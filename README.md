@@ -34,10 +34,7 @@ The `PageBuilder:GitContent` and `PageBuilder:ThemeSnapshot` configuration secti
 
 Roles keep working: the permissions are the same `builder:*` ones.
 
-Two things need a manual step:
-
-* Settings forced in configuration under `VirtoCommerce:Settings:Override` are keyed by setting name: rename `VirtoCommerce.PageBuilderModule.*` to `VirtoCommerce.SiteBuilder.*`, and `NewPageBuilder` to `NewSiteBuilder`.
-* A GitHub App that Page Builder created sends the user back to `api/pagebuilder/git/app/installed` after an installation. In the App's settings on GitHub, change its Setup URL to `api/site-builder/git/app/installed`.
+Settings forced in configuration under `VirtoCommerce:Settings:Override` need a manual step: they are keyed by setting name, so rename `VirtoCommerce.PageBuilderModule.*` to `VirtoCommerce.SiteBuilder.*`, and `NewPageBuilder` to `NewSiteBuilder`.
 
 ## Store access
 
