@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.GenericCrud;
@@ -266,6 +267,7 @@ public class MultilanguagePageControllerTests
         var pagesController = CreatePagesController(fixture);
 
         Assert.IsType<BadRequestObjectResult>((await controller.Search(null)).Result);
+        Assert.IsType<BadRequestObjectResult>((await pagesController.SearchGroups(null)).Result);
         Assert.IsType<BadRequestObjectResult>((await pagesController.SearchList(null, fixture.List, TestContext.Current.CancellationToken)).Result);
         Assert.IsType<BadRequestObjectResult>((await pagesController.FindPermalinkUsage(null, fixture.List, TestContext.Current.CancellationToken)).Result);
     }
@@ -318,7 +320,9 @@ public class MultilanguagePageControllerTests
             new PredicateAuthorizationService(_ => true),
             null!,
             null!,
-            NullLogger<SiteBuilderPageController>.Instance)
+            NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
+            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PredicateAuthorizationService(_ => true)),
+            TestServices.Designer(new NoContentHistory()))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

@@ -1,12 +1,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests;
 
-public class IsValidSchemaKindTests
+public class IsSchemaKindTests
 {
     [Theory]
     [InlineData("sections")]
@@ -15,7 +17,7 @@ public class IsValidSchemaKindTests
     [InlineData("objects")]
     [InlineData("shared")]
     public void Returns_true_for_known_kinds(string kind) =>
-        Assert.True(SiteBuilderController.IsValidSchemaKind(kind));
+        Assert.True(SiteBuilderContentPaths.IsSchemaKind(kind));
 
     [Theory]
     [InlineData("")]
@@ -24,7 +26,7 @@ public class IsValidSchemaKindTests
     [InlineData("pageSettings")]
     [InlineData(null)]
     public void Returns_false_for_unknown_kinds(string kind) =>
-        Assert.False(SiteBuilderController.IsValidSchemaKind(kind));
+        Assert.False(SiteBuilderContentPaths.IsSchemaKind(kind));
 }
 
 public class IsStaticEntryTests
@@ -355,7 +357,7 @@ public class MergeStaticSectionsIntoTemplateTests
 public class TryValidatePageContentEnvelopeTests
 {
     private static bool Validate(string content, out string error) =>
-        SiteBuilderPageController.TryValidatePageContentEnvelope(content, out error);
+        PageContentEnvelope.TryValidate(content, out error);
 
     [Fact]
     public void Accepts_minimal_valid_envelope()

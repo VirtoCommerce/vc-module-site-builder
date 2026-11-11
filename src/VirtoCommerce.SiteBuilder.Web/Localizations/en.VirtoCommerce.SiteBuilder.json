@@ -71,13 +71,13 @@
         "title": "Delete the old draft file?",
         "message": "\"{{path}}\" is left over from before this store moved to the content repository. The page itself is not touched."
       },
-      "delete-legacy-draft-unsaved": {
-        "title": "Delete the old draft file?",
-        "message": "\"{{path}}\" still holds changes that are not in the content repository. Deleting it loses them. The published page is not touched."
-      },
       "legacy-draft-kept": {
         "title": "The draft file was kept",
         "message": "Nothing else holds this page: it is in neither the content repository nor a published file, so deleting the draft would delete the page. Save it from the designer once, then delete the draft."
+      },
+      "legacy-draft-changed": {
+        "title": "The draft file was kept",
+        "message": "This draft holds changes the published page does not have, so deleting it would lose them."
       },
       "git-awaiting-merge": {
         "title": "Publishing needs one more step",
@@ -123,6 +123,14 @@
           "GitContentEnabled": {
             "title": "Publish pages through Git",
             "description": "When enabled, saving a page commits it to a work branch in the configured content repository and publishing opens and merges a pull request, instead of writing to blob storage directly. Requires the Git content connection to be configured on the server (SiteBuilder:GitContent)."
+          },
+          "GitContentRepository": {
+            "title": "Git repository",
+            "description": "An existing GitHub repository (owner/name) for this store's pages. Leave empty to use the store's own repository, which Site Builder creates in the configured organization."
+          },
+          "NewSiteBuilder": {
+            "title": "New Site Builder",
+            "description": "Opens the store's pages in the new Site Builder designer, and the storefront shows the theme published from it. When off, pages open in the classic designer and the storefront works as before."
           }
         },
         "Migration": {

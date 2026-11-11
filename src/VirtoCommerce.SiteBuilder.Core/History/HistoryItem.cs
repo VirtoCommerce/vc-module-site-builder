@@ -1,0 +1,32 @@
+namespace VirtoCommerce.SiteBuilder.Core.History;
+
+public sealed record HistoryItem(HistoryItemType Type, string Key)
+{
+    public const string PagePrefix = "page:";
+    public const string ThemePrefix = "theme:";
+
+    /// <summary>Trims the leading "/" the admin may send, so the history names a file once.</summary>
+    public static HistoryItem ForThemeFile(string path) => new(HistoryItemType.Theme, path?.TrimStart('/'));
+
+    public static bool TryParse(string value, out HistoryItem item)
+    {
+        item = null;
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        if (value.StartsWith(PagePrefix, StringComparison.Ordinal) && value.Length > PagePrefix.Length)
+        {
+            item = new HistoryItem(HistoryItemType.Page, value[PagePrefix.Length..]);
+        }
+        else if (value.StartsWith(ThemePrefix, StringComparison.Ordinal) && value.Length > ThemePrefix.Length)
+        {
+            item = new HistoryItem(HistoryItemType.Theme, value[ThemePrefix.Length..]);
+        }
+
+        return item != null;
+    }
+
+    public override string ToString() => $"{(Type == HistoryItemType.Page ? PagePrefix : ThemePrefix)}{Key}";
+}

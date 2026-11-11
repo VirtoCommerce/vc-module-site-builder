@@ -6,6 +6,8 @@ namespace VirtoCommerce.SiteBuilder.Core
     {
         public const string DefaultPageContent = "{ \"settings\": {}, \"content\": [] }";
 
+        public const string DraftSuffix = "-draft";
+
         public static class ContentProviders
         {
             /// <summary>
@@ -21,6 +23,42 @@ namespace VirtoCommerce.SiteBuilder.Core
             public const string ReferenceType = "componentRef";
             public const string ReferenceProperty = "componentRef";
             public const int NameMaxLength = 128;
+        }
+
+        public static class Theme
+        {
+            public const string DefaultThemeName = "default";
+            public const string ThemeNamePropertyName = "DefaultThemeName";
+            public const string FallbackLanguage = "en-US";
+        }
+
+        public static class Palette
+        {
+            public const string Light = "light";
+            public const string Dark = "dark";
+
+            /// <summary>WCAG 2.2 AA minimum contrast of normal text.</summary>
+            public const double TextContrastRatio = 4.5;
+
+            /// <summary>WCAG 2.2 AA minimum contrast of large text, icons and UI components.</summary>
+            public const double NonTextContrastRatio = 3;
+        }
+
+        public static class GitHistory
+        {
+            public const int DefaultPageSize = 20;
+
+            public const string SavedSummary = "Saved";
+            public const string PublishedSummary = "Published";
+            public const string DiscardedSummary = "Discarded unpublished changes";
+            public const string RestoredSummary = "Restored";
+
+            public const int RestoredVersionLength = 7;
+        }
+
+        public static class Headers
+        {
+            public const string SaveId = "X-SiteBuilder-Save";
         }
 
         public static class PageStatuses
@@ -43,6 +81,17 @@ namespace VirtoCommerce.SiteBuilder.Core
 
             /// <summary>A translation is behind the source language version.</summary>
             public const string Outdated = "Outdated";
+        }
+
+        public static class SchemaKinds
+        {
+            public const string Sections = "sections";
+            public const string Templates = "templates";
+            public const string Blocks = "blocks";
+            public const string Objects = "objects";
+            public const string Shared = "shared";
+
+            public static IReadOnlyList<string> All { get; } = [Sections, Templates, Blocks, Objects, Shared];
         }
 
         public static class PageLifecycleFilters
@@ -195,12 +244,53 @@ namespace VirtoCommerce.SiteBuilder.Core
                     DefaultValue = false,
                 };
 
+                public static SettingDescriptor GitContentRepository { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.Store.GitContentRepository",
+                    GroupName = "CMS|Site builder",
+                    ValueType = SettingValueType.ShortText,
+                    DefaultValue = "",
+                };
+
+                /// <summary>Public, so the storefront sees it in the store's module settings.</summary>
+                public static SettingDescriptor NewSiteBuilder { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder",
+                    GroupName = "CMS|Site builder",
+                    ValueType = SettingValueType.Boolean,
+                    DefaultValue = false,
+                    IsPublic = true,
+                };
+
                 public static IEnumerable<SettingDescriptor> AllStoreLevelSettings
                 {
                     get
                     {
                         yield return PreviewUserIds;
+                        yield return NewSiteBuilder;
                         yield return GitContentEnabled;
+                        yield return GitContentRepository;
+                    }
+                }
+            }
+
+            public static class GitHub
+            {
+                /// <summary>Encrypted with the data protection keys.</summary>
+                public static SettingDescriptor AppConnection { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.GitHub.AppConnection",
+                    GroupName = "CMS|Site builder",
+                    ValueType = SettingValueType.LongText,
+                    DefaultValue = "",
+                    IsHidden = true,
+                };
+
+                public static IEnumerable<SettingDescriptor> AllGitHubSettings
+                {
+                    get
+                    {
+                        yield return AppConnection;
                     }
                 }
             }
@@ -208,6 +298,7 @@ namespace VirtoCommerce.SiteBuilder.Core
             public static IEnumerable<SettingDescriptor> AllSettings =>
                 General.AllGeneralSettings
                     .Union(Migration.AllMigrationSettings)
+                    .Union(GitHub.AllGitHubSettings)
                     .Union(StoreLevelSettings.AllStoreLevelSettings);
         }
     }

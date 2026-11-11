@@ -1,0 +1,21 @@
+using VirtoCommerce.ContentModule.Core.Services;
+
+namespace VirtoCommerce.SiteBuilder.Data.Extensions;
+
+public static class BlobContentStorageProviderExtensions
+{
+    public static async Task<string> ReadTextAsync(this IBlobContentStorageProvider storageProvider, string path)
+    {
+        ArgumentNullException.ThrowIfNull(storageProvider);
+
+        if (await storageProvider.GetBlobInfoAsync(path) == null)
+        {
+            return null;
+        }
+
+        await using var stream = await storageProvider.OpenReadAsync(path);
+        using var reader = new StreamReader(stream);
+
+        return await reader.ReadToEndAsync();
+    }
+}

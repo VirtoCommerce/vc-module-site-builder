@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.SiteBuilder.Web.Models;
 using Xunit;
@@ -60,6 +62,24 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
         {
             Assert.Empty(payload.UsagePages);
         }
+    }
+
+    [Fact]
+    public async Task Get_RoleScopedToTheComponentsStore_ReturnsPageDetails()
+    {
+        var component = CreateAuthorizedComponent();
+        var usageService = new StubUsageService();
+        var controller = CreateController(
+            new StubSharedComponentService(component),
+            new StubSharedComponentContentService(),
+            usageService,
+            new FakeAuthorizationService("store", ModuleConstants.Security.Permissions.SharedComponentsRead));
+
+        var response = await controller.Get(component.Id, TestContext.Current.CancellationToken);
+
+        var payload = Assert.IsType<SiteBuilderSharedComponent>(Assert.IsType<OkObjectResult>(response.Result).Value);
+        Assert.True(usageService.LastIncludePages);
+        Assert.Single(payload.UsagePages);
     }
 
     [Fact]
@@ -180,14 +200,15 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
     private static SiteBuilderSharedComponentsController CreateController(
         ISiteBuilderSharedComponentService componentService,
         ISiteBuilderSharedComponentContentService contentService,
-        ISiteBuilderSharedComponentUsageService usageService)
+        ISiteBuilderSharedComponentUsageService usageService,
+        IAuthorizationService authorizationService = null)
     {
         return new SiteBuilderSharedComponentsController(
             componentService,
             sharedComponentSearchService: null,
             contentService,
             usageService,
-            new StubAuthorizationService(canReadPages: true))
+            authorizationService ?? new StubAuthorizationService(canReadPages: true))
         {
             ControllerContext = new ControllerContext
             {
@@ -343,7 +364,9 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
             object resource,
             IEnumerable<IAuthorizationRequirement> requirements)
         {
-            return Task.FromResult(AuthorizationResult.Success());
+            var authorized = canReadPages || requirements.OfType<SiteBuilderAuthorizationRequirement>()
+                .All(x => x.Permission != ModuleConstants.Security.Permissions.Read);
+            return Task.FromResult(authorized ? AuthorizationResult.Success() : AuthorizationResult.Failed());
         }
 
         public Task<AuthorizationResult> AuthorizeAsync(
@@ -351,8 +374,7 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
             object resource,
             string policyName)
         {
-            var authorized = policyName != ModuleConstants.Security.Permissions.Read || canReadPages;
-            return Task.FromResult(authorized ? AuthorizationResult.Success() : AuthorizationResult.Failed());
+            return Task.FromResult(AuthorizationResult.Failed());
         }
     }
 }

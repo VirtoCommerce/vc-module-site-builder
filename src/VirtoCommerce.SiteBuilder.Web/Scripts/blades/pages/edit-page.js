@@ -5,8 +5,10 @@ angular.module('virtoCommerce.siteBuilderModule')
         'platformWebApp.dynamicProperties.dictionaryItemsApi', 'platformWebApp.settings',
         'virtoCommerce.siteBuilderModule.resourceNameService', 'virtoCommerce.searchModule.searchIndexation', "moment",
         'virtoCommerce.contentModule.broadcastChannelFactory', 'virtoCommerce.contentModule.files-draft',
+        'virtoCommerce.storeModule.stores',
         function ($rootScope, $scope, $q, validators, contentApi, siteBuilderApi, bladeNavigationService, dialogService,
-            dictionaryItemsApi, settings, nameHelper, searchApi, moment, broadcastChannelFactory, filesDraftService) {
+            dictionaryItemsApi, settings, nameHelper, searchApi, moment, broadcastChannelFactory, filesDraftService,
+            stores) {
 
             var momentFormat = "YYYYMMDDHHmmss";
 
@@ -26,10 +28,13 @@ angular.module('virtoCommerce.siteBuilderModule')
             // place under each, so it must never run on a guess.
             var flowResolved = false;
 
+            var newSiteBuilderSetting = 'VirtoCommerce.SiteBuilder.Store.NewSiteBuilder';
+            var designerReady = $q.resolve(false);
+
             blade.initialize = function () {
                 channel = broadcastChannelFactory(blade);
-                var pathname = window.location.pathname === '/' ? '' : window.location.pathname;
-                blade.designerUrl = `${window.location.origin + pathname}/Modules/$(VirtoCommerce.SiteBuilder)/Content/site-builder-designer/index.html`;
+                blade.newSiteBuilder = false;
+                designerReady = loadDesigner();
                 loadPublishStatus();
                 if (blade.isNew) {
                     blade.isLoading = false;
@@ -74,6 +79,24 @@ angular.module('virtoCommerce.siteBuilderModule')
                 loadLegacyDraft();
             };
 
+            // Without an answer neither designer opens: not opening is recoverable, editing the page
+            // in the wrong designer is not.
+            function loadDesigner() {
+                var pathname = window.location.pathname === '/' ? '' : window.location.pathname;
+                var platformUrl = window.location.origin + pathname;
+                return stores.get({ id: blade.storeId }).$promise.then(function (store) {
+                    var setting = _.find(store.settings || [], function (x) { return x.name === newSiteBuilderSetting; });
+                    blade.newSiteBuilder = !!setting && setting.value === true;
+                    blade.designerUrl = blade.newSiteBuilder
+                        ? `${platformUrl}/apps/site-builder-shell/`
+                        : `${platformUrl}/Modules/$(VirtoCommerce.SiteBuilder)/Content/site-builder-designer/index.html`;
+                    return true;
+                }, function (error) {
+                    bladeNavigationService.setError('Error ' + error.status, $scope.blade);
+                    return false;
+                });
+            }
+
             // Which flow this store is on, and the page's real publish state. The list one blade back
             // derives both from blob file names, which says nothing about a page whose drafts are
             // branches — so ask the server rather than trusting what we were handed.
@@ -89,6 +112,8 @@ angular.module('virtoCommerce.siteBuilderModule')
                     if (!blade.isNew) {
                         blade.published = status.published;
                         blade.hasChanges = status.hasChanges;
+                        // A merge done on GitHub writes nothing live, so the live page can differ from the production branch.
+                        blade.liveBehind = status.liveBehind;
                         blade.pending = status.pending;
                         // The open pull request is not going to merge itself — see inFlight below.
                         blade.awaitingMerge = status.awaitingMerge;
@@ -242,7 +267,7 @@ angular.module('virtoCommerce.siteBuilderModule')
                                 // The repository is the source of truth: preview the exact commit at the
                                 // head of this editor's branch, else what is published. The blob draft
                                 // this url would otherwise point at is not written on this flow.
-                                window.open(gitUrl('git/preview'), '_blank');
+                                window.open(gitUrl('git/preview'), '_blank', 'noopener,noreferrer');
                                 return;
                             }
                             var showPreview = function (storeUrl) {
@@ -256,7 +281,7 @@ angular.module('virtoCommerce.siteBuilderModule')
                                     if (language) {
                                         previewUrl += `&cultureName=${encodeURIComponent(language)}`;
                                     }
-                                    window.open(previewUrl, '_blank');
+                                    window.open(previewUrl, '_blank', 'noopener,noreferrer');
                                 } else {
                                     var dialog = {
                                         id: "noUrlInStore",
@@ -285,24 +310,9 @@ angular.module('virtoCommerce.siteBuilderModule')
 
             var publishCommand = {
                 name: "siteBuilder.commands.publish", icon: 'fa fa-file',
-                executeMethod: function () {
-                    if (blade.gitFlow) {
-                        gitPublish();
-                        return;
-                    }
-                    contentApi.publish({
-                        contentType: blade.contentType,
-                        storeId: blade.storeId,
-                        relativeUrl: blade.currentEntity.relativeUrl
-                    }, function () {
-                        blade.hasChanges = false;
-                        blade.published = true;
-                        getDocumentIndex();
-                        updateToolbarCommands();
-                        postMessageToSiteBuilder({ source: 'platform', published: true, hasChanges: false });
-                        blade.parentBlade.refresh();
-                    });
-                },
+                // Through the builder API on either flow: it checks the builder's publish permission and the
+                // store, while the Content module's own publishing does not.
+                executeMethod: gitPublish,
                 // a pull request that is merging itself is already publishing this page — pressing
                 // publish again would achieve nothing
                 canExecuteMethod: function () { return !isDirty() && !inFlight(blade); }
@@ -321,6 +331,7 @@ angular.module('virtoCommerce.siteBuilderModule')
             // shipping a commit, hence one function. That can land straight away or wait on the CI checks
             // of a pull request, so the state comes from the server afterwards: telling the editor
             // "published" when it is still pending would send them away believing the page is live.
+            // Off the git flow the server publishes or unpublishes the blob and answers Merged.
             function gitShip(operation, pendingDialog) {
                 blade.isLoading = true;
                 operation({
@@ -424,13 +435,10 @@ angular.module('virtoCommerce.siteBuilderModule')
                 name: "siteBuilder.commands.delete-legacy-draft", icon: 'fa fa-eraser',
                 executeMethod: function () {
                     var draft = blade.legacyDraft;
-                    // One file, and it has no second copy anywhere. Name it in the prompt, and say
-                    // plainly when it still holds something the repository has not got.
-                    var dialogKey = draft.differsFromCurrent ? 'delete-legacy-draft-unsaved' : 'delete-legacy-draft';
                     dialogService.showConfirmationDialog({
                         id: "confirmDeleteLegacyDraft",
-                        title: `siteBuilder.dialogs.${dialogKey}.title`,
-                        message: `siteBuilder.dialogs.${dialogKey}.message`,
+                        title: "siteBuilder.dialogs.delete-legacy-draft.title",
+                        message: "siteBuilder.dialogs.delete-legacy-draft.message",
                         messageValues: { path: draft.blobPath },
                         callback: function (confirmed) {
                             if (confirmed) {
@@ -439,7 +447,8 @@ angular.module('virtoCommerce.siteBuilderModule')
                         }
                     });
                 },
-                canExecuteMethod: function () { return !!blade.legacyDraft; }
+                // the server keeps a draft that differs from the published page
+                canExecuteMethod: function () { return !!blade.legacyDraft && !blade.legacyDraft.differsFromCurrent; }
             };
 
             function deleteLegacyDraft(path) {
@@ -450,13 +459,14 @@ angular.module('virtoCommerce.siteBuilderModule')
                 }, { paths: [path], dryRun: false }, function (result) {
                     blade.isLoading = false;
                     // The server keeps a draft whose page is not in the repository — it is still
-                    // what the builder reads. Say so, rather than report a deletion that did not
-                    // happen.
+                    // what the builder reads — and one that changed since this blade looked. Say
+                    // which, rather than report a deletion that did not happen.
                     if (result.skipped && result.skipped.length) {
+                        var dialogKey = result.skipped[0].reason === 'has-changes' ? 'legacy-draft-changed' : 'legacy-draft-kept';
                         dialogService.showNotificationDialog({
                             id: "legacyDraftKept",
-                            title: "siteBuilder.dialogs.legacy-draft-kept.title",
-                            message: "siteBuilder.dialogs.legacy-draft-kept.message"
+                            title: `siteBuilder.dialogs.${dialogKey}.title`,
+                            message: `siteBuilder.dialogs.${dialogKey}.message`
                         });
                     }
                     loadLegacyDraft();
@@ -476,23 +486,7 @@ angular.module('virtoCommerce.siteBuilderModule')
 
             var unpublishCommand = {
                 name: "siteBuilder.commands.unpublish", icon: 'fa fa-file-alt',
-                executeMethod: function () {
-                    if (blade.gitFlow) {
-                        gitUnpublish();
-                        return;
-                    }
-                    contentApi.unpublish({
-                        contentType: blade.contentType,
-                        storeId: blade.storeId,
-                        relativeUrl: blade.currentEntity.relativeUrl
-                    }, function () {
-                        blade.hasChanges = true;
-                        blade.published = false;
-                        updateToolbarCommands();
-                        postMessageToSiteBuilder({ source: 'platform', published: false, hasChanges: true });
-                        blade.parentBlade.refresh();
-                    });
-                },
+                executeMethod: gitUnpublish,
                 // a pull request that is merging itself has the page on its way somewhere, and shipping
                 // a second commit for it would only race with the first
                 canExecuteMethod: function () { return !isDirty() && !inFlight(blade); }
@@ -614,16 +608,39 @@ angular.module('virtoCommerce.siteBuilderModule')
             }
 
             function runDesigner() {
+                designerReady.then(function (resolved) {
+                    if (resolved) {
+                        openDesigner();
+                        return;
+                    }
+                    designerReady = loadDesigner();
+                    designerReady.then(function (loaded) {
+                        if (loaded) {
+                            openDesigner();
+                        }
+                    });
+                });
+            }
+
+            function openDesigner() {
                 if (blade.designerUrl) {
-                    var relativeUrl = filesDraftService.getDraftFileName(blade);
-                    var previewId = filesDraftService.getDocumentId(blade, true);
-                    var parameters = `storeId=${blade.storeId}#/pages?type=${blade.contentType}&path=${relativeUrl}&previewId=${encodeURIComponent(previewId)}`;
+                    var parameters;
+                    if (blade.newSiteBuilder) {
+                        // The designer reads the draft, or in git this editor's branch, itself, so it needs only the page's path.
+                        parameters = `storeId=${encodeURIComponent(blade.storeId)}` +
+                            `&designType=${encodeURIComponent(blade.contentType)}` +
+                            `&designPath=${encodeURIComponent(blade.currentEntity.relativeUrl)}`;
+                    } else {
+                        var relativeUrl = filesDraftService.getDraftFileName(blade);
+                        var previewId = filesDraftService.getDocumentId(blade, true);
+                        parameters = `storeId=${blade.storeId}#/pages?type=${blade.contentType}&path=${relativeUrl}&previewId=${encodeURIComponent(previewId)}`;
+                    }
                     // Pass the page language so the designer preview renders in that language (VCST-5219).
                     var designerLanguage = blade.currentEntity && blade.currentEntity.language;
                     if (designerLanguage) {
                         parameters += `&cultureName=${encodeURIComponent(designerLanguage)}`;
                     }
-                    window.open(`${blade.designerUrl}?${parameters}`, '_blank');
+                    window.open(`${blade.designerUrl}?${parameters}`, '_blank', 'noopener');
                 } else {
                     var dialog = {
                         id: "noUrlInStore",
@@ -782,10 +799,12 @@ angular.module('virtoCommerce.siteBuilderModule')
                 $scope.blade.toolbarCommands = blade.toolbarCommands.filter(x => managed.indexOf(x) < 0);
 
                 // Nothing to publish and the page is live: the one thing left to do with it is take it
-                // down. On the git flow that is a commit deleting the page, merged like any other.
-                var command = $scope.blade.published && !$scope.blade.hasChanges
-                    ? unpublishCommand
-                    : publishCommand;
+                // down. A live page left behind by a merge done on GitHub follows the branch: published again
+                // while the branch has it, taken down once it does not.
+                var takeDown = $scope.blade.published
+                    ? !$scope.blade.hasChanges && !$scope.blade.liveBehind
+                    : !!$scope.blade.liveBehind;
+                var command = takeDown ? unpublishCommand : publishCommand;
                 $scope.blade.toolbarCommands.splice(4, 0, command);
 
                 // Publishing reaches the environment editors work against; promotion reaches the

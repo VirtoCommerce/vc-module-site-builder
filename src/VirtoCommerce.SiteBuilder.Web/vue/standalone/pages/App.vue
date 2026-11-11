@@ -1,0 +1,55 @@
+<template>
+  <VcApp
+    :is-ready="isReady"
+    :logo="logoImage"
+    title="Site Builder"
+    :version="version"
+  >
+  </VcApp>
+</template>
+
+<script lang="ts" setup>
+import { useBlade, useUser } from "@vc-shell/framework";
+import { nextTick, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
+import logoImage from "/assets/logo.svg";
+import { refreshMenuBadges } from "../../src/modules/site-builder/composables";
+import { designerFromLink, forgetDesignerLink } from "../designerLink";
+
+import { VcApp } from "@vc-shell/framework/ui";
+
+const isReady = ref(false);
+const version = import.meta.env.PACKAGE_VERSION;
+
+const { isAuthenticated } = useUser();
+const { openBlade } = useBlade();
+const router = useRouter();
+
+async function openDesignerFromLink() {
+  const designer = designerFromLink(window.location.search);
+  if (!designer) return;
+  await router.isReady();
+  await nextTick();
+  forgetDesignerLink();
+  openBlade(designer);
+}
+
+onMounted(async () => {
+  try {
+    if (isAuthenticated.value) {
+      isReady.value = true;
+      refreshMenuBadges();
+      await openDesignerFromLink();
+    }
+  } catch (e) {
+    console.log(e);
+    throw e;
+  }
+});
+
+console.debug(`Initializing App`);
+</script>
+
+<style lang="scss">
+@use "./../styles/index.scss";
+</style>

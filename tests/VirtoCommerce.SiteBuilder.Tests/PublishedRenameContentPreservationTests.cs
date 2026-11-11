@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Pages.Core.Models;
@@ -135,7 +136,6 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var pageContentService = new SiteBuilderPageContentService(
                 pageService,
                 service,
-                new NoopSharedComponentReferenceIndexService(),
                 new NoopEventPublisher(),
                 NullLogger<SiteBuilderPageContentService>.Instance);
             var controller = new SiteBuilderPageController(
@@ -145,7 +145,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 authorizationService: new AllowAllAuthorizationService(),
                 pageDocumentSearchService: new NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance);
+                logger: NullLogger<SiteBuilderPageController>.Instance, contentHistory: new NoContentHistory(),
+                sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
+                designerContentService: TestServices.Designer(new NoContentHistory()));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Response.Body = new MemoryStream();
@@ -179,12 +181,13 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 {
                     if (snapshot.Content == content)
                     {
-                        return new(snapshot.PageId, snapshot.ETag);
+                        return new(snapshot.PageId, snapshot.ETag) { ContentWritten = false };
                     }
                     throw new SiteBuilderContentConflictException();
                 }
                 if (SaveContentException != null) throw SaveContentException;
                 var draft = SiteBuilderPageSelection.Order(current.Pages).FirstOrDefault(x => x.Status == Draft);
+                var groupedEventsPublished = draft == null;
                 if (draft == null)
                 {
                     draft = new SiteBuilderPage { Id = $"page-new-{++_idSeq}", StoreId = current.StoreId, Status = Draft };
@@ -192,7 +195,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 }
                 draft.Content = content;
                 await SaveChangesAsync([current]);
-                return new(draft.Id, SiteBuilderContentVersion.Create(current, content));
+                return new(draft.Id, SiteBuilderContentVersion.Create(current, content)) { GroupedEventsPublished = groupedEventsPublished };
             }
 
             public async Task SaveGroupSettingsAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default)
@@ -337,8 +340,12 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 return Task.CompletedTask;
             }
 
+            public Exception LoadContentException { get; set; }
+
             public Task<string> LoadContent(string pageId, CancellationToken cancellationToken = default)
-                => Task.FromResult(_content.TryGetValue(pageId, out var c) ? c : string.Empty);
+                => LoadContentException != null
+                    ? Task.FromException<string>(LoadContentException)
+                    : Task.FromResult(_content.TryGetValue(pageId, out var c) ? c : string.Empty);
 
             public Task SaveContent(string pageId, string content, CancellationToken cancellationToken = default)
             {

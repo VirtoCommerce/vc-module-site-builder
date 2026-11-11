@@ -279,6 +279,19 @@ public partial class PageContentAtomicWriteTests
         Assert.Equal([AssetAUrl], await LoadAssetUrlsAsync(database.ConnectionString));
     }
 
+    [Fact]
+    public void GroupSettings_OldPage_KeepsItsHeaderAndHideBreadcrumbs()
+    {
+        var group = new GroupedSiteBuilderPage { Name = "Renamed", Permalink = "about", CultureName = "en-US" };
+        const string content = """{"settings":{"type":"settings","name":"About","permalink":"about","cultureName":"en-US","header":"About us","hideBreadcrumbs":true},"content":[]}""";
+
+        var updated = JsonNode.Parse(SiteBuilderContentSettings.Synchronize(content, group));
+
+        Assert.Equal("Renamed", updated["settings"]["name"].GetValue<string>());
+        Assert.Equal("About us", updated["settings"]["header"].GetValue<string>());
+        Assert.True(updated["settings"]["hideBreadcrumbs"].GetValue<bool>());
+    }
+
     [Theory]
     [InlineData("42")]
     [InlineData("true")]
@@ -511,10 +524,12 @@ public partial class PageContentAtomicWriteTests
     {
         events ??= new NoopEventPublisher();
         var pages = new SiteBuilderPageService(() => new SiteBuilderRepository(CreateContext(connectionString)), cache, events);
-        var content = new SiteBuilderPageContentService(pages, service, new NoopSharedComponentReferenceIndexService(), events,
+        var content = new SiteBuilderPageContentService(pages, service, events,
             NullLogger<SiteBuilderPageContentService>.Instance);
         return new SiteBuilderPageController(pages, service, null, new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
-            null, content, NullLogger<SiteBuilderPageController>.Instance)
+            null, content, NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
+            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
+            TestServices.Designer(new NoContentHistory()))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

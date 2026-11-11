@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
@@ -182,7 +183,6 @@ public class SiteBuilderPermalinkTests
         var pageContentService = new SiteBuilderPageContentService(
             pageService,
             service,
-            new NoopSharedComponentReferenceIndexService(),
             new PublishedRenameContentPreservationTests.NoopEventPublisher(),
             NullLogger<SiteBuilderPageContentService>.Instance);
         var controller = new SiteBuilderPageController(
@@ -192,7 +192,9 @@ public class SiteBuilderPermalinkTests
             new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
             pageContentService,
-            NullLogger<SiteBuilderPageController>.Instance);
+            NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
+            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
+            TestServices.Designer(new NoContentHistory()));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) },

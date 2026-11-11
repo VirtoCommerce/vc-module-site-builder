@@ -47,7 +47,6 @@ public class SiteBuilderSharedComponentsController(
     }
 
     [HttpPost("search")]
-    [Authorize(ModuleConstants.Security.Permissions.SharedComponentsRead)]
     public async Task<ActionResult<SiteBuilderSharedComponentSearchResult>> Search(
         [FromBody] SiteBuilderSharedComponentSearchCriteria criteria,
         CancellationToken cancellationToken = default)
@@ -69,7 +68,6 @@ public class SiteBuilderSharedComponentsController(
     }
 
     [HttpGet("{id}")]
-    [Authorize(ModuleConstants.Security.Permissions.SharedComponentsRead)]
     public async Task<ActionResult<SiteBuilderSharedComponent>> Get(
         [FromRoute] string id,
         CancellationToken cancellationToken = default)
@@ -87,7 +85,7 @@ public class SiteBuilderSharedComponentsController(
 
         await EnrichUsageAsync(
             [component],
-            includePages: await CanReadPagesAsync(),
+            includePages: await CanReadPagesAsync(component),
             cancellationToken);
         return Ok(component);
     }
@@ -187,7 +185,7 @@ public class SiteBuilderSharedComponentsController(
 
         await EnrichUsageAsync(
             [component],
-            includePages: await CanReadPagesAsync(),
+            includePages: await CanReadPagesAsync(component),
             cancellationToken);
 
         return Ok(component);
@@ -212,7 +210,7 @@ public class SiteBuilderSharedComponentsController(
             return Forbidden;
         }
 
-        var includeUsagePages = await CanReadPagesAsync();
+        var includeUsagePages = await CanReadPagesAsync(component);
         await EnrichUsageAsync([component], includeUsagePages, cancellationToken);
         if (component.UsageCount > 0)
         {
@@ -241,7 +239,6 @@ public class SiteBuilderSharedComponentsController(
     }
 
     [HttpGet("{id}/content")]
-    [Authorize(ModuleConstants.Security.Permissions.SharedComponentsRead)]
     [ProducesResponseType(typeof(JObject), StatusCodes.Status200OK)]
     public async Task<ActionResult> GetContent(
         [FromRoute] string id,
@@ -337,16 +334,13 @@ public class SiteBuilderSharedComponentsController(
         var result = await authorizationService.AuthorizeAsync(
             User,
             resource,
-            new SiteBuilderAuthorizationRequirement());
+            new SiteBuilderAuthorizationRequirement(ModuleConstants.Security.Permissions.SharedComponentsRead));
         return result.Succeeded;
     }
 
-    private async Task<bool> CanReadPagesAsync()
+    private async Task<bool> CanReadPagesAsync(object resource)
     {
-        var result = await authorizationService.AuthorizeAsync(
-            User,
-            null,
-            ModuleConstants.Security.Permissions.Read);
+        var result = await authorizationService.AuthorizeAsync(User, resource, new SiteBuilderAuthorizationRequirement());
         return result.Succeeded;
     }
 

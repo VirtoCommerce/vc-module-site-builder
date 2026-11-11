@@ -16,10 +16,22 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
     public interface IGitContentPolicy
     {
         /// <summary>
-        /// True when <c>SiteBuilder:GitContent:Enabled</c> is set, the connection is configured, and the
-        /// store opted in via the <c>VirtoCommerce.SiteBuilder.Store.GitContentEnabled</c> setting.
-        /// A missing or unreadable store setting means "off".
+        /// A missing or unreadable opt-in means "off".
         /// </summary>
+        /// <exception cref="GitContentException">The store opted in, but its repository setting is not "owner/name", is not allowed, or the saved GitHub App cannot be read: git content is neither on nor safely off for it.</exception>
         Task<bool> IsEnabledForStoreAsync(string storeId, CancellationToken cancellationToken = default);
+
+        /// <summary>Returns <c>null</c> when git content is off for the store.</summary>
+        Task<string> GetRepositoryAsync(string storeId, CancellationToken cancellationToken = default);
+
+        /// <summary>Returns <c>null</c> when git content is off for the store.</summary>
+        Task<StoreRepository> GetRepositoryInfoAsync(string storeId, CancellationToken cancellationToken = default);
+
+        /// <summary>Returns the repository whether or not git content is on for the store.</summary>
+        /// <exception cref="GitContentException">The store setting is not a repository in "owner/name" form, or is not allowed; or the store opted in and the saved GitHub App cannot be read.</exception>
+        Task<StoreRepository> GetConfiguredRepositoryAsync(string storeId, CancellationToken cancellationToken = default);
+
+        /// <exception cref="GitContentException">The setting is not a repository in "owner/name" form, or is not allowed.</exception>
+        Task<StoreRepository> GetConfiguredRepositoryAsync(string storeId, string repositorySetting, CancellationToken cancellationToken = default);
     }
 }

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
@@ -100,9 +101,11 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         [Fact]
-        public async Task Valid_content_save_publishes_page_changed_event_exactly_once()
+        public async Task Saving_over_an_existing_draft_publishes_page_changed_event_exactly_once()
         {
             var service = NewServiceWithPublishedPage(out var groupId);
+            // The first save creates the draft, and the grouped page service raises the events for that.
+            await SaveContent(service, groupId, "{ \"settings\": {}, \"content\": [ { \"type\": \"hero\" } ] }");
             var events = new RecordingEventPublisher();
 
             var (result, _) = await SaveContent(
@@ -219,7 +222,6 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var pageContentService = new SiteBuilderPageContentService(
                 pageService,
                 service,
-                new NoopSharedComponentReferenceIndexService(),
                 publisher,
                 NullLogger<SiteBuilderPageContentService>.Instance);
             var controller = new SiteBuilderPageController(
@@ -229,7 +231,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 authorizationService: new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
                 pageDocumentSearchService: new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance);
+                logger: NullLogger<SiteBuilderPageController>.Instance, contentHistory: new NoContentHistory(),
+                sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
+                designerContentService: TestServices.Designer(new NoContentHistory()));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));

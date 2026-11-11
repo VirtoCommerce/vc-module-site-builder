@@ -1,0 +1,286 @@
+import { computed, ref, reactive, Ref, ComputedRef, onMounted } from "vue";
+import { useAsync, useLoading, useApiClient } from "@vc-shell/framework";
+import {
+  FilePublishStatus,
+  MultilanguagePage,
+  MultilanguagePageClient,
+  SiteBuilderPageClient,
+  GroupedSiteBuilderPage,
+} from "../../../../api_client/virtocommerce.sitebuilder";
+
+import useUserGroups, { IUserGroupsResult } from "./../useUserGroups";
+import useOrganizations, { IOrganizationsResult } from "./../useOrganizations";
+import useUrlParams from "../useStoreParams";
+import { downloadPageContent, PageExportData } from "../usePageContentApi";
+import { usePageDesigner } from "../usePageDesigner";
+import { serializeImportedPageContent } from "./importContent";
+import { loadPage, savePage } from "../../../designer/api";
+
+const { getApiClient } = useApiClient(SiteBuilderPageClient);
+const { getApiClient: getMultilanguageApiClient } = useApiClient(MultilanguagePageClient);
+
+/** Stored in the content's `settings.seoInfo`, which the storefront reads. */
+export interface PageSeo {
+  pageTitle?: string;
+  metaDescription?: string;
+  metaKeywords?: string;
+}
+
+export interface IUseSiteBuilderDetails {
+  item: Ref<GroupedSiteBuilderPage>;
+  seo: Ref<PageSeo>;
+  status: Ref<FilePublishStatus>;
+  loading: ComputedRef<boolean>;
+  loadGroup: () => Promise<void>;
+  saveGroup: () => Promise<GroupedSiteBuilderPage>;
+  deleteGroup: () => Promise<void>;
+  loadUserGroups: () => Promise<IUserGroupsResult>;
+  loadOrganizations: (keyword?: string, skip?: number, objectIds?: string[]) => Promise<IOrganizationsResult>;
+  isReadOnly: ComputedRef<boolean>;
+  statusText: ComputedRef<string>;
+  publishGroup: () => Promise<void>;
+  unpublishGroup: () => Promise<void>;
+  openDraftDesigner: (onClose?: () => void) => void;
+  downloadContent: () => Promise<void>;
+  clonePage: () => Promise<GroupedSiteBuilderPage>;
+  convertToMultilanguage: () => Promise<MultilanguagePage>;
+}
+
+export interface UseSiteBuilderDetailsOptions {
+  id?: string;
+  storeId?: string;
+  importData?: PageExportData;
+}
+
+export function useSiteBuilderDetails(options?: UseSiteBuilderDetailsOptions): IUseSiteBuilderDetails {
+  const { getUserGroups } = useUserGroups();
+  const { getOrganizations } = useOrganizations();
+  const { storeId, initUrlParams } = useUrlParams();
+  const openPageDesigner = usePageDesigner();
+
+  const item = ref<GroupedSiteBuilderPage>({} as GroupedSiteBuilderPage);
+  const isNew = ref(!options?.id);
+  const status = ref<FilePublishStatus>({} as FilePublishStatus);
+  const seo = ref<PageSeo>({});
+  const seoKey = (x: PageSeo) => JSON.stringify([x.pageTitle || "", x.metaDescription || "", x.metaKeywords || ""]);
+  let savedSeo = seoKey({});
+
+  let groupStoreId: string | undefined;
+
+  const { action: loadGroup, loading: loadingGroup } = useAsync(async () => {
+    if (options?.id) {
+      const apiClient = await getApiClient();
+      const [result, page] = await Promise.all([apiClient.getGroup(options.id), loadPage(options.id)]);
+      status.value = await apiClient.publishStatus(options.id);
+      seo.value = { ...(page.doc.settings.seoInfo as PageSeo | undefined) };
+      savedSeo = seoKey(seo.value);
+      item.value = reactive(result);
+    } else {
+      const page = { visibility: true } as GroupedSiteBuilderPage;
+      if (options?.importData) {
+        const data = options.importData;
+        page.name = data.name;
+        page.permalink = data.permalink;
+        page.cultureName = data.cultureName;
+        page.visibility = data.visibility;
+        page.userGroups = data.userGroups;
+        page.organizationId = data.organizationId;
+        page.startDate = data.startDate;
+        page.endDate = data.endDate;
+      }
+      item.value = reactive(page);
+    }
+  });
+
+  const { action: saveGroup, loading: savingGroup } = useAsync(async () => {
+    const apiClient = await getApiClient();
+    const group = item.value;
+    let result: GroupedSiteBuilderPage;
+
+    if (isNew.value) {
+      group.storeId = groupStoreId;
+      const content = options?.importData?.content;
+      // Use the existing atomic creation API: a new import has no document version to edit yet.
+      result =
+        content !== undefined
+          ? await apiClient.createGroupPage({
+              ...group,
+              content: serializeImportedPageContent(content),
+            })
+          : await apiClient.createGroup(group);
+
+      item.value = reactive(result);
+      isNew.value = false;
+    } else {
+      result = await apiClient.updateGroup(group);
+      item.value = reactive(result);
+      await saveSeo(result.id!);
+      // a new name, permalink or language is written into the page content as a draft
+      status.value = await apiClient.publishStatus(result.id!);
+    }
+
+    return result;
+  });
+
+  /** Reads the draft again first: the designer may have saved since this blade loaded. */
+  async function saveSeo(groupId: string) {
+    if (seoKey(seo.value) === savedSeo) return;
+    const { doc, eTag } = await loadPage(groupId);
+    await savePage(groupId, { ...doc, settings: { ...doc.settings, seoInfo: { ...seo.value } } }, eTag ?? "");
+    savedSeo = seoKey(seo.value);
+  }
+
+  const { action: deleteGroup, loading: deletingGroup } = useAsync(async () => {
+    const groupId = item.value?.id;
+    if (!groupId) {
+      throw new Error("Can't archive page.");
+    }
+    const apiClient = await getApiClient();
+    await apiClient.archiveGroups([groupId]);
+  });
+
+  const { action: publishGroup, loading: publishingGroup } = useAsync(async () => {
+    const groupId = item.value?.id;
+    if (!groupId) {
+      throw new Error("Can't publish group.");
+    }
+    const apiClient = await getApiClient();
+    await apiClient.publishGroup(groupId, true);
+
+    if (item.value) {
+      await loadGroup();
+    }
+  });
+
+  const { action: unpublishGroup, loading: unpublishingGroup } = useAsync(async () => {
+    if (status.value?.hasChanges) {
+      throw new Error("SITE_BUILDER.PAGES.ALERTS.UNPUBLISH_WITH_DRAFT");
+    }
+
+    const groupId = item.value?.id;
+    if (!groupId) {
+      throw new Error("Can't unpublish group.");
+    }
+    const apiClient = await getApiClient();
+    await apiClient.publishGroup(groupId, false);
+
+    if (item.value) {
+      await loadGroup();
+    }
+  });
+
+  const { action: downloadContent, loading: downloadingContent } = useAsync(async () => {
+    const groupId = item.value?.id;
+    if (!groupId) {
+      throw new Error("Can't download content.");
+    }
+    await downloadPageContent(groupId, item.value);
+  });
+
+  const { action: clonePage, loading: cloningPage } = useAsync(async () => {
+    const source = item.value;
+    if (!source?.id) {
+      throw new Error("Can't clone page.");
+    }
+
+    const apiClient = await getApiClient();
+    // The server picks a suffix no page of the store uses yet, so a second clone gets its own address.
+    const copyName = await apiClient.getCopyName(source.id);
+    const clone: GroupedSiteBuilderPage = {
+      name: copyName.name,
+      permalink: copyName.permalink,
+      cultureName: source.cultureName,
+      storeId: source.storeId,
+      visibility: source.visibility,
+      userGroups: source.userGroups,
+      organizationId: source.organizationId,
+    };
+
+    const created = await apiClient.createGroup(clone);
+
+    if (created.id && source.id) {
+      await apiClient.copyPageContent(created.id, source.id);
+    }
+
+    return created;
+  });
+
+  const { action: convertToMultilanguage, loading: converting } = useAsync(async () => {
+    const groupId = item.value?.id;
+    if (!groupId) {
+      throw new Error("Can't convert page.");
+    }
+    const apiClient = await getMultilanguageApiClient();
+    return apiClient.convert(groupId);
+  });
+
+  function openDraftDesigner(onClose?: () => void) {
+    openPageDesigner(
+      {
+        groupId: item.value?.id,
+        storeId: item.value?.storeId,
+        cultureName: item.value?.cultureName,
+        status: item.value?.status,
+      },
+      { onClose },
+    );
+  }
+
+  async function loadUserGroupsAsync() {
+    return getUserGroups();
+  }
+
+  async function loadOrganizationsAsync(keyword?: string, skip?: number, objectIds?: string[]) {
+    return getOrganizations(keyword, skip, objectIds);
+  }
+
+  const isReadOnly = computed(() => {
+    return item.value?.status === "Archived";
+  });
+
+  const statusText = computed(() => {
+    const page = item.value;
+    if (page == null) {
+      return "Draft";
+    }
+    return page.status || "Draft";
+  });
+
+  onMounted(() => {
+    initUrlParams();
+    if (options?.storeId) {
+      groupStoreId = options.storeId;
+    } else {
+      groupStoreId = storeId.value as string;
+    }
+  });
+
+  return {
+    item,
+    seo,
+    status,
+    loading: useLoading(
+      loadingGroup,
+      savingGroup,
+      deletingGroup,
+      publishingGroup,
+      unpublishingGroup,
+      downloadingContent,
+      cloningPage,
+      converting,
+    ),
+    loadGroup,
+    saveGroup,
+    deleteGroup,
+    loadUserGroups: loadUserGroupsAsync,
+    loadOrganizations: loadOrganizationsAsync,
+    isReadOnly,
+    statusText,
+    publishGroup,
+    unpublishGroup,
+    openDraftDesigner,
+    downloadContent,
+    clonePage,
+    convertToMultilanguage: convertToMultilanguage as () => Promise<MultilanguagePage>,
+  };
+}

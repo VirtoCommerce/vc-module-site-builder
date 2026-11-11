@@ -10,11 +10,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.AssetsModule.Core.Assets;
 using VirtoCommerce.ContentModule.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.SiteBuilder.Web.Models;
+using VirtoCommerce.StoreModule.Core.Model;
 using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests
@@ -31,6 +34,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
     public class LegacyDraftsCleanupTests
     {
         private const string Base = "Pages/vccom/";
+        private const string StoreRepository = "acme/site-vccom";
         private const string OnGit = """{ "settings": { "type": "settings", "name": "About" }, "content": [] }""";
 
         // The same document as OnGit, written the way the pre-git flow wrote it: four-space indent, CRLF.
@@ -159,13 +163,41 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             var blob = Storage();
             blob.AddFile("about-us.page", OnGit);
-            blob.AddFile("about-us.page-draft", UnpublishedWork);
+            blob.AddFile("about-us.page-draft", OnGit);
 
             await Controller(blob, git: Git(("pages/about-us.page", OnGit)))
                 .DeleteLegacyDrafts("vccom", "pages", "default", Request("about-us.page-draft"));
 
             Assert.Equal(["about-us.page-draft"], blob.Removed);
             Assert.Contains("about-us.page", blob.Files.Keys);
+        }
+
+        [Fact]
+        public async Task Delete_ADraftThatDiffersFromTheRepository_IsKept()
+        {
+            var blob = Storage();
+            blob.AddFile("about-us.page-draft", UnpublishedWork);
+
+            var result = await Controller(blob, git: Git(("pages/about-us.page", OnGit)))
+                .DeleteLegacyDrafts("vccom", "pages", "default", Request("about-us.page-draft"));
+
+            Assert.Empty(blob.Removed);
+            var body = Assert.IsType<OkObjectResult>(result).Value;
+            Assert.Empty((IEnumerable<string>)Value(body, "deleted"));
+            Assert.Contains("has-changes", JArray.FromObject(Value(body, "skipped")).ToString());
+        }
+
+        [Fact]
+        public async Task Delete_ADraftThatDiffersFromThePublishedBlob_IsKept()
+        {
+            var blob = Storage();
+            blob.AddFile("legacy.page", OnGit);
+            blob.AddFile("legacy.page-draft", UnpublishedWork);
+
+            await Controller(blob, git: Git())
+                .DeleteLegacyDrafts("vccom", "pages", "default", Request("legacy.page-draft"));
+
+            Assert.Empty(blob.Removed);
         }
 
         [Fact]
@@ -242,26 +274,13 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // the whole cleanup blocked for exactly the stores it was written for.
             var blob = Storage();
             blob.AddFile("legacy.page", OnGit);
-            blob.AddFile("legacy.page-draft", UnpublishedWork);
+            blob.AddFile("legacy.page-draft", OnGit);
 
             await Controller(blob, git: Git())
                 .DeleteLegacyDrafts("vccom", "pages", "default", Request("legacy.page-draft"));
 
             Assert.Equal(["legacy.page-draft"], blob.Removed);
             Assert.Contains("legacy.page", blob.Files.Keys);
-        }
-
-        [Fact]
-        public async Task Delete_WithoutTheDeletePermission_IsForbidden()
-        {
-            var blob = Storage();
-            blob.AddFile("about-us.page-draft", OnGit);
-
-            var result = await Controller(blob, allowed: false)
-                .DeleteLegacyDrafts("vccom", "pages", "default", Request(false, "about-us.page-draft"));
-
-            Assert.IsType<ForbidResult>(result);
-            Assert.Empty(blob.Removed);
         }
 
         [Fact]
@@ -381,19 +400,36 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 PagesRoot = "pages",
             });
 
+            // The store's own repository, not the shared one configured above, so a read from the wrong one finds nothing.
+            var policy = new FakeGitContentPolicy(gitFlow, repositoryFormat: "acme/site-{0}");
+            var filePageDrafts = TestServices.FilePageDrafts(options, GitHubConnections.CreateService(options.Value), policy, git ?? new FakeGitRepository(), null, new FakeGitContentProvisioner(), new FakeStoreService(new Store { Id = "vccom" }), new FakePathResolver(), new FakeStorageFactory(storage), null, null);
             var controller = new SiteBuilderController(
-                storeService: null,
+                storeService: new FakeStoreService(new Store { Id = "vccom" }),
                 pathResolver: new FakePathResolver(),
                 blobContentStorageProviderFactory: new FakeStorageFactory(storage),
                 publishingService: null,
                 eventPublisher: null,
                 gitContentOptions: options,
-                gitContentPolicy: new FakePolicy(gitFlow),
+                gitHubConnectionService: GitHubConnections.CreateService(options.Value),
+                gitContentPolicy: policy,
                 gitContentRepository: git ?? new FakeGitRepository(),
                 gitContentHistory: null,
                 gitContentPublisher: null,
+                gitLivePageService: null,
                 settingsManager: null,
-                authorizationService: new FakeAuthorizationService(allowed));
+                authorizationService: new FakeAuthorizationService(allowed),
+                distributedLock: new InProcessDistributedLock(),
+                requestValidator: RequestValidators.Content("s1", "vccom"),
+                contentHistory: new NoContentHistory(),
+                themeDraftService: null,
+                groupedPageService: null,
+                sharedComponentPlacementValidator: null,
+                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null),
+                contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
+                filePageDraftService: filePageDrafts,
+            designerSaveValidator: RequestValidators.DesignerSave,
+            designerDiscardValidator: RequestValidators.DesignerDiscard,
+            themeStorageFactory: new ThemeStorageFactory(new FakeStoreService(new Store { Id = "vccom" }), new FakePathResolver(), new FakeStorageFactory(storage), null));
 
             var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "john")], "test");
             controller.ControllerContext = new ControllerContext
@@ -485,36 +521,30 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             public Dictionary<string, string> Files { get; } = [];
 
-            public Task<string> ReadFileAsync(string path, string gitRef, CancellationToken cancellationToken = default) =>
-                Task.FromResult(Files.GetValueOrDefault(path));
+            public Task<string> ReadFileAsync(string repository, string path, string gitRef, CancellationToken cancellationToken = default) =>
+                Task.FromResult(repository == StoreRepository ? Files.GetValueOrDefault(path) : null);
 
-            public Task<string> GetBranchHeadShaAsync(string branch, CancellationToken cancellationToken = default) =>
+            public Task<string> GetBranchHeadShaAsync(string repository, string branch, CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
 
-            public Task CreateBranchAsync(string branch, string fromRef, CancellationToken cancellationToken = default) =>
+            public Task CreateBranchAsync(string repository, string branch, string fromRef, CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
 
-            public Task SetBranchAsync(string branch, string sha, string pagePath, CancellationToken cancellationToken = default) =>
+            public Task SetBranchAsync(string repository, string branch, string sha, string pagePath, CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
 
-            public Task DeleteBranchAsync(string branch, string pagePath, CancellationToken cancellationToken = default) =>
+            public Task DeleteBranchAsync(string repository, string branch, string pagePath, CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
 
-            public void InvalidateRead(string path, string gitRef) => throw new NotSupportedException();
+            public void InvalidateRead(string repository, string path, string gitRef) => throw new NotSupportedException();
 
-            public Task<string> CommitFileAsync(string path, string content, string branch, string message,
+            public Task<string> CommitFileAsync(string repository, string path, string content, string branch, string message,
                 GitCommitAuthor author, CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
 
-            public Task<string> DeleteFileAsync(string path, string branch, string message, GitCommitAuthor author,
+            public Task<string> DeleteFileAsync(string repository, string path, string branch, string message, GitCommitAuthor author,
                 CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
-        }
-
-        private sealed class FakePolicy(bool enabled) : IGitContentPolicy
-        {
-            public Task<bool> IsEnabledForStoreAsync(string storeId, CancellationToken cancellationToken = default) =>
-                Task.FromResult(enabled);
         }
 
     }

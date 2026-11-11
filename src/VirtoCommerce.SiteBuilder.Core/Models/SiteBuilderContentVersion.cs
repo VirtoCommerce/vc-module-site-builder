@@ -26,18 +26,31 @@ public static class SiteBuilderContentVersion
 
     public static string CreateFromUtf8(GroupedSiteBuilderPage group, ReadOnlySpan<byte> content)
     {
-        return CreateFromContentHash(group, Convert.ToHexString(SHA256.HashData(content)));
+        return CreateFromContentHash(group, HashContent(content));
+    }
+
+    public static string CreateForThemeFile(string storeId, string path, string content)
+    {
+        return Hash(new
+        {
+            StoreId = storeId,
+            ThemeFile = path,
+            ContentHash = content == null ? null : HashContent(Encoding.UTF8.GetBytes(content)),
+        });
     }
 
     private static string CreateFromContentHash(GroupedSiteBuilderPage group, string contentHash)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(new
+        return Hash(new
         {
             group.Id,
             group.StoreId,
             CreatedDateTicks = group.CreatedDate.Ticks,
             ContentHash = contentHash,
         });
-        return $"\"{Convert.ToHexString(SHA256.HashData(bytes))}\"";
     }
+
+    private static string HashContent(ReadOnlySpan<byte> content) => Convert.ToHexString(SHA256.HashData(content));
+
+    private static string Hash<T>(T identity) => $"\"{HashContent(JsonSerializer.SerializeToUtf8Bytes(identity))}\"";
 }

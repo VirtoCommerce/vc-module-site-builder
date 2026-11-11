@@ -1,0 +1,80 @@
+<template>
+  <VcPopup
+    :model-value="true"
+    :title="$t('SITE_BUILDER.MULTILANGUAGE.CONFLICT_POPUP.TITLE')"
+    is-mobile-fullscreen
+    @update:model-value="!$event && $emit('close')"
+    @close="$emit('close')"
+  >
+    <template #content>
+      <VcCol class="tw-gap-3">
+        <VcHint>{{ $t("SITE_BUILDER.MULTILANGUAGE.CONFLICT_POPUP.HINT") }}</VcHint>
+        <ul class="overrides-conflict__list">
+          <li
+            v-for="conflict in conflicts"
+            :key="conflict.cultureName"
+          >
+            <span class="tw-font-semibold">{{ conflict.cultureName }}</span>
+            — {{ conflict.fields.map(fieldLabel).join(", ") }}
+          </li>
+        </ul>
+      </VcCol>
+    </template>
+
+    <template #footer>
+      <div class="tw-flex tw-flex-wrap tw-justify-end tw-gap-3">
+        <VcButton
+          variant="secondary"
+          @click="$emit('close')"
+        >
+          {{ $t("SITE_BUILDER.MULTILANGUAGE.CONFLICT_POPUP.CANCEL") }}
+        </VcButton>
+        <VcButton
+          variant="secondary"
+          @click="$emit('apply-all')"
+        >
+          {{ $t("SITE_BUILDER.MULTILANGUAGE.CONFLICT_POPUP.APPLY_ALL") }}
+        </VcButton>
+        <VcButton @click="$emit('apply-inherited')">
+          {{ $t("SITE_BUILDER.MULTILANGUAGE.CONFLICT_POPUP.APPLY_INHERITED") }}
+        </VcButton>
+      </div>
+    </template>
+  </VcPopup>
+</template>
+
+<script lang="ts" setup>
+import { useI18n } from "vue-i18n";
+import { VcButton, VcCol, VcHint, VcPopup } from "@vc-shell/framework/ui";
+import { inheritableFieldLabelKey, type InheritableField } from "../composables/useMultilanguageInheritance";
+
+export interface IOverridesConflict {
+  cultureName: string;
+  fields: InheritableField[];
+}
+
+interface Props {
+  conflicts: IOverridesConflict[];
+}
+
+interface Emits {
+  (event: "close"): void;
+  (event: "apply-all"): void;
+  (event: "apply-inherited"): void;
+}
+
+defineProps<Props>();
+defineEmits<Emits>();
+
+const { t } = useI18n({ useScope: "global" });
+
+function fieldLabel(field: InheritableField): string {
+  return t(inheritableFieldLabelKey[field]);
+}
+</script>
+
+<style lang="scss" scoped>
+.overrides-conflict__list {
+  @apply tw-list-disc tw-pl-5 tw-text-sm;
+}
+</style>

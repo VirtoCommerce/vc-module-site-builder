@@ -47,7 +47,6 @@ public class SiteBuilderAssetsController(
     }
 
     [HttpPost("references")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<SiteBuilderAssetReferencesSearchResult>> SearchReferences(
         [FromBody] SiteBuilderAssetReferencesSearchCriteria criteria,
         CancellationToken cancellationToken = default)
@@ -65,7 +64,7 @@ public class SiteBuilderAssetsController(
 
         var result = await assetReferenceService.SearchReferencesAsync(criteria, cancellationToken);
 
-        if (!await CanReadSharedComponentsAsync())
+        if (!await CanReadSharedComponentsAsync(criteria))
         {
             foreach (var reference in result.Results)
             {
@@ -79,12 +78,12 @@ public class SiteBuilderAssetsController(
         return Ok(result);
     }
 
-    private async Task<bool> CanReadSharedComponentsAsync()
+    private async Task<bool> CanReadSharedComponentsAsync(object resource)
     {
         var result = await authorizationService.AuthorizeAsync(
             User,
-            null,
-            ModuleConstants.Security.Permissions.SharedComponentsRead);
+            resource,
+            new SiteBuilderAuthorizationRequirement(ModuleConstants.Security.Permissions.SharedComponentsRead));
         return result.Succeeded;
     }
 

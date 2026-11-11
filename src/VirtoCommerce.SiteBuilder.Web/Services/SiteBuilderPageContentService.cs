@@ -19,36 +19,19 @@ namespace VirtoCommerce.SiteBuilder.Web.Services;
 public sealed class SiteBuilderPageContentService(
     ISiteBuilderPageService pageService,
     IGroupedPageService groupedPageService,
-    ISiteBuilderSharedComponentReferenceIndexService sharedComponentReferenceIndexService,
     IEventPublisher eventPublisher,
     ILogger<SiteBuilderPageContentService> logger,
-    IGroupedPageContentService versionedContent)
+    IGroupedPageContentService versionedContent,
+    IGroupedPageContentWriter groupedPageContentWriter)
 {
     public SiteBuilderPageContentService(
         ISiteBuilderPageService pageService,
         IGroupedPageService groupedPageService,
-        ISiteBuilderSharedComponentReferenceIndexService sharedComponentReferenceIndexService,
         IEventPublisher eventPublisher,
         ILogger<SiteBuilderPageContentService> logger)
-        : this(pageService, groupedPageService, sharedComponentReferenceIndexService, eventPublisher, logger,
-            groupedPageService as IGroupedPageContentService)
+        : this(pageService, groupedPageService, eventPublisher, logger, groupedPageService as IGroupedPageContentService,
+            new GroupedPageContentWriter(groupedPageService as IGroupedPageContentService, pageService, eventPublisher))
     {
-    }
-
-    public bool HasSharedComponentReferences(string content)
-    {
-        return SiteBuilderSharedComponentReferenceMatcher.HasReferences(content);
-    }
-
-    public Task ValidateReferencesForStoreAsync(
-        string storeId,
-        string content,
-        CancellationToken cancellationToken)
-    {
-        return sharedComponentReferenceIndexService.ValidateReferencesForStoreAsync(
-            storeId,
-            [content],
-            cancellationToken);
     }
 
     private IGroupedPageContentService VersionedContent => versionedContent
@@ -112,12 +95,7 @@ public sealed class SiteBuilderPageContentService(
     public async Task<SiteBuilderConditionalContentWriteResult> SaveConditionalContentAsync(
         GroupedSiteBuilderPage group, string content, string expectedETag, CancellationToken cancellationToken)
     {
-        var result = await VersionedContent.SaveGroupContentAsync(group, content, expectedETag, cancellationToken);
-        if (result.ContentWritten && !result.GroupedEventsPublished)
-        {
-            await RaisePageContentChangedAsync(result.PageId, cancellationToken);
-        }
-        return result;
+        return await groupedPageContentWriter.SaveContentAsync(group, content, expectedETag, cancellationToken);
     }
 
     public async Task<SiteBuilderPageContentWriteResult> CopyContentAsync(
