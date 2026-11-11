@@ -341,11 +341,14 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         });
     }
 
+    // a value that is not a color is left out, as the storefront would set it as a custom property as it is
     private static Dictionary<string, string> GetColorTokens(JToken token)
     {
-        return token is JObject tokens && tokens.HasValues
-            ? tokens.Properties().Where(x => x.Value.Type == JTokenType.String).ToDictionary(x => x.Name, x => (string)x.Value)
-            : null;
+        var colors = (token as JObject)?.Properties()
+            .Where(x => ThemePaletteValues.IsTokenName(x.Name) && x.Value is JValue { Type: JTokenType.String } value && ThemePaletteValues.IsColor((string)value))
+            .ToDictionary(x => x.Name, x => (string)x.Value);
+
+        return colors?.Count > 0 ? colors : null;
     }
 
     private static string GetUrl(JObject source, string name)

@@ -594,6 +594,51 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
             ["sections"] = new JObject(sections.Select(x => new JProperty(x, new JObject()))),
         }.ToString(), Ct);
 
+    private Task<string> SaveRichTextCatalogAsync() =>
+        _catalogs.SaveAsync(StoreId, """
+            {
+              "hash": "catalog-rich",
+              "sections": {
+                "product-info": {},
+                "notice": { "settings": [ { "id": "body", "type": "text" }, { "id": "link", "type": "string", "format": "url" } ] }
+              },
+              "paletteTokens": { "light": [ "color_primary_500" ], "dark": [ "color_primary_500" ] }
+            }
+            """, Ct);
+
+    [Fact]
+    public async Task PublishAsync_DraftWithHtmlThatRuns_PublishesItSanitizedAndPutsItLiveSanitized()
+    {
+        var catalog = await SaveRichTextCatalogAsync();
+        _storage.Files[Theme(Product + "-draft")] = """
+            { "settings": {}, "content": [ { "id": "p", "type": "product-info" },
+              { "id": "n", "type": "notice", "body": "<p>Sale</p><img src=x onerror=alert(1)>", "link": "/sale" } ] }
+            """;
+
+        await _publisher.PublishAsync(StoreId, catalog, null, Ct);
+
+        var snapshot = JObject.Parse((await _snapshots.GetPublishedAsync(StoreId, "en-US", Ct)).Content);
+        Assert.Equal("<p>Sale</p><img src=\"x\">", snapshot["templates"]!["product"]!["content"]![1]!.Value<string>("body"));
+        Assert.Equal("<p>Sale</p><img src=\"x\">", JObject.Parse(_storage.Files[Theme(Product)])["content"]![1]!.Value<string>("body"));
+    }
+
+    [Theory]
+    [InlineData(Header, """{ "content": [ { "id": "n", "type": "notice", "link": "javascript:alert(1)" } ] }""", "'content[0].link' holds a javascript: URL, which runs script")]
+    [InlineData(Header, """{ "content": [ { "id": "n", "type": "notice", "link": "data:text/html,<script>alert(1)</script>" } ] }""", "'content[0].link' links to a data: URL")]
+    [InlineData("default/config/palette.json", """{ "color_primary_500": "red;}</style>" }""", "'color_primary_500' is not a CSS color")]
+    [InlineData("default/config/palette.json", """{ "color_unknown": "#fff" }""", "'color_unknown' is not a palette token the storefront has")]
+    public async Task PublishAsync_DraftThatCanRunScript_IsRefusedAndPublishesNothing(string file, string draft, string error)
+    {
+        var catalog = await SaveRichTextCatalogAsync();
+        _storage.Files[Theme(file + "-draft")] = draft;
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
+
+        Assert.Contains(exception.Errors, x => x.EndsWith(error, StringComparison.Ordinal));
+        Assert.False(_storage.Files.ContainsKey(Theme(Pointer)));
+        Assert.Equal(draft, _storage.Files[Theme(file + "-draft")]);
+    }
+
     [Fact]
     public async Task PublishAsync_LockLostWhileWritingLiveFiles_StopsAndPutsNothingBack()
     {
@@ -693,7 +738,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
 
     private ThemePublisher Publisher(IContentHistory history) =>
         new(_storageFactory, new ThemeSnapshotBuilder(), new ThemeValidator(), _stores, _catalogs, _lock, _storage, history,
-            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance);
+            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard());
 
     private TestThemeSnapshotService Snapshots(TestPlatformMemoryCache cache) =>
         new(_stores, _settings, _storageFactory, _publisher, cache, Options.Create(new ThemeSnapshotOptions()));

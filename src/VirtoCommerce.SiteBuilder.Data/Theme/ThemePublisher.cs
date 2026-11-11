@@ -10,8 +10,10 @@ using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.DistributedLock;
 using VirtoCommerce.Platform.Core.Events;
@@ -29,7 +31,8 @@ public class ThemePublisher(
     IEventPublisher eventPublisher,
     IContentHistory contentHistory,
     IOptions<ThemeSnapshotOptions> options,
-    ILogger<ThemePublisher> logger) : IThemePublisher
+    ILogger<ThemePublisher> logger,
+    ISiteBuilderContentGuard contentGuard) : IThemePublisher
 {
     private static readonly Dictionary<string, Action<ThemeSource, JToken>> ThemeParts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -115,7 +118,8 @@ public class ThemePublisher(
         var storage = await themeStorageFactory.OpenAsync(storeId);
 
         var source = await GetThemeSourceAsync(storage, includeDrafts);
-        var errors = themeValidator.Validate(source, catalogHash == null ? null : catalog);
+        var validationCatalog = catalogHash == null ? null : catalog;
+        var errors = GuardThemeSource(source, validationCatalog).Concat(themeValidator.Validate(source, validationCatalog)).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -166,6 +170,42 @@ public class ThemePublisher(
         result.PublishedFiles = GetPublishedFiles(storage, source.Drafts);
 
         return result;
+    }
+
+    /// <summary>
+    /// Sanitizes the HTML of every file again, as a draft saved before the checks existed may hold some that can run script:
+    /// the snapshot is built from the sanitized files, and a sanitized draft goes live as sanitized.
+    /// </summary>
+    protected virtual IList<string> GuardThemeSource(ThemeSource source, JObject catalog)
+    {
+        var files = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ThemeStorage.TemplateRulesFile] = source.Rules,
+            [ThemeStorage.HeaderGroupFile] = source.Header,
+            [ThemeStorage.FooterGroupFile] = source.Footer,
+            [ThemeStorage.BrandFile] = source.Brand,
+            [ThemeStorage.SettingsDataFile] = source.SettingsData,
+            [ThemeStorage.PaletteFile] = source.Palette,
+            [ThemeStorage.DarkPaletteFile] = source.PaletteDark,
+        };
+        foreach (var (key, document) in source.Templates)
+        {
+            files[ThemeStorage.GetTemplateFile(key)] = document;
+        }
+
+        var errors = new List<string>();
+        foreach (var (file, content) in files.Where(x => x.Value != null))
+        {
+            var result = contentGuard.GuardThemeFile(file, content, catalog);
+            errors.AddRange(result.Errors);
+
+            if (result.Changed && source.Drafts.TryGetValue(file, out var draft))
+            {
+                source.Drafts[file] = SiteBuilderContentGuardExtensions.Serialize(content, draft);
+            }
+        }
+
+        return errors;
     }
 
     protected virtual async Task<JObject> GetCatalogAsync(string storeId, string catalogHash, CancellationToken cancellationToken)

@@ -181,6 +181,26 @@ public class ThemeSnapshotBuilderTests
     }
 
     [Fact]
+    public void Build_PaletteValuesThatAreNotColors_LeavesThemOut()
+    {
+        var snapshot = Snapshot(Source(
+            palette: JObject.Parse("""
+                {
+                  "color_primary_500": "#f99e24",
+                  "color_accent_500": "rgb(10 20 30 / 50%)",
+                  "color_body_bg": "red;}</style><script>alert(1)</script>",
+                  "color_link": "url(javascript:alert(1))",
+                  "color_price": 12,
+                  "Not A Token": "#fff"
+                }
+                """),
+            paletteDark: JObject.Parse("""{ "color_primary_500": "expression(alert(1))" }""")));
+
+        Assert.Equal(JObject.Parse("""{ "color_primary_500": "#f99e24", "color_accent_500": "rgb(10 20 30 / 50%)" }"""), snapshot["palette"]!["light"], JToken.EqualityComparer);
+        Assert.Null(snapshot["palette"]!["dark"]);
+    }
+
+    [Fact]
     public void Build_MenuSettings_CollectsMenusFromHeaderAndFooter()
     {
         var catalog = JObject.Parse("""

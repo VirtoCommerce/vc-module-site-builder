@@ -67,7 +67,8 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             IFilePageDraftService filePageDraftService,
             IValidator<DesignerSaveRequest> designerSaveValidator,
             IValidator<DesignerDiscardRequest> designerDiscardValidator,
-            IThemeStorageFactory themeStorageFactory
+            IThemeStorageFactory themeStorageFactory,
+            ISiteBuilderContentGuard contentGuard = null
             )
         : Controller
     {
@@ -101,6 +102,8 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         private const string OnlyCopyError = "Nothing is published: the draft is the only copy.";
         private const string CatalogRequiredError = "Theme files are checked against the storefront's schema catalog: name it with catalogHash (preview the storefront first).";
         private const string SaveAction = "save";
+
+        private readonly ISiteBuilderContentGuard _contentGuard = contentGuard ?? new SiteBuilderContentGuard();
 
 
         [HttpGet]
@@ -604,6 +607,11 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
                 return invalid;
             }
 
+            if (GuardPages(files) is { } unsafePages)
+            {
+                return unsafePages;
+            }
+
             if (themeFiles.Count > 0 && await ValidateThemeFilesAsync(storeId, themeFiles, draft, catalogHash) is { } refusedThemeFiles)
             {
                 return refusedThemeFiles;
@@ -652,6 +660,17 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             {
                 return BadRequest(new { error = ex.Message, errors = ex.Errors });
             }
+        }
+
+        /// <summary>Sanitizes the HTML of the pages in place, so that what is written is sanitized.</summary>
+        private BadRequestObjectResult GuardPages(List<SaveFileModel> files)
+        {
+            var errors = files
+                .Where(x => GitPageLocation.IsPageContent(x.Type) && x.Content is JToken)
+                .SelectMany(x => _contentGuard.GuardPage((JToken)x.Content, x.Path, catalog: null).Errors)
+                .ToList();
+
+            return errors.Count > 0 ? BadRequest(new { error = SiteBuilderContentGuardExtensions.GetMessage(errors), errors }) : null;
         }
 
         private static bool IsThemeFile(SaveFileModel file) => string.Equals(file?.Type, Themes, StringComparison.OrdinalIgnoreCase);
@@ -816,6 +835,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             command.PageETag = page?.ETag?.Trim();
             command.FilePage = files.Where(x => !IsThemeFile(x)).Select(ToContentFile).FirstOrDefault();
             command.ThemeFiles = themeFiles;
+            command.CatalogHash = catalogHash;
             try
             {
                 return Ok(await designerContentService.SaveAsync(command, User, cancellationToken));
@@ -1455,6 +1475,12 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             // the editor with a branch that cannot be published.
             var page = ParsePage(content);
             var errors = PageEnvelopeValidator.Validate(page);
+            if (errors.Count == 0)
+            {
+                // an old version may predate the checks: it is saved again sanitized, or not at all
+                errors = _contentGuard.GuardPage(page, path, catalog: null).Errors;
+            }
+
             if (errors.Count > 0)
             {
                 return BadRequest(new { errors });

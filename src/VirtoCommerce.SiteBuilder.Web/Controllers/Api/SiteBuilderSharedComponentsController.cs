@@ -16,6 +16,7 @@ using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Models;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.StoreModule.Core.Services;
@@ -31,9 +32,14 @@ public class SiteBuilderSharedComponentsController(
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
     ISiteBuilderSharedComponentUsageService sharedComponentUsageService,
     IAuthorizationService authorizationService,
-    IStoreService storeService)
+    IStoreService storeService,
+    ISiteBuilderContentGuard contentGuard = null)
     : Controller
 {
+    private const string ComponentName = "shared component";
+
+    private readonly ISiteBuilderContentGuard _contentGuard = contentGuard ?? new SiteBuilderContentGuard();
+
     // Preserve the published constructor for extensions; request services supply the new dependency.
     public SiteBuilderSharedComponentsController(
         ISiteBuilderSharedComponentService sharedComponentService,
@@ -129,7 +135,7 @@ public class SiteBuilderSharedComponentsController(
         {
             await sharedComponentService.SaveWithContentAsync(
                 component,
-                request.Content.ToString(Formatting.None),
+                GuardContent(request.Content),
                 cancellationToken);
         }
         catch (InvalidDataException ex)
@@ -290,7 +296,7 @@ public class SiteBuilderSharedComponentsController(
         {
             if (!await sharedComponentContentService.TrySaveContentAsync(
                     component,
-                    content.ToString(Formatting.None),
+                    GuardContent(content),
                     cancellationToken))
             {
                 return NotFound();
@@ -302,6 +308,15 @@ public class SiteBuilderSharedComponentsController(
         }
 
         return NoContent();
+    }
+
+    /// <exception cref="InvalidDataException">Something in the content can run script.</exception>
+    private string GuardContent(JObject content)
+    {
+        var errors = _contentGuard.GuardPage(content, ComponentName, catalog: null).Errors;
+        SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
+
+        return content.ToString(Formatting.None);
     }
 
     private async Task EnrichUsageAsync(

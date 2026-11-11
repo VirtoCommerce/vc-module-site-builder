@@ -162,6 +162,27 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         [Fact]
+        public async Task Restore_AVersionWithAScriptUrl_IsRejectedBeforeAnythingIsWritten()
+        {
+            var repository = Repository("""{ "settings": { "type": "settings" }, "content": [ { "id": "a", "type": "hero", "link": "javascript:alert(1)" } ] }""");
+
+            var result = await Controller(repository, new RecordingHistory()).GitRestoreVersion("vccom", Page, "pages", Sha);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            AssertNothingWritten(repository);
+        }
+
+        [Fact]
+        public async Task Restore_AVersionWithHtmlThatRuns_CommitsItSanitized()
+        {
+            var repository = Repository("""{ "settings": { "type": "settings" }, "content": [ { "id": "a", "type": "text", "text": { "markdown": "x", "html": "<p>x</p><img src=x onerror=alert(1)>" } } ] }""");
+
+            await Controller(repository, new RecordingHistory()).GitRestoreVersion("vccom", Page, "pages", Sha);
+
+            Assert.Equal("<p>x</p><img src=\"x\">", JToken.Parse(Assert.Single(repository.Commits).Content)["content"]![0]!["text"]!.Value<string>("html"));
+        }
+
+        [Fact]
         public async Task Restore_AVersionTheDeployWouldRefuse_IsRejectedBeforeAnythingIsWritten()
         {
             // restoring a page CI cannot validate would leave the editor holding a branch that cannot be

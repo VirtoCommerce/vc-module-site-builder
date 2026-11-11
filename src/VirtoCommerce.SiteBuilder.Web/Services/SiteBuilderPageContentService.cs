@@ -9,6 +9,7 @@ using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Events;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
@@ -30,7 +31,7 @@ public sealed class SiteBuilderPageContentService(
         IEventPublisher eventPublisher,
         ILogger<SiteBuilderPageContentService> logger)
         : this(pageService, groupedPageService, eventPublisher, logger, groupedPageService as IGroupedPageContentService,
-            new GroupedPageContentWriter(groupedPageService as IGroupedPageContentService, pageService, eventPublisher))
+            new GroupedPageContentWriter(groupedPageService as IGroupedPageContentService, pageService, eventPublisher, new SiteBuilderContentGuard()))
     {
     }
 

@@ -114,6 +114,24 @@ public class SiteBuilderPermalinkTests
     }
 
     [Fact]
+    public async Task CreateGroupPage_ContentWithScriptUrl_ReturnsBadRequestAndDoesNotSave()
+    {
+        var service = new PublishedRenameContentPreservationTests.FakeGroupedPageService();
+        var controller = CreateController(service);
+
+        var result = await controller.CreateGroupPage(new CreateGroupedPageRequest
+        {
+            StoreId = StoreId,
+            Name = "Test page",
+            Permalink = "/test",
+            Content = """{"settings":{},"content":[{"id":"a","type":"hero","link":"vbscript:msgbox(1)"}]}""",
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Contains("'content[0].link' holds a vbscript: URL", (string)Assert.IsType<BadRequestObjectResult>(result.Result).Value);
+        Assert.Empty(await service.GetAsync(["group-new-1"]));
+    }
+
+    [Fact]
     public async Task UpdateGroup_UnchangedLegacyInvalidPermalink_AllowsOtherChanges()
     {
         var service = CreateServiceWithPublishedGroup("/legacy page");

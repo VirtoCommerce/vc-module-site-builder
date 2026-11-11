@@ -90,6 +90,9 @@ namespace VirtoCommerce.SiteBuilder.Web
                 SiteBuilderSharedComponentAssetReferenceIndexService>();
             serviceCollection.AddTransient<SiteBuilderPageContentService>();
             serviceCollection.AddTransient<IGroupedPageContentWriter, GroupedPageContentWriter>();
+            // Site Builder's own: another module registers the platform's IHtmlSanitizer with its own profile
+            serviceCollection.AddSingleton<ISiteBuilderHtmlSanitizer, SiteBuilderHtmlSanitizer>();
+            serviceCollection.AddSingleton<ISiteBuilderContentGuard, SiteBuilderContentGuard>();
 
             serviceCollection.AddTransient<GroupedSiteBuilderPageChangedEventHandler>();
             serviceCollection.AddTransient<SiteBuilderSharedComponentContentChangedEventHandler>();

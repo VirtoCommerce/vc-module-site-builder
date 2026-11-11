@@ -1,3 +1,6 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.ContentModule.Core.Services;
@@ -8,6 +11,7 @@ using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Events;
 using VirtoCommerce.StoreModule.Core.Services;
 using Fakes = VirtoCommerce.SiteBuilder.Tests.PublishedRenameContentPreservationTests;
@@ -44,13 +48,22 @@ internal static class TestServices
         Fakes.FakeGroupedPageService pages = null,
         IEventPublisher events = null,
         IThemePublisher themePublisher = null,
-        IThemeSnapshotService themeSnapshots = null)
+        IThemeSnapshotService themeSnapshots = null,
+        ISchemaCatalogService catalogs = null)
     {
+        var contentGuard = new SiteBuilderContentGuard();
         var contentWriter = pages == null
             ? null
-            : new GroupedPageContentWriter(pages, new Fakes.FakeSiteBuilderPageService(pages), events ?? new Fakes.NoopEventPublisher());
+            : new GroupedPageContentWriter(pages, new Fakes.FakeSiteBuilderPageService(pages), events ?? new Fakes.NoopEventPublisher(), contentGuard);
 
         return new DesignerContentService(themeDrafts, themePublisher, themeSnapshots, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
-            pages, pages, contentWriter, filePageDrafts, contentHistory);
+            pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs());
+    }
+
+    private sealed class NoSchemaCatalogs : ISchemaCatalogService
+    {
+        public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
     }
 }

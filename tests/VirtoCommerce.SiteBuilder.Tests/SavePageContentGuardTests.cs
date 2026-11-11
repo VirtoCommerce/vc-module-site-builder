@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
@@ -79,6 +80,42 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // happened, and unpublishing would then be refused because the group appears to have changes.
             var group = await service.GetByIdAsync(groupId);
             Assert.DoesNotContain(group.Pages, x => x.Status == Draft);
+        }
+
+        [Theory]
+        [InlineData("javascript:alert(1)")]
+        [InlineData(" JavaScript:alert(1)")]
+        [InlineData("vbscript:msgbox(1)")]
+        public async Task Script_url_is_refused_naming_its_path_and_leaves_the_published_content_intact(string link)
+        {
+            var service = NewServiceWithPublishedPage(out var groupId);
+            var body = new JObject
+            {
+                ["settings"] = new JObject(),
+                ["content"] = new JArray(new JObject { ["type"] = "hero", ["link"] = link }),
+            }.ToString();
+
+            var (result, _) = await SaveContent(service, groupId, body);
+
+            Assert.Contains("'content[0].link'", (string)Assert.IsType<BadRequestObjectResult>(result).Value);
+            Assert.DoesNotContain((await service.GetByIdAsync(groupId)).Pages, x => x.Status == Draft);
+            Assert.Equal(LiveContent, await service.LoadContent("page-published", TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public async Task Markdown_html_is_saved_sanitized()
+        {
+            var service = NewServiceWithPublishedPage(out var groupId);
+            const string edited =
+                "{\"settings\":{},\"content\":[{\"type\":\"text\",\"text\":{\"markdown\":\"Hi\",\"html\":\"<p>Hi</p><img src=x onerror=alert(1)>\"}}]}";
+
+            var (result, _) = await SaveContent(service, groupId, edited);
+
+            Assert.IsType<NoContentResult>(result);
+            var draft = Assert.Single((await service.GetByIdAsync(groupId)).Pages, x => x.Status == Draft);
+            Assert.Equal(
+                "{\"settings\":{},\"content\":[{\"type\":\"text\",\"text\":{\"markdown\":\"Hi\",\"html\":\"<p>Hi</p><img src=\\\"x\\\">\"}}]}",
+                await service.LoadContent(draft.Id, TestContext.Current.CancellationToken));
         }
 
         [Fact]

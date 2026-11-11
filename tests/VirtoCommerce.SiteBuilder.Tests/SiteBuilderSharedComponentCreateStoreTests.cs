@@ -114,6 +114,31 @@ public class SiteBuilderSharedComponentCreateStoreTests
         Assert.False(stores.LastClone);
     }
 
+    [Fact]
+    public async Task Create_ScriptUrl_ReturnsBadRequestWithoutSaving()
+    {
+        var components = new RecordingComponentService();
+        var request = Request("store");
+        request.Content = JObject.Parse("""{"settings":{},"content":[{"id":"hero","type":"text","link":"javascript:alert(1)"}]}""");
+
+        var response = await CreateController(new FakeStoreService(new Store { Id = "store" }), components).Create(request, TestContext.Current.CancellationToken);
+
+        Assert.Contains("shared component: 'content[0].link' holds a javascript: URL", (string)Assert.IsType<BadRequestObjectResult>(response.Result).Value);
+        Assert.Null(components.SavedContent);
+    }
+
+    [Fact]
+    public async Task Create_MarkdownHtml_SavesItSanitized()
+    {
+        var components = new RecordingComponentService();
+        var request = Request("store");
+        request.Content = JObject.Parse("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p><script>alert(1)</script>"}}]}""");
+
+        await CreateController(new FakeStoreService(new Store { Id = "store" }), components).Create(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p>"}}]}""", components.SavedContent);
+    }
+
     private static SiteBuilderSharedComponentCreateModel Request(string storeId) => new()
     {
         StoreId = storeId,

@@ -20,6 +20,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.Platform.Core.Common;
 using Xunit;
@@ -775,6 +776,191 @@ public class DesignerSaveTests
         AssertNothingWritten();
     }
 
+    [Fact]
+    public async Task SaveDesignerChanges_PageWithScriptUrl_ReturnsBadRequestNamingThePathAndWritesNothing()
+    {
+        await SaveCatalogAsync();
+        var page = DatabasePage();
+        page.Content = """{"settings":{},"content":[{"id":"a","type":"text","buttons":[{"url":"\tJava\nScript:alert(1)"}]}]}""";
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, HeaderFile)), Catalog);
+
+        var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result));
+        Assert.Contains("page: 'content[0].buttons[0].url' holds a javascript: URL", (string)body["error"]);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_HtmlTheCatalogNames_IsSavedSanitizedAtTheVersionReturned()
+    {
+        await SaveContentCatalogAsync();
+        var page = DatabasePage();
+        page.Content = """{"settings":{},"content":[{"id":"a","type":"notice","body":"<p>Hi</p><script>alert(1)</script>","plain":"<b>as typed</b>"}]}""";
+        const string header = """{ "content": [ { "id": "h", "type": "notice", "note": { "en-US": "<a href=\"javascript:alert(1)\" target=\"_blank\">x</a>", "de-DE": "<p>ok</p>" } } ] }""";
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, header)), Catalog);
+
+        var body = PlatformJson.ParseBody(Assert.IsType<OkObjectResult>(result.Result));
+        const string savedPage = """{"settings":{},"content":[{"id":"a","type":"notice","body":"<p>Hi</p>","plain":"<b>as typed</b>"}]}""";
+        Assert.Equal(savedPage, await DraftAsync());
+        Assert.Equal(SiteBuilderContentVersion.Create(await _pages.GetByIdAsync("g1"), savedPage), (string)body["eTag"]);
+        var savedHeader = _live.Files[Theme($"{Header}-draft")];
+        Assert.Equal("<a target=\"_blank\" rel=\"noopener noreferrer\">x</a>", JObject.Parse(savedHeader)["content"]![0]!["note"]!.Value<string>("en-US"));
+        Assert.Equal(ETagOf(Header), (string)body["themeFiles"]![0]!["eTag"]);
+        Assert.Equal([savedPage, savedHeader], Assert.Single(_history.Records).Record.Entries.Select(x => x.Content));
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_DataUrlInALink_ReturnsBadRequestButKeepsInlineImages()
+    {
+        await SaveContentCatalogAsync();
+        const string link = """{ "content": [ { "id": "h", "type": "notice", "link": "data:text/html;base64,PHNjcmlwdD4=" } ] }""";
+        const string image = """{ "content": [ { "id": "h", "type": "notice", "image": "data:image/png;base64,iVBORw0KGgo=" } ] }""";
+
+        var refused = await Builder().SaveDesignerChanges("s1", Save(null, (Header, link)), Catalog);
+        var saved = await Builder().SaveDesignerChanges("s1", Save(null, (Header, image)), Catalog);
+
+        var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(refused.Result));
+        Assert.Equal("sections/header-group.json: 'content[0].link' links to a data: URL", (string)body["errors"]!.Single());
+        Assert.IsType<OkObjectResult>(saved.Result);
+        Assert.Equal(image, _live.Files[Theme($"{Header}-draft")]);
+    }
+
+    [Theory]
+    [InlineData("""{ "color_primary_500": "red;}</style>" }""", "'color_primary_500' is not a CSS color")]
+    [InlineData("""{ "color_primary_500": "url(javascript:alert(1))" }""", "'color_primary_500' is not a CSS color")]
+    [InlineData("""{ "color_primary_500": "expression(alert(1))" }""", "'color_primary_500' is not a CSS color")]
+    [InlineData("""{ "color_primary_500": 5 }""", "'color_primary_500' is not a CSS color")]
+    [InlineData("""{ "color_secret": "#fff" }""", "'color_secret' is not a palette token the storefront has")]
+    [InlineData("""[ "#fff" ]""", "not an object of token colors")]
+    public async Task SaveDesignerChanges_PaletteThatIsNotColorsOfKnownTokens_ReturnsBadRequestAndWritesNothing(string palette, string error)
+    {
+        await SaveContentCatalogAsync();
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), Catalog);
+
+        var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result));
+        Assert.Equal($"config/palette.json: {error}", (string)body["errors"]!.Single());
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_PaletteOfColors_SavesIt()
+    {
+        await SaveContentCatalogAsync();
+        const string palette = """{ "color_primary_500": "#f99e24", "color_neutral_900": "hsl(210deg 10% 12% / 0.9)" }""";
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), Catalog);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(palette, _live.Files[Theme("default/config/palette.json-draft")]);
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_FilePage_IsSavedSanitized()
+    {
+        await SaveContentCatalogAsync();
+        const string about = """{"settings":{"type":"settings"},"content":[{"id":"a","type":"notice","body":"<p onclick=\"alert(1)\">About</p>"}]}""";
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = about }), Catalog);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal("<p>About</p>", JObject.Parse(_live.Files[Page("about.page-draft")])["content"]![0]!.Value<string>("body"));
+    }
+
+    [Fact]
+    public async Task RestoreVersion_HtmlThatRuns_RestoresItSanitized()
+    {
+        await SaveContentCatalogAsync();
+        const string header = """{ "content": [ { "id": "h", "type": "notice", "text": { "markdown": "x", "html": "<p>x</p><svg onload=alert(1)>" } } ] }""";
+
+        await TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
+                catalogs: new SchemaCatalogService(_themes))
+            .RestoreAsync(new ContentRestoreCommand
+            {
+                StoreId = "s1",
+                SaveId = "restore-0001",
+                VersionId = "1234567",
+                Contents = new Dictionary<HistoryItem, string> { [new HistoryItem(HistoryItemType.Theme, Header)] = header },
+            }, new ClaimsPrincipal(new ClaimsIdentity()), Ct);
+
+        Assert.Equal("<p>x</p>", JObject.Parse(_live.Files[Theme($"{Header}-draft")])["content"]![0]!["text"]!.Value<string>("html"));
+    }
+
+    [Fact]
+    public async Task RestoreVersion_ScriptUrl_IsRefusedAndWritesNothing()
+    {
+        var restore = TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages)
+            .RestoreAsync(new ContentRestoreCommand
+            {
+                StoreId = "s1",
+                SaveId = "restore-0001",
+                VersionId = "1234567",
+                Contents = new Dictionary<HistoryItem, string> { [new HistoryItem(HistoryItemType.Theme, Header)] = """{ "content": [ { "id": "h", "type": "notice", "link": "vbscript:x" } ] }""" },
+            }, new ClaimsPrincipal(new ClaimsIdentity()), Ct);
+
+        Assert.Contains("'content[0].link' holds a vbscript: URL", (await Assert.ThrowsAsync<InvalidDataException>(() => restore)).Message);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveTemplates_FilePageWithScriptUrl_ReturnsBadRequestAndWritesNothing()
+    {
+        var files = new JArray(new JObject
+        {
+            ["type"] = "pages",
+            ["path"] = "about.page",
+            ["content"] = JObject.Parse("""{"settings":{"type":"settings"},"content":[{"id":"a","type":"notice","link":"&#106;avascript&colon;alert(1)"}]}"""),
+        });
+
+        var result = await Builder().SaveTemplates("s1", null, new SiteBuilderController.SaveFilesModel { Files = files.ToString() }, draft: true);
+
+        var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result));
+        Assert.Equal("about.page: 'content[0].link' holds a javascript: URL, which runs script", (string)body["errors"]!.Single());
+        Assert.DoesNotContain(_live.Files.Keys, x => x.StartsWith("pages/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SaveTemplates_MarkdownHtml_IsSavedSanitized()
+    {
+        var files = new JArray(new JObject
+        {
+            ["type"] = "pages",
+            ["path"] = "about.page",
+            ["content"] = JObject.Parse("""{"settings":{"type":"settings"},"content":[{"id":"a","type":"text","text":{"markdown":"[x](javascript:alert(1))","html":"<p><a href=\"javascript:alert(1)\">x</a></p>"}}]}"""),
+        });
+
+        var result = await Builder().SaveTemplates("s1", null, new SiteBuilderController.SaveFilesModel { Files = files.ToString() }, draft: true);
+
+        Assert.IsType<OkResult>(result);
+        Assert.Equal("<p><a>x</a></p>", JObject.Parse(_live.Files[Page("about.page-draft")])["content"]![0]!["text"]!.Value<string>("html"));
+    }
+
+    private Task<string> SaveContentCatalogAsync() =>
+        new SchemaCatalogService(_themes).SaveAsync("s1",
+            $$"""
+            {
+              "hash": "{{Catalog}}",
+              "sections": {
+                "site-header": {},
+                "text": {},
+                "notice": {
+                  "settings": [
+                    { "id": "body", "type": "text" },
+                    { "id": "note", "type": "markdown", "resultType": "html", "translatable": true },
+                    { "id": "text", "type": "markdown" },
+                    { "id": "plain", "type": "string" },
+                    { "id": "link", "type": "string", "format": "url" },
+                    { "id": "image", "type": "images" }
+                  ]
+                }
+              },
+              "blocks": {},
+              "shared": {},
+              "paletteTokens": { "light": [ "color_primary_500", "color_neutral_900" ], "dark": [ "color_primary_500" ] }
+            }
+            """, Ct);
+
     private void AssertNothingWritten()
     {
         Assert.DoesNotContain(_live.Files.Keys, x => x.EndsWith("-draft"));
@@ -863,7 +1049,7 @@ public class DesignerSaveTests
 
     private ThemePublisher ThemePublisher() =>
         new(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance);
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard());
 
     private SiteBuilderController Builder(IAuthorizationService authorization = null, IContentHistory history = null)
     {
@@ -891,7 +1077,8 @@ public class DesignerSaveTests
             themeDraftService: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance),
             groupedPageService: _pages,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization),
-            designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(), null),
+            designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(), null,
+                new SchemaCatalogService(_themes)),
             contentPermissionService: TestServices.Permissions(authorization),
             filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,

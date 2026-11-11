@@ -16,4 +16,7 @@ public class DesignerSaveCommand
     public SiteBuilderContentFile FilePage { get; set; }
 
     public IList<DesignerSaveFile> ThemeFiles { get; set; } = [];
+
+    /// <summary>The section schema catalog the designer previewed; without it the content is checked without a schema.</summary>
+    public string CatalogHash { get; set; }
 }

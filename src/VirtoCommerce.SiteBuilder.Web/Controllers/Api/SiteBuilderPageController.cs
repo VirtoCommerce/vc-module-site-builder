@@ -41,6 +41,7 @@ public class SiteBuilderPageController : Controller
     private readonly IContentHistory contentHistory;
     private readonly ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator;
     private readonly IDesignerContentService designerContentService;
+    private readonly ISiteBuilderContentGuard contentGuard;
 
     public SiteBuilderPageController(
         ISiteBuilderPageService crudService,
@@ -52,7 +53,8 @@ public class SiteBuilderPageController : Controller
         ILogger<SiteBuilderPageController> logger,
         IContentHistory contentHistory,
         ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator,
-        IDesignerContentService designerContentService)
+        IDesignerContentService designerContentService,
+        ISiteBuilderContentGuard contentGuard = null)
     {
         this.crudService = crudService;
         this.groupedPageService = groupedPageService;
@@ -64,6 +66,7 @@ public class SiteBuilderPageController : Controller
         this.contentHistory = contentHistory;
         this.sharedComponentPlacementValidator = sharedComponentPlacementValidator;
         this.designerContentService = designerContentService;
+        this.contentGuard = contentGuard ?? new SiteBuilderContentGuard();
     }
 
     [HttpPost("search")]
@@ -307,6 +310,15 @@ public class SiteBuilderPageController : Controller
         if (!PageContentEnvelope.TryValidate(model.Content, out var envelopeError))
         {
             return BadRequest(envelopeError);
+        }
+
+        try
+        {
+            model.Content = contentGuard.GuardPageContent(model.Content, "page", catalog: null);
+        }
+        catch (InvalidDataException ex)
+        {
+            return BadRequest(ex.Message);
         }
 
         var authorizationResult = await authorizationService.AuthorizeAsync(User, model, new SiteBuilderAuthorizationRequirement());
@@ -739,6 +751,8 @@ public class SiteBuilderPageController : Controller
 
         try
         {
+            // here, not only in the writer: the history records what is stored
+            content = contentGuard.GuardPageContent(content, "page", catalog: null);
             var result = await pageContentService.SaveConditionalContentAsync(group, content, expectedETag, cancellationToken);
             if (result.ContentWritten)
             {

@@ -1,10 +1,12 @@
 using System.Security.Claims;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
@@ -20,9 +22,12 @@ public class DesignerContentService(
     IGroupedPageContentService groupedPageContentService,
     IGroupedPageContentWriter groupedPageContentWriter,
     IFilePageDraftService filePageDraftService,
-    IContentHistory contentHistory) : IDesignerContentService
+    IContentHistory contentHistory,
+    ISiteBuilderContentGuard contentGuard,
+    ISchemaCatalogService schemaCatalogService) : IDesignerContentService
 {
     private const string NeverPublishedError = "This page has never been published, so there is no published version to go back to.";
+    private const string PageName = "page";
 
     public virtual async Task ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
         CancellationToken cancellationToken = default)
@@ -33,6 +38,15 @@ public class DesignerContentService(
         if (!draft && await themeSnapshotService.IsNewSiteBuilderEnabledAsync(storeId, cancellationToken))
         {
             throw new InvalidDataException("The store uses the new Site Builder: theme files are saved as drafts and published with theme/publish.");
+        }
+
+        var catalog = await GetCatalogAsync(storeId, catalogHash, cancellationToken);
+        var errors = files
+            .SelectMany(x => contentGuard.GuardThemeFile(SiteBuilderContentPaths.GetPathInTheme(x.Key), x.Value, catalog).Errors)
+            .ToList();
+        if (errors.Count > 0)
+        {
+            throw new ThemeValidationException(errors);
         }
 
         if (string.IsNullOrEmpty(catalogHash))
@@ -51,6 +65,8 @@ public class DesignerContentService(
     public virtual async Task<DesignerSaveResult> SaveAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+
+        await GuardAsync(command, cancellationToken);
 
         var result = AbstractTypeFactory<DesignerSaveResult>.TryCreateInstance();
         result.SaveId = command.SaveId;
@@ -115,6 +131,8 @@ public class DesignerContentService(
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        await GuardAsync(command, cancellationToken);
+
         var themeFiles = command.Contents.Where(x => x.Key.Type == HistoryItemType.Theme).ToDictionary(x => x.Key.Key, x => x.Value);
         var pageContent = command.Contents.Where(x => x.Key.Type == HistoryItemType.Page).Select(x => x.Value).SingleOrDefault();
         // a version restored replaces the drafts as they are now, as the page's restore does
@@ -132,6 +150,66 @@ public class DesignerContentService(
         result.SaveId = command.SaveId;
 
         return result;
+    }
+
+    /// <summary>Sanitizes the content to save in the command, so that its versions and its history entry are of what is stored.</summary>
+    /// <exception cref="InvalidDataException">Something in it can run script.</exception>
+    protected virtual async Task GuardAsync(DesignerSaveCommand command, CancellationToken cancellationToken)
+    {
+        var catalog = await GetCatalogAsync(command.StoreId, command.CatalogHash, cancellationToken);
+        var errors = new List<string>();
+
+        command.PageContent = contentGuard.GuardPageContent(command.PageContent, PageName, catalog, errors);
+        if (command.FilePage?.Content != null)
+        {
+            errors.AddRange(contentGuard.GuardPage(command.FilePage.Content, command.FilePage.Path, catalog).Errors);
+        }
+
+        foreach (var file in command.ThemeFiles)
+        {
+            file.Content = contentGuard.GuardThemeFileContent(SiteBuilderContentPaths.GetPathInTheme(file.Path), file.Content, catalog, errors);
+        }
+
+        SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
+    }
+
+    /// <summary>A version restored is checked against the store's current catalog, as it is saved again.</summary>
+    protected virtual async Task GuardAsync(ContentRestoreCommand command, CancellationToken cancellationToken)
+    {
+        var catalog = await ReadCatalogAsync(command.StoreId, hash: null, cancellationToken);
+        var errors = new List<string>();
+
+        foreach (var (item, content) in command.Contents.ToList())
+        {
+            command.Contents[item] = item.Type == HistoryItemType.Theme
+                ? contentGuard.GuardThemeFileContent(SiteBuilderContentPaths.GetPathInTheme(item.Key), content, catalog, errors)
+                : contentGuard.GuardPageContent(content, PageName, catalog, errors);
+        }
+
+        SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
+    }
+
+    /// <summary>Null for no hash or an unknown one: the content is then checked without a schema.</summary>
+    protected virtual async Task<JObject> GetCatalogAsync(string storeId, string catalogHash, CancellationToken cancellationToken) =>
+        string.IsNullOrEmpty(catalogHash) ? null : await ReadCatalogAsync(storeId, catalogHash, cancellationToken);
+
+    /// <summary>The store's current catalog for no hash.</summary>
+    protected virtual async Task<JObject> ReadCatalogAsync(string storeId, string hash, CancellationToken cancellationToken)
+    {
+        var catalog = await schemaCatalogService.GetAsync(storeId, hash, cancellationToken);
+        if (catalog == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return ThemeJson.ParseObject(catalog);
+        }
+        catch (JsonReaderException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Writes the page last, so that a refused page leaves the theme drafts to be put back.</summary>

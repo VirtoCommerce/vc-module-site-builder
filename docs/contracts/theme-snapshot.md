@@ -547,6 +547,16 @@ The catalog is the storefront's section, block, template and palette schemas, th
   every other section that is not hidden is shown.
 - A schema is data: see [Schemas](preview-protocol.md#schemas).
 
+The saves of pages, shared components and theme files, a restore and a publication also refuse content that can run
+script in the storefront, with 400 and an error naming the content and the JSON path: a `javascript:` or `vbscript:`
+URL in any string, a `data:` URL in a link field of the catalog (`format: "url"`), and a palette token the storefront
+does not have or a value that is not a hex, `rgb()` or `hsl()` color. The HTML they store (the `html` of a markdown
+value, and, with the catalog, `text`, `html` and HTML `markdown` fields) is sanitized instead, with the profile of the
+storefront's sanitizer. Content that reaches the storage around the API is not checked: a pull request merged on
+GitHub, and pages and theme files written before these checks. A theme file of that kind is checked again by its next
+publication, a page by its next save; until then the storefront's own sanitizing is what stands between it and a
+visitor.
+
 ## Endpoints
 
 All take `storeId` and check the store as the other Site Builder endpoints do.
