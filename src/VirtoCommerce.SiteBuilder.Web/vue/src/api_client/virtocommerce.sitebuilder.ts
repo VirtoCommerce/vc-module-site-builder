@@ -1991,7 +1991,7 @@ export class SiteBuilderClient extends AuthApiBase {
      * @return OK
      */
     search(storeId?: string | undefined, theme?: string | undefined, type?: string | undefined, folder?: string | undefined, pattern?: string | undefined, keyword?: string | undefined): Promise<string> {
-        let url_ = this.baseUrl + "/api/pagebuilder/search?";
+        let url_ = this.baseUrl + "/api/site-builder/search?";
         if (storeId === null)
             throw new globalThis.Error("The parameter 'storeId' cannot be null.");
         else if (storeId !== undefined)
