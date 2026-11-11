@@ -68,7 +68,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             IValidator<DesignerSaveRequest> designerSaveValidator,
             IValidator<DesignerDiscardRequest> designerDiscardValidator,
             IThemeStorageFactory themeStorageFactory,
-            ISiteBuilderContentGuard contentGuard = null
+            ISiteBuilderContentGuard contentGuard
             )
         : Controller
     {
@@ -102,8 +102,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         private const string OnlyCopyError = "Nothing is published: the draft is the only copy.";
         private const string CatalogRequiredError = "Theme files are checked against the storefront's schema catalog: name it with catalogHash (preview the storefront first).";
         private const string SaveAction = "save";
-
-        private readonly ISiteBuilderContentGuard _contentGuard = contentGuard ?? new SiteBuilderContentGuard();
 
 
         [HttpGet]
@@ -667,7 +665,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         {
             var errors = files
                 .Where(x => GitPageLocation.IsPageContent(x.Type) && x.Content is JToken)
-                .SelectMany(x => _contentGuard.GuardPage((JToken)x.Content, x.Path, catalog: null).Errors)
+                .SelectMany(x => contentGuard.GuardPage((JToken)x.Content, x.Path, catalog: null).Errors)
                 .ToList();
 
             return errors.Count > 0 ? BadRequest(new { error = SiteBuilderContentGuardExtensions.GetMessage(errors), errors }) : null;
@@ -1478,7 +1476,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             if (errors.Count == 0)
             {
                 // an old version may predate the checks: it is saved again sanitized, or not at all
-                errors = _contentGuard.GuardPage(page, path, catalog: null).Errors;
+                errors = contentGuard.GuardPage(page, path, catalog: null).Errors;
             }
 
             if (errors.Count > 0)

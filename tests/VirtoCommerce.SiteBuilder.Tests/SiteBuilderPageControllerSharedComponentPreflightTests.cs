@@ -261,7 +261,7 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
             pageContentService,
             NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
             new SiteBuilderSharedComponentPlacementValidator(referenceIndex, authorizationService),
-            TestServices.Designer(new NoContentHistory()));
+            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard);
         var httpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity()),

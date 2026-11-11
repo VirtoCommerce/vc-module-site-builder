@@ -168,6 +168,7 @@ public class ThemeWriteLockTests
             filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,
             designerDiscardValidator: RequestValidators.DesignerDiscard,
+            contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(_live.StoreService, _live, _live, _live)));
     }
 

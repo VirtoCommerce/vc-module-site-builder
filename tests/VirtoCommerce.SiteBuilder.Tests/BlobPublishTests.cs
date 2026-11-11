@@ -132,6 +132,7 @@ public class BlobPublishTests
             filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,
             designerDiscardValidator: RequestValidators.DesignerDiscard,
+            contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(new FakeStoreService(new Store { Id = "vccom" }), null, null, publishing));
 
         controller.ControllerContext = new ControllerContext

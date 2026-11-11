@@ -420,6 +420,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,
             designerDiscardValidator: RequestValidators.DesignerDiscard,
+            contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(new FakeStoreService(store ?? new Store { Id = "vccom" }), null, null, null));
 
             var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test");

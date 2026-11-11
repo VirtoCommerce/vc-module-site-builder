@@ -94,11 +94,14 @@ public class SiteBuilderSharedComponentCreateStoreTests
     }
 
     [Fact]
-    public async Task Create_PublishedConstructor_ResolvesStoreServiceFromRequestServices()
+    public async Task Create_PublishedConstructor_ResolvesItsDependenciesFromRequestServices()
     {
         var stores = new FakeStoreService(new Store { Id = "store" });
         var components = new RecordingComponentService();
-        using var services = new ServiceCollection().AddSingleton<IStoreService>(stores).BuildServiceProvider();
+        using var services = new ServiceCollection()
+            .AddSingleton<IStoreService>(stores)
+            .AddSingleton<ISiteBuilderContentGuard>(TestServices.ContentGuard)
+            .BuildServiceProvider();
         var controller = new SiteBuilderSharedComponentsController(components, null, null, null,
             new FakeAuthorizationService(true))
         {
@@ -148,7 +151,7 @@ public class SiteBuilderSharedComponentCreateStoreTests
 
     private static SiteBuilderSharedComponentsController CreateController(
         IStoreService stores, ISiteBuilderSharedComponentService components, bool authorized = true) =>
-        new(components, null, null, null, new FakeAuthorizationService(authorized), stores)
+        new(components, null, null, null, new FakeAuthorizationService(authorized), stores, TestServices.ContentGuard)
         {
             ControllerContext = new ControllerContext
             {

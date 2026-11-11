@@ -36,7 +36,9 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
             sharedComponentSearchService: null,
             sharedComponentContentService: null,
             usageService,
-            new StubAuthorizationService(canReadPages))
+            new StubAuthorizationService(canReadPages),
+            storeService: null,
+            contentGuard: TestServices.ContentGuard)
         {
             ControllerContext = new ControllerContext
             {
@@ -100,7 +102,9 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
             sharedComponentSearchService: null,
             sharedComponentContentService: null,
             new StubUsageService(),
-            new StubAuthorizationService(canReadPages: true))
+            new StubAuthorizationService(canReadPages: true),
+            storeService: null,
+            contentGuard: TestServices.ContentGuard)
         {
             ControllerContext = new ControllerContext
             {
@@ -208,7 +212,9 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
             sharedComponentSearchService: null,
             contentService,
             usageService,
-            authorizationService ?? new StubAuthorizationService(canReadPages: true))
+            authorizationService ?? new StubAuthorizationService(canReadPages: true),
+            storeService: null,
+            contentGuard: TestServices.ContentGuard)
         {
             ControllerContext = new ControllerContext
             {

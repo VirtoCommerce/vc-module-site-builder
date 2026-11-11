@@ -20,6 +20,8 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 
 internal static class TestServices
 {
+    public static SiteBuilderContentGuard ContentGuard { get; } = new(new SiteBuilderHtmlSanitizer());
+
     public static ContentPermissionService Permissions(IAuthorizationService authorizationService) => new(authorizationService);
 
     public static FilePageDraftService FilePageDrafts(
@@ -51,7 +53,7 @@ internal static class TestServices
         IThemeSnapshotService themeSnapshots = null,
         ISchemaCatalogService catalogs = null)
     {
-        var contentGuard = new SiteBuilderContentGuard();
+        var contentGuard = ContentGuard;
         var contentWriter = pages == null
             ? null
             : new GroupedPageContentWriter(pages, new Fakes.FakeSiteBuilderPageService(pages), events ?? new Fakes.NoopEventPublisher(), contentGuard);

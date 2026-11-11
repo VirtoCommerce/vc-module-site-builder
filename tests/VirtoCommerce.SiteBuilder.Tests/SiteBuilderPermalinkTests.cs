@@ -212,7 +212,7 @@ public class SiteBuilderPermalinkTests
             pageContentService,
             NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
             new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-            TestServices.Designer(new NoContentHistory()));
+            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) },

@@ -263,7 +263,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 pageContentService: pageContentService,
                 logger: NullLogger<SiteBuilderPageController>.Instance, contentHistory: new NoContentHistory(),
                 sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-                designerContentService: TestServices.Designer(new NoContentHistory()));
+                designerContentService: TestServices.Designer(new NoContentHistory()), contentGuard: TestServices.ContentGuard);
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Response.Body = new MemoryStream();
@@ -289,7 +289,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 pageContentService: pageContentService,
                 logger: NullLogger<SiteBuilderPageController>.Instance, contentHistory: new NoContentHistory(),
                 sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-                designerContentService: TestServices.Designer(new NoContentHistory()));
+                designerContentService: TestServices.Designer(new NoContentHistory()), contentGuard: TestServices.ContentGuard);
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             var body = new MemoryStream();

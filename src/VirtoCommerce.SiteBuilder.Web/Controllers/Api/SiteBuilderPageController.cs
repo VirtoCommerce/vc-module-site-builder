@@ -54,7 +54,7 @@ public class SiteBuilderPageController : Controller
         IContentHistory contentHistory,
         ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator,
         IDesignerContentService designerContentService,
-        ISiteBuilderContentGuard contentGuard = null)
+        ISiteBuilderContentGuard contentGuard)
     {
         this.crudService = crudService;
         this.groupedPageService = groupedPageService;
@@ -66,7 +66,7 @@ public class SiteBuilderPageController : Controller
         this.contentHistory = contentHistory;
         this.sharedComponentPlacementValidator = sharedComponentPlacementValidator;
         this.designerContentService = designerContentService;
-        this.contentGuard = contentGuard ?? new SiteBuilderContentGuard();
+        this.contentGuard = contentGuard;
     }
 
     [HttpPost("search")]

@@ -435,6 +435,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,
             designerDiscardValidator: RequestValidators.DesignerDiscard,
+            contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(live.StoreService, live, live, live));
 
             var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test");

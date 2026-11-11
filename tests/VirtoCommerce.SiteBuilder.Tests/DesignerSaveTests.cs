@@ -1083,6 +1083,7 @@ public class DesignerSaveTests
             filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,
             designerDiscardValidator: RequestValidators.DesignerDiscard,
+            contentGuard: TestServices.ContentGuard,
             themeStorageFactory: _themes);
         controller.ControllerContext = new ControllerContext
         {

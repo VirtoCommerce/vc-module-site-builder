@@ -252,7 +252,7 @@ public class PageContentConcurrencyContractTests
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(), contentService,
             NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
             new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-            TestServices.Designer(new NoContentHistory()))
+            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

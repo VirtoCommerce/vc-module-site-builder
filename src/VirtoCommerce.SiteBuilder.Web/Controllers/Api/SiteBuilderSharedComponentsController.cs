@@ -33,14 +33,12 @@ public class SiteBuilderSharedComponentsController(
     ISiteBuilderSharedComponentUsageService sharedComponentUsageService,
     IAuthorizationService authorizationService,
     IStoreService storeService,
-    ISiteBuilderContentGuard contentGuard = null)
+    ISiteBuilderContentGuard contentGuard)
     : Controller
 {
     private const string ComponentName = "shared component";
 
-    private readonly ISiteBuilderContentGuard _contentGuard = contentGuard ?? new SiteBuilderContentGuard();
-
-    // Preserve the published constructor for extensions; request services supply the new dependency.
+    // Preserve the published constructor for extensions; request services supply the new dependencies.
     public SiteBuilderSharedComponentsController(
         ISiteBuilderSharedComponentService sharedComponentService,
         ISiteBuilderSharedComponentSearchService sharedComponentSearchService,
@@ -48,7 +46,7 @@ public class SiteBuilderSharedComponentsController(
         ISiteBuilderSharedComponentUsageService sharedComponentUsageService,
         IAuthorizationService authorizationService)
         : this(sharedComponentService, sharedComponentSearchService, sharedComponentContentService,
-            sharedComponentUsageService, authorizationService, null)
+            sharedComponentUsageService, authorizationService, null, null)
     {
     }
 
@@ -313,7 +311,8 @@ public class SiteBuilderSharedComponentsController(
     /// <exception cref="InvalidDataException">Something in the content can run script.</exception>
     private string GuardContent(JObject content)
     {
-        var errors = _contentGuard.GuardPage(content, ComponentName, catalog: null).Errors;
+        var guard = contentGuard ?? HttpContext.RequestServices.GetRequiredService<ISiteBuilderContentGuard>();
+        var errors = guard.GuardPage(content, ComponentName, catalog: null).Errors;
         SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
 
         return content.ToString(Formatting.None);

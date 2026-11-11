@@ -407,6 +407,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,
             designerDiscardValidator: RequestValidators.DesignerDiscard,
+            contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(new FakeStoreService(new Store { Id = Store }), null, null, null));
 
             controller.ControllerContext = new ControllerContext

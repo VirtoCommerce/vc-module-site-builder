@@ -231,7 +231,7 @@ public class PageContentSaveFailureControllerTests
             logger: NullLogger<SiteBuilderPageController>.Instance,
             contentHistory: _history,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new Fakes.AllowAllAuthorizationService()),
-            designerContentService: TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages)));
+            designerContentService: TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages), contentGuard: TestServices.ContentGuard));
 
     private HistoryController HistoryController()
     {

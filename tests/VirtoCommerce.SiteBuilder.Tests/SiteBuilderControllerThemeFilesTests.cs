@@ -427,6 +427,7 @@ public class SiteBuilderControllerThemeFilesTests
             filePageDraftService: filePageDrafts,
             designerSaveValidator: RequestValidators.DesignerSave,
             designerDiscardValidator: RequestValidators.DesignerDiscard,
+            contentGuard: TestServices.ContentGuard,
             themeStorageFactory: _themeStorageFactory);
         controller.ControllerContext = new ControllerContext
         {
