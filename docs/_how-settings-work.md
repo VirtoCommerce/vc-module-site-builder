@@ -1,0 +1,150 @@
+# How settings work
+
+Settings are loaded at application startup via `AppInitializator` and resolved using a chain of HTTP requests with fallback support. Each setting value can be a static string, a `ServerRequestDescriptor`, or an array of descriptors executed in order until one succeeds.
+
+Resolved settings are available in template expressions as `{{settings.*}}`. The execution context also exposes `location.*` (current URL parts) and `config.*` (theme configuration). See the [Settings configuration](./builder-settings.md) reference for a full list of supported properties and the [Component context](./component-context.md) for available context variables.
+
+
+
+
+```json
+{
+    "storefrontUrl": {
+        "init": "requests",
+        "requests": [
+            {
+                "url": "/api/stores/{{location.params.storeId}}",
+                "method": "GET",
+                "response": {
+                    "result": "$.url",
+                    "isArray": false
+                }
+            },
+            {
+                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StoreUrl",
+                "method": "GET",
+                "response": {
+                    "result": "$.value",
+                    "isArray": false
+                }
+            }
+        ]
+    },
+    "previewPath": {
+        "init": "requests",
+        "requests": [
+            {
+                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                "method": "GET",
+                "cacheable": true,
+                "response": {
+                    "result": "$.value",
+                    "isArray": false
+                }
+            },
+            {
+                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                "method": "GET",
+                "cacheable": true,
+                "response": {
+                    "result": "$.defaultValue",
+                    "isArray": false
+                }
+            }
+        ]
+    },
+    "fullPreviewUrl": "{{settings.storefrontUrl}}{{settings.previewPath}}?ep={{location.origin}}",
+    "themeName": {
+        "init": true,
+        "url": "/api/stores/{{location.params.storeId}}",
+        "method": "GET",
+        "response": {
+            "result": "$.dynamicProperties..values[?(@.propertyName=='DefaultThemeName')].value",
+            "isArray": false
+        },
+        "fallbackValue": "default"
+    },
+    "templatesListUrl": "/api/site-builder/templates?storeId={{location.params.storeId}}&theme={{config.themeName}}",
+    "sectionsListUrl": "/api/site-builder/sections?storeId={{location.params.storeId}}&theme={{config.themeName}}",
+    "templateUrl": {
+        "__templates": "/api/site-builder/template?storeId={{location.params.storeId}}&theme={{config.themeName}}&path={{path}}&type={{type}}&draft=true",
+        "pages": "/api/site-builder/template?storeId={{location.params.storeId}}&theme={{config.themeName}}&path={{path}}&type=pages&draft=true&pageId={{pageId}}",
+        "blogs": "/api/site-builder/template?storeId={{location.params.storeId}}&theme={{config.themeName}}&path={{path}}&type=blogs&draft=true"
+    },
+    "saveTemplates": {
+        "url": "/api/site-builder/save?storeId={{location.params.storeId}}&theme={{config.themeName}}&draft=true",
+        "method": "POST",
+        "body": {
+            "files": "{{=JSON.stringify(this.templatesToSave.map(x => ({ path: x.entry.path, pageId: x.entry.pageId, type: x.entry.type, content: x.content })))}}"
+        }
+    },
+    "publish": {
+        "status": "/api/content/{{type}}/{{location.params.storeId}}/publish-status?relativeUrl={{path}}",
+        "publish": {
+            "url": "/api/content/{{type}}/{{location.params.storeId}}/publishing?relativeUrl={{path}}&publish=true",
+            "method": "POST"
+        },
+        "unpublish": {
+            "url": "/api/content/{{type}}/{{location.params.storeId}}/publishing?relativeUrl={{path}}&publish=false",
+            "method": "POST"
+        }
+    },
+    "publishPages": {
+        "status": "/api/site-builder-pages/grouped/publish-status/?id={{pageId}}",
+        "publish": {
+            "url": "/api/site-builder-pages/grouped/publishing/?id={{pageId}}&publish=true",
+            "method": "POST"
+        },
+        "unpublish": {
+            "url": "/api/site-builder-pages/grouped/publishing/?id={{pageId}}&publish=false",
+            "method": "POST"
+        }
+    },
+    "externalPreview": {
+        "url": "{{settings.storefrontUrl}}/pages?path={{path}}"
+    },
+    "settingsDataRequest": "/api/site-builder/template?storeId={{location.params.storeId}}&path={{settings.settingsPath}}&type=themes",
+    "settingsSchemaRequest": "/api/site-builder/template?storeId={{location.params.storeId}}&path={{config.themeName}}/config/settings_schema.json&type=themes",
+    "saveSettings": {
+        "url": "/api/site-builder/save?storeId={{location.params.storeId}}&theme={{config.themeName}}",
+        "method": "POST",
+        "body": {
+            "files": "[{\"path\": \"{{settings.settingsPath}}\", \"type\": \"themes\", \"content\": {{item}}}]"
+        }
+    },
+    "settingsPath": "{{config.themeName}}/config/settings_data.json",
+    "defaultPreviewUrl": "/",
+    "uploadAssetsRequest": {
+        "url": "/api/content/pages/{{location.params.storeId}}?folderUrl=/assets/pages&name={{file.assetName}}",
+        "method": "POST",
+        "form": {
+            "name": "uploadedFile",
+            "fileName": "{{file.assetName}}"
+        },
+        "response": {
+            "result": "$[0].url",
+            "isArray": false
+        }
+    },
+    "skipTheme": {
+        "init": true,
+        "url": "/api/platform/security/currentuser",
+        "method": "GET",
+        "cacheable": true,
+        "response": {
+            "selector": "this.response.permissions.indexOf('builder:theme') === -1",
+            "isArray": false
+        }
+    },
+    "skipTemplates": {
+        "init": true,
+        "url": "/api/platform/security/currentuser",
+        "method": "GET",
+        "cacheable": true,
+        "response": {
+            "selector": "this.response.permissions.indexOf('builder:templates') === -1",
+            "isArray": false
+        }
+    }
+}
+```

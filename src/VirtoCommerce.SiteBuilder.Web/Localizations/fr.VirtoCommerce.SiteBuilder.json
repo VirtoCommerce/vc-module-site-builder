@@ -1,0 +1,114 @@
+{
+  "module": {
+    "VirtoCommerce.SiteBuilder": {
+      "description": "Export/import des pages Site Builder"
+    }
+  },
+  "siteBuilder": {
+    "blades": {
+      "edit-page": {
+        "title": "Modifier '{{name}}'",
+        "subtitle": "Édition de la page",
+        "title-new": "Nouvelle page",
+        "subtitle-new": "Créer une nouvelle page",
+        "subtitle-post": "Édition d'un article de blog",
+        "title-new-post": "Nouvel article",
+        "subtitle-new-post": "Créer un nouvel article de blog",
+        "labels": {
+          "filename": "Nom du fichier",
+          "name": "Nom",
+          "language": "Langue",
+          "permalink": "Permalien",
+          "drag-note": "Glissez-déposez un fichier ici",
+          "progress": "Progression",
+          "markdown": "Markdown",
+          "metadata": "Métadonnées",
+          "relativePath": "Chemin relatif"
+        },
+        "placeholders": {
+          "filename": "Saisir le nom du fichier",
+          "name": "Saisir le nom",
+          "language": "Sélectionner...",
+          "permalink": "Saisir le permalien"
+        },
+        "validations": {
+          "pageName-invalid": "Le nom de la page peut contenir uniquement des caractères alphanumériques, \"_\", \"-\" et \".\"",
+          "permalink-invalid": "D'autres pages utilisent le même permalien",
+          "permalink-format-invalid": "Le lien permanent doit comporter au plus 2048 caractères et ne peut pas contenir d'espaces ni de caractères invisibles, les caractères ? # & % \\ \" < > { } | ^ `, de doubles barres obliques ni les segments . et .."
+        },
+        "hints": {
+          "rename-in-git": "Cette boutique publie les pages via Git, où le nom du fichier est l'adresse de la page dans le dépôt. Renommez-la là-bas, via une pull request."
+        }
+      },
+      "siteBuilderEditor": {
+        "create": {
+          "title": "Concevoir la page",
+          "description": "Utilisez le concepteur pour créer une nouvelle page"
+        },
+        "edit": {
+          "title": "Concevoir la page",
+          "description": "Utilisez le concepteur pour modifier la page"
+        }
+      }
+    },
+    "commands": {
+      "open-designer": "Concevoir",
+      "publish": "Publier",
+      "unpublish": "Dépublier"
+    },
+    "dialogs": {
+      "git-awaiting-merge": {
+        "title": "La publication demande une étape de plus",
+        "message": "La pull request de cette page est ouverte mais ne sera pas fusionnée d'elle-même : ce dépôt n'autorise pas l'auto-merge et une vérification obligatoire n'est pas passée. Publiez à nouveau lorsque les vérifications sont vertes, ou fusionnez-la dans GitHub. {{url}}"
+      },
+      "git-publish-pending": {
+        "title": "Publication en cours",
+        "message": "La page n'est pas encore en ligne : une pull request est ouverte et sera fusionnée une fois ses vérifications réussies. {{url}}"
+      },
+      "git-unpublish-pending": {
+        "title": "Retrait en cours",
+        "message": "La page est encore en ligne : une pull request qui la supprime est ouverte et sera fusionnée une fois ses vérifications réussies. {{url}}"
+      }
+    }
+  },
+  "settings": {
+    "VirtoCommerce": {
+      "SiteBuilder": {
+        "General": {
+          "StoreUrl": {
+            "description": "URL du magasin avec gestionnaire d'aperçu Site Builder",
+            "title": "URL du magasin"
+          },
+          "StorePreviewPath": {
+            "description": "Chemin relatif pour l'aperçu",
+            "title": "Chemin d'aperçu du magasin"
+          },
+          "OzAgentUrl": {
+            "title": "URL de l'agent Virto OZ",
+            "description": "URL de l'iframe de l'agent IA Virto OZ intégré à Site Builder. Laisser vide pour désactiver l'assistant IA."
+          }
+        },
+        "Store": {
+          "GitContentEnabled": {
+            "title": "Publier les pages via Git",
+            "description": "Lorsque cette option est activée, l'enregistrement d'une page crée un commit dans une branche de travail du dépôt de contenu configuré, et la publication ouvre et fusionne une pull request, au lieu d'écrire directement dans le stockage blob. Nécessite une connexion de contenu Git configurée sur le serveur (SiteBuilder:GitContent)."
+          },
+          "PreviewUserIds": {
+            "title": "IDs utilisateur pour l'aperçu",
+            "description": "Liste des IDs utilisateur pour l'usurpation d'identité lors de l'aperçu (un par ligne)"
+          }
+        },
+        "Migration": {
+          "MetadataFromContentMigrated": {
+            "title": "Migration des métadonnées de contenu terminée",
+            "description": "La migration des métadonnées des éléments de contenu vers les pages du générateur de pages a été effectuée avec succès."
+          }
+        }
+      }
+    }
+  },
+  "permissions": {
+    "builder:theme": "Autoriser la modification des paramètres du thème",
+    "builder:templates": "Autoriser le changement de modèle pendant la modification"
+  }
+}

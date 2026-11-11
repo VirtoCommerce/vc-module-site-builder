@@ -1,0 +1,36 @@
+name: sitebuilder_get_page_content
+description: |
+  Load the full JSON content of a SiteBuilder page (page-level settings + ordered list of sections) for editing. Always loads the latest content (draft if present, otherwise published or archived). Returns content as a JSON string and its eTag. Parse content before mutating, keep the eTag alongside that exact document, and pass both back via `sitebuilder_save_page_content`.
+
+  Use when: editing an existing page — need its current state before mutating.
+  Skip when: creating a fresh page (no existing content to load).
+require_approval: false
+
+parameters:
+  type: object
+  properties:
+    groupId:
+      type: string
+      description: ID of the grouped page. Required.
+  required:
+    - groupId
+
+execution:
+  endpoint: /api/site-builder-pages/grouped/{groupId}/content
+  method: GET
+  mappings:
+    request:
+      query:
+        draft: "true"
+        includeVersion: "true"
+    response:
+      content: "$.content"
+      eTag: "$.eTag"
+
+permission:
+  - builder:read
+
+tags:
+  - sitebuilder
+  - page
+  - read

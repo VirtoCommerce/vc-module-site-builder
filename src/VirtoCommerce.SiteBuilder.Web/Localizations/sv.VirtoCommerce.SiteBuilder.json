@@ -1,0 +1,119 @@
+{
+  "module": {
+    "VirtoCommerce.SiteBuilder": {
+      "description": "Export/import av Site Builder-sidor"
+    }
+  },
+  "siteBuilder": {
+    "blades": {
+      "edit-page": {
+        "title": "Redigera '{{name}}'",
+        "subtitle": "Sidredigering",
+        "title-new": "Ny sida",
+        "subtitle-new": "Skapa ny sida",
+        "subtitle-post": "Redigera blogginlägg",
+        "title-new-post": "Nytt inlägg",
+        "subtitle-new-post": "Skapa nytt blogginlägg",
+        "labels": {
+          "filename": "Filnamn",
+          "name": "Namn",
+          "language": "Språk",
+          "permalink": "Permalänk",
+          "drag-note": "Dra och släpp fil här",
+          "progress": "Förlopp",
+          "markdown": "Markdown",
+          "metadata": "Metadata",
+          "relativePath": "Relativ sökväg"
+        },
+        "placeholders": {
+          "filename": "Ange filnamn",
+          "name": "Ange namn",
+          "language": "Välj…",
+          "permalink": "Ange permalänk"
+        },
+        "validations": {
+          "pageName-invalid": "Sidnamnet får endast innehålla alfanumeriska tecken, \"_\", \"-\" och \".\"",
+          "permalink-invalid": "Andra sidor har samma permalänk",
+          "permalink-format-invalid": "Permalänken får vara högst 2048 tecken och får inte innehålla mellanslag eller osynliga tecken, tecknen ? # & % \\ \" < > { } | ^ `, dubbla snedstreck eller segmenten . och .."
+        },
+        "hints": {
+          "rename-in-git": "Den här butiken publicerar sidor via Git, där filnamnet är sidans adress i repositoryt. Byt namn på den där, via en pull request."
+        }
+      },
+      "siteBuilderEditor": {
+        "create": {
+          "title": "Designa sida",
+          "description": "Använd designverktyget för att skapa en ny sida"
+        },
+        "edit": {
+          "title": "Designa sida",
+          "description": "Använd designverktyget för att redigera sidan"
+        }
+      }
+    },
+    "commands": {
+      "open-designer": "Design",
+      "publish": "Publicera",
+      "unpublish": "Avpublicera"
+    },
+    "widgets": {
+      "siteBuilder-app": {
+        "title": "Site Builder"
+      }
+    },
+    "dialogs": {
+      "git-awaiting-merge": {
+        "title": "Publiceringen behöver ett steg till",
+        "message": "Pull requesten för den här sidan är öppen men slås inte samman av sig själv: det här repot tillåter inte auto-merge och en obligatorisk kontroll har inte godkänts. Publicera igen när kontrollerna är gröna, eller slå samman den i GitHub. {{url}}"
+      },
+      "git-publish-pending": {
+        "title": "Publicering pågår",
+        "message": "Sidan är inte publicerad än: en pull request är öppen och slås samman när dess kontroller har godkänts. {{url}}"
+      },
+      "git-unpublish-pending": {
+        "title": "Avpublicering pågår",
+        "message": "Sidan är fortfarande publicerad: en pull request som tar bort den är öppen och slås samman när dess kontroller har godkänts. {{url}}"
+      }
+    }
+  },
+  "settings": {
+    "VirtoCommerce": {
+      "SiteBuilder": {
+        "General": {
+          "StoreUrl": {
+            "description": "Butiks-URL med förhandsgranskning för Site Builder",
+            "title": "Butiks-URL"
+          },
+          "StorePreviewPath": {
+            "description": "Relativ sökväg för sidförhandsgranskning",
+            "title": "Sökväg för förhandsgranskning"
+          },
+          "OzAgentUrl": {
+            "title": "URL för Virto OZ-agent",
+            "description": "URL till Virto OZ AI-agentens iframe inbäddad i Site Builder. Lämna tomt för att inaktivera AI-assistenten."
+          }
+        },
+        "Store": {
+          "GitContentEnabled": {
+            "title": "Publicera sidor via Git",
+            "description": "När det är aktiverat commitas en sida till en arbetsgren i det konfigurerade innehållsförvaret när den sparas, och publicering öppnar och slår samman en pull request i stället för att skriva direkt till blob-lagring. Kräver att Git-innehållsanslutningen är konfigurerad på servern (SiteBuilder:GitContent)."
+          },
+          "PreviewUserIds": {
+            "title": "Användar-IDn för förhandsgranskning",
+            "description": "Lista med användar-IDn för förhandsgranskningsimitation (ett per rad)"
+          }
+        },
+        "Migration": {
+          "MetadataFromContentMigrated": {
+            "title": "Metadata-migrering från innehåll slutförd",
+            "description": "Migreringen av metadata från innehållsobjekt till Site Builder-sidor har genomförts utan problem."
+          }
+        }
+      }
+    }
+  },
+  "permissions": {
+    "builder:theme": "Tillåt redigering av temainställningar",
+    "builder:templates": "Tillåt byte av mall under redigering"
+  }
+}

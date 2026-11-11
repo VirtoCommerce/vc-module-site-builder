@@ -1,0 +1,11 @@
+{
+  "language_name": "Suomi",
+  "COMMON": {
+    "STORE_CONTEXT": {
+      "MISSING_TITLE": "Kaupan konteksti puuttuu",
+      "MISSING_DESCRIPTION": "Avaa Site Builder kaupasta, jotta voit hallita sivuja ja aineistoja.",
+      "INVALID_TITLE": "Kauppaa ei löydy",
+      "INVALID_DESCRIPTION": "Kauppaa \"{storeId}\" ei ole olemassa tai se ei ole käytettävissä. Tarkista kaupan konteksti ja avaa Site Builder uudelleen kelvollisesta kaupasta."
+    }
+  }
+}

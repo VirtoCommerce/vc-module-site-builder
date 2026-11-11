@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<module xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <id>VirtoCommerce.SiteBuilder</id>
+  <version>3.1000.0</version>
+  <version-tag />
+
+  <platformVersion>3.1095.0</platformVersion>
+  <dependencies>
+    <dependency id="VirtoCommerce.Assets" version="3.1010.0" />
+    <dependency id="VirtoCommerce.Content" version="3.1006.0" />
+    <dependency id="VirtoCommerce.Core" version="3.1012.0" />
+    <dependency id="VirtoCommerce.Customer" version="3.1028.0" />
+    <dependency id="VirtoCommerce.Pages" version="3.1012.0" optional="true" />
+    <dependency id="VirtoCommerce.Search" version="3.1010.0" />
+    <dependency id="VirtoCommerce.Store" version="3.1009.0" />
+  </dependencies>
+  <incompatibilities>
+    <module id="VirtoCommerce.PageBuilderModule" version="3.0.0" />
+  </incompatibilities>
+
+  <title>Site Builder</title>
+  <description>Compose sites in visual site builder.</description>
+
+  <apps>
+    <app id="site-builder-shell">
+      <title>Site Builder Shell</title>
+      <description>Site Builder Shell</description>
+      <iconUrl>/apps/site-builder-shell/assets/logo-only.svg</iconUrl>
+      <placement>Hidden</placement>
+    </app>
+    <app id="site-builder-designer">
+      <title>Site Builder Designer</title>
+      <description>Site Builder Designer</description>
+      <iconUrl>/apps/site-builder-designer/assets/images/logo-only.svg</iconUrl>
+      <placement>Hidden</placement>
+    </app>
+  </apps>
+
+  <authors>
+    <author>Vasily Kotov</author>
+  </authors>
+  <owners>
+    <owner>Virto Commerce</owner>
+  </owners>
+  <projectUrl>https://github.com/VirtoCommerce/vc-module-site-builder</projectUrl>
+  <requireLicenseAcceptance>false</requireLicenseAcceptance>
+  <copyright>Copyright © 2011-2026 Virto Commerce. All rights reserved</copyright>
+  <tags>cms content sitebuilder</tags>
+  <assemblyFile>VirtoCommerce.SiteBuilder.Web.dll</assemblyFile>
+  <moduleType>VirtoCommerce.SiteBuilder.Web.Module, VirtoCommerce.SiteBuilder.Web</moduleType>
+  <useFullTypeNameInSwagger>false</useFullTypeNameInSwagger>
+  <groups>
+    <group>commerce</group>
+  </groups>
+</module>

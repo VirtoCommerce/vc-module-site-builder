@@ -1,0 +1,11 @@
+{
+  "language_name": "Italiano",
+  "COMMON": {
+    "STORE_CONTEXT": {
+      "MISSING_TITLE": "Contesto dello store mancante",
+      "MISSING_DESCRIPTION": "Apri Site Builder da uno store per gestire pagine e asset.",
+      "INVALID_TITLE": "Store non trovato",
+      "INVALID_DESCRIPTION": "Lo store \"{storeId}\" non esiste o non è disponibile. Controlla il contesto dello store e riapri Site Builder da uno store valido."
+    }
+  }
+}

@@ -1,0 +1,104 @@
+using Microsoft.Extensions.Logging;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
+using VirtoCommerce.Pages.Core.Events;
+using VirtoCommerce.Pages.Core.Extensions;
+using VirtoCommerce.Pages.Core.Models;
+using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.Platform.Core.Events;
+
+namespace VirtoCommerce.SiteBuilder.Data.Handlers
+{
+    public abstract class SiteBuilderEventHandlerBase(
+        IGroupedPageService groupedPageService,
+        ISiteBuilderSharedComponentResolver sharedComponentResolver,
+        ILogger logger
+    )
+    {
+        internal const int MaxDegreeOfParallelism = 8;
+
+        protected async Task<PagesDomainEvent> ToPagesDomainEvent(SiteBuilderPage entry, EntryState state)
+        {
+            var pageOperation = state.ToPageOperation(entry);
+
+            // A page with an unrecognized status maps to PageOperation.Unknown, which has no
+            // corresponding index status (GetPageDocumentStatus would throw). Such a page must not
+            // be pushed to the index, so skip it instead of raising an event for it.
+            if (pageOperation == PageOperation.Unknown)
+            {
+                return null;
+            }
+
+            var group = await groupedPageService.GetByIdAsync(entry.GroupId);
+
+            // The group and its content are already gone when the group was deleted,
+            // so the page can only be removed from the index.
+            if (group == null)
+            {
+                var deleteEvent = AbstractTypeFactory<PagesDomainEvent>.TryCreateInstance();
+                deleteEvent.Id = entry.Id;
+                deleteEvent.Operation = PageOperation.Delete;
+                deleteEvent.Page = AbstractTypeFactory<PageDocument>.TryCreateInstance();
+                deleteEvent.Page.Id = entry.Id;
+                return deleteEvent;
+            }
+
+            var rawContent = await groupedPageService.LoadContent(entry.Id);
+
+            string content;
+            try
+            {
+                content = await sharedComponentResolver.ResolveAsync(rawContent);
+            }
+            catch (InvalidDataException ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Skipped Site Builder page {PageId} because its content could not be expanded",
+                    entry.Id);
+                return null;
+            }
+
+            var pageDocument = entry.ToPageDocument(group, content);
+            // todo: move to pages module
+            pageDocument.Status = pageOperation.GetPageDocumentStatus();
+
+            var result = AbstractTypeFactory<PagesDomainEvent>.TryCreateInstance();
+
+            result.Id = pageDocument.Id;
+            result.Operation = pageOperation;
+            result.Page = pageDocument;
+
+            return result;
+        }
+
+        protected static async Task PublishPagesDomainEvents(IEnumerable<PagesDomainEvent> events, IEventPublisher eventPublisher)
+        {
+            await ForEachBoundedAsync(
+                events.Where(e => e != null).ToArray(),
+                @event => eventPublisher.Publish(@event));
+        }
+
+        internal static async Task<TResult[]> SelectBoundedAsync<TSource, TResult>(
+            IReadOnlyList<TSource> source,
+            Func<TSource, Task<TResult>> selector)
+        {
+            var results = new TResult[source.Count];
+            await ForEachBoundedAsync(
+                Enumerable.Range(0, source.Count).ToArray(),
+                async index => results[index] = await selector(source[index]));
+            return results;
+        }
+
+        internal static Task ForEachBoundedAsync<TSource>(
+            IReadOnlyList<TSource> source,
+            Func<TSource, Task> action)
+        {
+            return Parallel.ForEachAsync(
+                source,
+                new ParallelOptions { MaxDegreeOfParallelism = MaxDegreeOfParallelism },
+                async (item, _) => await action(item));
+        }
+    }
+}

@@ -1,0 +1,119 @@
+{
+  "module": {
+    "VirtoCommerce.SiteBuilder": {
+      "description": "Eksport/import av Site Builder-sider"
+    }
+  },
+  "siteBuilder": {
+    "blades": {
+      "edit-page": {
+        "title": "Rediger '{{name}}'",
+        "subtitle": "Side-redigering",
+        "title-new": "Ny side",
+        "subtitle-new": "Opprett ny side",
+        "subtitle-post": "Redigering av blogginnlegg",
+        "title-new-post": "Nytt innlegg",
+        "subtitle-new-post": "Opprett nytt blogginnlegg",
+        "labels": {
+          "filename": "Filnavn",
+          "name": "Navn",
+          "language": "Språk",
+          "permalink": "Permalenke",
+          "drag-note": "Dra og slipp fil her",
+          "progress": "Fremdrift",
+          "markdown": "Markdown",
+          "metadata": "Metadata",
+          "relativePath": "Relativ sti"
+        },
+        "placeholders": {
+          "filename": "Skriv inn filnavn",
+          "name": "Skriv inn navn",
+          "language": "Velg…",
+          "permalink": "Skriv inn permalenke"
+        },
+        "validations": {
+          "pageName-invalid": "Sidenavnet kan kun inneholde alfanumeriske tegn, «_», «-» og «.»",
+          "permalink-invalid": "Andre sider har samme permalenke",
+          "permalink-format-invalid": "Permalinken kan være på høyst 2048 tegn og kan ikke inneholde mellomrom eller usynlige tegn, tegnene ? # & % \\ \" < > { } | ^ `, doble skråstreker eller segmentene . og .."
+        },
+        "hints": {
+          "rename-in-git": "Denne butikken publiserer sider via Git, der filnavnet er sidens adresse i repositoriet. Gi den nytt navn der, via en pull request."
+        }
+      },
+      "siteBuilderEditor": {
+        "create": {
+          "title": "Design side",
+          "description": "Bruk designeren til å lage en ny side"
+        },
+        "edit": {
+          "title": "Design side",
+          "description": "Bruk designeren til å redigere siden"
+        }
+      }
+    },
+    "commands": {
+      "open-designer": "Design",
+      "publish": "Publiser",
+      "unpublish": "Avpubliser"
+    },
+    "widgets": {
+      "siteBuilder-app": {
+        "title": "Site Builder"
+      }
+    },
+    "dialogs": {
+      "git-awaiting-merge": {
+        "title": "Publisering trenger ett steg mer",
+        "message": "Pull requesten for denne siden er åpen, men blir ikke flettet av seg selv: dette repositoriet tillater ikke auto-merge, og en påkrevd kontroll har ikke passert. Publiser på nytt når kontrollene er grønne, eller flett den i GitHub. {{url}}"
+      },
+      "git-publish-pending": {
+        "title": "Publisering pågår",
+        "message": "Siden er ikke publisert ennå: en pull request er åpen og blir flettet når kontrollene passerer. {{url}}"
+      },
+      "git-unpublish-pending": {
+        "title": "Avpublisering pågår",
+        "message": "Siden er fortsatt publisert: en pull request som fjerner den er åpen og blir flettet når kontrollene passerer. {{url}}"
+      }
+    }
+  },
+  "settings": {
+    "VirtoCommerce": {
+      "SiteBuilder": {
+        "General": {
+          "StoreUrl": {
+            "description": "Butikk-URL med forhåndsvisning for Site Builder",
+            "title": "Butikk-URL"
+          },
+          "StorePreviewPath": {
+            "description": "Relativ sti for forhåndsvisning av side",
+            "title": "Sti for forhåndsvisning"
+          },
+          "OzAgentUrl": {
+            "title": "Virto OZ-agent-URL",
+            "description": "URL til Virto OZ AI-agent-iframen som er innebygd i Site Builder. La feltet stå tomt for å deaktivere AI-assistenten."
+          }
+        },
+        "Store": {
+          "GitContentEnabled": {
+            "title": "Publiser sider via Git",
+            "description": "Når aktivert, committes en side til en arbeidsgren i det konfigurerte innholdsrepositoriet når den lagres, og publisering åpner og fletter en pull request i stedet for å skrive direkte til blob-lagring. Krever at Git-innholdstilkoblingen er konfigurert på serveren (SiteBuilder:GitContent)."
+          },
+          "PreviewUserIds": {
+            "title": "Bruker-IDer for forhåndsvisning",
+            "description": "Liste over bruker-IDer for forhåndsvisning som en annen bruker (én per linje)"
+          }
+        },
+        "Migration": {
+          "MetadataFromContentMigrated": {
+            "title": "Metadata-migrering fra innhold fullført",
+            "description": "Migreringen av metadata fra innholdselementer til Site Builder-sider er fullført."
+          }
+        }
+      }
+    }
+  },
+  "permissions": {
+    "builder:theme": "Tillat redigering av temainnstillinger",
+    "builder:templates": "Tillat bytte av mal under redigering"
+  }
+}

@@ -1,0 +1,110 @@
+using Newtonsoft.Json.Linq;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.BackgroundJobs;
+using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.Platform.Core.Jobs;
+using VirtoCommerce.Platform.Core.Settings;
+using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
+
+namespace VirtoCommerce.SiteBuilder.Data.Services;
+
+public class PagesMigrationService(
+    IGroupedPageSearchService groupedPageSearchService,
+    IGroupedPageService groupedPageService,
+    ISettingsManager settingsManager,
+    IBackgroundJob backgroundJob
+    ) : IPagesMigrationService
+{
+    private static readonly object LockObject = new();
+
+    public void StartMigration()
+    {
+        lock (LockObject)
+        {
+            var migrationCompleted = settingsManager.GetValue<bool>(Settings.Migration.MetadataFromContentMigrated);
+            if (!migrationCompleted)
+            {
+                // Waits for the enqueue: StartMigration runs synchronously at startup, and a failed enqueue must surface there.
+#pragma warning disable S4462 // Calls to "async" methods should not be blocking - StartMigration is void by contract and runs from the synchronous Module.PostInitialize
+                backgroundJob.Enqueue<PagesMigrationJob>(new PagesMigrationJobPayload()).GetAwaiter().GetResult();
+#pragma warning restore S4462
+            }
+        }
+    }
+
+    public async Task MigratePages()
+    {
+        try
+        {
+            const int step = 20;
+            var criteria = new SiteBuilderPageSearchCriteria
+            {
+                Statuses = $"{PageStatuses.Draft},{PageStatuses.Published}",
+                Skip = 0,
+                Take = step,
+            };
+            var groups = await groupedPageSearchService.SearchAsync(criteria);
+            while (groups.Results.Count > 0)
+            {
+                await MigrateBatch(groups.Results);
+                await groupedPageService.SaveChangesAsync(groups.Results);
+                criteria.Skip += step;
+                groups = await groupedPageSearchService.SearchAsync(criteria);
+            }
+        }
+        finally
+        {
+            await settingsManager.SetValueAsync(Settings.Migration.MetadataFromContentMigrated.Name, true);
+        }
+    }
+
+    private async Task MigrateBatch(IList<GroupedSiteBuilderPage> groups)
+    {
+        foreach (var group in groups)
+        {
+            var page = SiteBuilderPageSelection.Order(group.Pages)
+                .FirstOrDefault(x => x.Status == PageStatuses.Draft || x.Status == PageStatuses.Published);
+
+            if (page == null)
+            {
+                continue;
+            }
+
+            var content = await groupedPageService.LoadContent(page.Id);
+            MigrateGroup(group, content);
+        }
+    }
+
+    private static void MigrateGroup(GroupedSiteBuilderPage model, string contentAsString)
+    {
+        try
+        {
+            var content = JObject.Parse(contentAsString.IsNullOrEmpty() ? "{}" : contentAsString);
+            var settings = (JObject)content["settings"];
+            SetValue(settings, "visibility", (bool v) => model.Visibility = v);
+            SetValue(settings, "userGroups", (string v) => model.UserGroups = v);
+            SetValue(settings, "startDate", (DateTime v) => model.StartDate = v);
+            SetValue(settings, "endDate", (DateTime v) => model.EndDate = v);
+        }
+        catch (Exception)
+        {
+            // ignore errors
+        }
+    }
+
+    private static void SetValue<T>(JObject settings, string propertyName, Action<T> setter)
+    {
+        var token = settings?.GetValue(propertyName);
+        if (token == null || token.Type == JTokenType.Null)
+        {
+            return;
+        }
+
+        var value = token.ToObject<T>();
+        if (value != null)
+        {
+            setter(value);
+        }
+    }
+}

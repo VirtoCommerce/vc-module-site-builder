@@ -1,0 +1,119 @@
+{
+  "module": {
+    "VirtoCommerce.SiteBuilder": {
+      "description": "Site Builder -sivujen vienti/tuonti"
+    }
+  },
+  "siteBuilder": {
+    "blades": {
+      "edit-page": {
+        "title": "Muokkaa '{{name}}'",
+        "subtitle": "Sivun muokkaus",
+        "title-new": "Uusi sivu",
+        "subtitle-new": "Luo uusi sivu",
+        "subtitle-post": "Blogikirjoituksen muokkaus",
+        "title-new-post": "Uusi kirjoitus",
+        "subtitle-new-post": "Luo uusi blogikirjoitus",
+        "labels": {
+          "filename": "Tiedostonimi",
+          "name": "Nimi",
+          "language": "Kieli",
+          "permalink": "Pysyvä linkki",
+          "drag-note": "Vedä ja pudota tiedosto tähän",
+          "progress": "Edistyminen",
+          "markdown": "Markdown",
+          "metadata": "Metatiedot",
+          "relativePath": "Suhteellinen polku"
+        },
+        "placeholders": {
+          "filename": "Anna tiedostonimi",
+          "name": "Anna nimi",
+          "language": "Valitse…",
+          "permalink": "Anna pysyvä linkki"
+        },
+        "validations": {
+          "pageName-invalid": "Sivun nimi saa sisältää vain aakkosnumeerisia merkkejä sekä \"_\", \"-\" ja \".\"",
+          "permalink-invalid": "Muilla sivuilla on sama pysyvä linkki",
+          "permalink-format-invalid": "Pysyvä linkki saa olla enintään 2048 merkkiä, eikä se saa sisältää välilyöntejä tai näkymättömiä merkkejä, merkkejä ? # & % \\ \" < > { } | ^ `, kaksoiskauttaviivoja eikä segmenttejä . ja .."
+        },
+        "hints": {
+          "rename-in-git": "Tämä kauppa julkaisee sivut Gitin kautta, jossa tiedostonimi on sivun osoite repositoriossa. Nimeä se uudelleen siellä, pull requestin kautta."
+        }
+      },
+      "siteBuilderEditor": {
+        "create": {
+          "title": "Suunnittele sivu",
+          "description": "Käytä suunnitteluohjelmaa uuden sivun luomiseen"
+        },
+        "edit": {
+          "title": "Suunnittele sivu",
+          "description": "Käytä suunnitteluohjelmaa sivun muokkaamiseen"
+        }
+      }
+    },
+    "commands": {
+      "open-designer": "Suunnittelu",
+      "publish": "Julkaise",
+      "unpublish": "Poista julkaisusta"
+    },
+    "widgets": {
+      "siteBuilder-app": {
+        "title": "Site Builder"
+      }
+    },
+    "dialogs": {
+      "git-awaiting-merge": {
+        "title": "Julkaisu vaatii vielä yhden askeleen",
+        "message": "Tämän sivun pull request on avoinna, mutta se ei yhdisty itsestään: tämä repositorio ei salli automaattista yhdistämistä eikä vaadittu tarkistus ole mennyt läpi. Julkaise uudelleen, kun tarkistukset ovat vihreitä, tai yhdistä se GitHubissa. {{url}}"
+      },
+      "git-publish-pending": {
+        "title": "Julkaisu käynnissä",
+        "message": "Sivu ei ole vielä julkaistu: pull request on avoinna ja yhdistetään, kun sen tarkistukset menevät läpi. {{url}}"
+      },
+      "git-unpublish-pending": {
+        "title": "Julkaisun peruutus käynnissä",
+        "message": "Sivu on vielä julkaistu: sen poistava pull request on avoinna ja yhdistetään, kun sen tarkistukset menevät läpi. {{url}}"
+      }
+    }
+  },
+  "settings": {
+    "VirtoCommerce": {
+      "SiteBuilder": {
+        "General": {
+          "StoreUrl": {
+            "description": "Kaupan URL, jossa on Site Builder -esikatselu",
+            "title": "Kaupan URL"
+          },
+          "StorePreviewPath": {
+            "description": "Suhteellinen polku sivun esikatseluun",
+            "title": "Esikatselupolku"
+          },
+          "OzAgentUrl": {
+            "title": "Virto OZ -agentin URL",
+            "description": "Site Builderiin upotetun Virto OZ -tekoälyagentin iframen URL. Jätä tyhjäksi poistaaksesi tekoälyavustajan käytöstä."
+          }
+        },
+        "Store": {
+          "GitContentEnabled": {
+            "title": "Julkaise sivut Gitin kautta",
+            "description": "Kun käytössä, sivun tallentaminen tekee commitin määritetyn sisältövaraston työhaaraan ja julkaiseminen avaa ja yhdistää pull requestin sen sijaan, että kirjoitettaisiin suoraan blob-tallennustilaan. Edellyttää palvelimella määritettyä Git-sisältöyhteyttä (SiteBuilder:GitContent)."
+          },
+          "PreviewUserIds": {
+            "title": "Esikatselun käyttäjätunnukset",
+            "description": "Luettelo käyttäjätunnuksista esikatselun toisena käyttäjänä toimimista varten (yksi per rivi)"
+          }
+        },
+        "Migration": {
+          "MetadataFromContentMigrated": {
+            "title": "Metatietojen siirto sisällöstä valmis",
+            "description": "Sisältökohteista Site Builder -sivuille tehdyt metatietojen siirrot on suoritettu onnistuneesti."
+          }
+        }
+      }
+    }
+  },
+  "permissions": {
+    "builder:theme": "Salli teeman asetusten muokkaus",
+    "builder:templates": "Salli mallin vaihto muokkauksen aikana"
+  }
+}

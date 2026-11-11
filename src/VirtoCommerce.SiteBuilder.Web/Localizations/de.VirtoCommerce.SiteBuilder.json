@@ -1,0 +1,114 @@
+{
+  "module": {
+    "VirtoCommerce.SiteBuilder": {
+      "description": "Export/Import von Site-Builder-Seiten"
+    }
+  },
+  "siteBuilder": {
+    "blades": {
+      "edit-page": {
+        "title": "Bearbeiten '{{name}}'",
+        "subtitle": "Seitenbearbeitung",
+        "title-new": "Neue Seite",
+        "subtitle-new": "Neue Seite erstellen",
+        "subtitle-post": "Blogbeitrag bearbeiten",
+        "title-new-post": "Neuer Beitrag",
+        "subtitle-new-post": "Neuen Blogbeitrag erstellen",
+        "labels": {
+          "filename": "Dateiname",
+          "name": "Name",
+          "language": "Sprache",
+          "permalink": "Permalink",
+          "drag-note": "Datei hierher ziehen",
+          "progress": "Fortschritt",
+          "markdown": "Markdown",
+          "metadata": "Metadaten",
+          "relativePath": "Relativer Pfad"
+        },
+        "placeholders": {
+          "filename": "Dateinamen eingeben",
+          "name": "Name eingeben",
+          "language": "Auswählen...",
+          "permalink": "Permalink eingeben"
+        },
+        "validations": {
+          "pageName-invalid": "Der Seitenname darf nur alphanumerische Zeichen, \"_\", \"-\" und \".\" enthalten",
+          "permalink-invalid": "Andere Seiten verwenden denselben Permalink",
+          "permalink-format-invalid": "Der Permalink darf höchstens 2048 Zeichen lang sein und keine Leerzeichen oder unsichtbaren Zeichen, die Zeichen ? # & % \\ \" < > { } | ^ `, doppelte Schrägstriche oder die Segmente . und .. enthalten"
+        },
+        "hints": {
+          "rename-in-git": "Dieses Geschäft veröffentlicht Seiten über Git, wo der Dateiname die Adresse der Seite im Repository ist. Benennen Sie sie dort um, über einen Pull Request."
+        }
+      },
+      "siteBuilderEditor": {
+        "create": {
+          "title": "Seite gestalten",
+          "description": "Designer verwenden, um eine neue Seite zu erstellen"
+        },
+        "edit": {
+          "title": "Seite gestalten",
+          "description": "Designer verwenden, um die Seite zu bearbeiten"
+        }
+      }
+    },
+    "commands": {
+      "open-designer": "Gestalten",
+      "publish": "Veröffentlichen",
+      "unpublish": "Nicht veröffentlichen"
+    },
+    "dialogs": {
+      "git-awaiting-merge": {
+        "title": "Veröffentlichung braucht einen weiteren Schritt",
+        "message": "Der Pull Request für diese Seite ist offen, wird aber nicht von selbst zusammengeführt: Dieses Repository erlaubt kein Auto-Merge und eine erforderliche Prüfung ist noch nicht erfolgreich. Veröffentlichen Sie erneut, sobald die Prüfungen grün sind, oder führen Sie ihn in GitHub zusammen. {{url}}"
+      },
+      "git-publish-pending": {
+        "title": "Veröffentlichung läuft",
+        "message": "Die Seite ist noch nicht live: Ein Pull Request ist offen und wird zusammengeführt, sobald seine Prüfungen erfolgreich sind. {{url}}"
+      },
+      "git-unpublish-pending": {
+        "title": "Zurückziehen läuft",
+        "message": "Die Seite ist noch live: Ein Pull Request, der sie entfernt, ist offen und wird zusammengeführt, sobald seine Prüfungen erfolgreich sind. {{url}}"
+      }
+    }
+  },
+  "settings": {
+    "VirtoCommerce": {
+      "SiteBuilder": {
+        "General": {
+          "StoreUrl": {
+            "description": "GeschäftsURL mit Site Builder Preview Handler",
+            "title": "GeschäftsURL"
+          },
+          "StorePreviewPath": {
+            "description": "Relativer Pfad für Vorschauseite",
+            "title": "Vorschau-Pfad des Geschäfts"
+          },
+          "OzAgentUrl": {
+            "title": "Virto OZ Agent-URL",
+            "description": "URL des in Site Builder eingebetteten Virto OZ AI-Agent-iFrames. Leer lassen, um den AI-Assistenten zu deaktivieren."
+          }
+        },
+        "Store": {
+          "GitContentEnabled": {
+            "title": "Seiten über Git veröffentlichen",
+            "description": "Wenn aktiviert, wird beim Speichern einer Seite ein Commit in einem Arbeitsbranch des konfigurierten Content-Repositorys erstellt, und beim Veröffentlichen wird ein Pull Request geöffnet und zusammengeführt — anstatt direkt in den Blob-Speicher zu schreiben. Erfordert eine auf dem Server konfigurierte Git-Content-Verbindung (SiteBuilder:GitContent)."
+          },
+          "PreviewUserIds": {
+            "title": "Benutzer-IDs für Vorschau",
+            "description": "Liste der Benutzer-IDs für die Vorschau-Imitation (eine pro Zeile)"
+          }
+        },
+        "Migration": {
+          "MetadataFromContentMigrated": {
+            "title": "Migration der Metadaten aus Inhalten abgeschlossen",
+            "description": "Die Migration der Metadaten von Inhaltsobjekten zu Seiten im Site Builder wurde erfolgreich durchgeführt."
+          }
+        }
+      }
+    }
+  },
+  "permissions": {
+    "builder:theme": "Erlaubnis, Theme-Einstellungen zu bearbeiten",
+    "builder:templates": "Erlaubnis, Vorlage während der Bearbeitung zu ändern"
+  }
+}

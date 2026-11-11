@@ -1,0 +1,214 @@
+using VirtoCommerce.Platform.Core.Settings;
+
+namespace VirtoCommerce.SiteBuilder.Core
+{
+    public static class ModuleConstants
+    {
+        public const string DefaultPageContent = "{ \"settings\": {}, \"content\": [] }";
+
+        public static class ContentProviders
+        {
+            /// <summary>
+            /// <see cref="VirtoCommerce.Pages.Core.ContentProviders.IPageContentProvider.ProviderName"/> of the Site Builder
+            /// content provider. Consumers (for example, the standalone preview in XCMS) select the provider by this name,
+            /// so it is a public contract and must not change.
+            /// </summary>
+            public const string SiteBuilder = "PageBuilder";
+        }
+
+        public static class SharedComponents
+        {
+            public const string ReferenceType = "componentRef";
+            public const string ReferenceProperty = "componentRef";
+            public const int NameMaxLength = 128;
+        }
+
+        public static class PageStatuses
+        {
+            public const string Draft = "Draft";
+            public const string Published = "Published";
+            public const string Archived = "Archived";
+        }
+
+        public static class PageTypes
+        {
+            public const string Landing = "Landing";
+            public const string Multilanguage = "Multilanguage";
+        }
+
+        public static class TranslationStatuses
+        {
+            /// <summary>A store language (or the requested one) has no version.</summary>
+            public const string Missing = "Missing";
+
+            /// <summary>A translation is behind the source language version.</summary>
+            public const string Outdated = "Outdated";
+        }
+
+        public static class PageLifecycleFilters
+        {
+            public const string Drafts = "drafts";
+            public const string Pending = "pending";
+            public const string Active = "active";
+            public const string Archived = "archived";
+        }
+
+        public static class Security
+        {
+            public static class Permissions
+            {
+                public const string Theme = "builder:theme";
+                public const string Templates = "builder:templates";
+                public const string Access = "builder:access";
+                public const string Create = "builder:create";
+                public const string Read = "builder:read";
+                public const string Update = "builder:update";
+                public const string Delete = "builder:delete";
+                public const string Publish = "builder:publish";
+                public const string SharedComponentsRead = "builder:shared-components:read";
+                public const string SharedComponentsCreate = "builder:shared-components:create";
+                public const string SharedComponentsUpdate = "builder:shared-components:update";
+                public const string SharedComponentsDelete = "builder:shared-components:delete";
+
+                /// <summary>
+                /// Promoting a page to production. Deliberately separate from <see cref="Publish"/>: that
+                /// one writes to the environment editors work against, this one changes the public site.
+                /// Folding them together would make "may edit pages" mean "may change the live site".
+                /// </summary>
+                public const string Promote = "builder:promote";
+
+                public static string[] AllPermissions { get; } =
+                [
+                    Theme,
+                    Templates,
+                    Access,
+                    Create,
+                    Read,
+                    Update,
+                    Delete,
+                    Publish,
+                    Promote,
+                    SharedComponentsRead,
+                    SharedComponentsCreate,
+                    SharedComponentsUpdate,
+                    SharedComponentsDelete,
+                ];
+            }
+        }
+
+        public static class Settings
+        {
+            /// <summary>
+            /// Object type store-level settings are registered and looked up under. Matches
+            /// <c>nameof(Store)</c>, kept here so layers that only need the key do not have to
+            /// reference the store module.
+            /// </summary>
+            public const string StoreSettingsObjectType = "Store";
+
+            public static class General
+            {
+                public static SettingDescriptor StoreUrl { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.General.StoreUrl",
+                    GroupName = "CMS|General",
+                    ValueType = SettingValueType.ShortText
+                };
+
+                public static SettingDescriptor StorePreviewPath { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                    ValueType = SettingValueType.ShortText,
+                    GroupName = "CMS|General",
+                    DefaultValue = "/designer-preview"
+                };
+
+                public static SettingDescriptor OzAgentUrl { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.General.OzAgentUrl",
+                    GroupName = "CMS|General",
+                    ValueType = SettingValueType.ShortText,
+                    DefaultValue = "",
+                };
+
+                public static IEnumerable<SettingDescriptor> AllGeneralSettings
+                {
+                    get
+                    {
+                        yield return StoreUrl;
+                        yield return StorePreviewPath;
+                        yield return OzAgentUrl;
+                    }
+                }
+            }
+
+            public static class Migration
+            {
+                public static SettingDescriptor MetadataFromContentMigrated { get; } = new()
+                {
+                    Name = "VirtoCommerce.PageBuilderModule.Migration.MetadataFromContentMigrated",
+                    GroupName = "CMS|Migration",
+                    ValueType = SettingValueType.Boolean,
+                    DefaultValue = false,
+                };
+
+                public static SettingDescriptor AssetReferenceIndexMigrated { get; } = new()
+                {
+                    Name = "VirtoCommerce.PageBuilderModule.Migration.AssetReferenceIndexMigrated",
+                    GroupName = "CMS|Migration",
+                    ValueType = SettingValueType.Boolean,
+                    DefaultValue = false,
+                };
+
+                public static IEnumerable<SettingDescriptor> AllMigrationSettings
+                {
+                    get
+                    {
+                        yield return MetadataFromContentMigrated;
+                        yield return AssetReferenceIndexMigrated;
+                    }
+                }
+            }
+
+            public static class StoreLevelSettings
+            {
+                public static SettingDescriptor PreviewUserIds { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.Store.PreviewUserIds",
+                    GroupName = "CMS|Site builder",
+                    ValueType = SettingValueType.LongText,
+                    DefaultValue = "",
+                };
+
+                /// <summary>
+                /// Turns the git content flow on for this store: pages are edited on git work branches
+                /// and published by merging into the production branch, instead of being written straight
+                /// to blob storage. Off by default — a store keeps its current behaviour until someone
+                /// opts it in. The connection itself (repository, token, base branch) lives in
+                /// appsettings under <see cref="GitContent.GitContentOptions.SectionName"/>; this switch
+                /// only decides which stores use it.
+                /// </summary>
+                public static SettingDescriptor GitContentEnabled { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.Store.GitContentEnabled",
+                    GroupName = "CMS|Site builder",
+                    ValueType = SettingValueType.Boolean,
+                    DefaultValue = false,
+                };
+
+                public static IEnumerable<SettingDescriptor> AllStoreLevelSettings
+                {
+                    get
+                    {
+                        yield return PreviewUserIds;
+                        yield return GitContentEnabled;
+                    }
+                }
+            }
+
+            public static IEnumerable<SettingDescriptor> AllSettings =>
+                General.AllGeneralSettings
+                    .Union(Migration.AllMigrationSettings)
+                    .Union(StoreLevelSettings.AllStoreLevelSettings);
+        }
+    }
+}

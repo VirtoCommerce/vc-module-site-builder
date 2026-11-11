@@ -1,0 +1,45 @@
+name: sitebuilder_save_page_content
+description: |
+  Save edited page JSON back into SiteBuilder as a draft. Replaces the entire page content of the given group; the backend reuses an existing draft or creates one as needed.
+
+  Use when: the user asks to modify an existing page, after `sitebuilder_get_page_content` + in-memory mutation.
+  Skip when: creating a fresh page — use `sitebuilder_create_page` instead.
+
+  Pass the full page JSON (not a diff) as a string. Envelope must follow `{ settings: object, content: array }` from the system prompt — the backend validates it and returns 400 with a specific error pointer if malformed.
+  Pass the eTag returned with the document you edited. A 412 means another author changed the page; stop and report the conflict. Never fetch a fresh eTag and reuse it with stale content.
+require_approval: true
+
+parameters:
+  type: object
+  properties:
+    groupId:
+      type: string
+      description: ID of the grouped page to update. Required.
+    content:
+      type: string
+      description: Full page JSON document as a string (same shape produced by sitebuilder_create_page / returned by sitebuilder_get_page_content). Required.
+    eTag:
+      type: string
+      description: Exact eTag returned by sitebuilder_get_page_content together with the content being edited. Required.
+  required:
+    - groupId
+    - content
+    - eTag
+
+execution:
+  endpoint: /api/site-builder-pages/grouped/{groupId}/content-json
+  method: POST
+  mappings:
+    request:
+      body:
+        content: "{{content}}"
+        eTag: "{{eTag}}"
+
+permission:
+  - builder:update
+
+tags:
+  - sitebuilder
+  - page
+  - update
+  - write

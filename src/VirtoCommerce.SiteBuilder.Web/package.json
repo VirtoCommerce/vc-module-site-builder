@@ -1,0 +1,23 @@
+{
+    "version": "1.0.0",
+    "name": "vc-module",
+    "private": true,
+    "scripts": {
+        "webpack:dev": "webpack --mode=development",
+        "webpack:watch": "webpack --watch --mode=development",
+        "webpack:build": "webpack --mode=production"
+    },
+    "devDependencies": {
+        "clean-webpack-plugin": "^4.0.0",
+        "css-loader": "^6.5.1",
+        "mini-css-extract-plugin": "^2.10.1",
+        "webpack": "^5.105.4",
+        "webpack-cli": "4.10.0"
+    },
+    "overrides": {
+      "serialize-javascript": "^7.0.3"
+    },
+    "webpack": {
+        "stats": "verbose"
+    }
+}

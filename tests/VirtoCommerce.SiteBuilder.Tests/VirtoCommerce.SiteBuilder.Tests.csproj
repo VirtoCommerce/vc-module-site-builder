@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data\VirtoCommerce.SiteBuilder.Data.csproj" />
+    <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.SqlServer\VirtoCommerce.SiteBuilder.Data.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.PostgreSql\VirtoCommerce.SiteBuilder.Data.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.MySql\VirtoCommerce.SiteBuilder.Data.MySql.csproj" />
+    <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Web\VirtoCommerce.SiteBuilder.Web.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Shared with the site builder shell tests, so both implementations of the permalink rule check the same cases. -->
+    <None Include="..\TestData\permalink-cases.json" Link="TestData\permalink-cases.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="10.1.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

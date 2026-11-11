@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <noWarn>1591;NU1608</noWarn>
+    <IsPackable>False</IsPackable>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Core\VirtoCommerce.SiteBuilder.Core.csproj" />
+    <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data.MySql\VirtoCommerce.SiteBuilder.Data.MySql.csproj" />
+    <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data.PostgreSql\VirtoCommerce.SiteBuilder.Data.PostgreSql.csproj" />
+    <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data.SqlServer\VirtoCommerce.SiteBuilder.Data.SqlServer.csproj" />
+    <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data\VirtoCommerce.SiteBuilder.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VirtoCommerce.SiteBuilder.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NSwag emits repeated request/response plumbing; regenerate these clients instead of refactoring them. -->
+    <SonarQubeSetting Include="sonar.cpd.exclusions">
+      <Value>**/Apps/site-builder-shell/src/api_client/virtocommerce.*.ts</Value>
+    </SonarQubeSetting>
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Content Include="ai\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AiFolder Include="ai\**" />
+  </ItemGroup>
+
+  <Target Name="CopyCustomContentOnPublish" AfterTargets="Publish">
+    <Copy SourceFiles="@(SiteBuilderApp)" DestinationFiles="$(PublishDir)\..\%(Identity)" />
+    <Copy SourceFiles="@(AiFolder)" DestinationFiles="$(PublishDir)\..\%(Identity)" />
+  </Target>
+</Project>

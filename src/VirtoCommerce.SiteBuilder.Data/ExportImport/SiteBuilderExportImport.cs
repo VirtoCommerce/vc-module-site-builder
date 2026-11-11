@@ -1,0 +1,371 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using VirtoCommerce.SiteBuilder.Core.Events;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.Platform.Core.Events;
+using VirtoCommerce.Platform.Core.ExportImport;
+using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
+
+
+namespace VirtoCommerce.SiteBuilder.Data.ExportImport;
+
+public sealed class SiteBuilderExportImport(
+    IGroupedPageService groupedPageService,
+    IGroupedPageSearchService groupedPageSearchService,
+    ISiteBuilderPageService siteBuilderPageService,
+    SiteBuilderSharedComponentExportImport sharedComponentExportImport,
+    IEventPublisher eventPublisher,
+    JsonSerializer jsonSerializer,
+    MultilanguagePageExportImport multilanguagePageExportImport = null)
+{
+    private const int BatchSize = 50;
+
+    public async Task DoExportAsync(Stream outStream, Action<ExportImportProgressInfo> progressCallback, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var progressInfo = new ExportImportProgressInfo { Description = "Site Builder pages are loading" };
+        progressCallback(progressInfo);
+
+        using var sw = new StreamWriter(outStream, leaveOpen: true);
+        using var writer = new JsonTextWriter(sw);
+
+        await writer.WriteStartObjectAsync(cancellationToken);
+
+        await sharedComponentExportImport.ExportAsync(
+            writer,
+            progressInfo,
+            progressCallback,
+            cancellationToken);
+
+        // Roots go before pages: a language version can only be imported once its root exists.
+        if (multilanguagePageExportImport != null)
+        {
+            await multilanguagePageExportImport.ExportAsync(writer, progressInfo, progressCallback, cancellationToken);
+        }
+
+        progressInfo.Description = "Site Builder pages are started to export";
+        progressCallback(progressInfo);
+
+        await writer.WritePropertyNameAsync("SiteBuilderPages", cancellationToken);
+        await writer.WriteStartArrayAsync(cancellationToken);
+
+        var criteria = AbstractTypeFactory<SiteBuilderPageSearchCriteria>.TryCreateInstance();
+        criteria.Take = BatchSize;
+        criteria.Statuses = $"{Draft},{Published},{Archived}";
+
+        var processedCount = 0;
+
+        for (criteria.Skip = 0; ; criteria.Skip += BatchSize)
+        {
+            var searchResult = await groupedPageSearchService.SearchNoCloneAsync(criteria);
+
+            foreach (var group in searchResult.Results)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var exportPage = await ConvertToExportPageAsync(group);
+                jsonSerializer.Serialize(writer, exportPage);
+                processedCount++;
+            }
+
+            await writer.FlushAsync(cancellationToken);
+
+            progressInfo.Description = $"{processedCount} of {searchResult.TotalCount} site builder pages have been exported";
+            progressInfo.ProcessedCount = processedCount;
+            progressInfo.TotalCount = searchResult.TotalCount;
+            progressCallback(progressInfo);
+
+            if (criteria.Skip + BatchSize >= searchResult.TotalCount)
+            {
+                break;
+            }
+        }
+
+        await writer.WriteEndArrayAsync(cancellationToken);
+        await writer.WriteEndObjectAsync(cancellationToken);
+        await writer.FlushAsync(cancellationToken);
+    }
+
+    public async Task DoImportAsync(Stream inputStream, Action<ExportImportProgressInfo> progressCallback, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var progressInfo = new ExportImportProgressInfo();
+        var hasMultilanguagePages = false;
+        var pageBufferPath = Path.Combine(
+            Path.GetTempPath(),
+            $"site-builder-import-{Guid.NewGuid():N}.json");
+        await using var pageBuffer = new FileStream(
+            pageBufferPath,
+            FileMode.CreateNew,
+            FileAccess.ReadWrite,
+            FileShare.None,
+            bufferSize: 81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.DeleteOnClose);
+
+        using (var pageBufferStreamWriter = new StreamWriter(pageBuffer, leaveOpen: true))
+        using (var pageBufferWriter = new JsonTextWriter(pageBufferStreamWriter))
+        {
+            await pageBufferWriter.WriteStartArrayAsync(cancellationToken);
+
+            using var streamReader = new StreamReader(inputStream, leaveOpen: true);
+            using var reader = new JsonTextReader(streamReader);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (reader.TokenType != JsonToken.PropertyName)
+                {
+                    continue;
+                }
+
+                if (reader.Value?.ToString() == "SiteBuilderSharedComponents")
+                {
+                    await sharedComponentExportImport.ImportAsync(
+                        reader,
+                        progressInfo,
+                        progressCallback,
+                        cancellationToken);
+                }
+                else if (reader.Value?.ToString() == MultilanguagePageExportImport.PropertyName && multilanguagePageExportImport != null)
+                {
+                    hasMultilanguagePages = true;
+                    await multilanguagePageExportImport.ImportAsync(reader, progressInfo, progressCallback, cancellationToken);
+                }
+                else if (reader.Value?.ToString() == "SiteBuilderPages")
+                {
+                    await BufferPagesArrayAsync(reader, pageBufferWriter, cancellationToken);
+                }
+            }
+
+            await pageBufferWriter.WriteEndArrayAsync(cancellationToken);
+            await pageBufferWriter.FlushAsync(cancellationToken);
+        }
+
+        pageBuffer.Position = 0;
+        using var pageBufferStreamReader = new StreamReader(pageBuffer, leaveOpen: true);
+        using var pageBufferReader = new JsonTextReader(pageBufferStreamReader);
+        await ImportPagesArrayAsync(pageBufferReader, progressInfo, progressCallback, hasMultilanguagePages, cancellationToken);
+    }
+
+    /// <param name="hasMultilanguagePages">The file was exported with multilanguage pages, so a page without a link is a Landing Page.
+    /// A file exported before them carries no links at all and must not unlink the existing language versions.</param>
+    private async Task ImportPagesArrayAsync(JsonTextReader reader, ExportImportProgressInfo progressInfo, Action<ExportImportProgressInfo> progressCallback,
+        bool hasMultilanguagePages, CancellationToken cancellationToken)
+    {
+        if (!await reader.ReadAsync(cancellationToken) || reader.TokenType != JsonToken.StartArray)
+        {
+            return;
+        }
+
+        var processedCount = 0;
+
+        while (await reader.ReadAsync(cancellationToken) && reader.TokenType != JsonToken.EndArray)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var exportPage = jsonSerializer.Deserialize<SiteBuilderExportPage>(reader);
+            if (exportPage != null)
+            {
+                await ImportPageAsync(exportPage, progressInfo, hasMultilanguagePages, cancellationToken);
+                processedCount++;
+
+                progressInfo.Description = $"{processedCount} site builder pages have been imported";
+                progressInfo.ProcessedCount = processedCount;
+                progressCallback(progressInfo);
+            }
+        }
+    }
+
+    private async Task ImportPageAsync(SiteBuilderExportPage exportPage, ExportImportProgressInfo progressInfo, bool hasMultilanguagePages,
+        CancellationToken cancellationToken)
+    {
+        // Validate the union once, before replacing group metadata or variants. Deterministic content errors
+        // must not leave an existing group partially replaced; batching also avoids one component query per variant.
+        await sharedComponentExportImport.ValidatePageReferencesAsync(
+            exportPage.StoreId,
+            exportPage.Variants.Select(x => x.Content),
+            cancellationToken);
+
+        GroupedSiteBuilderPage existingGroup = null;
+
+        if (!string.IsNullOrEmpty(exportPage.GroupId))
+        {
+            existingGroup = await groupedPageService.GetByIdAsync(exportPage.GroupId);
+        }
+
+        if (existingGroup != null)
+        {
+            await UpdateExistingGroupAsync(existingGroup, exportPage, cancellationToken);
+            if (multilanguagePageExportImport != null && (hasMultilanguagePages || !string.IsNullOrEmpty(exportPage.MultilanguagePageId)))
+            {
+                await multilanguagePageExportImport.SyncLinkAsync(existingGroup, exportPage.MultilanguagePageId, progressInfo, cancellationToken);
+            }
+        }
+        else
+        {
+            await CreateNewGroupAsync(exportPage, progressInfo, cancellationToken);
+        }
+    }
+
+    private async Task UpdateExistingGroupAsync(
+        GroupedSiteBuilderPage group,
+        SiteBuilderExportPage exportPage,
+        CancellationToken cancellationToken)
+    {
+        ApplyMetadata(group, exportPage);
+
+        // Replace pages with exported snapshot
+        group.Pages = [.. exportPage.Variants.Select(v =>
+        {
+            var page = AbstractTypeFactory<SiteBuilderPage>.TryCreateInstance();
+            page.Id = v.PageId;
+            page.Status = v.Status;
+            page.StoreId = exportPage.StoreId;
+            page.GroupId = group.Id;
+            return page;
+        })];
+
+        await groupedPageService.SaveChangesAsync([group]);
+
+        await SaveVariantsContentAsync(exportPage.Variants, cancellationToken);
+    }
+
+    private async Task CreateNewGroupAsync(SiteBuilderExportPage exportPage, ExportImportProgressInfo progressInfo, CancellationToken cancellationToken)
+    {
+        var newGroup = AbstractTypeFactory<GroupedSiteBuilderPage>.TryCreateInstance();
+        newGroup.Id = exportPage.GroupId;
+        ApplyMetadata(newGroup, exportPage);
+        if (multilanguagePageExportImport != null)
+        {
+            newGroup.MultilanguagePageId = await multilanguagePageExportImport.GetExistingIdAsync(exportPage.MultilanguagePageId);
+        }
+
+        foreach (var variant in exportPage.Variants)
+        {
+            var page = AbstractTypeFactory<SiteBuilderPage>.TryCreateInstance();
+            page.Id = variant.PageId;
+            page.GroupId = newGroup.Id;
+            page.Status = variant.Status;
+            page.StoreId = exportPage.StoreId;
+            newGroup.Pages.Add(page);
+        }
+
+        try
+        {
+            await groupedPageService.SaveChangesAsync([newGroup]);
+        }
+        catch (InvalidDataException ex) when (!string.IsNullOrEmpty(newGroup.MultilanguagePageId))
+        {
+            // The root already has this language (or is in another store): the page is kept as a Landing Page.
+            // The link is the only difference, so an error unrelated to it fails the retry and is not reported as a link error.
+            newGroup.MultilanguagePageId = null;
+            await groupedPageService.SaveChangesAsync([newGroup]);
+            progressInfo.Errors.Add($"Page '{newGroup.Id}' was imported without its multilanguage page link: {ex.Message}");
+        }
+
+        await SaveVariantsContentAsync(exportPage.Variants, cancellationToken);
+    }
+
+    private static void ApplyMetadata(GroupedSiteBuilderPage group, SiteBuilderExportPage exportPage)
+    {
+        group.Name = exportPage.Name;
+        group.Permalink = exportPage.Permalink;
+        group.StoreId = exportPage.StoreId;
+        group.CultureName = exportPage.CultureName;
+        group.Visibility = exportPage.Visibility;
+        group.UserGroups = exportPage.UserGroups;
+        group.OrganizationId = exportPage.OrganizationId;
+        group.StartDate = exportPage.StartDate;
+        group.EndDate = exportPage.EndDate;
+    }
+
+    private async Task SaveVariantsContentAsync(
+        IList<SiteBuilderExportPageVariant> variants,
+        CancellationToken cancellationToken)
+    {
+        var variantsWithContent = variants
+            .Where(v => !string.IsNullOrEmpty(v.PageId) && !string.IsNullOrEmpty(v.Content))
+            .ToArray();
+
+        foreach (var variant in variantsWithContent)
+        {
+            await groupedPageService.SaveContent(variant.PageId, variant.Content, cancellationToken);
+        }
+
+        if (variantsWithContent.Length > 0 && siteBuilderPageService != null && eventPublisher != null)
+        {
+            var pages = await siteBuilderPageService.GetAsync(variantsWithContent.Select(x => x.PageId).ToArray());
+            var changedEntries = pages
+                .Select(x => new GenericChangedEntry<SiteBuilderPage>(x, EntryState.Modified))
+                .ToArray();
+
+            if (changedEntries.Length > 0)
+            {
+                await eventPublisher.Publish(new SiteBuilderPageChangedEvent(changedEntries), cancellationToken);
+            }
+        }
+    }
+
+    private async Task BufferPagesArrayAsync(
+        JsonTextReader reader,
+        JsonTextWriter writer,
+        CancellationToken cancellationToken)
+    {
+        if (!await reader.ReadAsync(cancellationToken) || reader.TokenType != JsonToken.StartArray)
+        {
+            return;
+        }
+
+        while (await reader.ReadAsync(cancellationToken) && reader.TokenType != JsonToken.EndArray)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var exportPage = jsonSerializer.Deserialize<SiteBuilderExportPage>(reader);
+            if (exportPage != null)
+            {
+                jsonSerializer.Serialize(writer, exportPage);
+            }
+        }
+
+        await writer.FlushAsync(cancellationToken);
+    }
+
+    private async Task<SiteBuilderExportPage> ConvertToExportPageAsync(GroupedSiteBuilderPage group)
+    {
+        var exportPage = new SiteBuilderExportPage
+        {
+            GroupId = group.Id,
+            Name = group.Name,
+            Permalink = group.Permalink,
+            StoreId = group.StoreId,
+            CultureName = group.CultureName,
+            Visibility = group.Visibility,
+            UserGroups = group.UserGroups,
+            OrganizationId = group.OrganizationId,
+            StartDate = group.StartDate,
+            EndDate = group.EndDate,
+            MultilanguagePageId = group.MultilanguagePageId,
+        };
+
+        foreach (var page in group.Pages)
+        {
+            var content = await groupedPageService.LoadContent(page.Id);
+            exportPage.Variants.Add(new SiteBuilderExportPageVariant
+            {
+                PageId = page.Id,
+                Status = page.Status,
+                Content = content,
+            });
+        }
+
+        return exportPage;
+    }
+}

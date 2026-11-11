@@ -1,0 +1,238 @@
+using Microsoft.EntityFrameworkCore;
+using VirtoCommerce.SiteBuilder.Data.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
+
+namespace VirtoCommerce.SiteBuilder.Data.Repositories;
+
+internal static class SiteBuilderPageIndexing
+{
+    private const int QueryBatchSize = 500;
+
+    internal static async Task RebuildAfterRawContentWriteAsync(
+        SiteBuilderDbContext dbContext,
+        string pageId,
+        string rawContent,
+        string groupStoreId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTransaction(dbContext);
+
+        var page = await dbContext.Set<SiteBuilderPageEntity>()
+            .Where(x => x.Id == pageId)
+            .Select(x => new { x.StoreId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (page == null)
+        {
+            throw new KeyNotFoundException($"Page '{pageId}' was not found.");
+        }
+
+        var pageStoreId = page.StoreId ?? groupStoreId;
+        if (string.IsNullOrWhiteSpace(pageStoreId))
+        {
+            throw new InvalidDataException($"Page '{pageId}' has no store.");
+        }
+
+        var sharedComponentIds = SiteBuilderWriteLock.OrderIds(
+            SiteBuilderSharedComponentReferenceMatcher.ExtractReferences(rawContent));
+
+        await SiteBuilderWriteLock.AcquireSharedComponentLocksAsync(
+            dbContext,
+            sharedComponentIds,
+            cancellationToken);
+        await ValidateLockedComponentsAsync(
+            dbContext,
+            sharedComponentIds,
+            pageStoreId,
+            cancellationToken);
+
+        await ReplaceSharedComponentIndexAsync(
+            dbContext,
+            pageId,
+            sharedComponentIds,
+            cancellationToken);
+        await ReplaceAssetReferenceIndexAsync(
+            dbContext,
+            pageId,
+            rawContent,
+            cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    // Older repository decorators expose the original query, lock and indexing contracts.
+    internal static async Task RebuildAfterRawContentWriteAsync(
+        ISiteBuilderRepository repository, string pageId, string rawContent, string groupStoreId, CancellationToken cancellationToken)
+    {
+        var page = await repository.SiteBuilderPages.Where(x => x.Id == pageId)
+            .Select(x => new { x.StoreId }).FirstOrDefaultAsync(cancellationToken);
+        if (page == null)
+        {
+            throw new KeyNotFoundException($"Page '{pageId}' was not found.");
+        }
+        var pageStoreId = page.StoreId ?? groupStoreId;
+        if (string.IsNullOrWhiteSpace(pageStoreId))
+        {
+            throw new InvalidDataException($"Page '{pageId}' has no store.");
+        }
+        var sharedComponentIds = SiteBuilderWriteLock.OrderIds(SiteBuilderSharedComponentReferenceMatcher.ExtractReferences(rawContent));
+        var rebuilt = await repository.ExecuteUnderSharedComponentWriteLocksAsync(sharedComponentIds, async ct =>
+        {
+            await SiteBuilderSharedComponentReferenceIndexService.ValidateComponentsAsync(repository, sharedComponentIds, pageStoreId, ct);
+            var references = await repository.SiteBuilderSharedComponentReferences.Where(x => x.PageId == pageId).ToListAsync(ct);
+            foreach (var reference in references)
+            {
+                repository.Remove(reference);
+            }
+            foreach (var sharedComponentId in sharedComponentIds)
+            {
+                repository.Add(new SiteBuilderSharedComponentReferenceEntity
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    PageId = pageId,
+                    SharedComponentId = sharedComponentId,
+                });
+            }
+            await repository.RebuildPageAssetReferenceIndexAsync(pageId, ct);
+            await repository.UnitOfWork.CommitAsync();
+        }, cancellationToken);
+        if (!rebuilt)
+        {
+            // The built-in path reports missing rows in lock order before validating store/content.
+            foreach (var batch in sharedComponentIds.Chunk(QueryBatchSize))
+            {
+                var existingIds = await repository.SiteBuilderSharedComponents.Where(x => batch.Contains(x.Id))
+                    .Select(x => x.Id).ToListAsync(cancellationToken);
+                var missingId = batch.Except(existingIds, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                if (missingId != null)
+                {
+                    throw new InvalidDataException($"Shared Component '{missingId}' was not found.");
+                }
+            }
+            throw new InvalidDataException("Shared Component write locks could not be acquired.");
+        }
+    }
+
+    internal static async Task RebuildCurrentRawPageAssetIndexAsync(
+        SiteBuilderDbContext dbContext,
+        string pageId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTransaction(dbContext);
+
+        var rawContent = await dbContext.Set<SiteBuilderContentEntity>()
+            .AsNoTracking()
+            .Where(x => x.Id == pageId)
+            .Select(x => x.PageContent)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        await ReplaceAssetReferenceIndexAsync(
+            dbContext,
+            pageId,
+            rawContent,
+            cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task ValidateLockedComponentsAsync(
+        SiteBuilderDbContext dbContext,
+        string[] sharedComponentIds,
+        string pageStoreId,
+        CancellationToken cancellationToken)
+    {
+        if (sharedComponentIds.Length == 0)
+        {
+            return;
+        }
+
+        var componentStores = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var contentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var batch in sharedComponentIds.Chunk(QueryBatchSize))
+        {
+            var stores = await dbContext.Set<SiteBuilderSharedComponentEntity>()
+                .Where(x => batch.Contains(x.Id))
+                .Select(x => new { x.Id, x.StoreId })
+                .ToListAsync(cancellationToken);
+            var batchContentIds = await dbContext.Set<SiteBuilderSharedComponentContentEntity>()
+                .Where(x => batch.Contains(x.Id))
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+
+            foreach (var component in stores)
+            {
+                componentStores[component.Id] = component.StoreId;
+            }
+
+            contentIds.UnionWith(batchContentIds);
+        }
+
+        SiteBuilderSharedComponentReferenceValidator.Validate(
+            sharedComponentIds,
+            pageStoreId,
+            componentStores,
+            contentIds);
+    }
+
+    private static async Task ReplaceSharedComponentIndexAsync(
+        SiteBuilderDbContext dbContext,
+        string pageId,
+        IEnumerable<string> sharedComponentIds,
+        CancellationToken cancellationToken)
+    {
+        var existingReferences = await dbContext.Set<SiteBuilderSharedComponentReferenceEntity>()
+            .Where(x => x.PageId == pageId)
+            .ToListAsync(cancellationToken);
+        dbContext.RemoveRange(existingReferences);
+
+        await dbContext.AddRangeAsync(
+            sharedComponentIds.Select(sharedComponentId => new SiteBuilderSharedComponentReferenceEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                PageId = pageId,
+                SharedComponentId = sharedComponentId,
+            }),
+            cancellationToken);
+    }
+
+    private static async Task ReplaceAssetReferenceIndexAsync(
+        SiteBuilderDbContext dbContext,
+        string pageId,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(pageId))
+        {
+            return;
+        }
+
+        var pageExists = await dbContext.Set<SiteBuilderPageEntity>()
+            .AnyAsync(x => x.Id == pageId, cancellationToken);
+        var existingReferences = await dbContext.Set<SiteBuilderAssetReferenceEntity>()
+            .Where(x => x.PageId == pageId)
+            .ToListAsync(cancellationToken);
+
+        dbContext.RemoveRange(existingReferences);
+
+        if (pageExists)
+        {
+            await dbContext.AddRangeAsync(
+                SiteBuilderAssetReferenceMatcher.ExtractReferences(content)
+                    .Select(reference => new SiteBuilderAssetReferenceEntity
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        PageId = pageId,
+                        NormalizedAssetUrl = reference,
+                        NormalizedAssetUrlHash = SiteBuilderAssetReferenceMatcher.GetAssetUrlHash(reference),
+                    }),
+                cancellationToken);
+        }
+    }
+
+    private static void EnsureTransaction(SiteBuilderDbContext dbContext)
+    {
+        if (dbContext.Database.CurrentTransaction == null)
+        {
+            throw new InvalidOperationException("Page content and its indexes must share a database transaction.");
+        }
+    }
+}

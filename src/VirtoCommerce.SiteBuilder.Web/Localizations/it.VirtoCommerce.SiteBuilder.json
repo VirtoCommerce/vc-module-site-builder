@@ -1,0 +1,114 @@
+{
+  "module": {
+    "VirtoCommerce.SiteBuilder": {
+      "description": "Esportazione/importazione delle pagine di Site Builder"
+    }
+  },
+  "siteBuilder": {
+    "blades": {
+      "edit-page": {
+        "title": "Modifica '{{name}}'",
+        "subtitle": "Modifica pagina",
+        "title-new": "Nuova pagina",
+        "subtitle-new": "Crea nuova pagina",
+        "subtitle-post": "Modifica blogpost",
+        "title-new-post": "Nuovo post",
+        "subtitle-new-post": "Crea nuovo blogpost",
+        "labels": {
+          "filename": "Nome file",
+          "name": "Nome",
+          "language": "Lingua",
+          "permalink": "Permalink",
+          "drag-note": "Trascina e rilascia il file qui",
+          "progress": "Progresso",
+          "markdown": "Markdown",
+          "metadata": "Metadati",
+          "relativePath": "Percorso relativo"
+        },
+        "placeholders": {
+          "filename": "Inserisci nome file",
+          "name": "Inserisci nome",
+          "language": "Seleziona...",
+          "permalink": "Inserisci permalink"
+        },
+        "validations": {
+          "pageName-invalid": "Il nome della pagina può contenere solo caratteri alfanumerici, \"_\", \"-\" e \".\"",
+          "permalink-invalid": "Altre pagine hanno lo stesso permalink",
+          "permalink-format-invalid": "Il permalink deve avere al massimo 2048 caratteri e non può contenere spazi o caratteri invisibili, i caratteri ? # & % \\ \" < > { } | ^ `, doppie barre o i segmenti . e .."
+        },
+        "hints": {
+          "rename-in-git": "Questo negozio pubblica le pagine tramite Git, dove il nome del file è l'indirizzo della pagina nel repository. Rinominala lì, tramite una pull request."
+        }
+      },
+      "siteBuilderEditor": {
+        "create": {
+          "title": "Progetta pagina",
+          "description": "Usa il designer per creare una nuova pagina"
+        },
+        "edit": {
+          "title": "Progetta pagina",
+          "description": "Usa il designer per modificare la pagina"
+        }
+      }
+    },
+    "commands": {
+      "open-designer": "Progetta",
+      "publish": "Pubblica",
+      "unpublish": "Annulla pubblicazione"
+    },
+    "dialogs": {
+      "git-awaiting-merge": {
+        "title": "La pubblicazione richiede un altro passaggio",
+        "message": "La pull request di questa pagina è aperta ma non verrà unita da sola: questo repository non consente l'auto-merge e un controllo obbligatorio non è passato. Pubblica di nuovo quando i controlli sono verdi, oppure uniscila in GitHub. {{url}}"
+      },
+      "git-publish-pending": {
+        "title": "Pubblicazione in corso",
+        "message": "La pagina non è ancora online: una pull request è aperta e verrà unita quando i suoi controlli saranno superati. {{url}}"
+      },
+      "git-unpublish-pending": {
+        "title": "Rimozione dalla pubblicazione in corso",
+        "message": "La pagina è ancora online: una pull request che la rimuove è aperta e verrà unita quando i suoi controlli saranno superati. {{url}}"
+      }
+    }
+  },
+  "settings": {
+    "VirtoCommerce": {
+      "SiteBuilder": {
+        "General": {
+          "StoreUrl": {
+            "description": "URL del negozio con gestore anteprima Site Builder",
+            "title": "URL del negozio"
+          },
+          "StorePreviewPath": {
+            "description": "Percorso relativo per l'anteprima della pagina",
+            "title": "Percorso di anteprima del negozio"
+          },
+          "OzAgentUrl": {
+            "title": "URL dell'agente Virto OZ",
+            "description": "URL dell'iframe dell'agente IA Virto OZ incorporato in Site Builder. Lasciare vuoto per disabilitare l'assistente IA."
+          }
+        },
+        "Store": {
+          "GitContentEnabled": {
+            "title": "Pubblica le pagine tramite Git",
+            "description": "Se abilitato, il salvataggio di una pagina crea un commit in un branch di lavoro del repository di contenuti configurato e la pubblicazione apre e unisce una pull request, invece di scrivere direttamente nell'archivio blob. Richiede una connessione ai contenuti Git configurata sul server (SiteBuilder:GitContent)."
+          },
+          "PreviewUserIds": {
+            "title": "ID utente per anteprima",
+            "description": "Elenco degli ID utente per l'impersonificazione nell'anteprima (uno per riga)"
+          }
+        },
+        "Migration": {
+          "MetadataFromContentMigrated": {
+            "title": "Migrazione dei metadati da contenuti completata",
+            "description": "La migrazione dei metadati degli elementi di contenuto verso le pagine del generatore di pagine è stata completata con successo."
+          }
+        }
+      }
+    }
+  },
+  "permissions": {
+    "builder:theme": "Consenti la modifica delle impostazioni del tema",
+    "builder:templates": "Consenti la modifica del modello durante la modifica"
+  }
+}

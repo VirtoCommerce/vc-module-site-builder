@@ -1,0 +1,72 @@
+import type {
+  SiteBuilderAssetReference,
+  SiteBuilderAssetReferenceSharedComponent,
+  SiteBuilderAssetReferencePage,
+} from "../../api_client/virtocommerce.sitebuilder";
+
+export type AssetReferencePage = SiteBuilderAssetReferencePage;
+export type AssetReferenceSharedComponent = SiteBuilderAssetReferenceSharedComponent;
+export type AssetReference = SiteBuilderAssetReference;
+
+export interface AssetReferenceDetails {
+  referencesCount: number;
+  pageReferencesCount: number;
+  sharedComponentReferencesCount: number;
+  referencePages: AssetReferencePage[];
+  referenceSharedComponents: AssetReferenceSharedComponent[];
+}
+
+export interface AssetEntry {
+  type: "folder" | "blob";
+  name: string;
+  url?: string;
+  relativeUrl?: string;
+  contentType?: string;
+  size?: number;
+  referencesCount?: number;
+  pageReferencesCount?: number;
+  sharedComponentReferencesCount?: number;
+  referencePages?: AssetReferencePage[];
+  referenceSharedComponents?: AssetReferenceSharedComponent[];
+  modifiedDate?: string;
+  createdDate?: string;
+}
+
+export interface AssetSearchResult {
+  fileCount?: number;
+  skip?: number;
+  totalCount: number;
+  results: AssetEntry[];
+}
+
+export interface CreateFolderPayload {
+  name: string;
+  parentUrl: string;
+}
+
+export type AssetLibraryViewMode = "grid" | "table";
+
+export interface AssetLibraryEntryViewModel {
+  id: string;
+  key: string;
+  entry: AssetEntry;
+  name: string;
+  type: AssetEntry["type"];
+  contentType?: string;
+  isFolder: boolean;
+  isBlob: boolean;
+  isImage: boolean;
+  selected: boolean;
+  dropTarget: boolean;
+  dropFolderUrl?: string;
+  icon: string;
+  previewUrl?: string;
+  referencesCount: number;
+  referencesAvailable: boolean;
+  formattedSize: string;
+  formattedDate: string;
+}
+
+export interface AssetLibraryDetailsViewModel extends AssetLibraryEntryViewModel, AssetReferenceDetails {
+  dimensions?: string;
+}

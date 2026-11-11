@@ -1,0 +1,114 @@
+{
+  "module": {
+    "VirtoCommerce.SiteBuilder": {
+      "description": "导出/导入 Site Builder 页面"
+    }
+  },
+  "siteBuilder": {
+    "blades": {
+      "edit-page": {
+        "title": "编辑 '{{name}}'",
+        "subtitle": "页面编辑",
+        "title-new": "新页面",
+        "subtitle-new": "创建新页面",
+        "subtitle-post": "博客文章编辑",
+        "title-new-post": "新文章",
+        "subtitle-new-post": "创建新博客文章",
+        "labels": {
+          "filename": "文件名",
+          "name": "名称",
+          "language": "语言",
+          "permalink": "永久链接",
+          "drag-note": "将文件拖放到此处",
+          "progress": "进度",
+          "markdown": "Markdown",
+          "metadata": "元数据",
+          "relativePath": "相对路径"
+        },
+        "placeholders": {
+          "filename": "输入文件名",
+          "name": "输入名称",
+          "language": "选择...",
+          "permalink": "输入永久链接"
+        },
+        "validations": {
+          "pageName-invalid": "页面名称只能包含字母、数字、\"_\", \"-\", 和 \".\" 字符",
+          "permalink-invalid": "其他页面使用了相同的永久链接",
+          "permalink-format-invalid": "永久链接最多 2048 个字符，不能包含空格或不可见字符、字符 ? # & % \\ \" < > { } | ^ `、双斜杠以及 . 和 .. 路径段"
+        },
+        "hints": {
+          "rename-in-git": "此店铺通过 Git 发布页面，文件名即页面在仓库中的地址。请在仓库中通过 pull request 重命名。"
+        }
+      },
+      "siteBuilderEditor": {
+        "create": {
+          "title": "设计页面",
+          "description": "使用设计器创建新页面"
+        },
+        "edit": {
+          "title": "设计页面",
+          "description": "使用设计器编辑页面"
+        }
+      }
+    },
+    "commands": {
+      "open-designer": "设计",
+      "publish": "发布",
+      "unpublish": "取消发布"
+    },
+    "dialogs": {
+      "git-awaiting-merge": {
+        "title": "发布还需要一步",
+        "message": "此页面的 pull request 已打开，但不会自动合并：该仓库未启用自动合并，且必需检查尚未通过。检查通过后再次发布，或在 GitHub 中合并。{{url}}"
+      },
+      "git-publish-pending": {
+        "title": "正在发布",
+        "message": "页面尚未上线：pull request 已打开，检查通过后将合并。{{url}}"
+      },
+      "git-unpublish-pending": {
+        "title": "正在取消发布",
+        "message": "页面仍在线：删除该页面的 pull request 已打开，检查通过后将合并。{{url}}"
+      }
+    }
+  },
+  "settings": {
+    "VirtoCommerce": {
+      "SiteBuilder": {
+        "General": {
+          "StoreUrl": {
+            "description": "带有Site Builder预览处理程序的商店URL",
+            "title": "商店URL"
+          },
+          "StorePreviewPath": {
+            "description": "预览页面的相对路径",
+            "title": "商店预览路径"
+          },
+          "OzAgentUrl": {
+            "title": "Virto OZ 代理 URL",
+            "description": "嵌入到 Site Builder 中的 Virto OZ AI 代理 iframe 的 URL。留空可禁用 AI 助手。"
+          }
+        },
+        "Store": {
+          "GitContentEnabled": {
+            "title": "通过 Git 发布页面",
+            "description": "启用后，保存页面时会将其提交到已配置内容仓库的工作分支，发布时会打开并合并拉取请求（pull request），而不是直接写入 blob 存储。需要在服务器上配置 Git 内容连接（SiteBuilder:GitContent）。"
+          },
+          "PreviewUserIds": {
+            "title": "预览用户ID",
+            "description": "用于页面预览模拟的用户ID列表（每行一个）"
+          }
+        },
+        "Migration": {
+          "MetadataFromContentMigrated": {
+            "title": "迁移内容元数据完成",
+            "description": "内容项的元数据迁移到页面构建器页面已成功完成。"
+          }
+        }
+      }
+    }
+  },
+  "permissions": {
+    "builder:theme": "允许编辑主题设置",
+    "builder:templates": "允许在编辑期间更改模板"
+  }
+}
