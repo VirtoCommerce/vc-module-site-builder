@@ -27,7 +27,7 @@ public class SiteBuilderPageItemType : BuilderPageItemType
         _groupedPageService = groupedPageService;
 
         // the name GraphQL would take from this class would rename the type in the schema
-        Name = "BuilderPageItem";
+        Name = "BuilderPageItemType";
     }
 
     protected override async Task<string> LoadContent(IResolveFieldContext<BuilderPageItem> context)

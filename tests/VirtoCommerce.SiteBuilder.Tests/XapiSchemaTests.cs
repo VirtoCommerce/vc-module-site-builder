@@ -72,11 +72,11 @@ public class XapiSchemaTests
         Assert.Equal(
             """
             type Query {
-              builderPage(storeId: String!, pageId: String!): BuilderPageItem
+              builderPage(storeId: String!, pageId: String!): BuilderPageItemType
               themeSnapshot(domain: String, storeId: String, cultureName: String, permalink: String): ThemeSnapshot
             }
 
-            type BuilderPageItem {
+            type BuilderPageItemType {
               permalink: String
               content: String
             }

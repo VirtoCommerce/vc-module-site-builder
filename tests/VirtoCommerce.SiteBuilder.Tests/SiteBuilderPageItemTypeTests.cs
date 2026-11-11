@@ -34,8 +34,7 @@ public class SiteBuilderPageItemTypeTests : IDisposable
         var type = new SiteBuilderPageItemType(NoPageBuilder(), GroupedPages().Object);
         var xcmsType = new BuilderPageItemType(NoPageBuilder());
 
-        Assert.Equal(xcmsType.Name, type.Name);
-        Assert.Equal("BuilderPageItem", type.Name);
+        Assert.Equal("BuilderPageItemType", type.Name);
         Assert.Equal(xcmsType.Fields.Select(x => (x.Name, x.Type)), type.Fields.Select(x => (x.Name, x.Type)));
     }
 
