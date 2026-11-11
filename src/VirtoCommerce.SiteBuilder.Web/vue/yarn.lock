@@ -2562,6 +2562,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/markdown-it@npm:14.2.0, @types/markdown-it@npm:^14.0.0":
+  version: 14.2.0
+  resolution: "@types/markdown-it@npm:14.2.0"
+  dependencies:
+    "@types/linkify-it": "npm:^5"
+    "@types/mdurl": "npm:^2"
+  checksum: 10/9376d449bd103c74853abf8abdc649354aca59c628fe431c75cae1c916dcef6a308ff4c30eb5f8477a6df875ecc8229d1ff5316652ce7c7070baf46d91e2b43e
+  languageName: node
+  linkType: hard
+
 "@types/markdown-it@npm:^13.0.7":
   version: 13.0.9
   resolution: "@types/markdown-it@npm:13.0.9"
@@ -2569,16 +2579,6 @@ __metadata:
     "@types/linkify-it": "npm:^3"
     "@types/mdurl": "npm:^1"
   checksum: 10/c8ad045cc5a4fd9179007ef3c00c35c7515ed76408790cdb04dfe5171850573c39d68a504136ea5df0ea17e9fd0158c2b274ef1346aac3e5f404bc0b9b114f9c
-  languageName: node
-  linkType: hard
-
-"@types/markdown-it@npm:^14.0.0":
-  version: 14.2.0
-  resolution: "@types/markdown-it@npm:14.2.0"
-  dependencies:
-    "@types/linkify-it": "npm:^5"
-    "@types/mdurl": "npm:^2"
-  checksum: 10/9376d449bd103c74853abf8abdc649354aca59c628fe431c75cae1c916dcef6a308ff4c30eb5f8477a6df875ecc8229d1ff5316652ce7c7070baf46d91e2b43e
   languageName: node
   linkType: hard
 
@@ -4613,7 +4613,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dompurify@npm:^3.0.11":
+"dompurify@npm:3.4.17, dompurify@npm:^3.0.11":
   version: 3.4.17
   resolution: "dompurify@npm:3.4.17"
   dependencies:
@@ -5777,7 +5777,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"markdown-it@npm:^14.0.0, markdown-it@npm:^14.1.0":
+"markdown-it@npm:14.3.2, markdown-it@npm:^14.0.0, markdown-it@npm:^14.1.0":
   version: 14.3.2
   resolution: "markdown-it@npm:14.3.2"
   dependencies:
@@ -6987,6 +6987,7 @@ __metadata:
   dependencies:
     "@tiptap/core": "npm:^3.4.2"
     "@types/lodash-es": "npm:^4.17.12"
+    "@types/markdown-it": "npm:14.2.0"
     "@types/node": "npm:^20.10.5"
     "@types/sortablejs": "npm:^1"
     "@vc-shell/api-client-generator": "npm:2.7.0"
@@ -7000,8 +7001,10 @@ __metadata:
     "@vueuse/integrations": "npm:^10.11.1"
     autoprefixer: "npm:^10.4.27"
     cross-env: "npm:^7.0.3"
+    dompurify: "npm:3.4.17"
     jsdom: "npm:^29.1.1"
     lodash-es: "npm:^4.18.1"
+    markdown-it: "npm:14.3.2"
     postcss: "npm:^8.5.13"
     sass: "npm:^1.87.0"
     sortablejs: "npm:^1.15.7"

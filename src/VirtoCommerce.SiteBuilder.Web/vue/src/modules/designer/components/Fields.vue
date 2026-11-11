@@ -32,7 +32,7 @@
         :required="field.required"
         :maxlength="LONG_TEXT_MAX_LENGTH"
         :class="{ 'pd-fields__code': field.type === 'markdown' }"
-        @update:model-value="setText(field, $event)"
+        @update:model-value="field.type === 'markdown' ? setMarkdown(field, $event) : setText(field, $event)"
       />
       <VcEditor
         v-else-if="field.type === 'text'"
@@ -341,6 +341,7 @@ import { SEARCH_DEBOUNCE_MS, requestResult, runSearch, searchDisplayValue, type 
 import { assetTypes } from "../assetTypes";
 import { moveItem } from "../rules";
 import { LONG_TEXT_MAX_LENGTH } from "../json";
+import { markdownOf, markdownValue, resultTypeOf, translationText } from "../markdown";
 import ImageField from "./ImageField.vue";
 import ImageListField from "./ImageListField.vue";
 
@@ -430,8 +431,18 @@ function keepInRange(field: Field) {
 const TEXT_TYPES = ["string", "markdown", "text"];
 const translated = (field: Field) =>
   props.translation && TEXT_TYPES.includes(field.type) && (field.translatable || isTranslations(props.values[field.id!])) ? props.translation : undefined;
-const text = (field: Field) => {
+/** A markdown setting may hold its markdown and HTML together; the textarea and the translations work on its text. */
+const textValue = (field: Field) => {
   const value = props.values[field.id!];
+  return field.type === "markdown" && !isTranslations(value) ? markdownOf(value) : value;
+};
+// A field that stores HTML only would show the HTML of each keystroke, so the typed markdown stays shown until
+// the value changes from elsewhere, an undo for one.
+const typedMarkdown = new Map<Field, { text: string; value: string; language?: string }>();
+const text = (field: Field) => {
+  const typed = typedMarkdown.get(field);
+  if (typed && typed.language === translated(field)?.language && typed.value === JSON.stringify(props.values[field.id!] ?? null)) return typed.text;
+  const value = textValue(field);
   const at = translated(field);
   if (at) return translationOf(value, at).own ?? "";
   return value == null ? "" : String(value);
@@ -440,16 +451,28 @@ function setText(field: Field, value: unknown) {
   const at = translated(field);
   set(field, at ? withTranslation(props.values[field.id!], at, String(value ?? "")) : value);
 }
+function setMarkdown(field: Field, typed: unknown) {
+  const text = String(typed ?? "");
+  const type = resultTypeOf(field);
+  const current = props.values[field.id!];
+  const at = translated(field);
+  const value =
+    !at || (!isTranslations(current) && at.language === at.defaultLanguage)
+      ? markdownValue(text, type)
+      : withTranslation(isTranslations(current) ? current : translationText(current, type), at, translationText(markdownValue(text, type), type));
+  typedMarkdown.set(field, { text, value: JSON.stringify(value ?? null), language: at?.language });
+  set(field, value);
+}
 const manyLanguages = computed(() => (props.translation?.languages?.length ?? 0) > 1);
 const label = (field: Field) => (translated(field) && manyLanguages.value && field.label ? `${field.label} · ${props.translation!.language}` : field.label);
 const placeholder = (field: Field) => {
   const at = translated(field);
-  return (at && translationOf(props.values[field.id!], at).fallback?.text) || field.placeholder;
+  return (at && translationOf(textValue(field), at).fallback?.text) || field.placeholder;
 };
 function translationNote(field: Field): string | undefined {
   const at = translated(field);
   if (!at || !manyLanguages.value) return undefined;
-  const state = translationOf(props.values[field.id!], at);
+  const state = translationOf(textValue(field), at);
   if (state.fallback?.language) return t("SITE_BUILDER.DESIGNER.TRANSLATION.FALLBACK", { language: at.language, fallback: state.fallback.language });
   if (state.fallback) return t("SITE_BUILDER.DESIGNER.TRANSLATION.SAME_EVERYWHERE");
   const others = state.languages.filter((x) => x.toLowerCase() !== at.language.toLowerCase());
