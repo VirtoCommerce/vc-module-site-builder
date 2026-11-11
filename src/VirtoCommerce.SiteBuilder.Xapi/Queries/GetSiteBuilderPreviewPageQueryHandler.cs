@@ -62,7 +62,6 @@ public class GetSiteBuilderPreviewPageQueryHandler(
         return result;
     }
 
-    /// <summary>The id is a page's or a group's; a group is previewed by its draft, else its published, else its latest archived page.</summary>
     protected virtual async Task<(SiteBuilderPage, GroupedSiteBuilderPage)> GetPage(GetBuilderPageQuery request)
     {
         var page = await GetPageById(request.StoreId, request.PageId);

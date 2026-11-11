@@ -20,7 +20,6 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
     private const string HtmlProperty = "html";
     private const string PaletteTokensKey = "paletteTokens";
 
-    // keys whose values are URLs: link, url, href, src, image(s), and names ending in one of them (logoUrl, logo_image, permalink)
     private static readonly string[] UrlKeyEndings = ["url", "link", "href", "src", "image", "images"];
 
     public SiteBuilderContentGuard()
@@ -72,7 +71,7 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
         return result;
     }
 
-    /// <summary>The sections of a page document, in place: <c>content</c>, or all but the first element of the legacy array.</summary>
+    /// <summary>The document's own tokens, as the guard sanitizes them in place; a legacy array starts with the page settings.</summary>
     protected virtual IEnumerable<JToken> GetItems(JToken document) => document switch
     {
         JObject envelope => envelope["content"] as JArray ?? [],
@@ -122,7 +121,7 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
         var resultType = GetString(field, "resultType");
         if (type is HtmlFieldType or RichTextFieldType || (type == MarkdownFieldType && resultType == HtmlFieldType))
         {
-            // every text of the value is HTML: a string, the texts of a translation, the html of a markdown value
+            // every text of the value is HTML, but for a markdown value's source
             foreach (var text in GetTexts(value).Where(x => x.Parent is not JProperty { Name: MarkdownProperty }))
             {
                 Sanitize(text, result);
@@ -138,7 +137,7 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
         }
     }
 
-    /// <summary>Checks that need no schema: the values of keys that name a URL for a script URL, and the HTML of every markdown value.</summary>
+    /// <summary>The checks that need no schema, so content saved without a catalog gets them too.</summary>
     protected virtual void GuardValues(JToken content, string name, SiteBuilderContentGuardResult result)
     {
         foreach (var token in GetTokens(content))
@@ -164,7 +163,7 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
     protected virtual bool IsUrlKey(string key) =>
         UrlKeyEndings.Any(x => key.EndsWith(x, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The URL itself, a list of URLs, or the texts of a translation; nested objects are checked by their own keys.</summary>
+    /// <summary>Any other object is left out: its own keys decide whether it holds a URL.</summary>
     protected virtual IEnumerable<JValue> GetUrlTexts(JToken value) => value switch
     {
         JValue { Type: JTokenType.String } text => [text],
@@ -183,7 +182,6 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
         }
     }
 
-    /// <summary>Token names the storefront announced in the catalog, else of its shape; values that are CSS colors.</summary>
     protected virtual void GuardPalette(JToken content, string file, JObject catalog, SiteBuilderContentGuardResult result)
     {
         if (content.Type == JTokenType.Null)

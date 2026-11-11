@@ -81,7 +81,6 @@ public class HistoryController(
         return content == null ? NotFound() : Content(content, MediaTypeNames.Application.Json);
     }
 
-    /// <summary>Restore the items as of the version as their drafts, in one save</summary>
     [HttpPost("{versionId}/restore")]
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<ContentSaveResult>> Restore([FromRoute] string versionId, [FromQuery] string storeId,

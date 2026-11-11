@@ -52,7 +52,7 @@ public class SiteBuilderContentGuardTests
     [InlineData(" vb\tscript:msgbox(1)", "vbscript")]
     public void GuardPage_ScriptUrlInALink_ReturnsAnErrorNamingThePath(string value, string scheme)
     {
-        // no schema: the key names a URL; with the schema: a link field, a list of links and an image
+        // the unknown type has no schema, so its keys decide; the known one is checked by its schema
         var unknown = Page(new JObject
         {
             ["id"] = "a",

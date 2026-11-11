@@ -4,11 +4,7 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.Data.Validation;
 
-/// <summary>
-/// The storefront's DOMPurify profile (<c>USE_PROFILES: { html: true }</c> plus <c>target</c>, <c>rel="noopener noreferrer"</c> on a link
-/// to a new window), without the <c>style</c>, <c>form</c> and <c>template</c> elements and with an allowlist of URL schemes.
-/// Not the platform's <see cref="IHtmlSanitizer"/>: another module registers that one with its own profile.
-/// </summary>
+/// <summary>The storefront's sanitizer profile, with fewer elements and an allowlist of URL schemes.</summary>
 public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
 {
     private static readonly HashSet<string> AllowedTags = new(StringComparer.OrdinalIgnoreCase)

@@ -12,10 +12,7 @@ namespace VirtoCommerce.SiteBuilder.Xapi.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Serves the x-cms <c>builderPage</c> query from Site Builder. Call it after x-cms registered its own handler:
-    /// MediatR keeps the first handler registered for a request.
-    /// </summary>
+    /// <summary>Replaces x-cms's builder page handler and graph type: call it after x-cms registers them.</summary>
     public static IServiceCollection AddSiteBuilderPreview(this IServiceCollection services)
     {
         services.RemoveAll<IRequestHandler<GetBuilderPageQuery, BuilderPageItem>>();

@@ -21,10 +21,8 @@ public static class ThemePaletteValues
         ")\\z",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
-    // the storefront's preset tokens: color_primary_500
     private static readonly Regex TokenNamePattern = new("\\A[a-z0-9_]+\\z", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
-    /// <summary>A hex color of 3, 4, 6 or 8 digits, or <c>rgb()</c>, <c>rgba()</c>, <c>hsl()</c>, <c>hsla()</c> with numbers.</summary>
     public static bool IsColor(string value) => value != null && ColorPattern.IsMatch(value);
 
     /// <summary>The shape of a token name, for when the storefront's list of tokens is not known.</summary>

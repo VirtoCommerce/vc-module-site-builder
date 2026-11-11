@@ -698,9 +698,8 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
         private async Task<ActionResult> SaveDraftToGitAsync(string storeId, string theme, List<SaveFileModel> files)
         {
-            // A draft is a commit on a work branch, not a .page-draft blob. The blob was a single slot
-            // per page, so two editors of the same page overwrote each other's draft and preview; their
-            // branches do not.
+            // A draft is a commit on the editor's own work branch, so two editors of one page keep apart
+            // their drafts and previews.
             var pages = files.Where(x => GitPageLocation.IsPageContent(x.Type)).ToList();
 
             var saved = new List<GitPageCommit>();
@@ -724,7 +723,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             return Ok(new { pages = saved });
         }
 
-        /// <summary>A theme file as the designer edits it: its draft, else what is live, with the version its save sends back</summary>
         [HttpGet]
         [Route("designer/theme-file")]
         [ProducesResponseType(typeof(ThemeFileContent), StatusCodes.Status200OK)]
@@ -741,7 +739,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             return Ok(await themeDraftService.ReadAsync(storeId, path, HttpContext.RequestAborted));
         }
 
-        /// <summary>Where the designer previews a store's pages</summary>
         [HttpGet]
         [Route("designer/storefront")]
         [ProducesResponseType(typeof(DesignerStorefront), StatusCodes.Status200OK)]
@@ -761,7 +758,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             return Ok(storefront);
         }
 
-        /// <summary>Save designer changes as drafts</summary>
         [HttpPost]
         [Authorize(ModuleConstants.Security.Permissions.Update)]
         [Route("designer/save")]

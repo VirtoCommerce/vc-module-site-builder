@@ -62,8 +62,8 @@ public class PageBuilderSettingsMigrationService(
             var copied = settingsManager.GetValue<bool>(Migration.SettingsCopiedFromPageBuilder);
             if (!copied)
             {
-                // Waits for the enqueue: StartMigration runs synchronously at startup, and a failed enqueue must surface there.
-#pragma warning disable S4462 // Calls to "async" methods should not be blocking - StartMigration is void by contract and runs from the synchronous Module.PostInitialize
+                // Waits for the enqueue, so that a failed one surfaces at startup.
+#pragma warning disable S4462 // Calls to "async" methods should not be blocking - void by contract, called from the synchronous module startup
                 backgroundJob.Enqueue<PageBuilderSettingsCopyJob>(new PageBuilderSettingsCopyJobPayload()).GetAwaiter().GetResult();
 #pragma warning restore S4462
             }
