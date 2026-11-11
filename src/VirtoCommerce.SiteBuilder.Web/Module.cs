@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation;
+using GraphQL.MicrosoftDI;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -32,6 +33,8 @@ using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Services;
+using VirtoCommerce.SiteBuilder.Xapi;
+using VirtoCommerce.SiteBuilder.Xapi.Extensions;
 using VirtoCommerce.Pages.Core.ContentProviders;
 using VirtoCommerce.Platform.Core.Events;
 using VirtoCommerce.Platform.Core.ExportImport;
@@ -41,6 +44,8 @@ using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.Platform.Core.Settings;
 using VirtoCommerce.StoreModule.Core.Events;
 using VirtoCommerce.StoreModule.Core.Security;
+using VirtoCommerce.Xapi.Core.Extensions;
+using VirtoCommerce.Xapi.Core.Infrastructure;
 
 namespace VirtoCommerce.SiteBuilder.Web
 {
@@ -159,6 +164,13 @@ namespace VirtoCommerce.SiteBuilder.Web
                 serviceCollection.AddTransient<SiteBuilderContentItemBuilder>();
             }
 
+            _ = new GraphQLBuilder(serviceCollection, builder =>
+            {
+                builder.AddSchema(serviceCollection, typeof(XapiAssemblyMarker));
+            });
+
+            serviceCollection.AddSingleton<ScopedSchemaFactory<XapiAssemblyMarker>>();
+            serviceCollection.AddSiteBuilderPreview();
         }
 
         private static void ConfigureGitHubClient(IServiceProvider provider, HttpClient httpClient)
@@ -194,6 +206,8 @@ namespace VirtoCommerce.SiteBuilder.Web
             appBuilder.RegisterEventHandler<GroupedSiteBuilderPageChangedEvent, GroupedSiteBuilderPageChangedEventHandler>();
             appBuilder.RegisterEventHandler<SiteBuilderSharedComponentContentChangedEvent, SiteBuilderSharedComponentContentChangedEventHandler>();
             appBuilder.RegisterEventHandler<StoreChangedEvent, GitContentStoreChangedEventHandler>();
+
+            appBuilder.UseScopedSchema<XapiAssemblyMarker>("site-builder");
 
             // Apply migrations
             using var serviceScope = serviceProvider.CreateScope();

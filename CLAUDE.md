@@ -65,6 +65,7 @@ Standard VirtoCommerce module pattern:
 - **`Core/`** — Domain models, service interfaces, events, `ModuleConstants`. No dependencies on Data or Web.
 - **`Data/`** — EF Core DbContext, entity models, service implementations, authorization handlers, search indexing. Depends on Core and platform.
 - **`Data.SqlServer/`, `Data.MySql/`, `Data.PostgreSql/`** — Database provider projects. Each contains EF Core migrations for its target DB.
+- **`Xapi/`** — Storefront GraphQL: the `themeSnapshot` query, and the x-cms `builderPage` query answered from Site Builder pages (its handler and `BuilderPageItem` type replace x-cms's, which read Page Builder). Depends on Core.
 - **`Web/`** — .NET Web SDK project (output is a library, not executable). Contains API controllers, AngularJS scripts, and serves the compiled Vue apps. Depends on Core + Data.
 - **`Tests/`** — xUnit v3 tests.
 

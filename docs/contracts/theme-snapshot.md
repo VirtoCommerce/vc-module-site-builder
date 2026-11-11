@@ -141,7 +141,7 @@ query ThemeSnapshot($domain: String, $storeId: String, $cultureName: String, $pe
 }
 ```
 
-The field is part of the x-cms schema: `/graphql` reaches the platform on every storefront host.
+Site Builder adds the field to the xAPI schema: `/graphql` reaches the platform on every storefront host.
 
 | Argument | Meaning |
 |---|---|

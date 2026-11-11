@@ -9,6 +9,7 @@
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.PostgreSql\VirtoCommerce.SiteBuilder.Data.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.MySql\VirtoCommerce.SiteBuilder.Data.MySql.csproj" />
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Web\VirtoCommerce.SiteBuilder.Web.csproj" />
+    <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Xapi\VirtoCommerce.SiteBuilder.Xapi.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared with the site builder shell tests, so both implementations of the permalink rule check the same cases. -->
@@ -21,7 +22,10 @@
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Moq" Version="4.21.0" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+    <!-- x-cms registers the builder page handler and type that Site Builder replaces -->
+    <PackageReference Include="VirtoCommerce.XCMS.Data" Version="3.1009.0" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
