@@ -100,7 +100,7 @@ describe("RulesPanel", () => {
 
   it("names every category the rules hold, past one search page of them", async () => {
     const ids = Array.from({ length: 25 }, (_, i) => `cat-${i}`);
-    // As the catalog answers: at most `first` categories, 20 unless asked otherwise.
+    // Caps the answer as the catalog does.
     platform.graphql("categories(", (request) => {
       const { query, variables } = request.body as { query: string; variables: { ids?: string[]; first?: number } };
       const first = variables.first ?? Number(/first: (\d+)/.exec(query)?.[1] ?? 20);

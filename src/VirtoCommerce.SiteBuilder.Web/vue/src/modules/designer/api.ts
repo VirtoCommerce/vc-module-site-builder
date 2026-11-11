@@ -53,7 +53,7 @@ const jsonOf = async (res: Response): Promise<unknown> => {
 
 const groupUrl = (groupId: string) => `/api/site-builder-pages/grouped/${encodeURIComponent(groupId)}`;
 
-/** 404 and 403 throw: an unknown page is not an empty one. */
+/** A page that cannot be read throws: an unknown page is not an empty one. */
 export async function loadPage(groupId: string): Promise<{ doc: PageDocument; eTag?: string }> {
   const res = await call(`${groupUrl(groupId)}/content?includeVersion=true`);
   const body = (await res.json()) as { content?: string; eTag?: string };
@@ -310,7 +310,7 @@ export async function templateKeys(storeId: string, theme: string): Promise<stri
   const res = await find(`/api/content/themes/${encodeURIComponent(storeId)}/search?${query}`);
   if (!res) return [];
   const items = ((await res.json()) ?? []) as { name?: string }[];
-  // A template saved only as a draft is listed as name.json-draft.
+  // A template saved only as a draft is listed by its draft file.
   return [...new Set(items.map((x) => templateKeyOf(`templates/${x.name ?? ""}`)).filter((x): x is string => !!x))].sort();
 }
 
@@ -335,7 +335,7 @@ export async function findTemplate(page: FilePage): Promise<{ doc?: PageDocument
   return { doc: file.content === undefined ? undefined : toDocument(file.content), eTag: file.eTag };
 }
 
-/** git validates the envelope, whose settings item must be typed "settings". */
+/** git validates the envelope, whose settings item must have a type. */
 export const filePageContent = (doc: PageDocument) =>
   fromDocument(doc.version === 1 ? doc : { ...doc, settings: { ...doc.settings, type: doc.settings.type || "settings" } });
 
@@ -402,7 +402,7 @@ export function filePreviewUrl(page: FilePage, git: boolean, storefront?: { url?
   if (git) return `/api/site-builder/git/preview?${fileArgs(page, sha ? { ref: sha } : {})}`;
   const url = storefront && storefrontPage(storefront.url, storefront.previewPath);
   if (!url) return undefined;
-  // Must match the content module's document id: base64 of the UTF-8 bytes, as the server encodes it.
+  // Must match the content module's document id.
   const path = page.path.replace(/\\/g, "/").replace(/^\/+/, "");
   const raw = `${page.storeId}::${page.type || "pages"}::${path}${draft && !path.endsWith("-draft") ? "-draft" : ""}`;
   const id = btoa(Array.from(new TextEncoder().encode(raw), (byte) => String.fromCharCode(byte)).join("")).replace(/=/g, "-");

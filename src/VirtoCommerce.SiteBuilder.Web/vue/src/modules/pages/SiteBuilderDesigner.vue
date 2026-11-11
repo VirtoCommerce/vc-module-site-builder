@@ -885,7 +885,7 @@ const bridge = usePreviewBridge({
       previewAs.refresh(),
     ]);
   },
-  // A reloaded frame has lost everything: whom it renders as, the inspector, light or dark, the theme, the page.
+  // A reloaded frame has lost everything.
   handshake: () =>
     handshakeMessages({
       auth: previewAs.message(),
@@ -1122,7 +1122,7 @@ async function publish(live: boolean, rebase = false) {
     notifyPagesChanged();
     await reloadHistory();
   } catch (e) {
-    // Git: a 409 means someone published another version meanwhile, and publishing over it is the editor's call.
+    // Git: a conflict means someone published another version meanwhile, and publishing over it is the editor's call.
     const conflict = e instanceof ApiError && e.status === 409 ? (JSON.parse(e.body || "{}") as { canRebase?: boolean }) : undefined;
     if (live && !rebase && conflict?.canRebase) {
       if (await showConfirmation(t("SITE_BUILDER.DESIGNER.PUBLISH_CONFLICT"))) await publish(true, true);
@@ -1613,7 +1613,7 @@ const barActions = computed(() =>
 );
 
 useBeforeUnload(unsaved);
-// onBeforeClose returning true keeps the blade open.
+// Returning true keeps the blade open.
 onBeforeClose(async () => unsaved.value && !(await showConfirmation(t("SITE_BUILDER.DESIGNER.DISCARD"))));
 
 // Held while the designer is open: the lists under it go back to their store once it closes.

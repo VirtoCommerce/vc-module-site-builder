@@ -1,4 +1,4 @@
-/** Names match the backend mask `overriddenFields`. */
+/** Names match the backend's mask of overridden fields. */
 export type InheritableField = "Permalink" | "Visibility" | "UserGroups" | "OrganizationId" | "StartDate" | "EndDate";
 
 export const inheritableFields: InheritableField[] = [

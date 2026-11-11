@@ -1,6 +1,6 @@
 import type { Item } from "./types";
 
-/** The Angular designer's clipboard format. */
+/** The Angular designer's format, so a copy pastes into either designer. */
 export interface ClipboardItem {
   type: "section" | "block";
   content: Item;

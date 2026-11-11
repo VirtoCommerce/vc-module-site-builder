@@ -23,7 +23,7 @@ export interface UseAiAgentContextWithStoreOptions<T extends ContextItem> {
 }
 
 // Workaround: the AI agent contract has no storeId, so it travels as a sentinel context item.
-// vc-shell's context manager keeps one slot per blade, so two useAiAgentContext calls in a blade would race for it.
+// vc-shell's context manager keeps one slot per blade, so two AI agent contexts in a blade would race for it.
 export default function useAiAgentContextWithStore<T extends ContextItem = ContextItem>(
   options: UseAiAgentContextWithStoreOptions<T> = {},
 ): void {

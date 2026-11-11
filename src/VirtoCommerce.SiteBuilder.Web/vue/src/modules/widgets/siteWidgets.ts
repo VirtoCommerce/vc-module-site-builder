@@ -40,7 +40,7 @@ export const SitesGitHubWidget = markRaw(
       const { openBlade } = useBlade();
       const on = ref<boolean>();
       async function load() {
-        // live=false reads the settings only, so opening the Sites panel makes no GitHub call.
+        // Without the live check only the settings are read, so opening the Sites panel makes no GitHub call.
         const connection = await (await getApiClient()).getConnection(false).catch(() => undefined);
         on.value = !!connection?.configured && !connection.error;
       }

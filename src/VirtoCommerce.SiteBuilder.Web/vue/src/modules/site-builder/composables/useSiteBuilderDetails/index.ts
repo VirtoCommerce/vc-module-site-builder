@@ -19,7 +19,7 @@ import { loadPage, savePage } from "../../../designer/api";
 const { getApiClient } = useApiClient(SiteBuilderPageClient);
 const { getApiClient: getMultilanguageApiClient } = useApiClient(MultilanguagePageClient);
 
-/** Stored in the content's `settings.seoInfo`, which the storefront reads. */
+/** Stored in the page content, where the storefront reads it. */
 export interface PageSeo {
   pageTitle?: string;
   metaDescription?: string;
@@ -100,7 +100,7 @@ export function useSiteBuilderDetails(options?: UseSiteBuilderDetailsOptions): I
     if (isNew.value) {
       group.storeId = groupStoreId;
       const content = options?.importData?.content;
-      // Use the existing atomic creation API: a new import has no document version to edit yet.
+      // Created with its content in one call: a new import has no document version to edit yet.
       result =
         content !== undefined
           ? await apiClient.createGroupPage({

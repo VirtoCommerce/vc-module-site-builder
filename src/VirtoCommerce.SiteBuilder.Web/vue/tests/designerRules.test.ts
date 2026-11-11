@@ -170,7 +170,7 @@ test("a new rule's id is short, url-safe and random", () => {
 
 test("a new rule's id drawn again when a rule has it", (t) => {
   let draw = 0;
-  // The first draw gives "aaaaaaaa" and the next one gives "bbbbbbbb".
+  // The first id drawn is already taken, so the next draw gives the new one.
   t.mock.method(globalThis.crypto, "getRandomValues", (array: Uint32Array) => array.fill(draw++));
   assert.equal(newRuleId(readRules({ page: [{ id: "aaaaaaaa", template: "page" }] })), "bbbbbbbb");
 });

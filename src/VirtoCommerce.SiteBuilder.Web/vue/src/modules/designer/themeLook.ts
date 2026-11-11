@@ -76,8 +76,8 @@ export function lookFiles(theme: string, look: ThemeLook, saved: ThemeLook): { p
 }
 
 /**
- * An empty brand is left out so that the published one shows, unless `emptyBrand` says it is the theme's own. A palette
- * without light colors is null, because a publication then keeps none.
+ * An empty brand is left out so that the published one shows, unless it is the theme's own. A palette without light
+ * colors is null, because a publication then keeps none.
  */
 export function lookDraft(look: ThemeLook, emptyBrand = false): { brand?: Brand; palette: Palette | null } {
   const brand = brandFile(look.brand);

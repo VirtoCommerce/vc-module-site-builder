@@ -3,7 +3,7 @@ import DOMPurify from "dompurify";
 import { isRecord } from "./json";
 import type { Field } from "./types";
 
-/** What a `markdown` setting stores: its markdown, its HTML, or both (`mixed`, when the schema names neither). */
+/** What a `markdown` setting stores: its markdown, its HTML, or both. */
 export type MarkdownResult = "markdown" | "html" | "mixed";
 
 export interface MarkdownModel {
@@ -69,14 +69,13 @@ export function markdownToHtml(markdown: string): string {
 
 const textIn = (value: unknown) => (typeof value === "string" ? value : "");
 
-/** The text to edit: the markdown when the value has one, else its HTML, which converts back to itself. */
+/** A value without markdown is edited as its HTML, which converts back to itself. */
 export function markdownOf(value: unknown): string {
   if (typeof value === "string") return value;
   if (!isRecord(value)) return "";
   return textIn(value.markdown) || textIn(value.html);
 }
 
-/** The value to store for an edited text, in the shape the field asks for. */
 export function markdownValue(text: string, type: MarkdownResult): string | null | MarkdownModel {
   const markdown = text || null;
   if (type === "markdown") return markdown;
