@@ -43,3 +43,21 @@ public class AssetReferenceIndexRebuildJob(SiteBuilderAssetReferenceMigrationSer
         return distributedLock.ExecuteAsync(LockResource, _ => migrationService.RebuildAssetReferenceIndex(), _lockTimeout, cancellationToken);
     }
 }
+
+public class PageBuilderSettingsCopyJobPayload
+{
+}
+
+public class PageBuilderSettingsCopyJob(PageBuilderSettingsMigrationService migrationService, IDistributedLock distributedLock)
+    : IBackgroundJobHandler<PageBuilderSettingsCopyJobPayload>
+{
+    // Every instance enqueues a copy at startup until the flag is set; the lock makes a queued one wait for the
+    // running one and then find the flag set, rather than both checking for Site Builder rows at the same time.
+    private const string LockResource = "sitebuilder:job:copy-page-builder-settings";
+    private static readonly TimeSpan _lockTimeout = TimeSpan.FromHours(1);
+
+    public virtual Task Execute(PageBuilderSettingsCopyJobPayload payload, IJobExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        return distributedLock.ExecuteAsync(LockResource, _ => migrationService.CopySettingsAsync(cancellationToken), _lockTimeout, cancellationToken);
+    }
+}

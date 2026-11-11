@@ -20,6 +20,25 @@ The store setting **New Site Builder** switches a store to the new designer; wit
 
 ![A product template with its template rules](docs/media/site-builder-template-rules.png)
 
+## Switching from Page Builder
+
+On its first start, Site Builder copies Page Builder's settings to its own names in a background job:
+
+* the global settings `StoreUrl`, `StorePreviewPath` and `OzAgentUrl`;
+* each store's `PreviewUserIds`, `GitContentEnabled`, `GitContentRepository`, and `NewPageBuilder` as `NewSiteBuilder`, so a store on the new designer stays on it;
+* the saved GitHub App connection, encrypted again for Site Builder.
+
+A setting that already has a stored Site Builder value keeps it. The copy runs once: if you later switch back to Page Builder and then to Site Builder again, Site Builder keeps its own values. If this server cannot decrypt the GitHub App connection (its data protection keys were not kept), the log has a warning naming the setting, and the connection has to be set up again.
+
+The `PageBuilder:GitContent` and `PageBuilder:ThemeSnapshot` configuration sections (`PageBuilder__…` environment variables included) and the `VirtoCommerce.PageBuilderModule` connection string still work when the Site Builder name is not set. They are deprecated, and a warning at startup lists them: rename them to `SiteBuilder:…` and `VirtoCommerce.SiteBuilder`.
+
+Roles keep working: the permissions are the same `builder:*` ones.
+
+Two things need a manual step:
+
+* Settings forced in configuration under `VirtoCommerce:Settings:Override` are keyed by setting name: rename `VirtoCommerce.PageBuilderModule.*` to `VirtoCommerce.SiteBuilder.*`, and `NewPageBuilder` to `NewSiteBuilder`.
+* A GitHub App that Page Builder created sends the user back to `api/pagebuilder/git/app/installed` after an installation. In the App's settings on GitHub, change its Setup URL to `api/site-builder/git/app/installed`.
+
 ## Store access
 
 A role can hold `builder:read` and `builder:shared-components:read` for selected stores only (the **Only for selected stores** scope). Every Site Builder endpoint checks the store it addresses: besides its own permission, the user needs the read permission in that store, for every store or through the scope. An account bound to a store reaches that store only.

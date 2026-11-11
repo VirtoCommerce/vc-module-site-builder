@@ -208,12 +208,22 @@ namespace VirtoCommerce.SiteBuilder.Core
                     DefaultValue = false,
                 };
 
+                public static SettingDescriptor SettingsCopiedFromPageBuilder { get; } = new()
+                {
+                    Name = "VirtoCommerce.SiteBuilder.Migration.SettingsCopiedFromPageBuilder",
+                    GroupName = "CMS|Migration",
+                    ValueType = SettingValueType.Boolean,
+                    DefaultValue = false,
+                    IsHidden = true,
+                };
+
                 public static IEnumerable<SettingDescriptor> AllMigrationSettings
                 {
                     get
                     {
                         yield return MetadataFromContentMigrated;
                         yield return AssetReferenceIndexMigrated;
+                        yield return SettingsCopiedFromPageBuilder;
                     }
                 }
             }

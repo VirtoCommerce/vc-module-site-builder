@@ -117,6 +117,9 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<SiteBuilderAssetReferenceMigrationService>();
             serviceCollection.AddBackgroundJob<PagesMigrationJob, PagesMigrationJobPayload>(triggerable: false);
             serviceCollection.AddBackgroundJob<AssetReferenceIndexRebuildJob, AssetReferenceIndexRebuildJobPayload>(triggerable: false);
+            serviceCollection.AddTransient<IPageBuilderSettingsMigrationService, PageBuilderSettingsMigrationService>();
+            serviceCollection.AddTransient<PageBuilderSettingsMigrationService>();
+            serviceCollection.AddBackgroundJob<PageBuilderSettingsCopyJob, PageBuilderSettingsCopyJobPayload>(triggerable: false);
             serviceCollection.AddTransient<SiteBuilderSharedComponentExportImport>();
             serviceCollection.AddTransient<MultilanguagePageExportImport>();
             serviceCollection.AddTransient<SiteBuilderExportImport>();
@@ -270,6 +273,9 @@ namespace VirtoCommerce.SiteBuilder.Web
             // Build asset reference index for existing pages
             var assetReferenceMigrationService = serviceScope.ServiceProvider.GetRequiredService<ISiteBuilderAssetReferenceMigrationService>();
             assetReferenceMigrationService.StartMigration();
+
+            var pageBuilderSettingsMigrationService = serviceScope.ServiceProvider.GetRequiredService<IPageBuilderSettingsMigrationService>();
+            pageBuilderSettingsMigrationService.StartMigration();
 
             // site-builder
             var siteBuilderAppPath = Path.Combine(ModuleInfo.FullPhysicalPath, "site-builder", "dist");
