@@ -14,10 +14,14 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
     private const string MarkdownFieldType = "markdown";
     private const string UrlFieldType = "url";
     private const string LinkFieldType = "link";
+    private const string ImagesFieldType = "images";
     private const string UrlFormat = "url";
     private const string MarkdownProperty = "markdown";
     private const string HtmlProperty = "html";
     private const string PaletteTokensKey = "paletteTokens";
+
+    // keys whose values are URLs: link, url, href, src, image(s), and names ending in one of them (logoUrl, logo_image, permalink)
+    private static readonly string[] UrlKeyEndings = ["url", "link", "href", "src", "image", "images"];
 
     public SiteBuilderContentGuard()
         : this(new SiteBuilderHtmlSanitizer())
@@ -97,12 +101,20 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
             return;
         }
 
-        if (IsLinkField(field))
+        if (IsLinkField(field) || GetString(field, "type") == ImagesFieldType)
         {
-            // a link may not open a document it carries; images may, so only links are checked
-            foreach (var text in GetTexts(value).Where(x => ContentUrlScheme.GetSchemes((string)x).Contains(ContentUrlScheme.Data)))
+            foreach (var text in GetTexts(value))
             {
-                result.Errors.Add($"{name}: '{GetPath(text)}' links to a data: URL");
+                var schemes = ContentUrlScheme.GetSchemes((string)text).ToList();
+                if (schemes.FirstOrDefault(ContentUrlScheme.RunsScript) is { } scheme)
+                {
+                    AddScriptUrlError(text, scheme, name, result);
+                }
+                // a link may not open a document it carries; an image may
+                else if (IsLinkField(field) && schemes.Contains(ContentUrlScheme.Data))
+                {
+                    result.Errors.Add($"{name}: '{GetPath(text)}' links to a data: URL");
+                }
             }
         }
 
@@ -126,7 +138,7 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
         }
     }
 
-    /// <summary>Checks that need no schema: every string for a script URL, and the HTML of every markdown value.</summary>
+    /// <summary>Checks that need no schema: the values of keys that name a URL for a script URL, and the HTML of every markdown value.</summary>
     protected virtual void GuardValues(JToken content, string name, SiteBuilderContentGuardResult result)
     {
         foreach (var token in GetTokens(content))
@@ -135,11 +147,39 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
             {
                 Sanitize((JValue)markdown[HtmlProperty], result);
             }
-            else if (token is JValue { Type: JTokenType.String } text &&
-                     ContentUrlScheme.GetSchemes((string)text).FirstOrDefault(ContentUrlScheme.RunsScript) is { } scheme)
+            else if (token is JProperty property && IsUrlKey(property.Name))
             {
-                result.Errors.Add($"{name}: '{GetPath(text)}' holds a {scheme}: URL, which runs script");
+                foreach (var text in GetUrlTexts(property.Value))
+                {
+                    if (ContentUrlScheme.GetSchemes((string)text).FirstOrDefault(ContentUrlScheme.RunsScript) is { } scheme)
+                    {
+                        AddScriptUrlError(text, scheme, name, result);
+                    }
+                }
             }
+        }
+    }
+
+    /// <summary>Only URLs are checked: a text such as "JavaScript: tips" is no link.</summary>
+    protected virtual bool IsUrlKey(string key) =>
+        UrlKeyEndings.Any(x => key.EndsWith(x, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The URL itself, a list of URLs, or the texts of a translation; nested objects are checked by their own keys.</summary>
+    protected virtual IEnumerable<JValue> GetUrlTexts(JToken value) => value switch
+    {
+        JValue { Type: JTokenType.String } text => [text],
+        JArray list => list.OfType<JValue>().Where(x => x.Type == JTokenType.String),
+        JObject translation when !IsMarkdownValue(translation) => translation.Properties().Select(x => x.Value).OfType<JValue>().Where(x => x.Type == JTokenType.String),
+        _ => [],
+    };
+
+    // a value can be both a schema field and of a key that names a URL
+    private static void AddScriptUrlError(JValue text, string scheme, string name, SiteBuilderContentGuardResult result)
+    {
+        var error = $"{name}: '{GetPath(text)}' holds a {scheme}: URL, which runs script";
+        if (!result.Errors.Contains(error))
+        {
+            result.Errors.Add(error);
         }
     }
 

@@ -50,13 +50,60 @@ public class SiteBuilderContentGuardTests
     [InlineData("vbscript:msgbox(1)", "vbscript")]
     [InlineData("VBScript:msgbox(1)", "vbscript")]
     [InlineData(" vb\tscript:msgbox(1)", "vbscript")]
-    public void GuardPage_ScriptUrlAnywhere_ReturnsAnErrorNamingThePath(string value, string scheme)
+    public void GuardPage_ScriptUrlInALink_ReturnsAnErrorNamingThePath(string value, string scheme)
     {
-        var page = Page(new JObject { ["id"] = "a", ["type"] = "unknown", ["deep"] = new JObject { ["items"] = new JArray("ok", value) } });
+        // no schema: the key names a URL; with the schema: a link field, a list of links and an image
+        var unknown = Page(new JObject
+        {
+            ["id"] = "a",
+            ["type"] = "unknown",
+            ["cta"] = new JObject { ["buttonLink"] = value },
+            ["slides"] = new JArray(new JObject { ["url"] = "/ok" }, new JObject { ["url"] = value }),
+            ["backgroundImage"] = value,
+            ["logo_image"] = value,
+            ["permalink"] = value,
+            ["href"] = new JArray("/ok", value),
+            ["src"] = new JObject { ["en-US"] = value },
+        });
+        var known = Page(new JObject
+        {
+            ["id"] = "a",
+            ["type"] = "hero",
+            ["link"] = value,
+            ["buttons"] = new JArray(new JObject { ["url"] = value, ["label"] = "Go" }),
+            ["image"] = value,
+        });
 
-        var result = _guard.GuardPage(page, "page", catalog: null);
+        Assert.Equal(
+            new[] { "cta.buttonLink", "slides[1].url", "backgroundImage", "logo_image", "permalink", "href[1]", "src.en-US" }
+                .Select(x => $"page: 'content[0].{x}' holds a {scheme}: URL, which runs script"),
+            _guard.GuardPage(unknown, "page", catalog: null).Errors);
+        Assert.Equal(
+            new[] { "link", "image", "buttons[0].url" }.Select(x => $"page: 'content[0].{x}' holds a {scheme}: URL, which runs script").Order(),
+            _guard.GuardPage(known, "page", Catalog).Errors.Order());
+    }
 
-        Assert.Equal([$"page: 'content[0].deep.items[1]' holds a {scheme}: URL, which runs script"], result.Errors);
+    [Theory]
+    [InlineData("JavaScript: tips")]
+    [InlineData("javascript: is a language")]
+    [InlineData("VBScript: a history")]
+    [InlineData("javascript:alert(1)")]
+    public void GuardPage_TextThatIsNoLink_IsAccepted(string value)
+    {
+        var page = Page(new JObject
+        {
+            ["id"] = "a",
+            ["type"] = "hero",
+            ["title"] = value,
+            ["body"] = value,
+            ["text"] = new JObject { ["markdown"] = value, ["html"] = $"<p>{value}</p>" },
+            ["buttons"] = new JArray(new JObject { ["url"] = "/ok", ["label"] = value }),
+            ["imageDescription"] = value,
+            ["description"] = new JObject { ["en-US"] = value },
+        });
+
+        Assert.Empty(_guard.GuardPage(page, "page", catalog: null).Errors);
+        Assert.Empty(_guard.GuardPage(page, "page", Catalog).Errors);
     }
 
     [Theory]
@@ -85,9 +132,9 @@ public class SiteBuilderContentGuardTests
     [Fact]
     public void GuardPage_PageSettings_AreCheckedToo()
     {
-        var page = JObject.Parse("""{ "settings": { "canonical": "javascript:alert(1)" }, "content": [] }""");
+        var page = JObject.Parse("""{ "settings": { "canonicalUrl": "javascript:alert(1)" }, "content": [] }""");
 
-        Assert.Equal(["page: 'settings.canonical' holds a javascript: URL, which runs script"], _guard.GuardPage(page, "page", null).Errors);
+        Assert.Equal(["page: 'settings.canonicalUrl' holds a javascript: URL, which runs script"], _guard.GuardPage(page, "page", null).Errors);
     }
 
     [Fact]
