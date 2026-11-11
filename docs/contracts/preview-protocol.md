@@ -280,7 +280,8 @@ Schemas are data, never code.
   comparisons, `&&`, `||`, `??`, `?:`, array literals and the evaluator's helper functions; or one of its known forms,
   matched as written. An expression that is none of these, or that fails, hides the field, as in the Angular designer.
 - A field with `request` fetches options; `request.response.result` is a dotted path to the rows, not an expression.
-  On the platform's origin only two requests are made, with the admin token: `GET /api/pagebuilder/search`, and
+  On the platform's origin only two requests are made, with the admin token: `GET /api/site-builder/search` (or its deprecated
+  Page Builder address `/api/pagebuilder/search`, which themes made for Page Builder name), and
   `POST /graphql` without a query string, whose filled `body.query` is a string with no `mutation` or `subscription`
   keyword outside its string literals and comments. Any other request to the platform is refused: nothing is sent, the
   field gets no options and the console has a warning. A URL on any other origin is requested without the

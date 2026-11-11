@@ -149,6 +149,11 @@ test("a schema request goes over http(s) only, to its URL resolved against the d
   assert.equal(schemaRequest({ url: "http://[" }, location), undefined);
 });
 
+test("a schema request may name the search by its Site Builder or its Page Builder address", () => {
+  for (const path of ["/api/site-builder/search", "/api/pagebuilder/search"])
+    assert.equal(schemaRequest({ url: `${path}?storeId=B2B` }, location)?.url, `https://platform.example${path}?storeId=B2B`);
+});
+
 test("a schema request to another origin may use any method and body", () => {
   assert.equal(schemaRequest({ url: "https://elsewhere.example/x", method: "POST", body: { query: "mutation { x }" } }, location)?.url, "https://elsewhere.example/x");
   assert.equal(schemaRequest({ url: "https://elsewhere.example/api/platform/x", method: "delete" }, location)?.url, "https://elsewhere.example/api/platform/x");
@@ -189,6 +194,7 @@ test("path tricks do not reach the allowed schema requests", (t) => {
     `${SEARCH}%2f`,
     `${SEARCH}\\..\\x`,
     `/API/pagebuilder/search`,
+    `/api/site-builder/search/`,
     `/x/..${SEARCH}x`,
     `//platform.example/api/platform/x`,
   ])

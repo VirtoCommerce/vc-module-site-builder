@@ -143,9 +143,12 @@ function isGraphqlRead(body: unknown): boolean {
   return typeof query === "string" && !/\b(mutation|subscription)\b/.test(query.replace(GRAPHQL_STRINGS_AND_COMMENTS, " "));
 }
 
+// Themes made for Page Builder name its address.
+const SEARCH_PATHS = new Set(["/api/site-builder/search", "/api/pagebuilder/search"]);
+
 function isAllowedOnPlatform(target: URL, request: SchemaRequest): boolean {
   const method = (request.method ?? "GET").toUpperCase();
-  if (method === "GET") return target.pathname === "/api/pagebuilder/search";
+  if (method === "GET") return SEARCH_PATHS.has(target.pathname);
   // GraphQL.NET's server can read the query from the URL, where it overrides the body.
   return method === "POST" && target.pathname === "/graphql" && !target.search && isGraphqlRead(request.body);
 }

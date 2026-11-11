@@ -538,6 +538,14 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
         [HttpGet]
         [Route("~/api/pagebuilder/search")]
+        [Obsolete("Themes made for Page Builder name this address in their section schemas. Use api/site-builder/search.")]
+        public Task<ActionResult<string>> SearchByPageBuilderAddress(string storeId, string theme, string type, string folder, string pattern = null, string keyword = null)
+        {
+            return Search(storeId, theme, type, folder, pattern, keyword);
+        }
+
+        [HttpGet]
+        [Route("search")]
         public async Task<ActionResult<string>> Search(string storeId, string theme, string type, string folder, string pattern = null, string keyword = null)
         {
             var request = new SiteBuilderContentRequest { StoreId = storeId, ContentType = type, Theme = theme, Paths = PathsOf(folder), Keyword = keyword };
