@@ -1,46 +1,24 @@
 ﻿# Site Builder
 
-Site Builder replaces Page Builder ([vc-module-pagebuilder](https://github.com/VirtoCommerce/vc-module-pagebuilder)): it cannot be installed alongside it and keeps the same database schema.
+Site Builder lets a merchandiser build the storefront's pages, catalog templates and theme in a visual designer, next to a live preview of the real storefront.
 
+It replaces Page Builder ([vc-module-pagebuilder](https://github.com/VirtoCommerce/vc-module-pagebuilder)). The two cannot be installed together, and Site Builder uses Page Builder's database as it is, so existing pages stay after the switch.
 
-# Overview
+![A landing page in the Site Builder designer](docs/media/site-builder-designer.png)
 
-The Site Builder allows creating ecommerce pages from blocks and editing them using a visual editor.
+## What it does
+* **Pages from sections.** Landing pages, content pages and blog articles are built from sections: add, reorder, copy, paste and hide them, and edit their settings while the preview updates.
+* **Catalog templates and rules.** Product, category and other storefront templates are edited the same way. Template rules decide which template a page gets, by category, product type or property, and the rule panel shows which rule a previewed product matches.
+* **Theme.** Header, footer, light and dark palettes, logos and favicon. The palette generator builds both palettes from one or two brand colors, with every text and background pair at WCAG 2.2 AA contrast.
+* **Theme publishing.** One action puts every theme draft live as a new versioned theme per language. A publication that fails validation leaves the previous one live.
+* **Multilanguage pages,** with per-language values for translatable fields.
+* **Version history on GitHub.** Each store can have its own repository: every save is a commit, any version can be restored, and pages can go live through a pull request.
+* **AI assistant (Virto OZ)** generates, edits, diagnoses and bulk-updates pages from a text prompt. See [AI Assistant for Site Builder](docs/ai-assistant.md).
+* **Admin Shell plugin and a standalone designer app.**
 
-Each page consists of several different blocks. The block view and settings depend on web page requirements.
+The store setting **New Site Builder** switches a store to the new designer; with it off, the store keeps the classic designer.
 
-The page is created in the builder as a list of blocks with specific settings applied to each block. All data are saved in a Json file format.
-
-![image](https://user-images.githubusercontent.com/7639413/195313557-91c00a53-ea2a-4572-aca7-927e210d17b7.png)
-
-## For Business
-* Build e-commerce landing pages – simple and faster.
-* Look at the content as the end customer see it.
-* Mobile-friendliness by design.
-* Ready-to-go building blocks and recommendations.
-
-## For Developers
-* Integrable into your unique design.
-* Configurable set of favourites blocks.
-* More blocks. Less code. Create new blocks with flexible JSON schema.
-* Can be integrated with your existing sites and apps.
-* Ready for integration with DevOps.
-* Ready for Publishing process.
-
-## Key Features
-* Build a new landing page visually without developer.
-* AI assistant (Virto OZ) — generate, edit, diagnose, and bulk-update pages from a text prompt. See [AI Assistant for Site Builder](docs/ai-assistant.md).
-* Theme editor.
-* Ecommerce page customization (Preview).
-* Preview content.
-* Block library.
-* Seo by design.
-* Mobile-friendliness by design
-* Block management with Drag and drop, Copy, Paste, Hide, etc.
-* Integration with Virto Frontend.
-* Native Extensibility Framework.
-* Permissions.
-* Platform Backup & Restore support.
+![A product template with its template rules](docs/media/site-builder-template-rules.png)
 
 ## Store access
 

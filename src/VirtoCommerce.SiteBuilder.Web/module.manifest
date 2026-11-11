@@ -21,7 +21,7 @@
   </incompatibilities>
 
   <title>Site Builder</title>
-  <description>Compose sites in visual site builder.</description>
+  <description>Build storefront pages, catalog templates and theme in a visual designer with live preview.</description>
 
   <apps>
     <app id="site-builder-shell">
