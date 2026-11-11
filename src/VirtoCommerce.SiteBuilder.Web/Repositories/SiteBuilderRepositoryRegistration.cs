@@ -14,6 +14,9 @@ namespace VirtoCommerce.SiteBuilder.Data.Repositories;
 
 internal static class SiteBuilderRepositoryRegistration
 {
+    /// <summary>Page Builder's module id, which named its own connection string.</summary>
+    internal const string PageBuilderModuleId = "VirtoCommerce.PageBuilderModule";
+
     internal static void AddSiteBuilderRepositories(
         this IServiceCollection serviceCollection,
         IConfiguration configuration,
@@ -23,6 +26,7 @@ internal static class SiteBuilderRepositoryRegistration
         serviceCollection.AddDbContextFactory<SiteBuilderDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString(moduleInfo.Id) ??
+                                   configuration.GetConnectionString(PageBuilderModuleId) ??
                                    configuration.GetConnectionString("VirtoCommerce");
 
             switch (databaseProvider)

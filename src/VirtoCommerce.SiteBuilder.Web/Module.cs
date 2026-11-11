@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,11 +13,13 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.ContentModule.Core.Extensions;
 using VirtoCommerce.ContentModule.Core.Search;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Events;
+using VirtoCommerce.SiteBuilder.Core.Extensions;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
@@ -52,6 +56,7 @@ namespace VirtoCommerce.SiteBuilder.Web
     public class Module : IModule, IExportSupport, IImportSupport, IHasConfiguration
     {
         private IApplicationBuilder _appBuilder;
+        private List<RenamedConfigurationKey> _pageBuilderConfigurationKeys = [];
 
         public ManifestModuleInfo ModuleInfo { get; set; }
         public IConfiguration Configuration { get; set; }
@@ -116,11 +121,15 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<MultilanguagePageExportImport>();
             serviceCollection.AddTransient<SiteBuilderExportImport>();
 
-            var gitContentSection = Configuration.GetSection(GitContentOptions.SectionName);
-            serviceCollection.Configure<GitContentOptions>(gitContentSection);
-            // Fail fast: a half-configured flow must not boot, or publishing would silently keep writing
-            // straight to production on an installation whose operator expects pull requests.
-            gitContentSection.Get<GitContentOptions>()?.Validate();
+            _pageBuilderConfigurationKeys = AddSiteBuilderOptions(serviceCollection, Configuration);
+            if (Configuration.GetConnectionString(ModuleInfo.Id) == null &&
+                Configuration.GetConnectionString(SiteBuilderRepositoryRegistration.PageBuilderModuleId) != null)
+            {
+                _pageBuilderConfigurationKeys.Add(new(
+                    $"ConnectionStrings:{SiteBuilderRepositoryRegistration.PageBuilderModuleId}",
+                    $"ConnectionStrings:{ModuleInfo.Id}"));
+            }
+
             serviceCollection.AddTransient<IGitHubConnectionService, GitHubConnectionService>();
             serviceCollection.AddTransient<IGitHubApiClient, GitHubApiClient>();
             serviceCollection.AddTransient<GitHubAuthHandler>();
@@ -138,7 +147,6 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IGitLivePageService, GitLivePageService>();
             serviceCollection.AddTransient<IContentHistory, GitHubSiteHistory>();
 
-            serviceCollection.Configure<ThemeSnapshotOptions>(Configuration.GetSection(ThemeSnapshotOptions.SectionName));
             serviceCollection.AddTransient<IThemeStorageFactory, ThemeStorageFactory>();
             serviceCollection.AddTransient<IThemeSnapshotBuilder, ThemeSnapshotBuilder>();
             serviceCollection.AddTransient<IThemeValidator, ThemeValidator>();
@@ -176,6 +184,43 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddSiteBuilderPreview();
         }
 
+        internal static List<RenamedConfigurationKey> AddSiteBuilderOptions(IServiceCollection serviceCollection, IConfiguration configuration)
+        {
+            var pageBuilderKeys = new List<RenamedConfigurationKey>();
+
+            var gitContentSection = GetSection(GitContentOptions.SectionName);
+            serviceCollection.Configure<GitContentOptions>(gitContentSection);
+            // Fail fast: a half-configured flow must not boot, or publishing would silently keep writing
+            // straight to production on an installation whose operator expects pull requests.
+            gitContentSection.Get<GitContentOptions>()?.Validate();
+
+            serviceCollection.Configure<ThemeSnapshotOptions>(GetSection(ThemeSnapshotOptions.SectionName));
+
+            return pageBuilderKeys;
+
+            IConfigurationSection GetSection(string sectionName)
+            {
+                var section = configuration.GetSiteBuilderSection(sectionName, out var isPageBuilderSection);
+                if (isPageBuilderSection)
+                {
+                    pageBuilderKeys.Add(new(section.Path, sectionName));
+                }
+
+                return section;
+            }
+        }
+
+        internal static void WarnAboutPageBuilderConfiguration(ILogger logger, IList<RenamedConfigurationKey> pageBuilderKeys)
+        {
+            if (pageBuilderKeys.Count > 0)
+            {
+                logger.LogWarning("Site Builder read Page Builder's configuration, whose names are deprecated: {Keys}. Rename them; the old names will stop working in a future version.",
+                    string.Join(", ", pageBuilderKeys.Select(x => $"{x.PageBuilderKey} -> {x.SiteBuilderKey}")));
+            }
+        }
+
+        internal sealed record RenamedConfigurationKey(string PageBuilderKey, string SiteBuilderKey);
+
         private static void ConfigureGitHubClient(IServiceProvider provider, HttpClient httpClient)
         {
             GitHubApiClient.ConfigureHttpClient(httpClient, provider.GetRequiredService<IOptions<GitContentOptions>>().Value);
@@ -185,6 +230,8 @@ namespace VirtoCommerce.SiteBuilder.Web
         {
             _appBuilder = appBuilder;
             var serviceProvider = appBuilder.ApplicationServices;
+
+            WarnAboutPageBuilderConfiguration(serviceProvider.GetRequiredService<ILogger<Module>>(), _pageBuilderConfigurationKeys);
 
             var settingsRegistrar = serviceProvider.GetRequiredService<ISettingsRegistrar>();
             settingsRegistrar.RegisterSettings(ModuleConstants.Settings.AllSettings, ModuleInfo.Id);

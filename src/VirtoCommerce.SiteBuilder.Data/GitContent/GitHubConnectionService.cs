@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using VirtoCommerce.SiteBuilder.Core;
+using VirtoCommerce.SiteBuilder.Core.Extensions;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Settings;
@@ -27,7 +28,7 @@ public class GitHubConnectionService(
 {
     public const string DefaultBaseBranch = "main";
 
-    private const string ProtectionPurpose = "VirtoCommerce.SiteBuilder.GitHubAppConnection";
+    internal const string ProtectionPurpose = "VirtoCommerce.SiteBuilder.GitHubAppConnection";
     private const string GitHubApiHost = "api.github.com";
     private const string GitHubWebUrl = "https://github.com/";
     private const string AppDescription = "Keeps each site's Site Builder pages in its own repository.";
@@ -39,7 +40,7 @@ public class GitHubConnectionService(
 
     // an explicit Enabled=false also switches off the saved App; a bound bool cannot tell it from "not set"
     private readonly bool _isSwitchedOff =
-        bool.TryParse(configuration.GetSection(GitContentOptions.SectionName)[nameof(GitContentOptions.Enabled)], out var enabled) && !enabled;
+        bool.TryParse(configuration.GetSiteBuilderSection(GitContentOptions.SectionName)[nameof(GitContentOptions.Enabled)], out var enabled) && !enabled;
 
     public virtual async Task<GitHubConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
