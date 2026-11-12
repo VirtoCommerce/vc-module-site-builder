@@ -442,8 +442,8 @@ const textValue = (field: Field) => {
 // the value changes from elsewhere, an undo for one.
 const typedMarkdown = new Map<Field, { text: string; value: string; language?: string }>();
 const text = (field: Field) => {
-  const typed = typedMarkdown.get(field);
-  if (typed && typed.language === translated(field)?.language && typed.value === JSON.stringify(props.values[field.id!] ?? null)) return typed.text;
+  const lastTyped = typedMarkdown.get(field);
+  if (lastTyped && lastTyped.language === translated(field)?.language && lastTyped.value === JSON.stringify(props.values[field.id!] ?? null)) return lastTyped.text;
   const value = textValue(field);
   const at = translated(field);
   if (at) return translationOf(value, at).own ?? "";
