@@ -1,4 +1,4 @@
-import { clone, isRecord, isText, isTextList } from "./json";
+import { byCodeUnit, clone, isRecord, isText, isTextList } from "./json";
 import type { ConditionDescriptor } from "./previewMessages";
 import { checkCondition, conditionsFor } from "./ruleConditions";
 import { PAGE_TYPES, pageTypeOf, type PageType } from "./templates";
@@ -54,7 +54,7 @@ function withIds(list: unknown[], type: PageType): TemplateRule[] {
 }
 
 const conditionNames = (lists: Partial<Record<PageType, unknown>>) =>
-  [...new Set(PAGE_TYPES.flatMap((type) => (Array.isArray(lists[type]) ? (lists[type] as TemplateRule[]) : []).flatMap((rule) => Object.keys(rule.when ?? {}))))].sort();
+  [...new Set(PAGE_TYPES.flatMap((type) => (Array.isArray(lists[type]) ? (lists[type] as TemplateRule[]) : []).flatMap((rule) => Object.keys(rule.when ?? {}))))].sort(byCodeUnit);
 
 function toFile(rules: Record<string, unknown>): TemplateRules {
   const { version: _version, conditions: _conditions, product, category, page, ...rest } = rules;

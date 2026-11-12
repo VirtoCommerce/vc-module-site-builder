@@ -20,7 +20,7 @@ export function menuOptions(lists: unknown, current?: unknown): MenuOption[] {
   }
   const options: MenuOption[] = [...byName.values()]
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map(({ name, languages }) => ({ value: name, label: languages.size ? `${name} (${[...languages].sort().join(", ")})` : name }));
+    .map(({ name, languages }) => ({ value: name, label: languages.size ? `${name} (${[...languages].sort((a, b) => a.localeCompare(b)).join(", ")})` : name }));
   if (isText(current) && !byName.has(current.toLowerCase())) options.unshift({ value: current, label: current, unknown: true });
   return options;
 }

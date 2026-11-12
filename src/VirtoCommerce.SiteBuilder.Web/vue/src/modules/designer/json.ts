@@ -2,6 +2,9 @@ export const isRecord = (value: unknown): value is Record<string, unknown> => !!
 
 export const isText = (value: unknown): value is string => typeof value === "string" && !!value.trim();
 
+/** The order a bare sort() gives: ids and file keys keep it, whatever the browser's locale. */
+export const byCodeUnit = (a: string, b: string) => Number(a > b) - Number(a < b);
+
 export const isTextList = (value: unknown): value is string[] => Array.isArray(value) && value.every((x) => typeof x === "string");
 
 /** structuredClone refuses reactive proxies. */

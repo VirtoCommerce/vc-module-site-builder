@@ -1,6 +1,7 @@
 import type { Item, PageDocument, SectionGroup } from "./types";
 import { fromDocument, toDocument } from "./document";
 import { templateKeyOf } from "./templates";
+import { byCodeUnit } from "./json";
 import { groupPath, historyStatusUrl, historyUrl, parseHistoryPage, parseHistoryStatus, restoreUrl, versionUrl, type HistoryStatus } from "./history";
 import {
   CatalogPendingError,
@@ -311,7 +312,7 @@ export async function templateKeys(storeId: string, theme: string): Promise<stri
   if (!res) return [];
   const items = ((await res.json()) ?? []) as { name?: string }[];
   // A template saved only as a draft is listed by its draft file.
-  return [...new Set(items.map((x) => templateKeyOf(`templates/${x.name ?? ""}`)).filter((x): x is string => !!x))].sort();
+  return [...new Set(items.map((x) => templateKeyOf(`templates/${x.name ?? ""}`)).filter((x): x is string => !!x))].sort(byCodeUnit);
 }
 
 export async function gitFlowOf(storeId: string, theme: string): Promise<{ on: boolean }> {

@@ -124,6 +124,7 @@ test("a menu setting offers each store link list once by its name, with its lang
   // The storefront matches names ignoring case, so a value in another case is still the list.
   assert.equal(menuOptions(lists, "MAIN MENU").length, 2);
   assert.deepEqual(menuOptions(lists, "Gone")[0], { value: "Gone", label: "Gone", unknown: true });
+  assert.equal(menuOptions([{ name: "Top", language: "fr-FR" }, { name: "Top", language: "de-DE" }, { name: "Top", language: "en-US" }])[0].label, "Top (de-DE, en-US, fr-FR)");
   // The Content module answers an empty body for a store without lists.
   assert.deepEqual(menuOptions(undefined), []);
 });

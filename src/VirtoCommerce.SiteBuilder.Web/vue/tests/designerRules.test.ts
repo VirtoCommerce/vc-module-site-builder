@@ -95,6 +95,11 @@ test("a version 2 file keeps its ids; the conditions list is written from the ru
   assert.equal(formatRules(readRules(JSON.parse(formatRules(rules)))), formatRules(rules));
 });
 
+test("the conditions list is in code unit order, so a saved file does not change with the browser's locale", () => {
+  const rules = readRules({ version: 2, page: [{ id: "landing", template: "page.landing", when: { path: "/a", audience: "b", Locale: "en" } }] });
+  assert.deepEqual(rules.conditions, ["Locale", "audience", "path"]);
+});
+
 test("no file: no lists, so every page type has its defaults, which are not written", () => {
   for (const missing of [undefined, null, [], "x"]) {
     const rules = readRules(missing);

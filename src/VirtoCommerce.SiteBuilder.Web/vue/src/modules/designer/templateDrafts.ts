@@ -1,11 +1,12 @@
 import type { PageDocument } from "./types";
 import { templateKeyOf } from "./templates";
+import { byCodeUnit } from "./json";
 import type { ThemeStatus } from "./themePublication";
 
 // The storefront takes the draft's templates in place of all the published ones, so a draft has every template or none.
 
 export const draftedTemplateKeys = (status: ThemeStatus | undefined): string[] =>
-  [...new Set((status?.drafts ?? []).map((x) => templateKeyOf(x)).filter((x): x is string => !!x))].sort();
+  [...new Set((status?.drafts ?? []).map((x) => templateKeyOf(x)).filter((x): x is string => !!x))].sort(byCodeUnit);
 
 export interface TemplateSource {
   keys: () => Promise<string[]>;

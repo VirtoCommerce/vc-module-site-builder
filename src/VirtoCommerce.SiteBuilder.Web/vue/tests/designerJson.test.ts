@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clone, isRecord, isText, isTextList } from "../src/modules/designer/json";
+import { byCodeUnit, clone, isRecord, isText, isTextList } from "../src/modules/designer/json";
 
 test("an object is a record; an array or null is not", () => {
   assert.equal(isRecord({}), true);
@@ -28,4 +28,10 @@ test("a copy shares nothing with the original, and undefined stays undefined", (
   copy.a[0].b = 2;
   assert.equal(value.a[0].b, 1);
   assert.equal(clone(undefined), undefined);
+});
+
+test("byCodeUnit sorts as a bare sort() does, not by the locale", () => {
+  const keys = ["page.b", "page.B", "page.a-b", "page.ab", "page.a", "page", "page.10", "page.9"];
+  assert.deepEqual([...keys].sort(byCodeUnit), ["page", "page.10", "page.9", "page.B", "page.a", "page.a-b", "page.ab", "page.b"]);
+  assert.equal(byCodeUnit("a", "a"), 0);
 });

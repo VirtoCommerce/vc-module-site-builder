@@ -27,6 +27,10 @@ test("draftedTemplateKeys: the templates among the theme files with a draft", ()
     draftedTemplateKeys(status(["templates/product.json", "sections/header-group.json", "templates/page.landing.json", "config/template_rules.json"])),
     ["page.landing", "product"],
   );
+  assert.deepEqual(
+    draftedTemplateKeys(status(["templates/product.ab.json", "templates/product.a-b.json", "templates/product.10.json", "templates/product.9.json"])),
+    ["product.10", "product.9", "product.a-b", "product.ab"],
+  );
   assert.deepEqual(draftedTemplateKeys(status(["config/brand.json"])), []);
   assert.deepEqual(draftedTemplateKeys(undefined), []);
 });

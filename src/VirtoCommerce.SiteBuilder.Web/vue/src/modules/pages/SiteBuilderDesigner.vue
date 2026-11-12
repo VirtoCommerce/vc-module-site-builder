@@ -604,7 +604,7 @@ import { PageAnchorsKey, PaletteTokensKey, PickAssetKey, StoreMenusKey, WhiteLab
 import { pageAnchors } from "../designer/anchors";
 import { useDesigner } from "../designer/useDesigner";
 import { resolveRefs, toDocument } from "../designer/document";
-import { LONG_TEXT_MAX_LENGTH } from "../designer/json";
+import { LONG_TEXT_MAX_LENGTH, byCodeUnit } from "../designer/json";
 import { pageOnly } from "../designer/groups";
 import { previewUrl, storefrontPage, usePreviewBridge } from "../designer/preview";
 import {
@@ -1873,7 +1873,7 @@ async function createAndOpenTemplate() {
     const [base, created] = await Promise.all([findFilePage(file(target.type)), loadThemeFile(storeId, file(key).path)]);
     // Someone created it meanwhile: the name is taken.
     if (created.content !== undefined) {
-      templateKeyList.value = [...new Set([...templateKeyList.value, key])].sort();
+      templateKeyList.value = [...new Set([...templateKeyList.value, key])].sort(byCodeUnit);
       return;
     }
     const doc = startingTemplate(target.type, base, templateEntry(designer.schemas.value, target.type).entry, designer.mainItem);
@@ -1884,7 +1884,7 @@ async function createAndOpenTemplate() {
     return;
   }
   creating.value = undefined;
-  templateKeyList.value = [...new Set([...templateKeyList.value, key])].sort();
+  templateKeyList.value = [...new Set([...templateKeyList.value, key])].sort(byCodeUnit);
   // The new template opens as saved, so there is nothing unsaved to ask about.
   look.revert();
   if (rules.dirty.value) await rules.load(storeId, themeName.value).catch(() => undefined);
