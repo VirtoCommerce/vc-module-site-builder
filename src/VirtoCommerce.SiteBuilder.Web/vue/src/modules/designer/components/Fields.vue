@@ -126,8 +126,8 @@
             :label="field.label"
             :placeholder="$t('SITE_BUILDER.DESIGNER.TOKEN_PLACEHOLDER')"
             :options="tokenOptions(palette?.tokens ?? [], palette?.colors ?? {}, values[field.id!])"
-            :option-value="(x: TokenOption) => x.value"
-            :option-label="(x: TokenOption) => (x.unknown ? `${x.label} · ${$t('SITE_BUILDER.DESIGNER.THEME.UNKNOWN_TOKEN')}` : x.label)"
+            :option-value="tokenOptionValue"
+            :option-label="tokenOptionLabel"
             searchable
             :clearable="!field.required"
             emit-value
@@ -392,6 +392,8 @@ const { t } = useI18n({ useScope: "global" });
 const openRow = ref<string>();
 
 const palette = inject(PaletteTokensKey, undefined);
+const tokenOptionValue = (x: TokenOption) => x.value;
+const tokenOptionLabel = (x: TokenOption) => (x.unknown ? `${x.label} · ${t("SITE_BUILDER.DESIGNER.THEME.UNKNOWN_TOKEN")}` : x.label);
 const overridden = inject(WhiteLabelingKey, undefined);
 
 const loadStoreMenus = inject(StoreMenusKey, undefined);
@@ -440,8 +442,8 @@ const textValue = (field: Field) => {
 // the value changes from elsewhere, an undo for one.
 const typedMarkdown = new Map<Field, { text: string; value: string; language?: string }>();
 const text = (field: Field) => {
-  const typed = typedMarkdown.get(field);
-  if (typed && typed.language === translated(field)?.language && typed.value === JSON.stringify(props.values[field.id!] ?? null)) return typed.text;
+  const shown = typedMarkdown.get(field);
+  if (shown && shown.language === translated(field)?.language && shown.value === JSON.stringify(props.values[field.id!] ?? null)) return shown.text;
   const value = textValue(field);
   const at = translated(field);
   if (at) return translationOf(value, at).own ?? "";
@@ -451,16 +453,18 @@ function setText(field: Field, value: unknown) {
   const at = translated(field);
   set(field, at ? withTranslation(props.values[field.id!], at, String(value ?? "")) : value);
 }
-function setMarkdown(field: Field, typed: unknown) {
-  const text = String(typed ?? "");
+function markdownSetting(field: Field, markdown: string): unknown {
   const type = resultTypeOf(field);
   const current = props.values[field.id!];
   const at = translated(field);
-  const value =
-    !at || (!isTranslations(current) && at.language === at.defaultLanguage)
-      ? markdownValue(text, type)
-      : withTranslation(isTranslations(current) ? current : translationText(current, type), at, translationText(markdownValue(text, type), type));
-  typedMarkdown.set(field, { text, value: JSON.stringify(value ?? null), language: at?.language });
+  if (!at || (!isTranslations(current) && at.language === at.defaultLanguage)) return markdownValue(markdown, type);
+  const translations = isTranslations(current) ? current : translationText(current, type);
+  return withTranslation(translations, at, translationText(markdownValue(markdown, type), type));
+}
+function setMarkdown(field: Field, input: unknown) {
+  const markdown = String(input ?? "");
+  const value = markdownSetting(field, markdown);
+  typedMarkdown.set(field, { text: markdown, value: JSON.stringify(value ?? null), language: translated(field)?.language });
   set(field, value);
 }
 const manyLanguages = computed(() => (props.translation?.languages?.length ?? 0) > 1);
@@ -552,15 +556,18 @@ const searchValue = (field: Field) => {
   return value && typeof value === "object" ? (value as SearchValue) : undefined;
 };
 const searchQuery = (field: Field) => typedQueries.get(field) ?? searchValue(field)?.__searchQuery ?? "";
-const shownValue = (value: unknown) => (value == null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value));
+function shownValue(value: unknown) {
+  if (value == null) return "";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
 
 function typed(field: SearchField, query: unknown) {
-  const text = query == null ? "" : String(query);
-  typedQueries.set(field, text);
+  const queryText = query == null ? "" : String(query);
+  typedQueries.set(field, queryText);
   clearTimeout(pendingQueries.get(field));
   pendingQueries.set(
     field,
-    setTimeout(() => search(field, text), field.debounceTime || SEARCH_DEBOUNCE_MS),
+    setTimeout(() => search(field, queryText), field.debounceTime || SEARCH_DEBOUNCE_MS),
   );
 }
 

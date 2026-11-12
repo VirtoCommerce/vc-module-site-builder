@@ -14,6 +14,14 @@ export class DisplayableError extends Error {
   }
 }
 
+function parseText(error: string): DisplayableError {
+  try {
+    return parseError(JSON.parse(error));
+  } catch {
+    return new DisplayableError(error, error, error);
+  }
+}
+
 // As the framework's: an NSwag ApiException shows its JSON body's message, or "<status>: <message>".
 export function parseError(error: unknown): DisplayableError {
   if (error instanceof DisplayableError) return error;
@@ -27,13 +35,7 @@ export function parseError(error: unknown): DisplayableError {
   }
   if (error instanceof Error && "response" in error && error.response) return parseError(error.response);
   if (error instanceof Error) return new DisplayableError(error.message, error.stack || String(error), error);
-  if (typeof error === "string") {
-    try {
-      return parseError(JSON.parse(error));
-    } catch {
-      return new DisplayableError(error, error, error);
-    }
-  }
+  if (typeof error === "string") return parseText(error);
   if (typeof error === "object" && error !== null) {
     const shape = error as Record<string, unknown>;
     if ("status" in shape && "data" in shape) return new DisplayableError(`${shape.status}: ${shape.statusText || "Error"}`, JSON.stringify(shape.data), error);
@@ -130,7 +132,15 @@ export const useResponsive = () => ({ isMobile: ref(false) });
 
 const MODIFIERS = ["mod", "ctrl", "meta", "alt", "shift"];
 const hotkeyOf = (modifiers: Record<string, boolean>): unknown =>
-  new Proxy({}, { get: (_target, key) => (typeof key !== "string" || key === "then" ? undefined : MODIFIERS.includes(key) ? hotkeyOf({ ...modifiers, [key]: true }) : { key, ...modifiers }) });
+  new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        if (typeof key !== "string" || key === "then") return undefined;
+        return MODIFIERS.includes(key) ? hotkeyOf({ ...modifiers, [key]: true }) : { key, ...modifiers };
+      },
+    },
+  );
 export const hotkey = hotkeyOf({}) as Record<string, Record<string, { key: string; mod?: boolean }>>;
 export const BladeMaximizedKey = Symbol("BladeMaximized");
 export const BladeStackKey = Symbol("BladeStack");

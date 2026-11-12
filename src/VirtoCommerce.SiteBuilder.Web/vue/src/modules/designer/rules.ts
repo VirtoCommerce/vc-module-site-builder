@@ -46,7 +46,8 @@ function withIds(list: unknown[], type: PageType): TemplateRule[] {
     let id = typeof rule.id === "string" ? rule.id : "";
     if (!id || ids.has(id)) {
       id = `${type}-${index}`;
-      for (let n = 2; ids.has(id); n++) id = `${type}-${index}-${n}`;
+      let n = 2;
+      while (ids.has(id)) id = `${type}-${index}-${n++}`;
     }
     ids.add(id);
     return { ...rule, id };

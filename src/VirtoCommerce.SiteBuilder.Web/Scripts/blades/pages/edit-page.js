@@ -85,7 +85,9 @@ angular.module('virtoCommerce.siteBuilderModule')
                 var pathname = window.location.pathname === '/' ? '' : window.location.pathname;
                 var platformUrl = window.location.origin + pathname;
                 return stores.get({ id: blade.storeId }).$promise.then(function (store) {
-                    var setting = _.find(store.settings || [], function (x) { return x.name === newSiteBuilderSetting; });
+                    var setting = _.find(store.settings || [], function (x) {
+                        return x.name === newSiteBuilderSetting;
+                    });
                     blade.newSiteBuilder = !!setting && setting.value === true;
                     blade.designerUrl = blade.newSiteBuilder
                         ? `${platformUrl}/apps/site-builder-shell/`

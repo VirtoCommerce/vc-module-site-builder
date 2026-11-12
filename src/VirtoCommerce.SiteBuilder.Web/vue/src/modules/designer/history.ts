@@ -58,7 +58,9 @@ export function historyItems(open: {
   theme?: string;
   parts: ThemePart[];
 }): { file: HistoryFile; item: string }[] {
-  const page = open.groupId ? pageItem(open.groupId) : open.templatePath ? themeItem(open.templatePath) : undefined;
+  let page: string | undefined;
+  if (open.groupId) page = pageItem(open.groupId);
+  else if (open.templatePath) page = themeItem(open.templatePath);
   const items: { file: HistoryFile; item: string }[] = page ? [{ file: "page", item: page }] : [];
   const theme = open.theme;
   if (!theme) return items;
@@ -128,5 +130,6 @@ export function historyOffer(open: {
   if (open.shared) return "none";
   if (open.filePage) return open.gitFlow ? "history" : "enable";
   if (!open.site) return "none";
-  return open.status === "enabled" ? "history" : open.status === "setupRequired" ? "enable" : "none";
+  if (open.status === "enabled") return "history";
+  return open.status === "setupRequired" ? "enable" : "none";
 }

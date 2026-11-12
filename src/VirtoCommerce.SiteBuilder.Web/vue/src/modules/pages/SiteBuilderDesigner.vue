@@ -638,9 +638,6 @@ import {
   filePageContent,
   hasCatalog,
   uploadCatalog,
-  ApiError, type FilePage, type SharedComponent } from "../designer/api";
-import { newItem } from "../designer/schema";
-import {
   searchCategories,
   searchPages,
   searchProducts,
@@ -648,9 +645,13 @@ import {
   findFilePage,
   findTemplate,
   loadThemeFile,
+  ApiError,
   type CatalogContext,
+  type FilePage,
   type NamedEntity,
+  type SharedComponent,
 } from "../designer/api";
+import { newItem } from "../designer/schema";
 import { PAGE_CONTENT, alternateKey, alternateName, entityUrl, pageTypeOf, startingTemplate, templateEntry, templatePath, type PageType } from "../designer/templates";
 import { rulesFor } from "../designer/rules";
 import { useTemplateRules } from "../designer/templateRules";
@@ -811,8 +812,8 @@ function previewUser(id: string | null) {
 const pageSubject = computed<PageSubject | undefined>(() => {
   if (designer.templateKey.value || designer.shared.value) return undefined;
   if (designer.groupId.value) {
-    const permalink = group.value?.permalink?.trim();
-    return permalink ? { permalink: `/${permalink.replace(/^\/+/, "")}`, objectType: "Pages" } : undefined;
+    const groupPermalink = group.value?.permalink?.trim();
+    return groupPermalink ? { permalink: `/${groupPermalink.replace(/^\/+/, "")}`, objectType: "Pages" } : undefined;
   }
   const file = designer.file.value;
   const permalink = designer.doc.value.settings.permalink;
@@ -835,14 +836,17 @@ function render(options: { scroll?: boolean; model?: Item; preview?: RenderInput
   });
 }
 
+function draftedTemplates(templateKey: string | undefined) {
+  if (designer.shared.value) return undefined;
+  return draftTemplates(savedTemplates.value, templateKey ? { key: templateKey, document: designer.preview.value.template } : undefined);
+}
+
 // The open template is in the draft and in the render, and the render's copy wins.
 function draft(groups = designer.groupsPreview.value): DraftMessage {
   const templateKey = designer.templateKey.value;
   return draftMessage({
     rules: rules.loaded.value ? rules.rules.value : undefined,
-    templates: designer.shared.value
-      ? undefined
-      : draftTemplates(savedTemplates.value, templateKey ? { key: templateKey, document: designer.preview.value.template } : undefined),
+    templates: draftedTemplates(templateKey),
     groups,
     look: look.draft.value,
     capabilities: designer.handshake.value?.capabilities ?? [],
@@ -1075,11 +1079,11 @@ const reloadHistory = () => versionHistory.value?.reload().catch(() => undefined
 // The toast is rendered by the shell, outside this blade's scoped styles.
 const ERROR_LIST_STYLE = { margin: "4px 0 0", paddingLeft: "18px", listStyle: "disc" };
 
-function notifyFailure(title: string, e: unknown) {
+function notifyFailure(heading: string, e: unknown) {
   const pending = e instanceof CatalogPendingError ? [t("SITE_BUILDER.DESIGNER.CATALOG_PENDING")] : [];
   const errors = e instanceof ApiError ? themeErrors(e.status, e.body) : pending;
-  if (!errors.length) notification.error(title);
-  else notification.error(h("div", [h("p", title), h("ul", { style: ERROR_LIST_STYLE }, errors.map((x) => h("li", x)))]), { timeout: false });
+  if (!errors.length) notification.error(heading);
+  else notification.error(h("div", [h("p", heading), h("ul", { style: ERROR_LIST_STYLE }, errors.map((x) => h("li", x)))]), { timeout: false });
 }
 
 async function saveChanges() {
@@ -1145,15 +1149,15 @@ async function promote() {
 function openPreview() {
   const file = designer.file.value;
   if (designer.templateKey.value) {
-    const url = previewUrlOf.value ? storefrontPage(storefront.value?.url, previewUrlOf.value) : undefined;
-    if (url) window.open(url, "_blank", "noopener");
+    const templateUrl = previewUrlOf.value ? storefrontPage(storefront.value?.url, previewUrlOf.value) : undefined;
+    if (templateUrl) window.open(templateUrl, "_blank", "noopener");
   } else if (file) {
     const href = filePreviewUrl(file, designer.gitFlow.value, storefront.value, !!designer.status.value.hasChanges);
     if (href) window.open(href, "_blank", "noopener");
   } else if (storefront.value && designer.groupId.value) {
-    const url = storefrontPage(storefront.value.url, storefront.value.previewPath);
-    url?.searchParams.set("pageId", designer.groupId.value);
-    if (url) window.open(url, "_blank", "noopener");
+    const pageUrl = storefrontPage(storefront.value.url, storefront.value.previewPath);
+    pageUrl?.searchParams.set("pageId", designer.groupId.value);
+    if (pageUrl) window.open(pageUrl, "_blank", "noopener");
   }
 }
 
@@ -1282,8 +1286,8 @@ function restoreRefused(version: HistoryVersion) {
 async function historySource(cursor?: string) {
   const file = designer.file.value;
   if (file && !designer.templateKey.value) {
-    const page = await fileHistory(file, cursor);
-    return { versions: page.versions.map(fromGitVersion), hasMore: page.truncated, endCursor: page.endCursor };
+    const gitPage = await fileHistory(file, cursor);
+    return { versions: gitPage.versions.map(fromGitVersion), hasMore: gitPage.truncated, endCursor: gitPage.endCursor };
   }
   const page = await contentHistory(designer.storeId.value!, shownItems.value.map((x) => x.item), cursor);
   siteHistory.value = page.status;
@@ -1335,14 +1339,14 @@ async function previewVersion(version: HistoryVersion | null) {
   }
   try {
     const storeId = designer.storeId.value!;
-    const at = (file: HistoryFile) => {
-      const item = itemOf(file);
+    const at = (part: HistoryFile) => {
+      const item = itemOf(part);
       return item ? contentVersion(storeId, version.id, item) : Promise.resolve(undefined);
     };
-    const groupAt = async (group: SectionGroup) => {
-      const saved = (await at(group)) as { content?: unknown } | undefined;
-      if (saved === undefined) return undefined;
-      return Array.isArray(saved?.content) ? (saved.content as Item[]) : [];
+    const groupAt = async (sectionGroup: SectionGroup) => {
+      const stored = (await at(sectionGroup)) as { content?: unknown } | undefined;
+      if (stored === undefined) return undefined;
+      return Array.isArray(stored?.content) ? (stored.content as Item[]) : [];
     };
     const [saved, header, footer] = await Promise.all([
       at("page").then((x) => (x === undefined ? undefined : toDocument(x))),
@@ -1575,7 +1579,10 @@ const toolbar = computed<IBladeToolbar[]>(() => [
     title: t("SITE_BUILDER.DESIGNER.RULES.TITLE"),
     icon: "lucide-split",
     isVisible: !!designer.templateKey.value,
-    clickHandler: () => (rulesOpen.value ? (rulesOpen.value = false) : openRules()),
+    clickHandler: () => {
+      if (rulesOpen.value) rulesOpen.value = false;
+      else openRules();
+    },
   },
   {
     id: "history",
@@ -1625,33 +1632,40 @@ onBeforeUnmount(() => {
 });
 
 const { getApiClient } = useApiClient(SiteBuilderPageClient);
+/** Nothing is opened for an archived page, and `openFailed` is set when there is nothing to open. */
+async function startOpening(target: Record<string, string> | undefined): Promise<{ storeId: string; open: Promise<void> } | undefined> {
+  if (param.value) {
+    group.value = await (await getApiClient()).getGroup(param.value);
+    if (archived.value) return undefined;
+    const storeId = group.value.storeId!;
+    home = { groupId: param.value, storeId };
+    return { storeId, open: designer.open(home) };
+  }
+  if (target?.storeId && target.sharedComponentId) {
+    const storeId = target.storeId;
+    return { storeId, open: designer.open({ sharedComponentId: target.sharedComponentId, storeId }) };
+  }
+  if (target?.storeId && target.path) {
+    const storeId = target.storeId;
+    const page: FilePage = { storeId, path: target.path, type: target.type || "pages", theme: await storeTheme(storeId) };
+    if (page.type !== "themes") home = page;
+    return { storeId, open: designer.open(page) };
+  }
+  openFailed.value = true;
+  return undefined;
+}
+
 onMounted(async () => {
-  let storeId: string;
-  let open: Promise<void>;
   const target = param.value ? undefined : (query.value ?? restoreQueryFromAddress());
+  let opening: Awaited<ReturnType<typeof startOpening>>;
   try {
-    if (param.value) {
-      group.value = await (await getApiClient()).getGroup(param.value);
-      if (archived.value) return;
-      storeId = group.value.storeId!;
-      home = { groupId: param.value, storeId };
-      open = designer.open(home);
-    } else if (target?.storeId && target.sharedComponentId) {
-      storeId = target.storeId;
-      open = designer.open({ sharedComponentId: target.sharedComponentId, storeId });
-    } else if (target?.storeId && target.path) {
-      storeId = target.storeId;
-      const page: FilePage = { storeId, path: target.path, type: target.type || "pages", theme: await storeTheme(storeId) };
-      if (page.type !== "themes") home = page;
-      open = designer.open(page);
-    } else {
-      openFailed.value = true;
-      return;
-    }
+    opening = await startOpening(target);
   } catch {
     openFailed.value = true;
     return;
   }
+  if (!opening) return;
+  const { storeId, open } = opening;
   // The assets library picker works on this store.
   if (!unmounted) releaseStore = useUrlParams().holdStoreId(storeId);
   void previewAs.load(storeId);
@@ -1799,6 +1813,12 @@ watch(previewUrlOf, (to) => {
   else bridge.send(render());
 });
 
+async function firstEntity(type: PageType, ctx: CatalogContext, storeId: string): Promise<NamedEntity | undefined> {
+  if (type === "product") return (await searchProducts(ctx))[0];
+  if (type === "category") return (await searchCategories(ctx))[0];
+  return (await searchPages(storeId)).map((x) => ({ id: x.permalink, name: x.name }))[0];
+}
+
 async function enterTemplate() {
   const type = designer.pageType.value;
   const ctx = catalog.value;
@@ -1809,12 +1829,7 @@ async function enterTemplate() {
     previewed.value
       ? undefined
       : (async () => {
-          const first =
-            type === "product"
-              ? (await searchProducts(ctx))[0]
-              : type === "category"
-                ? (await searchCategories(ctx))[0]
-                : (await searchPages(storeId)).map((x) => ({ id: x.permalink, name: x.name }))[0];
+          const first = await firstEntity(type, ctx, storeId);
           if (first) previewPicks.value = { ...previewPicks.value, [pickKey(type)]: first };
         })().catch(() => undefined),
   ]);

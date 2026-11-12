@@ -394,8 +394,9 @@ function describe(rule: TemplateRule): RulePart[] {
     return [{ text: `${descriptor?.label ?? name}: ` }, { text, strong: true }];
   });
   if (!conditions.length) return [{ text: t(`SITE_BUILDER.DESIGNER.RULES.${ALWAYS[props.type]}`) }];
+  const subject = t(`SITE_BUILDER.DESIGNER.RULES.${SUBJECTS[props.type]}`);
   return [
-    { text: `${t(`SITE_BUILDER.DESIGNER.RULES.${SUBJECTS[props.type]}`)} ` },
+    { text: `${subject} ` },
     ...conditions.flatMap((parts, i) => (i ? [{ text: t("SITE_BUILDER.DESIGNER.RULES.AND") }, ...parts] : parts)),
   ];
 }

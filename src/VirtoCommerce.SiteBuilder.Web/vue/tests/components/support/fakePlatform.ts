@@ -29,8 +29,10 @@ export function fakePlatform() {
   const requests: Request[] = [];
   const routes: { method: string; path: string | RegExp; answer: Answer; graphql?: RegExp }[] = [];
 
-  const respond = (value: unknown) =>
-    value instanceof Response ? value : new Response(typeof value === "string" ? value : JSON.stringify(value ?? null), { status: 200 });
+  const respond = (value: unknown) => {
+    if (value instanceof Response) return value;
+    return new Response(typeof value === "string" ? value : JSON.stringify(value ?? null), { status: 200 });
+  };
 
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const url = new URL(input, platformOrigin());
@@ -85,7 +87,8 @@ export function fakePlatform() {
 export const status = (code: number, body: unknown = "", headers?: HeadersInit) => {
   if (code === 401) throw new Error("The fake platform does not model the shell's session check that a 401 sets off.");
   const empty = code === 204 || code === 205 || code === 304;
-  return new Response(empty ? null : typeof body === "string" ? body : JSON.stringify(body), { status: code, headers });
+  const text = () => (typeof body === "string" ? body : JSON.stringify(body));
+  return new Response(empty ? null : text(), { status: code, headers });
 };
 
 export type FakePlatform = ReturnType<typeof fakePlatform>;

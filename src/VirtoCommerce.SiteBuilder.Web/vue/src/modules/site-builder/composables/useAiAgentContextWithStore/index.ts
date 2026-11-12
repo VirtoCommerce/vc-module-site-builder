@@ -12,13 +12,15 @@ const STORE_SENTINEL_OBJECT_TYPE = "sitebuilder.store";
 interface ContextItem {
   id: string | undefined;
   objectType: string | undefined;
-  name?: string | undefined;
+  name?: string;
   [key: string]: unknown;
 }
 
+type ContextData<T> = T | T[] | null | undefined;
+
 export interface UseAiAgentContextWithStoreOptions<T extends ContextItem> {
   /** A single object is wrapped in an array: merged with the store sentinel, vc-shell's list mode trims its fields. */
-  dataRef?: Ref<T | T[] | null | undefined> | ComputedRef<T | T[] | null | undefined>;
+  dataRef?: Ref<ContextData<T>> | ComputedRef<ContextData<T>>;
   suggestions?: UseAiAgentContextOptions<T>["suggestions"];
 }
 
@@ -38,7 +40,7 @@ export default function useAiAgentContextWithStore<T extends ContextItem = Conte
 
   const mergedItems = ref<ContextItem[]>([]);
 
-  const dataRefSource: Ref<T | T[] | null | undefined> | ComputedRef<T | T[] | null | undefined> =
+  const dataRefSource: Ref<ContextData<T>> | ComputedRef<ContextData<T>> =
     options.dataRef ?? ref(undefined);
 
   watch(

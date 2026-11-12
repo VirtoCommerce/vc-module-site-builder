@@ -154,6 +154,23 @@ export function parseLoaded(data: unknown): Loaded | "unsupported" | undefined {
 const templateChoice = (data: Record<string, unknown>): TemplateChoice | undefined =>
   isText(data.template) && (data.ruleId === null || isText(data.ruleId)) ? { template: data.template, ruleId: data.ruleId } : undefined;
 
+function parseEdit(data: unknown): PreviewEvent | undefined {
+  if (!isRecord(data) || !isText(data.itemId) || typeof data.value !== "string") return undefined;
+  const path = data.path;
+  if (!Array.isArray(path) || !path.length || !path.every((x) => typeof x === "string" || typeof x === "number")) return undefined;
+  if (data.cultureName !== undefined && typeof data.cultureName !== "string") return undefined;
+  return { type: "edit", itemId: data.itemId, path, value: data.value, ...(data.cultureName !== undefined ? { cultureName: data.cultureName } : {}) };
+}
+
+function parseResolved(data: unknown): PreviewEvent | undefined {
+  if (!isRecord(data) || typeof data.url !== "string" || typeof data.pageType !== "string" || !isTextList(data.overriddenByWhiteLabeling)) return undefined;
+  const rendered = templateChoice(data);
+  const rules = isRecord(data.rules) ? templateChoice(data.rules) : undefined;
+  return rendered && rules
+    ? { type: "resolved", resolved: { url: data.url, pageType: data.pageType, ...rendered, rules, overriddenByWhiteLabeling: data.overriddenByWhiteLabeling } }
+    : undefined;
+}
+
 function parseEvent(type: unknown, data: unknown): PreviewEvent | undefined {
   switch (type) {
     case "loaded": {
@@ -166,21 +183,10 @@ function parseEvent(type: unknown, data: unknown): PreviewEvent | undefined {
         : undefined;
     case "hover":
       return isRecord(data) && (data.sectionId === null || isText(data.sectionId)) ? { type, sectionId: data.sectionId } : undefined;
-    case "edit": {
-      if (!isRecord(data) || !isText(data.itemId) || typeof data.value !== "string") return undefined;
-      const path = data.path;
-      if (!Array.isArray(path) || !path.length || !path.every((x) => typeof x === "string" || typeof x === "number")) return undefined;
-      if (data.cultureName !== undefined && typeof data.cultureName !== "string") return undefined;
-      return { type, itemId: data.itemId, path, value: data.value, ...(data.cultureName !== undefined ? { cultureName: data.cultureName } : {}) };
-    }
-    case "resolved": {
-      if (!isRecord(data) || typeof data.url !== "string" || typeof data.pageType !== "string" || !isTextList(data.overriddenByWhiteLabeling)) return undefined;
-      const rendered = templateChoice(data);
-      const rules = isRecord(data.rules) ? templateChoice(data.rules) : undefined;
-      return rendered && rules
-        ? { type, resolved: { url: data.url, pageType: data.pageType, ...rendered, rules, overriddenByWhiteLabeling: data.overriddenByWhiteLabeling } }
-        : undefined;
-    }
+    case "edit":
+      return parseEdit(data);
+    case "resolved":
+      return parseResolved(data);
     default:
       return undefined;
   }

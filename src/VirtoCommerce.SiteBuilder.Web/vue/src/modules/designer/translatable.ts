@@ -51,13 +51,14 @@ export function translationOf(value: unknown, at: Translating): Translation {
   return { ...(text ? { fallback: { text } } : {}), languages: [] };
 }
 
+function translationsOf(value: unknown, at: Translating): Translations {
+  if (isTranslations(value)) return { ...value };
+  return typeof value === "string" && value ? { [at.defaultLanguage]: value } : {};
+}
+
 export function withTranslation(value: unknown, at: Translating, text: string): unknown {
   if (!isTranslations(value) && at.language === at.defaultLanguage) return text;
-  const translations: Translations = isTranslations(value)
-    ? { ...value }
-    : typeof value === "string" && value
-      ? { [at.defaultLanguage]: value }
-      : {};
+  const translations = translationsOf(value, at);
   const key = keyOf(translations, at.language) ?? at.language;
   if (text) translations[key] = text;
   else delete translations[key];

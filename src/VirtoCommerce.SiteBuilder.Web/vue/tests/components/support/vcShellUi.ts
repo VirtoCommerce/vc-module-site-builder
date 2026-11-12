@@ -138,6 +138,7 @@ const textInput = (name: string, tag: "input" | "textarea", maxlength?: string) 
     emits: ["update:modelValue", "blur"],
     setup: (props, { emit, attrs }) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      const inputType = () => (props.type === "integer" ? "number" : props.type);
       const update = (value: string | number | null) => {
         if (value === props.modelValue) return;
         clearTimeout(timer);
@@ -148,7 +149,7 @@ const textInput = (name: string, tag: "input" | "textarea", maxlength?: string) 
         h("label", { class: attrs.class }, [
           h("span", props.label),
           h(tag, {
-            type: tag === "input" ? (props.type === "integer" ? "number" : props.type) : undefined,
+            type: tag === "input" ? inputType() : undefined,
             value: props.modelValue ?? "",
             placeholder: props.placeholder,
             disabled: props.disabled,

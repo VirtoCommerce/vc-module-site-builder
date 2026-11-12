@@ -59,7 +59,10 @@ export function isEmptyValue(value: unknown): boolean {
 
 export function checkCondition(descriptor: ConditionDescriptor, value: unknown): ConditionProblem | undefined {
   const input = conditionInput(descriptor);
-  if (input.kind === "categories") return isFilledTextList(typeof value === "string" ? categoryIds(value) : value) ? undefined : { code: "CATEGORY_IDS" };
+  if (input.kind === "categories") {
+    const ids = typeof value === "string" ? categoryIds(value) : value;
+    return isFilledTextList(ids) ? undefined : { code: "CATEGORY_IDS" };
+  }
   if (input.kind === "texts") return isFilledTextList(value) ? undefined : { code: "TEXT_LIST" };
   return checkField(input.field, value);
 }
