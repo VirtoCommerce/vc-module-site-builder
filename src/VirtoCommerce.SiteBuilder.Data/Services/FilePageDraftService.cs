@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
@@ -12,6 +13,8 @@ using VirtoCommerce.Platform.Core.Events;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 public class FilePageDraftService(
     IGitContentPolicy gitContentPolicy,
     IGitContentRepository gitContentRepository,
@@ -27,10 +30,15 @@ public class FilePageDraftService(
 {
     private const string SaveAction = "save";
 
-    public virtual async Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    public virtual Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
 
+        return SaveDraftInternalAsync(storeId, page, user, cancellationToken);
+    }
+
+    private async Task SaveDraftInternalAsync(string storeId, SiteBuilderContentFile page, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
         if (await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
         {
             var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
@@ -41,11 +49,17 @@ public class FilePageDraftService(
         await SaveBlobDraftAsync(storeId, page, cancellationToken);
     }
 
-    public virtual async Task<GitPageCommit> CommitDraftAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
+    public virtual Task<GitPageCommit> CommitDraftAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
 
+        return CommitDraftInternalAsync(storeId, repository, page, action, user, cancellationToken);
+    }
+
+    private async Task<GitPageCommit> CommitDraftInternalAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
         var options = gitContentOptions.Value;
         var baseBranch = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch;
         var location = options.GetPageLocation(repository, page.ContentType, page.Path, user?.Identity?.Name);

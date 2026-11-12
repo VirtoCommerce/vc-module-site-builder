@@ -22,10 +22,15 @@ public class ContentPermissionService(IAuthorizationService authorizationService
         return item.Type == HistoryItemType.Page ? ModuleConstants.Security.Permissions.Update : GetThemeFileEditPermission(item.Key);
     }
 
-    public virtual async Task<bool> HasPermissionsAsync(ClaimsPrincipal user, IEnumerable<string> permissions)
+    public virtual Task<bool> HasPermissionsAsync(ClaimsPrincipal user, IEnumerable<string> permissions)
     {
         ArgumentNullException.ThrowIfNull(permissions);
 
+        return HasPermissionsInternalAsync(user, permissions);
+    }
+
+    private async Task<bool> HasPermissionsInternalAsync(ClaimsPrincipal user, IEnumerable<string> permissions)
+    {
         foreach (var permission in permissions.Distinct())
         {
             if (!(await authorizationService.AuthorizeAsync(user, null, permission)).Succeeded)
@@ -37,10 +42,15 @@ public class ContentPermissionService(IAuthorizationService authorizationService
         return true;
     }
 
-    public virtual async Task<bool> CanAccessPageAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, string storeId)
+    public virtual Task<bool> CanAccessPageAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, string storeId)
     {
         ArgumentNullException.ThrowIfNull(group);
 
+        return CanAccessPageInternalAsync(user, group, storeId);
+    }
+
+    private async Task<bool> CanAccessPageInternalAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, string storeId)
+    {
         var authorizationResult = await authorizationService.AuthorizeAsync(user, group, new SiteBuilderAuthorizationRequirement());
 
         return authorizationResult.Succeeded && group.StoreId.EqualsIgnoreCase(storeId);

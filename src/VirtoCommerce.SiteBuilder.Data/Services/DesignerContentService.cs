@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -13,6 +14,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 public class DesignerContentService(
     IThemeDraftService themeDraftService,
     IThemePublisher themePublisher,
@@ -29,11 +32,17 @@ public class DesignerContentService(
     private const string NeverPublishedError = "This page has never been published, so there is no published version to go back to.";
     private const string PageName = "page";
 
-    public virtual async Task ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
+    public virtual Task ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(files);
 
+        return ValidateThemeFilesInternalAsync(storeId, files, draft, catalogHash, cancellationToken);
+    }
+
+    private async Task ValidateThemeFilesInternalAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
+        CancellationToken cancellationToken)
+    {
         // the new Site Builder publishes the theme as a whole, from drafts
         if (!draft && await themeSnapshotService.IsNewSiteBuilderEnabledAsync(storeId, cancellationToken))
         {
@@ -62,10 +71,15 @@ public class DesignerContentService(
         }
     }
 
-    public virtual async Task<DesignerSaveResult> SaveAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    public virtual Task<DesignerSaveResult> SaveAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        return SaveInternalAsync(command, user, cancellationToken);
+    }
+
+    private async Task<DesignerSaveResult> SaveInternalAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
         await GuardAsync(command, cancellationToken);
 
         var result = AbstractTypeFactory<DesignerSaveResult>.TryCreateInstance();
@@ -94,16 +108,16 @@ public class DesignerContentService(
         return result;
     }
 
-    public virtual async Task<ContentSaveResult> DiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    public virtual Task<ContentSaveResult> DiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        string publishedPageContent = null;
-        var themeDrafts = await themeDraftService.DiscardDraftsAsync(
-            command.StoreId,
-            command.ThemeFiles,
-            async token => publishedPageContent = await DiscardPageAsync(command, user, token),
-            cancellationToken);
+        return DiscardInternalAsync(command, user, cancellationToken);
+    }
+
+    private async Task<ContentSaveResult> DiscardInternalAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var (themeDrafts, publishedPageContent) = await DiscardDraftsAsync(command, user, cancellationToken);
 
         var record = CreateHistoryRecord(ModuleConstants.GitHistory.DiscardedSummary, command.SaveId, user);
         if (publishedPageContent != null)
@@ -127,10 +141,28 @@ public class DesignerContentService(
         return result;
     }
 
-    public virtual async Task<ContentSaveResult> RestoreAsync(ContentRestoreCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    private async Task<(IList<DiscardedThemeDraft> ThemeDrafts, string PublishedPageContent)> DiscardDraftsAsync(DesignerDiscardCommand command, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        string publishedPageContent = null;
+        var themeDrafts = await themeDraftService.DiscardDraftsAsync(
+            command.StoreId,
+            command.ThemeFiles,
+            async token => publishedPageContent = await DiscardPageAsync(command, user, token),
+            cancellationToken);
+
+        return (themeDrafts, publishedPageContent);
+    }
+
+    public virtual Task<ContentSaveResult> RestoreAsync(ContentRestoreCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        return RestoreInternalAsync(command, user, cancellationToken);
+    }
+
+    private async Task<ContentSaveResult> RestoreInternalAsync(ContentRestoreCommand command, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
         await GuardAsync(command, cancellationToken);
 
         var themeFiles = command.Contents.Where(x => x.Key.Type == HistoryItemType.Theme).ToDictionary(x => x.Key.Key, x => x.Value);

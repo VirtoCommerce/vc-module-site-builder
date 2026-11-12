@@ -646,6 +646,17 @@ public class DesignerSaveTests
     }
 
     [Fact]
+    public async Task DiscardDesignerChanges_PageOnly_RecordsItsPublishedContent()
+    {
+        SeedPageDraft();
+
+        var result = await Builder().DiscardDesignerChanges("s1", Discard(new DesignerSavePage { GroupId = "g1" }));
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal([("page:g1", Published)], Assert.Single(_history.Records).Record.Entries.Select(x => (x.Item.ToString(), x.Content)));
+    }
+
+    [Fact]
     public async Task DiscardDesignerChanges_ThemeFileNeverPublished_KeepsItsDraft()
     {
         _live.Files[Theme(Header)] = "live header";

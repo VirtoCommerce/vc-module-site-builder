@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -260,6 +261,8 @@ public class GetThemeSnapshotQueryHandler(
     }
 
     /// <summary>Reads one property without loading the rest of the JSON.</summary>
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the document has no such property; any token, an empty one too, is the property's value.")]
     protected static JToken ReadProperty(TextReader content, string name)
     {
         using var reader = new JsonTextReader(content) { CloseInput = false };

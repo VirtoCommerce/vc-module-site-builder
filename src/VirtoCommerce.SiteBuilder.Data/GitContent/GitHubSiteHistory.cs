@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Text;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -22,6 +23,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
 
 namespace VirtoCommerce.SiteBuilder.Data.GitContent;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 public class GitHubSiteHistory(
     IGitContentPolicy gitContentPolicy,
     IGitContentRepository gitContentRepository,
@@ -84,10 +87,15 @@ public class GitHubSiteHistory(
         return await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken) ? ContentHistoryStatus.Enabled : ContentHistoryStatus.SetupRequired;
     }
 
-    public virtual async Task RecordAsync(string storeId, ContentHistoryRecord record, CancellationToken cancellationToken = default)
+    public virtual Task RecordAsync(string storeId, ContentHistoryRecord record, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(record);
 
+        return RecordInternalAsync(storeId, record, cancellationToken);
+    }
+
+    private async Task RecordInternalAsync(string storeId, ContentHistoryRecord record, CancellationToken cancellationToken)
+    {
         var files = GetCommitFiles(record);
         if (files.Count == 0)
         {
@@ -112,11 +120,17 @@ public class GitHubSiteHistory(
         }
     }
 
-    public virtual async Task<ContentVersionPage> ListAsync(string storeId, IList<HistoryItem> items, string cursor, int take,
+    public virtual Task<ContentVersionPage> ListAsync(string storeId, IList<HistoryItem> items, string cursor, int take,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
 
+        return ListInternalAsync(storeId, items, cursor, take, cancellationToken);
+    }
+
+    private async Task<ContentVersionPage> ListInternalAsync(string storeId, IList<HistoryItem> items, string cursor, int take,
+        CancellationToken cancellationToken)
+    {
         var continuation = ReadCursor(storeId, cursor);
         var positions = continuation.Positions;
         var result = AbstractTypeFactory<ContentVersionPage>.TryCreateInstance();
@@ -126,13 +140,7 @@ public class GitHubSiteHistory(
             return result;
         }
 
-        var sources = items
-            .Select(item => (Item: item, Path: GetFilePath(item)))
-            .Where(x => x.Path != null)
-            .DistinctBy(x => x.Path, StringComparer.Ordinal)
-            .Select(x => new HistorySource(x.Item, x.Path, positions.TryGetValue(GetPositionKey(x.Path), out var position) ? position : null))
-            .Where(x => !x.Position.Done)
-            .ToList();
+        var sources = GetSources(items, positions);
         if (sources.Count == 0)
         {
             return result;
@@ -148,13 +156,38 @@ public class GitHubSiteHistory(
             return result;
         }
 
-        var head = answer.SelectToken("data.repository.ref.target") ?? answer.SelectToken("data.repository.object");
+        var head = GetHistoryHead(answer);
         // GraphQL answers null for a commit that no longer exists
         if (continuation.Head != null && head is not JObject)
         {
             throw new ArgumentException(InvalidCursorError, nameof(cursor));
         }
 
+        await ReadHistoriesAsync(storeId, head, sources, cancellationToken);
+
+        result.Versions = MergeVersions(sources, take);
+        // later pages read the commit this page read, so a save made meanwhile does not shift them
+        result.Cursor = WriteCursor(storeId, GetCursorHead(continuation, head), positions, sources);
+
+        return result;
+    }
+
+    private static JToken GetHistoryHead(JObject answer) =>
+        answer.SelectToken("data.repository.ref.target") ?? answer.SelectToken("data.repository.object");
+
+    private static string GetCursorHead(HistoryCursor continuation, JToken head) => continuation.Head ?? head?["oid"]?.Value<string>();
+
+    private List<HistorySource> GetSources(IList<HistoryItem> items, IDictionary<string, HistoryPosition> positions) =>
+        items
+            .Select(item => (Item: item, Path: GetFilePath(item)))
+            .Where(x => x.Path != null)
+            .DistinctBy(x => x.Path, StringComparer.Ordinal)
+            .Select(x => new HistorySource(x.Item, x.Path, positions.TryGetValue(GetPositionKey(x.Path), out var position) ? position : null))
+            .Where(x => !x.Position.Done)
+            .ToList();
+
+    private async Task ReadHistoriesAsync(string storeId, JToken head, IList<HistorySource> sources, CancellationToken cancellationToken)
+    {
         for (var i = 0; i < sources.Count; i++)
         {
             var history = head?[$"h{i}"];
@@ -164,18 +197,17 @@ public class GitHubSiteHistory(
             source.EndCursor = history?.SelectToken("pageInfo.endCursor")?.Value<string>();
             source.LiveOid = source.Position.LiveFound ? null : ComputeBlobOid(await GetLiveContentAsync(storeId, source.Item, cancellationToken));
         }
-
-        result.Versions = MergeVersions(sources, take);
-        // later pages read the commit this page read, so a save made meanwhile does not shift them
-        result.Cursor = WriteCursor(storeId, continuation.Head ?? head?["oid"]?.Value<string>(), positions, sources);
-
-        return result;
     }
 
-    public virtual async Task<string> ReadAsync(string storeId, HistoryItem item, string versionId, CancellationToken cancellationToken = default)
+    public virtual Task<string> ReadAsync(string storeId, HistoryItem item, string versionId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
 
+        return ReadInternalAsync(storeId, item, versionId, cancellationToken);
+    }
+
+    private async Task<string> ReadInternalAsync(string storeId, HistoryItem item, string versionId, CancellationToken cancellationToken)
+    {
         var path = GetFilePath(item);
         var sha = GetCommitSha(versionId);
         if (path == null || sha == null)
@@ -196,9 +228,9 @@ public class GitHubSiteHistory(
 
         var bytes = PageJson.Encoding.GetBytes(content);
         var header = Encoding.ASCII.GetBytes($"blob {bytes.Length}\0");
-#pragma warning disable CA5350 // git names blobs by SHA-1; this is an identity, not a security check
+#pragma warning disable CA5350, S4790 // git names blobs by SHA-1; this is an identity, not a security check
         return Convert.ToHexStringLower(SHA1.HashData([.. header, .. bytes]));
-#pragma warning restore CA5350
+#pragma warning restore CA5350, S4790
     }
 
     protected virtual async Task<string> GetHistoryRepositoryAsync(string storeId, CancellationToken cancellationToken)
@@ -509,6 +541,8 @@ public class GitHubSiteHistory(
 
         public bool LiveFound { get; set; }
 
+        [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+            Justification = "null means every node was read; a node is a JSON object, not a collection of results.")]
         public JToken Head => Read < Nodes.Count ? Nodes[Read] : null;
     }
 }

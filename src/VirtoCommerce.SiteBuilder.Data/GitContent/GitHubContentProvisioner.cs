@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,8 @@ using StoreLevelSettings = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Settin
 
 namespace VirtoCommerce.SiteBuilder.Data.GitContent;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 public class GitHubContentProvisioner(
     IGitHubApiClient gitHubApiClient,
     IGitHubConnectionService gitHubConnectionService,
@@ -42,26 +45,7 @@ public class GitHubContentProvisioner(
         status.Configured = true;
         try
         {
-            var storeRepository = await gitContentPolicy.GetConfiguredRepositoryAsync(storeId, cancellationToken);
-            status.Repository = storeRepository?.Name;
-            status.Enabled = await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken);
-
-            var repositoryInfo = status.Repository == null ? null : await gitHubApiClient.GetRepositoryAsync(status.Repository, cancellationToken);
-            if (repositoryInfo != null && connection.IsInOrganization(status.Repository))
-            {
-                gitContentOwnership.EnsureOwnedBy(status.Repository, gitContentOwnership.GetStoreId(repositoryInfo.Description), storeId);
-            }
-
-            if (repositoryInfo == null && storeRepository?.Source == GitRepositorySource.Site)
-            {
-                await EnsureOrganizationReachableAsync(connection.Organization, cancellationToken);
-            }
-
-            status.Url = repositoryInfo?.HtmlUrl;
-            if (repositoryInfo != null)
-            {
-                status.LastCommitSha = await gitContentRepository.GetBranchHeadShaAsync(status.Repository, connection.BaseBranch, cancellationToken);
-            }
+            await ReadRepositoryStatusAsync(storeId, connection, status, cancellationToken);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -72,6 +56,30 @@ public class GitHubContentProvisioner(
         }
 
         return status;
+    }
+
+    private async Task ReadRepositoryStatusAsync(string storeId, GitHubConnection connection, GitContentSiteStatus status, CancellationToken cancellationToken)
+    {
+        var storeRepository = await gitContentPolicy.GetConfiguredRepositoryAsync(storeId, cancellationToken);
+        status.Repository = storeRepository?.Name;
+        status.Enabled = await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken);
+
+        var repositoryInfo = status.Repository == null ? null : await gitHubApiClient.GetRepositoryAsync(status.Repository, cancellationToken);
+        if (repositoryInfo != null && connection.IsInOrganization(status.Repository))
+        {
+            gitContentOwnership.EnsureOwnedBy(status.Repository, gitContentOwnership.GetStoreId(repositoryInfo.Description), storeId);
+        }
+
+        if (repositoryInfo == null && storeRepository?.Source == GitRepositorySource.Site)
+        {
+            await EnsureOrganizationReachableAsync(connection.Organization, cancellationToken);
+        }
+
+        status.Url = repositoryInfo?.HtmlUrl;
+        if (repositoryInfo != null)
+        {
+            status.LastCommitSha = await gitContentRepository.GetBranchHeadShaAsync(status.Repository, connection.BaseBranch, cancellationToken);
+        }
     }
 
     public virtual async Task CheckOrganizationAsync(CancellationToken cancellationToken = default)

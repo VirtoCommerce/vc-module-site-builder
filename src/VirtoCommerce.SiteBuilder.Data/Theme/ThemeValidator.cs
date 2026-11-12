@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
@@ -68,9 +69,7 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
     {
         foreach (var token in items)
         {
-            if (token is not JObject item
-                || GetString(item, "id") is not { } id || string.IsNullOrWhiteSpace(id)
-                || GetString(item, "type") is not { } type || string.IsNullOrWhiteSpace(type))
+            if (!TryReadItem(token, out var item, out var id, out var type))
             {
                 errors.Add($"{file}: an item without an id or a type");
                 continue;
@@ -86,10 +85,7 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
                 continue;
             }
 
-            var isKnown = catalog == null
-                || GetItemSchema(catalog, kind, type) != null
-                || (allowPageContent && kind == ModuleConstants.SchemaKinds.Sections && type == PageContentSection);
-            if (!isKnown)
+            if (!IsKnownType(catalog, kind, type, allowPageContent))
             {
                 errors.Add($"{file}: '{id}' has a type the storefront does not have, '{type}'");
             }
@@ -99,17 +95,7 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
                 ValidateValues(item, GetFields(GetItemSchema(catalog, kind, type), kind, catalog), $"{file}: '{id}'", catalog, errors);
             }
 
-            switch (item["blocks"])
-            {
-                case null:
-                    break;
-                case JArray blocks:
-                    ValidateItems(blocks, ModuleConstants.SchemaKinds.Blocks, file, catalog, errors, allowPageContent: false);
-                    break;
-                default:
-                    errors.Add($"{file}: '{id}' has blocks that are not a list");
-                    break;
-            }
+            ValidateBlocks(item, id, file, catalog, errors);
         }
     }
 
@@ -135,17 +121,17 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
         var chosen = value is JArray list && IsSet(field, "multiple") ? list.ToList() : [value];
         if (chosen.TrueForAll(IsEmptyValue))
         {
-            // an absent value is the field's default
-            var missing = IsSet(field, "required") && (value != null || IsEmptyValue(field["default"]));
-            return missing ? $"has no value in '{path}', which the storefront requires" : null;
+            return IsMissingRequiredValue(field, value) ? $"has no value in '{path}', which the storefront requires" : null;
         }
 
         var allowed = type == ColorTokenFieldType ? GetPaletteTokens(catalog) : GetOptions(field);
-        var bad = allowed == null ? null : chosen.Find(x => !IsEmptyValue(x) && !allowed.Any(option => JToken.DeepEquals(option, x)));
+        var bad = allowed == null ? null : FindValueNotAllowed(chosen, allowed);
 
         return bad == null ? null : $"has a value in '{path}' the storefront does not have, {DescribeValue(bad)}";
     }
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the catalog lists no palette tokens and the value is not checked; an empty list would reject every value.")]
     protected virtual IList<JToken> GetPaletteTokens(JObject catalog)
     {
         if (catalog?[PaletteTokensKey] is not JObject tokens)
@@ -156,14 +142,55 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
         return GetStrings(tokens["light"]).Concat(GetStrings(tokens["dark"])).Distinct(StringComparer.Ordinal).Select(x => (JToken)x).ToList();
     }
 
+    private static bool TryReadItem(JToken token, out JObject item, out string id, out string type)
+    {
+        item = token as JObject;
+        id = item == null ? null : GetString(item, "id");
+        type = item == null ? null : GetString(item, "type");
+
+        return !string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(type);
+    }
+
+    private static bool IsKnownType(JObject catalog, string kind, string type, bool allowPageContent) =>
+        catalog == null || GetItemSchema(catalog, kind, type) != null || IsPageContent(kind, type, allowPageContent);
+
+    private static bool IsPageContent(string kind, string type, bool allowPageContent) =>
+        allowPageContent && kind == ModuleConstants.SchemaKinds.Sections && type == PageContentSection;
+
+    private void ValidateBlocks(JObject item, string id, string file, JObject catalog, IList<string> errors)
+    {
+        switch (item["blocks"])
+        {
+            case null:
+                break;
+            case JArray blocks:
+                ValidateItems(blocks, ModuleConstants.SchemaKinds.Blocks, file, catalog, errors, allowPageContent: false);
+                break;
+            default:
+                errors.Add($"{file}: '{id}' has blocks that are not a list");
+                break;
+        }
+    }
+
+    // an absent value is the field's default
+    private static bool IsMissingRequiredValue(JObject field, JToken value) =>
+        IsSet(field, "required") && (value != null || IsEmptyValue(field["default"]));
+
+    private static JToken FindValueNotAllowed(List<JToken> chosen, IList<JToken> allowed) =>
+        chosen.Find(x => !IsEmptyValue(x) && !allowed.Any(option => JToken.DeepEquals(option, x)));
+
     // a select with remote options has no list to check against
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the options are not known here and the value is not checked; an empty list would reject every value.")]
     private static List<JToken> GetOptions(JObject field) =>
         field["request"] != null ? null : (field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).Where(x => x != null).ToList();
 
     private static bool IsSet(JObject field, string name) => field[name] is JValue { Type: JTokenType.Boolean } flag && (bool)flag;
 
     private static bool IsEmptyValue(JToken value) =>
-        value == null || value.Type == JTokenType.Null || (value is JValue { Type: JTokenType.String } text && string.IsNullOrEmpty((string)text)) || value is JArray { Count: 0 };
+        value == null || value.Type == JTokenType.Null || IsEmptyText(value) || value is JArray { Count: 0 };
+
+    private static bool IsEmptyText(JToken value) => value is JValue { Type: JTokenType.String } text && string.IsNullOrEmpty((string)text);
 
     // a scalar as it is, a list or an object by its kind, so that no content beyond the value goes into the error
     private static string DescribeValue(JToken value) => value switch

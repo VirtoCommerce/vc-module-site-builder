@@ -176,10 +176,7 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// <summary>
         /// True when the connection is filled in well enough to talk to GitHub at all.
         /// </summary>
-        public bool IsConfigured =>
-            (!string.IsNullOrWhiteSpace(Repository) || !string.IsNullOrWhiteSpace(Organization)) &&
-            (!string.IsNullOrWhiteSpace(Token) || HasApp()) &&
-            !string.IsNullOrWhiteSpace(BaseBranch);
+        public bool IsConfigured => HasTarget() && HasCredentials() && !string.IsNullOrWhiteSpace(BaseBranch);
 
         public bool IsRepositoryAllowed(string repository) => AllowedRepositories.Any(entry =>
             entry.EndsWith(AnyRepositoryOfOwner, StringComparison.Ordinal)
@@ -211,28 +208,39 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
 
             if (IsConfigured)
             {
-                // One branch on both ends turns promotion into a no-op that reports success: the page is
-                // written back to the branch it already came from, CI redeploys the environment it was
-                // already on, and production never hears about it. There is no configuration in which
-                // this is meant, so it is a start-up failure rather than a surprise at the first promotion.
-                if (!string.IsNullOrWhiteSpace(ReleaseBranch) &&
-                    string.Equals(ReleaseBranch.Trim(), BaseBranch?.Trim(), StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException(
-                        $"{SectionName}:{nameof(ReleaseBranch)} and {SectionName}:{nameof(BaseBranch)} both name " +
-                        $"\"{BaseBranch}\". Promotion to production would merge that branch into itself. " +
-                        $"Name the production branch, or leave {nameof(ReleaseBranch)} empty to disable promotion.");
-                }
-
+                ValidateReleaseBranch();
                 return;
             }
 
+            throw new InvalidOperationException(
+                $"{SectionName}:Enabled is set but the connection is incomplete — missing: {string.Join(", ", GetMissingSettings())}. " +
+                $"Fill them in, or set {SectionName}:Enabled to false.");
+        }
+
+        // One branch on both ends turns promotion into a no-op that reports success: the page is
+        // written back to the branch it already came from, CI redeploys the environment it was
+        // already on, and production never hears about it. There is no configuration in which
+        // this is meant, so it is a start-up failure rather than a surprise at the first promotion.
+        private void ValidateReleaseBranch()
+        {
+            if (!string.IsNullOrWhiteSpace(ReleaseBranch) &&
+                string.Equals(ReleaseBranch.Trim(), BaseBranch?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"{SectionName}:{nameof(ReleaseBranch)} and {SectionName}:{nameof(BaseBranch)} both name " +
+                    $"\"{BaseBranch}\". Promotion to production would merge that branch into itself. " +
+                    $"Name the production branch, or leave {nameof(ReleaseBranch)} empty to disable promotion.");
+            }
+        }
+
+        private List<string> GetMissingSettings()
+        {
             var missing = new List<string>();
-            if (string.IsNullOrWhiteSpace(Repository) && string.IsNullOrWhiteSpace(Organization))
+            if (!HasTarget())
             {
                 missing.Add($"{nameof(Organization)} (or {nameof(Repository)})");
             }
-            if (string.IsNullOrWhiteSpace(Token) && !HasApp())
+            if (!HasCredentials())
             {
                 missing.Add($"{nameof(AppId)} and {nameof(PrivateKey)} (or {nameof(Token)})");
             }
@@ -241,9 +249,7 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
                 missing.Add(nameof(BaseBranch));
             }
 
-            throw new InvalidOperationException(
-                $"{SectionName}:Enabled is set but the connection is incomplete — missing: {string.Join(", ", missing)}. " +
-                $"Fill them in, or set {SectionName}:Enabled to false.");
+            return missing;
         }
 
         private void ValidateAllowedRepositories()
@@ -256,6 +262,10 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
                     $"{string.Join(", ", malformed.Select(x => $"\"{x}\""))}.");
             }
         }
+
+        private bool HasTarget() => !string.IsNullOrWhiteSpace(Repository) || !string.IsNullOrWhiteSpace(Organization);
+
+        private bool HasCredentials() => !string.IsNullOrWhiteSpace(Token) || HasApp();
 
         private bool HasApp() => !string.IsNullOrWhiteSpace(AppId) && !string.IsNullOrWhiteSpace(PrivateKey);
     }

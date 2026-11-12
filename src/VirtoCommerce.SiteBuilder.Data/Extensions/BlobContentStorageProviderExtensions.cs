@@ -4,10 +4,15 @@ namespace VirtoCommerce.SiteBuilder.Data.Extensions;
 
 public static class BlobContentStorageProviderExtensions
 {
-    public static async Task<string> ReadTextAsync(this IBlobContentStorageProvider storageProvider, string path)
+    public static Task<string> ReadTextAsync(this IBlobContentStorageProvider storageProvider, string path)
     {
         ArgumentNullException.ThrowIfNull(storageProvider);
 
+        return ReadTextInternalAsync(storageProvider, path);
+    }
+
+    private static async Task<string> ReadTextInternalAsync(IBlobContentStorageProvider storageProvider, string path)
+    {
         if (await storageProvider.GetBlobInfoAsync(path) == null)
         {
             return null;

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Security.Claims;
 using System.Text;
@@ -21,6 +22,8 @@ using VirtoCommerce.StoreModule.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 public class ThemePublisher(
     IThemeStorageFactory themeStorageFactory,
     IThemeSnapshotBuilder themeSnapshotBuilder,

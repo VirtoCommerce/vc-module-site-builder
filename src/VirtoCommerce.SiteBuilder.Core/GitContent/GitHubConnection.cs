@@ -31,12 +31,13 @@ public class GitHubConnection
 
     public bool UsesApp => !string.IsNullOrWhiteSpace(AppId) && !string.IsNullOrWhiteSpace(PrivateKey);
 
-    public bool IsConfigured =>
-        (!string.IsNullOrWhiteSpace(Repository) || !string.IsNullOrWhiteSpace(Organization)) &&
-        (!string.IsNullOrWhiteSpace(Token) || UsesApp) &&
-        !string.IsNullOrWhiteSpace(BaseBranch);
+    public bool IsConfigured => HasTarget && HasCredentials && !string.IsNullOrWhiteSpace(BaseBranch);
 
     public bool IsInOrganization(string repository) =>
         !string.IsNullOrWhiteSpace(Organization) &&
         repository?.StartsWith($"{Organization.Trim()}/", StringComparison.OrdinalIgnoreCase) == true;
+
+    private bool HasTarget => !string.IsNullOrWhiteSpace(Repository) || !string.IsNullOrWhiteSpace(Organization);
+
+    private bool HasCredentials => !string.IsNullOrWhiteSpace(Token) || UsesApp;
 }

@@ -588,13 +588,8 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             }
 
             var gitFlow = await gitContentPolicy.IsEnabledForStoreAsync(storeId, HttpContext.RequestAborted);
-            if (IsPublication(files, draft, gitFlow) && !await HasPermissionsAsync([ModuleConstants.Security.Permissions.Publish]))
-            {
-                return Forbid();
-            }
-
             var themeFiles = files.Where(IsThemeFile).ToList();
-            if (!await HasPermissionsAsync(themeFiles.Select(x => contentPermissionService.GetThemeFileEditPermission(x.Path))))
+            if (!await CanSaveFilesAsync(files, themeFiles, draft, gitFlow))
             {
                 return Forbid();
             }
@@ -622,6 +617,16 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             }
 
             return await SaveDraftToGitAsync(storeId, theme, files);
+        }
+
+        private async Task<bool> CanSaveFilesAsync(List<SaveFileModel> files, List<SaveFileModel> themeFiles, bool draft, bool gitFlow)
+        {
+            if (IsPublication(files, draft, gitFlow) && !await HasPermissionsAsync([ModuleConstants.Security.Permissions.Publish]))
+            {
+                return false;
+            }
+
+            return await HasPermissionsAsync(themeFiles.Select(x => contentPermissionService.GetThemeFileEditPermission(x.Path)));
         }
 
         // With the git flow on, live belongs to the CI deploy and editors publish through a pull request.
@@ -773,20 +778,10 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             var page = value?.Page;
             var themeFiles = value?.ThemeFiles ?? [];
             var request = new SiteBuilderContentRequest { StoreId = storeId, CatalogHash = catalogHash };
-            if ((await CheckStoreAccessAsync(request) ?? await CheckThemeFilesAccessAsync(themeFiles.Select(x => x?.Path))) is { } forbidden)
+            var (group, refused) = await CheckDesignerRequestAsync(request, GetPaths(themeFiles), page?.GroupId, designerSaveValidator, value);
+            if (refused != null)
             {
-                return forbidden;
-            }
-
-            if (await designerSaveValidator.ValidateRequestAsync(value ?? new DesignerSaveRequest(), cancellationToken) is { } invalidRequest)
-            {
-                return invalidRequest;
-            }
-
-            var group = string.IsNullOrEmpty(page?.GroupId) ? null : await groupedPageService.GetByIdAsync(page.GroupId);
-            if (!string.IsNullOrEmpty(page?.GroupId) && await CheckDesignerGroupAccessAsync(storeId, group) is { } refusedGroup)
-            {
-                return refusedGroup;
+                return refused;
             }
 
             if (!TryParseDesignerFiles(page, themeFiles, out var files, out var parseError))
@@ -800,27 +795,24 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
                 return invalid;
             }
 
-            if (group != null && await CheckDesignerPageAsync(storeId, page, cancellationToken) is { } refusedPage)
+            if (await CheckDesignerPageAsync(storeId, group, page, cancellationToken) is { } refusedPage)
             {
                 return refusedPage;
             }
 
-            if (themeFiles.Any(x => string.IsNullOrWhiteSpace(x.ETag)))
-            {
-                return StatusCode(StatusCodes.Status428PreconditionRequired, "Read each theme file with designer/theme-file and send its ETag before saving.");
-            }
-
-            var themeSaveFiles = files.Where(IsThemeFile).ToList();
-            if (themeSaveFiles.Count > 0 && string.IsNullOrEmpty(catalogHash))
-            {
-                return BadRequest(new { error = CatalogRequiredError });
-            }
-
-            if (themeSaveFiles.Count > 0 && await ValidateThemeFilesAsync(storeId, themeSaveFiles, draft: true, catalogHash) is { } refusedThemeFiles)
+            if (await CheckDesignerThemeFilesAsync(storeId, themeFiles, files, catalogHash) is { } refusedThemeFiles)
             {
                 return refusedThemeFiles;
             }
 
+            var command = CreateDesignerSaveCommand(storeId, group, page, files, themeFiles, catalogHash);
+
+            return await SaveDesignerChangesAsync(command, cancellationToken);
+        }
+
+        private DesignerSaveCommand CreateDesignerSaveCommand(string storeId, GroupedSiteBuilderPage group, DesignerSavePage page, List<SaveFileModel> files,
+            IList<DesignerSaveFile> themeFiles, string catalogHash)
+        {
             var command = AbstractTypeFactory<DesignerSaveCommand>.TryCreateInstance();
             command.StoreId = storeId;
             command.SaveId = Request.GetOrCreateSaveId();
@@ -830,6 +822,12 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             command.FilePage = files.Where(x => !IsThemeFile(x)).Select(ToContentFile).FirstOrDefault();
             command.ThemeFiles = themeFiles;
             command.CatalogHash = catalogHash;
+
+            return command;
+        }
+
+        private async Task<ActionResult<DesignerSaveResult>> SaveDesignerChangesAsync(DesignerSaveCommand command, CancellationToken cancellationToken)
+        {
             try
             {
                 return Ok(await designerContentService.SaveAsync(command, User, cancellationToken));
@@ -859,27 +857,18 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             var page = value?.Page;
             var themePaths = value?.ThemeFiles ?? [];
             var request = new SiteBuilderContentRequest { StoreId = storeId };
-            if ((await CheckStoreAccessAsync(request) ?? await CheckThemeFilesAccessAsync(themePaths)) is { } forbidden)
+            var (group, refused) = await CheckDesignerRequestAsync(request, themePaths, page?.GroupId, designerDiscardValidator, value);
+            if (refused != null)
             {
-                return forbidden;
-            }
-
-            if (await designerDiscardValidator.ValidateRequestAsync(value ?? new DesignerDiscardRequest(), HttpContext.RequestAborted) is { } invalidRequest)
-            {
-                return invalidRequest;
-            }
-
-            var group = string.IsNullOrEmpty(page?.GroupId) ? null : await groupedPageService.GetByIdAsync(page.GroupId);
-            if (!string.IsNullOrEmpty(page?.GroupId) && await CheckDesignerGroupAccessAsync(storeId, group) is { } refusedGroup)
-            {
-                return refusedGroup;
+                return refused;
             }
 
             request.Files = themePaths.Select(x => new SiteBuilderContentFile { ContentType = Themes, Path = x }).ToList();
-            if (!string.IsNullOrEmpty(page?.Path))
+            var filePage = GetDesignerFilePage(page);
+            if (filePage != null)
             {
-                request.ContentType = page.Type.ToLowerInvariant();
-                request.Pages = [page.Path];
+                request.ContentType = filePage.ContentType;
+                request.Pages = [filePage.Path];
             }
 
             if (await ValidateAsync(request) is { } invalid)
@@ -891,7 +880,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             command.StoreId = storeId;
             command.SaveId = Request.GetOrCreateSaveId();
             command.Group = group;
-            command.FilePage = string.IsNullOrEmpty(page?.Path) ? null : new SiteBuilderContentFile { ContentType = request.ContentType, Path = page.Path };
+            command.FilePage = filePage;
             command.ThemeFiles = themePaths;
             try
             {
@@ -901,6 +890,56 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             {
                 return BadRequest(new { error = ex.Message });
             }
+        }
+
+        private static IEnumerable<string> GetPaths(IEnumerable<DesignerSaveFile> files) => files.Select(x => x?.Path);
+
+        private static SiteBuilderContentFile GetDesignerFilePage(DesignerSavePage page) =>
+            string.IsNullOrEmpty(page?.Path) ? null : new SiteBuilderContentFile { ContentType = page.Type.ToLowerInvariant(), Path = page.Path };
+
+        /// <returns>The group of the page the request names, and the answer that refuses the request, if any.</returns>
+        private async Task<(GroupedSiteBuilderPage Group, ActionResult Refused)> CheckDesignerRequestAsync<T>(SiteBuilderContentRequest request,
+            IEnumerable<string> themePaths, string groupId, IValidator<T> validator, T value)
+            where T : class, new()
+        {
+            if ((await CheckStoreAccessAsync(request) ?? await CheckThemeFilesAccessAsync(themePaths)) is { } forbidden)
+            {
+                return (null, forbidden);
+            }
+
+            if (await validator.ValidateRequestAsync(value ?? new T(), HttpContext.RequestAborted) is { } invalidRequest)
+            {
+                return (null, invalidRequest);
+            }
+
+            if (string.IsNullOrEmpty(groupId))
+            {
+                return (null, null);
+            }
+
+            var group = await groupedPageService.GetByIdAsync(groupId);
+            return (group, await CheckDesignerGroupAccessAsync(request.StoreId, group));
+        }
+
+        private async Task<ActionResult> CheckDesignerThemeFilesAsync(string storeId, IList<DesignerSaveFile> themeFiles, List<SaveFileModel> files, string catalogHash)
+        {
+            if (themeFiles.Any(x => string.IsNullOrWhiteSpace(x.ETag)))
+            {
+                return StatusCode(StatusCodes.Status428PreconditionRequired, "Read each theme file with designer/theme-file and send its ETag before saving.");
+            }
+
+            var themeSaveFiles = files.Where(IsThemeFile).ToList();
+            if (themeSaveFiles.Count == 0)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(catalogHash))
+            {
+                return BadRequest(new { error = CatalogRequiredError });
+            }
+
+            return await ValidateThemeFilesAsync(storeId, themeSaveFiles, draft: true, catalogHash);
         }
 
         /// <summary>Reads the JSON of the file page and the theme files as they are, dates included.</summary>
@@ -972,8 +1011,13 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             return await contentPermissionService.CanAccessPageAsync(User, group, storeId) ? null : Forbid();
         }
 
-        private async Task<ActionResult> CheckDesignerPageAsync(string storeId, DesignerSavePage page, CancellationToken cancellationToken)
+        private async Task<ActionResult> CheckDesignerPageAsync(string storeId, GroupedSiteBuilderPage group, DesignerSavePage page, CancellationToken cancellationToken)
         {
+            if (group == null)
+            {
+                return null;
+            }
+
             if (string.IsNullOrWhiteSpace(page.ETag))
             {
                 return StatusCode(StatusCodes.Status428PreconditionRequired, "Read the page content and send its ETag before saving.");
@@ -1008,15 +1052,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             var draft = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, HttpContext.RequestAborted);
             if (draft == null)
             {
-                await EnsureRepositoryReadableAsync(location.Repository, await GetBaseBranchAsync());
-
-                // nothing to merge; re-sync the live page anyway (repairs a failed or late live write)
-                if (storeRepository.IsPlatformManaged)
-                {
-                    await gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: false, HttpContext.RequestAborted);
-                }
-
-                return Ok(new { state = nameof(GitPublishState.AlreadyPublished) });
+                return await RespondToNothingToPublishAsync(storeRepository, location, storeId, type, path);
             }
 
             // The CI gate runs the full, schema-aware validator; this one only refuses to open a pull
@@ -1037,11 +1073,27 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             var response = await RespondToPublishAsync(result, location, path, canRebase: true);
             if (storeRepository.IsPlatformManaged && result.State is GitPublishState.Merged or GitPublishState.AlreadyPublished)
             {
-                await gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: false, HttpContext.RequestAborted);
+                await SyncPublishedLivePageAsync(storeId, type, path, location);
             }
 
             return response;
         }
+
+        private async Task<ActionResult> RespondToNothingToPublishAsync(StoreRepository storeRepository, GitPageFileLocation location, string storeId, string type, string path)
+        {
+            await EnsureRepositoryReadableAsync(location.Repository, await GetBaseBranchAsync());
+
+            // nothing to merge; re-sync the live page anyway (repairs a failed or late live write)
+            if (storeRepository.IsPlatformManaged)
+            {
+                await SyncPublishedLivePageAsync(storeId, type, path, location);
+            }
+
+            return Ok(new { state = nameof(GitPublishState.AlreadyPublished) });
+        }
+
+        private Task SyncPublishedLivePageAsync(string storeId, string type, string path, GitPageFileLocation location) =>
+            gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: false, HttpContext.RequestAborted);
 
         /// <summary>
         /// The way out of a <see cref="GitPublishState.Conflict"/>: the draft, as a state, on top of today's
@@ -1229,18 +1281,39 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
             if (await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, HttpContext.RequestAborted) == null)
             {
-                await EnsureRepositoryReadableAsync(location.Repository, baseBranch);
-
-                // retry of a merged unpublish whose live removal failed; a page the branch never had stays live
-                if (storeRepository.IsPlatformManaged && await gitLivePageService.IsRemovedFromBaseBranchAsync(location, HttpContext.RequestAborted))
-                {
-                    await gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: true, HttpContext.RequestAborted);
-                    return Ok(new { state = nameof(GitPublishState.AlreadyPublished) });
-                }
-
-                return NotFound(new { templatePath = path });
+                return await RespondToNothingToUnpublishAsync(storeRepository, location, baseBranch, storeId, type, path);
             }
 
+            await CommitUnpublishAsync(location, baseBranch, storeId, path);
+
+            var result = await gitContentPublisher.MergeBranchAsync(location.Repository, location.Branch, $"unpublish {path} (store: {storeId})", HttpContext.RequestAborted);
+
+            var response = await RespondToPublishAsync(result, location, path);
+            if (result.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
+            {
+                await SyncUnpublishedLivePageAsync(storeId, type, path, location);
+            }
+
+            return response;
+        }
+
+        private async Task<ActionResult> RespondToNothingToUnpublishAsync(StoreRepository storeRepository, GitPageFileLocation location, string baseBranch, string storeId,
+            string type, string path)
+        {
+            await EnsureRepositoryReadableAsync(location.Repository, baseBranch);
+
+            // retry of a merged unpublish whose live removal failed; a page the branch never had stays live
+            if (storeRepository.IsPlatformManaged && await gitLivePageService.IsRemovedFromBaseBranchAsync(location, HttpContext.RequestAborted))
+            {
+                await SyncUnpublishedLivePageAsync(storeId, type, path, location);
+                return Ok(new { state = nameof(GitPublishState.AlreadyPublished) });
+            }
+
+            return NotFound(new { templatePath = path });
+        }
+
+        private async Task CommitUnpublishAsync(GitPageFileLocation location, string baseBranch, string storeId, string path)
+        {
             var hadBranch = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, HttpContext.RequestAborted) != null;
             if (!hadBranch)
             {
@@ -1257,17 +1330,10 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
                 await gitContentRepository.DeleteFileAsync(location.Repository, location.RepoPath, location.Branch, CommitMessage($"unpublish {path} (store: {storeId})"), CurrentAuthor(), HttpContext.RequestAborted);
                 gitContentHistory.Invalidate(location.Repository, location.RepoPath);
             }
-
-            var result = await gitContentPublisher.MergeBranchAsync(location.Repository, location.Branch, $"unpublish {path} (store: {storeId})", HttpContext.RequestAborted);
-
-            var response = await RespondToPublishAsync(result, location, path);
-            if (result.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
-            {
-                await gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: true, HttpContext.RequestAborted);
-            }
-
-            return response;
         }
+
+        private Task SyncUnpublishedLivePageAsync(string storeId, string type, string path, GitPageFileLocation location) =>
+            gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: true, HttpContext.RequestAborted);
 
         /// <summary>
         /// The shape the builder's toolbar expects, answered from git: <c>published</c> is "the page
@@ -1578,6 +1644,11 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
                     : NoContent();
             }
 
+            return await DiscardThemeDraftAsync(storeId, path);
+        }
+
+        private async Task<ActionResult> DiscardThemeDraftAsync(string storeId, string path)
+        {
             var draft = (await themeDraftService.DiscardDraftsAsync(storeId, [path], _ => Task.CompletedTask, HttpContext.RequestAborted)).Single();
             if (draft.Status == DraftDiscardStatus.OnlyCopy)
             {
@@ -2243,13 +2314,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
             if (themeFiles.Count > 0)
             {
-                var record = ContentHistoryRecord.Create(draft ? ModuleConstants.GitHistory.SavedSummary : ModuleConstants.GitHistory.PublishedSummary, Request.GetOrCreateSaveId(), User);
-                foreach (var (path, content) in themeFiles)
-                {
-                    record.AddEntry(HistoryItem.ForThemeFile(path), content);
-                }
-
-                await contentHistory.RecordAsync(storeId, record, cancellationToken);
+                await RecordThemeFilesAsync(storeId, themeFiles, draft, cancellationToken);
             }
 
             async Task WriteFilesAsync()
@@ -2282,6 +2347,17 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
                     entries.Add(CreateChangedEntry(file.Path, file.Type, EntryState.Modified));
                 }
             }
+        }
+
+        private async Task RecordThemeFilesAsync(string storeId, List<(string Path, string Content)> themeFiles, bool draft, CancellationToken cancellationToken)
+        {
+            var record = ContentHistoryRecord.Create(draft ? ModuleConstants.GitHistory.SavedSummary : ModuleConstants.GitHistory.PublishedSummary, Request.GetOrCreateSaveId(), User);
+            foreach (var (path, content) in themeFiles)
+            {
+                record.AddEntry(HistoryItem.ForThemeFile(path), content);
+            }
+
+            await contentHistory.RecordAsync(storeId, record, cancellationToken);
         }
 
         private static GenericChangedEntry<FileEntity> CreateChangedEntry(string path, string type, EntryState state)

@@ -118,8 +118,7 @@ public class HistoryController(
             contents[historyItem] = content;
         }
 
-        if (pageItem != null &&
-            (await sharedComponentPlacementValidator.ValidateAsync(User, storeId, contents[pageItem], cancellationToken)).ToActionResult() is { } refusedContent)
+        if (await CheckRestoredPageAsync(storeId, pageItem, contents, cancellationToken) is { } refusedContent)
         {
             return refusedContent;
         }
@@ -146,6 +145,16 @@ public class HistoryController(
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    private async Task<ActionResult> CheckRestoredPageAsync(string storeId, HistoryItem pageItem, Dictionary<HistoryItem, string> contents, CancellationToken cancellationToken)
+    {
+        if (pageItem == null)
+        {
+            return null;
+        }
+
+        return (await sharedComponentPlacementValidator.ValidateAsync(User, storeId, contents[pageItem], cancellationToken)).ToActionResult();
     }
 
     private async Task<ActionResult> CheckRequestAsync(ContentHistoryRequest request, CancellationToken cancellationToken)

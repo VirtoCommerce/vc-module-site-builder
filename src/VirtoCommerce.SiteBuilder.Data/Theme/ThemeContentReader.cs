@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 
@@ -12,6 +13,8 @@ public abstract class ThemeContentReader
     private const string SharedBlockFields = "_blocks";
 
     /// <summary>Also accepts the legacy array format.</summary>
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the token is not a page; an empty document would be read as a page without settings or sections.")]
     protected virtual JObject GetPageDocument(JToken token)
     {
         var (settings, content) = token switch
@@ -21,7 +24,7 @@ public abstract class ThemeContentReader
             _ => (null, null),
         };
 
-        if (token is not (JObject or JArray) || (settings != null && settings is not JObject) || (content != null && content is not JArray))
+        if (!IsPageDocument(token, settings, content))
         {
             return null;
         }
@@ -42,19 +45,7 @@ public abstract class ThemeContentReader
 
         var ownFields = (schema["settings"] as JArray)?.OfType<JObject>().ToList() ?? [];
         var ownIds = ownFields.Select(x => GetString(x, "id")).Where(x => x != null).ToHashSet(StringComparer.Ordinal);
-        var defaultSharedKey = kind == ModuleConstants.SchemaKinds.Sections ? SharedSectionFields : SharedBlockFields;
-
-        IEnumerable<JObject> GetSharedFields(string key) =>
-            (GetSchema(catalog, ModuleConstants.SchemaKinds.Shared, key)?["settings"] as JArray)?.OfType<JObject>() ?? [];
-
-        var includedFields = GetStrings(schema["includeShared"]).SelectMany(GetSharedFields);
-        var sharedFields = schema["excludeShared"] switch
-        {
-            JValue { Type: JTokenType.Boolean } exclude when exclude.Value<bool>() => includedFields,
-            JArray excluded => GetSharedFields(defaultSharedKey).Concat(includedFields)
-                .Where(x => !GetStrings(excluded).Contains(GetString(x, "id"))),
-            _ => GetSharedFields(defaultSharedKey).Concat(includedFields),
-        };
+        var sharedFields = GetSharedFields(schema, kind, catalog);
 
         return ownFields.Concat(sharedFields.Where(x => !ownIds.Contains(GetString(x, "id") ?? string.Empty))).ToList();
     }
@@ -103,6 +94,28 @@ public abstract class ThemeContentReader
     protected static JObject GetItemSchema(JObject catalog, string kind, string type) =>
         GetSchema(catalog, kind, type) ?? (kind == ModuleConstants.SchemaKinds.Blocks ? GetSchema(catalog, ModuleConstants.SchemaKinds.Sections, type) : null);
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the catalog has no such schema; an empty schema would be read as one without fields.")]
     private static JObject GetSchema(JObject catalog, string kind, string type) =>
         type == null ? null : (catalog?[kind] as JObject)?[type] as JObject;
+
+    private static bool IsPageDocument(JToken token, JToken settings, JToken content) =>
+        token is JObject or JArray && settings is null or JObject && content is null or JArray;
+
+    private static IEnumerable<JObject> GetSharedFields(JObject schema, string kind, JObject catalog)
+    {
+        var defaultSharedKey = kind == ModuleConstants.SchemaKinds.Sections ? SharedSectionFields : SharedBlockFields;
+        var includedFields = GetStrings(schema["includeShared"]).SelectMany(key => GetSharedFields(catalog, key));
+
+        return schema["excludeShared"] switch
+        {
+            JValue { Type: JTokenType.Boolean } exclude when exclude.Value<bool>() => includedFields,
+            JArray excluded => GetSharedFields(catalog, defaultSharedKey).Concat(includedFields)
+                .Where(x => !GetStrings(excluded).Contains(GetString(x, "id"))),
+            _ => GetSharedFields(catalog, defaultSharedKey).Concat(includedFields),
+        };
+    }
+
+    private static IEnumerable<JObject> GetSharedFields(JObject catalog, string key) =>
+        (GetSchema(catalog, ModuleConstants.SchemaKinds.Shared, key)?["settings"] as JArray)?.OfType<JObject>() ?? [];
 }

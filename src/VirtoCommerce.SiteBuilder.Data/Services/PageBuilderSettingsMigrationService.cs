@@ -128,37 +128,9 @@ public class PageBuilderSettingsMigrationService(
 
             var searchResult = await storeSearchService.SearchAsync(criteria, clone: false);
             var storeIds = searchResult.Results.Select(x => x.Id).ToList();
-            if (storeIds.Count > 0)
+            if (storeIds.Count > 0 && await CopySettingsOfStoresAsync(storeIds, counts))
             {
-                var rows = await LoadRowsAsync(StoreMappings, StoreSettingsObjectType, storeIds);
-                var entries = new List<ObjectSettingEntry>();
-
-                foreach (var storeRows in rows.GroupBy(x => x.ObjectId, StringComparer.OrdinalIgnoreCase))
-                {
-                    var rowsOfStore = storeRows.ToList();
-                    foreach (var mapping in StoreMappings)
-                    {
-                        var entry = GetEntryToCopy(mapping, rowsOfStore);
-                        if (entry != null)
-                        {
-                            entries.Add(entry);
-                            counts[mapping.Descriptor.Name]++;
-                        }
-                    }
-                }
-
-                if (entries.Count > 0)
-                {
-                    await settingsManager.SaveObjectSettingsAsync(entries);
-
-                    // Stores are cached with their settings.
-                    foreach (var storeId in entries.Select(x => x.ObjectId).Distinct(StringComparer.OrdinalIgnoreCase))
-                    {
-                        GenericCachingRegion<Store>.ExpireTokenForKey(storeId);
-                    }
-
-                    touched = true;
-                }
+                touched = true;
             }
 
             criteria.Skip += criteria.Take;
@@ -171,6 +143,46 @@ public class PageBuilderSettingsMigrationService(
         if (touched)
         {
             GenericSearchCachingRegion<Store>.ExpireRegion();
+        }
+    }
+
+    /// <returns>Whether any setting was copied.</returns>
+    private async Task<bool> CopySettingsOfStoresAsync(IList<string> storeIds, IDictionary<string, int> counts)
+    {
+        var rows = await LoadRowsAsync(StoreMappings, StoreSettingsObjectType, storeIds);
+        var entries = new List<ObjectSettingEntry>();
+
+        foreach (var storeRows in rows.GroupBy(x => x.ObjectId, StringComparer.OrdinalIgnoreCase))
+        {
+            AddStoreEntriesToCopy(storeRows.ToList(), entries, counts);
+        }
+
+        if (entries.Count == 0)
+        {
+            return false;
+        }
+
+        await settingsManager.SaveObjectSettingsAsync(entries);
+
+        // Stores are cached with their settings.
+        foreach (var storeId in entries.Select(x => x.ObjectId).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            GenericCachingRegion<Store>.ExpireTokenForKey(storeId);
+        }
+
+        return true;
+    }
+
+    private static void AddStoreEntriesToCopy(IList<SettingEntity> rowsOfStore, List<ObjectSettingEntry> entries, IDictionary<string, int> counts)
+    {
+        foreach (var mapping in StoreMappings)
+        {
+            var entry = GetEntryToCopy(mapping, rowsOfStore);
+            if (entry != null)
+            {
+                entries.Add(entry);
+                counts[mapping.Descriptor.Name]++;
+            }
         }
     }
 

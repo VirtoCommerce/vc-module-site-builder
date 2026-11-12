@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -132,6 +133,8 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         return result;
     }
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null leaves the page type out of the snapshot JSON; an empty list would be written as no templates for it.")]
     protected virtual IList<JObject> GetPageTypeRules(JObject rules, string pageType, ISet<string> conditions)
     {
         if ((rules[pageType] as JArray ?? DefaultTemplateRules[pageType] as JArray) is not { } list)
@@ -223,6 +226,8 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         return cultureName.Split('-')[0];
     }
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null leaves the section group out of the snapshot; an empty object would be published as a group without content.")]
     protected virtual JObject GetSectionGroup(JToken token)
     {
         if (token is not JObject sectionGroup || sectionGroup["content"] is not JArray content)
@@ -270,6 +275,8 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         return result;
     }
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the settings data has no current settings, which an override may tell apart from settings that set nothing.")]
     protected virtual JObject GetCurrentSettings(JToken settingsData)
     {
         if (settingsData is not JObject data)
@@ -342,6 +349,8 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
     }
 
     // a value that is not a color is left out, as the storefront would set it as a custom property as it is
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means no color was set, so the snapshot has no palette; an empty one would replace the preset colors with nothing.")]
     private static Dictionary<string, string> GetColorTokens(JToken token)
     {
         var colors = (token as JObject)?.Properties()

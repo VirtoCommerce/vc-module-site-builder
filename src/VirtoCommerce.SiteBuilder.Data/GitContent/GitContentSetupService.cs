@@ -32,6 +32,18 @@ public class GitContentSetupService(
     public virtual async Task<GitContentConnectionStatus> GetConnectionStatusAsync(bool live, CancellationToken cancellationToken = default)
     {
         var connection = await gitHubConnectionService.GetConnectionAsync(cancellationToken);
+        var status = CreateConnectionStatus(connection);
+
+        if (live && status.Configured && status.Error == null)
+        {
+            status.Error = await GetOrganizationErrorAsync(cancellationToken);
+        }
+
+        return status;
+    }
+
+    private GitContentConnectionStatus CreateConnectionStatus(GitHubConnection connection)
+    {
         var organization = connection.Organization?.Trim();
 
         var status = AbstractTypeFactory<GitContentConnectionStatus>.TryCreateInstance();
@@ -46,18 +58,18 @@ public class GitContentSetupService(
         status.AutoCreateRepositories = status.Configured && connection.AutoCreateRepositories;
         status.Error = connection.Error;
 
-        if (live && status.Configured && status.Error == null)
-        {
-            status.Error = await GetOrganizationErrorAsync(cancellationToken);
-        }
-
         return status;
     }
 
-    public virtual async Task<IList<GitContentSite>> GetSitesAsync(IList<Store> stores, CancellationToken cancellationToken = default)
+    public virtual Task<IList<GitContentSite>> GetSitesAsync(IList<Store> stores, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stores);
 
+        return GetSitesInternalAsync(stores, cancellationToken);
+    }
+
+    private async Task<IList<GitContentSite>> GetSitesInternalAsync(IList<Store> stores, CancellationToken cancellationToken)
+    {
         var webUrl = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).WebUrl;
         var sites = new List<GitContentSite>();
         foreach (var store in stores)
@@ -113,10 +125,15 @@ public class GitContentSetupService(
         return new Uri(webUrl, path).AbsoluteUri;
     }
 
-    public virtual async Task<string> GetAppInstallUrlAsync(GitHubAppConnection app, CancellationToken cancellationToken = default)
+    public virtual Task<string> GetAppInstallUrlAsync(GitHubAppConnection app, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        return GetAppInstallUrlInternalAsync(app, cancellationToken);
+    }
+
+    private async Task<string> GetAppInstallUrlInternalAsync(GitHubAppConnection app, CancellationToken cancellationToken)
+    {
         var webUrl = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).WebUrl;
         return GetAppInstallUrl(webUrl, app);
     }

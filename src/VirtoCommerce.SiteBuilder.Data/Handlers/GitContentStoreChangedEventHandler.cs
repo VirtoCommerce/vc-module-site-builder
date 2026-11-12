@@ -7,6 +7,7 @@ using VirtoCommerce.Platform.Core.Events;
 using VirtoCommerce.Platform.Core.Jobs;
 using VirtoCommerce.Platform.Core.Settings;
 using VirtoCommerce.StoreModule.Core.Events;
+using VirtoCommerce.StoreModule.Core.Model;
 
 namespace VirtoCommerce.SiteBuilder.Data.Handlers;
 
@@ -49,27 +50,9 @@ public class GitContentStoreChangedEventHandler(
 
         foreach (var entry in message.ChangedEntries)
         {
-            var store = entry.NewEntry ?? entry.OldEntry;
-            if (string.IsNullOrEmpty(store?.Id))
+            if (await GetJobPayloadAsync(entry, connection) is { } payload)
             {
-                continue;
-            }
-
-            if (entry.EntryState == EntryState.Added && connection.AutoCreateRepositories)
-            {
-                payloads.Add(CreatePayload(store.Id, GitContentRepositoryAction.Connect, repository: null));
-            }
-            else if (entry.EntryState == EntryState.Deleted)
-            {
-                // a deleted store's settings exist only on the event
-                var repositorySetting = store.Settings?.GetValue<string>(ModuleConstants.Settings.StoreLevelSettings.GitContentRepository);
-                var repository = await GetRepositoryOrDefaultAsync(store.Id, repositorySetting);
-
-                // never archive a repository named in the store setting
-                if (repository?.Source == GitRepositorySource.Site)
-                {
-                    payloads.Add(CreatePayload(store.Id, GitContentRepositoryAction.Archive, repository.Name));
-                }
+                payloads.Add(payload);
             }
         }
 
@@ -86,6 +69,34 @@ public class GitContentStoreChangedEventHandler(
         {
             return null;
         }
+    }
+
+    private async Task<GitContentRepositoryJobPayload> GetJobPayloadAsync(GenericChangedEntry<Store> entry, GitHubConnection connection)
+    {
+        var store = entry.NewEntry ?? entry.OldEntry;
+        if (string.IsNullOrEmpty(store?.Id))
+        {
+            return null;
+        }
+
+        if (entry.EntryState == EntryState.Added && connection.AutoCreateRepositories)
+        {
+            return CreatePayload(store.Id, GitContentRepositoryAction.Connect, repository: null);
+        }
+
+        if (entry.EntryState != EntryState.Deleted)
+        {
+            return null;
+        }
+
+        // a deleted store's settings exist only on the event
+        var repositorySetting = store.Settings?.GetValue<string>(ModuleConstants.Settings.StoreLevelSettings.GitContentRepository);
+        var repository = await GetRepositoryOrDefaultAsync(store.Id, repositorySetting);
+
+        // never archive a repository named in the store setting
+        return repository?.Source == GitRepositorySource.Site
+            ? CreatePayload(store.Id, GitContentRepositoryAction.Archive, repository.Name)
+            : null;
     }
 
     private static GitContentRepositoryJobPayload CreatePayload(string storeId, GitContentRepositoryAction action, string repository)

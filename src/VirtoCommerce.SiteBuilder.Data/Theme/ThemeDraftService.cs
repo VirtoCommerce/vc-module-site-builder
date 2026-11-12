@@ -26,12 +26,18 @@ public class ThemeDraftService(
         return result;
     }
 
-    public virtual async Task<T> SaveDraftsAsync<T>(string storeId, IDictionary<string, string> files, IDictionary<string, string> eTags,
+    public virtual Task<T> SaveDraftsAsync<T>(string storeId, IDictionary<string, string> files, IDictionary<string, string> eTags,
         Func<CancellationToken, Task<T>> saveOthersAsync, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(files);
         ArgumentNullException.ThrowIfNull(saveOthersAsync);
 
+        return SaveDraftsInternalAsync<T>(storeId, files, eTags, saveOthersAsync, cancellationToken);
+    }
+
+    private async Task<T> SaveDraftsInternalAsync<T>(string storeId, IDictionary<string, string> files, IDictionary<string, string> eTags,
+        Func<CancellationToken, Task<T>> saveOthersAsync, CancellationToken cancellationToken)
+    {
         if (files.Count == 0)
         {
             // nothing of the theme is written, so the theme's writers need not wait
@@ -49,12 +55,18 @@ public class ThemeDraftService(
         return result;
     }
 
-    public virtual async Task<IList<DiscardedThemeDraft>> DiscardDraftsAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
+    public virtual Task<IList<DiscardedThemeDraft>> DiscardDraftsAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(discardOthersAsync);
 
+        return DiscardDraftsInternalAsync(storeId, paths, discardOthersAsync, cancellationToken);
+    }
+
+    private async Task<IList<DiscardedThemeDraft>> DiscardDraftsInternalAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
+        CancellationToken cancellationToken)
+    {
         if (paths.Count == 0)
         {
             await discardOthersAsync(cancellationToken);

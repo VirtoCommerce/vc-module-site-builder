@@ -27,11 +27,17 @@ public class GitLivePageService(
 {
     private static readonly JsonSerializerSettings PageSerializerSettings = new() { Formatting = Formatting.Indented };
 
-    public virtual async Task SyncLivePageAsync(string storeId, string contentType, string path, GitPageFileLocation location, bool removeWhenGone,
+    public virtual Task SyncLivePageAsync(string storeId, string contentType, string path, GitPageFileLocation location, bool removeWhenGone,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(location);
 
+        return SyncLivePageInternalAsync(storeId, contentType, path, location, removeWhenGone, cancellationToken);
+    }
+
+    private async Task SyncLivePageInternalAsync(string storeId, string contentType, string path, GitPageFileLocation location, bool removeWhenGone,
+        CancellationToken cancellationToken)
+    {
         var type = contentType.ToLowerInvariant();
         var baseBranch = await GetBaseBranchAsync(cancellationToken);
         // skip the read cache: GitHub may have merged since
@@ -58,10 +64,15 @@ public class GitLivePageService(
             : live != null && await IsRemovedFromBaseBranchAsync(location, cancellationToken);
     }
 
-    public virtual async Task<bool> IsRemovedFromBaseBranchAsync(GitPageFileLocation location, CancellationToken cancellationToken = default)
+    public virtual Task<bool> IsRemovedFromBaseBranchAsync(GitPageFileLocation location, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(location);
 
+        return IsRemovedFromBaseBranchInternalAsync(location, cancellationToken);
+    }
+
+    private async Task<bool> IsRemovedFromBaseBranchInternalAsync(GitPageFileLocation location, CancellationToken cancellationToken)
+    {
         var baseBranch = await GetBaseBranchAsync(cancellationToken);
         // read by head sha: a read by branch name may be cached from before the page was published again
         var head = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, baseBranch, cancellationToken);

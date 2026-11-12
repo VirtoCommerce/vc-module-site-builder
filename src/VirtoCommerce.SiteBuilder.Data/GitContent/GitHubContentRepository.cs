@@ -205,7 +205,8 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
                 return await GetBranchHeadShaAsync(repository, branch, cancellationToken);
             }
 
-            var response = await PutContentAsync(client, repository, escapedPath, content, branch, message, author, current?.Sha, cancellationToken);
+            var write = new ContentWrite(repository, escapedPath, content, branch, message, author);
+            var response = await PutContentAsync(client, write, current?.Sha, cancellationToken);
 
             // A stale sha (the file changed on the branch between GET and PUT) comes back as 409/422 —
             // refresh it once and retry. A branch belongs to one editor and one page, so the only writer
@@ -222,7 +223,7 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
                     return await GetBranchHeadShaAsync(repository, branch, cancellationToken);
                 }
 
-                response = await PutContentAsync(client, repository, escapedPath, content, branch, message, author, current?.Sha, cancellationToken);
+                response = await PutContentAsync(client, write, current?.Sha, cancellationToken);
             }
 
             using (response)
@@ -313,22 +314,25 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
             public bool Holds(byte[] bytes) => Content != null && Content.AsSpan().SequenceEqual(bytes);
         }
 
-        private static Task<HttpResponseMessage> PutContentAsync(HttpClient client, string repository, string escapedPath, string content, string branch, string message, GitCommitAuthor author, string sha, CancellationToken cancellationToken)
+        /// <summary>The write of a file, sent again when its sha was stale.</summary>
+        private sealed record ContentWrite(string Repository, string EscapedPath, string Content, string Branch, string Message, GitCommitAuthor Author);
+
+        private static Task<HttpResponseMessage> PutContentAsync(HttpClient client, ContentWrite write, string sha, CancellationToken cancellationToken)
         {
             var body = new JObject
             {
-                ["message"] = message,
-                ["content"] = Convert.ToBase64String(PageJson.Encoding.GetBytes(content)),
-                ["branch"] = branch,
+                ["message"] = write.Message,
+                ["content"] = Convert.ToBase64String(PageJson.Encoding.GetBytes(write.Content)),
+                ["branch"] = write.Branch,
             };
             if (!string.IsNullOrEmpty(sha))
             {
                 body["sha"] = sha;
             }
-            AddAuthor(body, author);
+            AddAuthor(body, write.Author);
 
-            return GitHubApiClient.SendRequestAsync(client, HttpMethod.Put, $"repos/{repository}/contents/{escapedPath}",
-                GitHubApiClient.CreateJsonContent(body), $"commit \"{escapedPath}\" to branch \"{branch}\"", cancellationToken);
+            return GitHubApiClient.SendRequestAsync(client, HttpMethod.Put, $"repos/{write.Repository}/contents/{write.EscapedPath}",
+                GitHubApiClient.CreateJsonContent(body), $"commit \"{write.EscapedPath}\" to branch \"{write.Branch}\"", cancellationToken);
         }
 
         private static void AddAuthor(JObject body, GitCommitAuthor author)

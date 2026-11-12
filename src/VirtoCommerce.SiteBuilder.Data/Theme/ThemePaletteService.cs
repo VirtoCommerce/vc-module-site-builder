@@ -14,6 +14,10 @@ public class ThemePaletteService : IThemePaletteService
     private const string BodyBackground = "color_body_bg";
     private const string NeutralFamily = "neutral";
 
+    private const string FamilyGroup = "family";
+    private const string ShadeGroup = "shade";
+    private const string RoleGroup = "role";
+
     private const int MaxAdjustmentRounds = 8;
     private const int SearchSteps = 24;
     private const double ShadeOrderStep = 0.03;
@@ -32,10 +36,16 @@ public class ThemePaletteService : IThemePaletteService
     private const double DarkShade950Saturation = 0.5;
     private const double DarkShade950Lightness = 0.06;
 
+    // a shade and the one it mirrors across 500 add up to it: 50 and 950, 100 and 900
+    private const int MirroredShadesSum = 1000;
+
+    // contrast ratios are reported rounded down to hundredths
+    private const double ReportedRatioScale = 100;
+
     private static readonly int[] Shades = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
 
-    private static readonly Regex ShadeToken = new(@"^color_([a-z]+)_(\d+)$", RegexOptions.None, TimeSpan.FromSeconds(1));
-    private static readonly Regex VcToken = new(@"^color_vc_([a-z]+_[a-z]+)_([a-z]+)$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex ShadeToken = new($@"^color_(?<{FamilyGroup}>[a-z]+)_(?<{ShadeGroup}>\d+)$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex VcToken = new($@"^color_vc_(?<{RoleGroup}>[a-z]+_[a-z]+)_(?<{FamilyGroup}>[a-z]+)$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     private static readonly PaletteColor DarkSurface = new(0x0a, 0x09, 0x0b);
     private static readonly PaletteColor DarkText = new(0xec, 0xea, 0xef);
@@ -44,6 +54,15 @@ public class ThemePaletteService : IThemePaletteService
     // fractions of the way from the base color (500) to the lightest and the darkest lightness
     private static readonly Dictionary<int, double> LighterShades = new() { [400] = 0.3, [300] = 0.5, [200] = 0.7, [100] = 0.85, [50] = 0.97 };
     private static readonly Dictionary<int, double> DarkerShades = new() { [600] = 0.2, [700] = 0.38, [800] = 0.55, [900] = 0.72, [950] = 0.85 };
+
+    // the light shade a dark one takes; the others are made from the hue
+    private static readonly Dictionary<int, int> DarkShadeSources = new() { [200] = 200, [300] = 300, [400] = 400, [500] = 500, [600] = 600, [700] = 300, [800] = 200, [900] = 100 };
+    private static readonly Dictionary<int, (double Saturation, double Lightness)> DarkShadesFromHue = new()
+    {
+        [50] = (DarkShade50Saturation, DarkShade50Lightness),
+        [100] = (DarkShade100Saturation, DarkShade100Lightness),
+        [950] = (DarkShade950Saturation, DarkShade950Lightness),
+    };
 
     private static readonly string[] DefaultColorFamilies = ["primary", "secondary", "accent", "neutral", "success", "warning", "danger", "info"];
 
@@ -192,8 +211,15 @@ public class ThemePaletteService : IThemePaletteService
     protected virtual IReadOnlyDictionary<string, string> GetButtonRoleSources(string scheme) =>
         scheme == Light ? DefaultLightButtonRoles : DefaultDarkButtonRoles;
 
-    protected virtual string GetNamedTokenSource(string token, string scheme) =>
-        DefaultNamedTokens.TryGetValue(token, out var source) ? (scheme == Light ? source.Light : source.Dark) : null;
+    protected virtual string GetNamedTokenSource(string token, string scheme)
+    {
+        if (!DefaultNamedTokens.TryGetValue(token, out var source))
+        {
+            return null;
+        }
+
+        return scheme == Light ? source.Light : source.Dark;
+    }
 
     protected virtual IDictionary<string, PaletteColor> GetBaseColors(ThemePaletteGenerationRequest request)
     {
@@ -237,23 +263,12 @@ public class ThemePaletteService : IThemePaletteService
 
         if (family == NeutralFamily)
         {
-            return Shades.ToDictionary(x => x, x => light[1000 - x]);
+            return Shades.ToDictionary(x => x, x => light[MirroredShadesSum - x]);
         }
 
-        return new Dictionary<int, PaletteColor>
-        {
-            [50] = PaletteColor.FromHsl(hue, saturation * DarkShade50Saturation, DarkShade50Lightness),
-            [100] = PaletteColor.FromHsl(hue, saturation * DarkShade100Saturation, DarkShade100Lightness),
-            [200] = light[200],
-            [300] = light[300],
-            [400] = light[400],
-            [500] = light[500],
-            [600] = light[600],
-            [700] = light[300],
-            [800] = light[200],
-            [900] = light[100],
-            [950] = PaletteColor.FromHsl(hue, saturation * DarkShade950Saturation, DarkShade950Lightness),
-        };
+        return Shades.ToDictionary(x => x, x => DarkShadeSources.TryGetValue(x, out var source)
+            ? light[source]
+            : PaletteColor.FromHsl(hue, saturation * DarkShadesFromHue[x].Saturation, DarkShadesFromHue[x].Lightness));
     }
 
     /// <summary>Null for a token without a rule: it keeps the preset's color.</summary>
@@ -272,8 +287,8 @@ public class ThemePaletteService : IThemePaletteService
         var shadeMatch = ShadeToken.Match(token);
         if (shadeMatch.Success)
         {
-            return scales.TryGetValue(shadeMatch.Groups[1].Value, out var scale)
-                   && int.TryParse(shadeMatch.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var shade)
+            return scales.TryGetValue(shadeMatch.Groups[FamilyGroup].Value, out var scale)
+                   && int.TryParse(shadeMatch.Groups[ShadeGroup].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var shade)
                    && scale.TryGetValue(shade, out var color)
                 ? color
                 : null;
@@ -351,7 +366,7 @@ public class ThemePaletteService : IThemePaletteService
                 failure.Background = evaluation.BackgroundToken;
                 failure.TextColor = evaluation.TextColor.ToHex();
                 failure.BackgroundColor = evaluation.BackgroundColor.ToHex();
-                failure.Ratio = Math.Floor(evaluation.Ratio * 100) / 100;
+                failure.Ratio = Math.Floor(evaluation.Ratio * ReportedRatioScale) / ReportedRatioScale;
                 failure.MinimumRatio = pair.MinimumRatio;
                 failures.Add(failure);
             }
@@ -389,9 +404,9 @@ public class ThemePaletteService : IThemePaletteService
         foreach (var token in tokens)
         {
             var match = VcToken.Match(token);
-            if (match.Success && match.Groups[1].Value is "text_solid" or "icon_solid")
+            if (match.Success && match.Groups[RoleGroup].Value is "text_solid" or "icon_solid")
             {
-                var family = match.Groups[2].Value;
+                var family = match.Groups[FamilyGroup].Value;
                 var background = FindColor(colors, $"color_vc_background_solid_{family}") ?? FindColor(colors, $"color_{family}_500");
                 if (background != null)
                 {
@@ -418,8 +433,8 @@ public class ThemePaletteService : IThemePaletteService
 
         var match = VcToken.Match(token);
 
-        return match.Success && GetButtonRoleSources(scheme).TryGetValue(match.Groups[1].Value, out var source)
-            ? string.Format(CultureInfo.InvariantCulture, source, match.Groups[2].Value)
+        return match.Success && GetButtonRoleSources(scheme).TryGetValue(match.Groups[RoleGroup].Value, out var source)
+            ? string.Format(CultureInfo.InvariantCulture, source, match.Groups[FamilyGroup].Value)
             : null;
     }
 
@@ -438,16 +453,28 @@ public class ThemePaletteService : IThemePaletteService
         var shortfall = GetShortfall(colors, tokens, pairs);
         foreach (var (token, candidate, _) in candidates)
         {
-            var current = colors[token];
-            colors[token] = candidate;
-            if (GetShortfall(colors, tokens, pairs) < shortfall - ShortfallTolerance)
+            if (TryCandidate(token, candidate, shortfall, colors, tokens, pairs))
             {
                 return true;
             }
-            colors[token] = current;
         }
 
         return false;
+    }
+
+    // keeps the candidate only when it lowers the shortfall of all the pairs
+    private bool TryCandidate(string token, PaletteColor candidate, double shortfall, IDictionary<string, PaletteColor?> colors, ISet<string> tokens, IList<PaletteContrastPair> pairs)
+    {
+        var current = colors[token];
+        colors[token] = candidate;
+
+        var lowered = GetShortfall(colors, tokens, pairs) < shortfall - ShortfallTolerance;
+        if (!lowered)
+        {
+            colors[token] = current;
+        }
+
+        return lowered;
     }
 
     private void OrderShade(string family, int shade, int neighbour, bool darker, IDictionary<string, PaletteColor?> colors, ISet<string> tokens, IList<PaletteContrastPair> pairs)
@@ -460,8 +487,8 @@ public class ThemePaletteService : IThemePaletteService
 
         var (hue, saturation, lightness) = current.ToHsl();
         var nextLightness = next.ToHsl().Lightness;
-        var target = darker ? Math.Min(lightness, nextLightness - ShadeOrderStep) : Math.Max(lightness, nextLightness + ShadeOrderStep);
-        if (target == lightness)
+        var target = darker ? nextLightness - ShadeOrderStep : nextLightness + ShadeOrderStep;
+        if (darker ? lightness <= target : lightness >= target)
         {
             return;
         }

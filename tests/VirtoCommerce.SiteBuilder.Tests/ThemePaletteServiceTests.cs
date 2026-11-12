@@ -354,6 +354,80 @@ public class ThemePaletteServiceTests
         Assert.Equal("#000080", result.Light["color_info_500"]);
     }
 
+    [Theory]
+    [InlineData("#ff0000", 0)]
+    [InlineData("#ffff00", 60)]
+    [InlineData("#00ff00", 120)]
+    [InlineData("#00ffff", 180)]
+    [InlineData("#0000ff", 240)]
+    [InlineData("#ff00ff", 300)]
+    public void ToHsl_EachChannelOnTop_ReturnsItsHue(string value, double hue)
+    {
+        PaletteColor.TryParse(value, out var color);
+
+        var hsl = color.ToHsl();
+
+        Assert.Equal(hue, hsl.Hue, 1e-9);
+        Assert.Equal(1, hsl.Saturation, 1e-9);
+        Assert.Equal(0.5, hsl.Lightness, 1e-9);
+    }
+
+    [Fact]
+    public void ToHsl_Gray_HasNoHueOrSaturation()
+    {
+        var hsl = new PaletteColor(0x80, 0x80, 0x80).ToHsl();
+
+        Assert.Equal((0d, 0d, 0x80 / 255d), hsl);
+    }
+
+    [Fact]
+    public void KeepShadeOrder_ShadesAlreadyApart_LeavesThem()
+    {
+        var colors = Colors(("color_primary_400", "#bbbbbb"), ("color_primary_500", "#808080"), ("color_primary_600", "#444444"));
+
+        new ExposedPaletteService().KeepOrder(colors);
+
+        Assert.Equal("#bbbbbb", colors["color_primary_400"].Value.ToHex());
+        Assert.Equal("#444444", colors["color_primary_600"].Value.ToHex());
+    }
+
+    [Fact]
+    public void KeepShadeOrder_ShadesTooClose_MovesThemAStepFromTheirNeighbours()
+    {
+        var colors = Colors(("color_primary_400", "#7a7a7a"), ("color_primary_500", "#808080"), ("color_primary_600", "#8a8a8a"));
+
+        new ExposedPaletteService().KeepOrder(colors);
+
+        var lightness = colors["color_primary_500"].Value.ToHsl().Lightness;
+        Assert.Equal(lightness + 0.03, colors["color_primary_400"].Value.ToHsl().Lightness, 0.5 / 255);
+        Assert.Equal(lightness - 0.03, colors["color_primary_600"].Value.ToHsl().Lightness, 0.5 / 255);
+    }
+
+    [Fact]
+    public void AdjustContrast_CandidateThatFailsMorePairs_PutsTheColorBack()
+    {
+        // Darkening the link for the white would fail both pairs on black; lightening it for the black fails one.
+        var colors = Colors(("color_link", "#777777"), ("color_additional_50", "#ffffff"), ("color_additional_950", "#000000"));
+        var onBlack = Pair("color_link", "color_additional_950", 5);
+        var pairs = new List<PaletteContrastPair> { onBlack, onBlack, Pair("color_link", "color_additional_50", 5) };
+
+        new ExposedPaletteService().Adjust(colors, pairs);
+
+        var link = colors["color_link"].Value;
+        Assert.True(ColorContrast.GetContrastRatio(link, PaletteColor.Black) >= 5);
+        Assert.True(ColorContrast.GetContrastRatio(link, PaletteColor.White) < 5);
+    }
+
+    private static Dictionary<string, PaletteColor?> Colors(params (string Token, string Hex)[] colors) =>
+        colors.ToDictionary(x => x.Token, x => { PaletteColor.TryParse(x.Hex, out var color); return (PaletteColor?)color; });
+
+    private static PaletteContrastPair Pair(string text, string background, double minimumRatio)
+    {
+        var pair = Pair(text, background);
+        pair.MinimumRatio = minimumRatio;
+        return pair;
+    }
+
     private static PaletteContrastPair Pair(string text, string background) =>
         new()
         {
@@ -376,6 +450,13 @@ public class ThemePaletteServiceTests
             colors["info"] = new PaletteColor(0x00, 0x00, 0x80);
             return colors;
         }
+    }
+
+    private sealed class ExposedPaletteService : ThemePaletteService
+    {
+        public void KeepOrder(Dictionary<string, PaletteColor?> colors) => KeepShadeOrder(colors, colors.Keys.ToHashSet(), []);
+
+        public void Adjust(Dictionary<string, PaletteColor?> colors, IList<PaletteContrastPair> pairs) => AdjustContrast(colors, colors.Keys.ToHashSet(), pairs);
     }
 
     private sealed class DefaultPairsPaletteService : ThemePaletteService

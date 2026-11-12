@@ -98,12 +98,26 @@ public class GitHubConnectionService(
         }
 
         var conversion = await GitHubApiClient.ReadAsAsync<AppConversion>(response, operation, cancellationToken);
+        var app = CreateAppConnection(conversion);
+        ValidateApp(app, organization);
+
+        await settingsManager.SetValueAsync(ModuleConstants.Settings.GitHub.AppConnection.Name, _protector.Protect(JsonConvert.SerializeObject(app)));
+        return app;
+    }
+
+    private static GitHubAppConnection CreateAppConnection(AppConversion conversion)
+    {
         var app = AbstractTypeFactory<GitHubAppConnection>.TryCreateInstance();
         app.Organization = conversion?.Owner?.Login;
         app.AppId = conversion?.Id;
         app.AppSlug = conversion?.Slug;
         app.PrivateKey = conversion?.Pem;
 
+        return app;
+    }
+
+    private static void ValidateApp(GitHubAppConnection app, string organization)
+    {
         if (!string.Equals(app.Organization, organization, StringComparison.OrdinalIgnoreCase))
         {
             throw new GitContentException($"The App was created for \"{app.Organization}\", not for \"{organization}\". Start the setup again from the site.");
@@ -113,9 +127,6 @@ public class GitHubConnectionService(
         {
             throw new GitContentException("GitHub's answer has no App id, name or key. Start the setup again from the site.");
         }
-
-        await settingsManager.SetValueAsync(ModuleConstants.Settings.GitHub.AppConnection.Name, _protector.Protect(JsonConvert.SerializeObject(app)));
-        return app;
     }
 
     public virtual GitHubAppManifest CreateAppManifest(string organization, string url, string redirectUrl, string setupUrl)

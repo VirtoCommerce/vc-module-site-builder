@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
@@ -102,24 +103,34 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
 
         if (IsLinkField(field) || GetString(field, "type") == ImagesFieldType)
         {
-            foreach (var text in GetTexts(value))
-            {
-                var schemes = ContentUrlScheme.GetSchemes((string)text).ToList();
-                if (schemes.FirstOrDefault(ContentUrlScheme.RunsScript) is { } scheme)
-                {
-                    AddScriptUrlError(text, scheme, name, result);
-                }
-                // a link may not open a document it carries; an image may
-                else if (IsLinkField(field) && schemes.Contains(ContentUrlScheme.Data))
-                {
-                    result.Errors.Add($"{name}: '{GetPath(text)}' links to a data: URL");
-                }
-            }
+            GuardFieldUrls(field, value, name, result);
         }
 
+        GuardFieldHtml(field, value, result);
+    }
+
+    private void GuardFieldUrls(JObject field, JToken value, string name, SiteBuilderContentGuardResult result)
+    {
+        foreach (var text in GetTexts(value))
+        {
+            var schemes = ContentUrlScheme.GetSchemes((string)text).ToList();
+            if (schemes.FirstOrDefault(ContentUrlScheme.RunsScript) is { } scheme)
+            {
+                AddScriptUrlError(text, scheme, name, result);
+            }
+            // a link may not open a document it carries; an image may
+            else if (IsLinkField(field) && schemes.Contains(ContentUrlScheme.Data))
+            {
+                result.Errors.Add($"{name}: '{GetPath(text)}' links to a data: URL");
+            }
+        }
+    }
+
+    private void GuardFieldHtml(JObject field, JToken value, SiteBuilderContentGuardResult result)
+    {
         var type = GetString(field, "type");
         var resultType = GetString(field, "resultType");
-        if (type is HtmlFieldType or RichTextFieldType || (type == MarkdownFieldType && resultType == HtmlFieldType))
+        if (IsHtmlValue(type, resultType))
         {
             // every text of the value is HTML, but for a markdown value's source
             foreach (var text in GetTexts(value).Where(x => x.Parent is not JProperty { Name: MarkdownProperty }))
@@ -127,7 +138,7 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
                 Sanitize(text, result);
             }
         }
-        else if (type == MarkdownFieldType && resultType != MarkdownFieldType && value is JObject translation && !IsMarkdownValue(translation))
+        else if (value is JObject translation && IsTranslatedMarkdownValue(type, resultType, translation))
         {
             // the texts of a translated markdown value are its HTML, as the designer stores them
             foreach (var text in translation.Properties().Select(x => x.Value).OfType<JValue>().Where(x => x.Type == JTokenType.String))
@@ -148,13 +159,24 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
             }
             else if (token is JProperty property && IsUrlKey(property.Name))
             {
-                foreach (var text in GetUrlTexts(property.Value))
-                {
-                    if (ContentUrlScheme.GetSchemes((string)text).FirstOrDefault(ContentUrlScheme.RunsScript) is { } scheme)
-                    {
-                        AddScriptUrlError(text, scheme, name, result);
-                    }
-                }
+                GuardUrlTexts(property.Value, name, result);
+            }
+        }
+    }
+
+    private static bool IsHtmlValue(string type, string resultType) =>
+        type is HtmlFieldType or RichTextFieldType || (type == MarkdownFieldType && resultType == HtmlFieldType);
+
+    private static bool IsTranslatedMarkdownValue(string type, string resultType, JObject value) =>
+        type == MarkdownFieldType && resultType != MarkdownFieldType && !IsMarkdownValue(value);
+
+    private void GuardUrlTexts(JToken value, string name, SiteBuilderContentGuardResult result)
+    {
+        foreach (var text in GetUrlTexts(value))
+        {
+            if (ContentUrlScheme.GetSchemes((string)text).FirstOrDefault(ContentUrlScheme.RunsScript) is { } scheme)
+            {
+                AddScriptUrlError(text, scheme, name, result);
             }
         }
     }
@@ -211,6 +233,8 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
     }
 
     // light and dark together: a palette written for an older storefront may hold a token of either
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the catalog lists no palette tokens, so token names are checked by their form; an empty set would refuse every token.")]
     protected virtual ISet<string> GetPaletteTokens(JObject catalog)
     {
         if (catalog?[PaletteTokensKey] is not JObject tokens)

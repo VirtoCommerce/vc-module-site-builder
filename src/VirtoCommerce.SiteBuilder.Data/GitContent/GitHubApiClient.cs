@@ -58,10 +58,15 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
             : await ReadAsAsync<GitHubRepositoryInfo>(response, operation, cancellationToken);
     }
 
-    public virtual async Task<GitHubRepositoryInfo> CreateRepositoryAsync(string repository, JObject settings, CancellationToken cancellationToken = default)
+    public virtual Task<GitHubRepositoryInfo> CreateRepositoryAsync(string repository, JObject settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        return CreateRepositoryInternalAsync(repository, settings, cancellationToken);
+    }
+
+    private async Task<GitHubRepositoryInfo> CreateRepositoryInternalAsync(string repository, JObject settings, CancellationToken cancellationToken)
+    {
         var (organization, _) = ParseRepository(repository);
         var operation = $"create repository \"{repository}\"";
         using var request = new HttpRequestMessage(HttpMethod.Post, $"orgs/{Uri.EscapeDataString(organization)}/repos")
@@ -81,11 +86,16 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
         return await ReadAsAsync<GitHubRepositoryInfo>(response, operation, cancellationToken);
     }
 
-    public virtual async Task UpdateRepositoryAsync(string repository, JObject settings, CancellationToken cancellationToken = default)
+    public virtual Task UpdateRepositoryAsync(string repository, JObject settings, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repository);
         ArgumentNullException.ThrowIfNull(settings);
 
+        return UpdateRepositoryInternalAsync(repository, settings, cancellationToken);
+    }
+
+    private async Task UpdateRepositoryInternalAsync(string repository, JObject settings, CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Patch, GetRepositoryPath(repository)) { Content = CreateJsonContent(settings) };
         using var response = await SendAsync(request, $"update repository \"{repository}\"", cancellationToken);
         await EnsureSuccessAsync(response, $"update repository \"{repository}\"", cancellationToken);
@@ -137,11 +147,16 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
         return body?.SelectToken("tree.sha")?.Value<string>() ?? throw new GitContentException($"GitHub request to {operation} returned no tree.");
     }
 
-    public virtual async Task<string> CreateTreeAsync(string repository, string baseTreeSha, IDictionary<string, string> files, CancellationToken cancellationToken = default)
+    public virtual Task<string> CreateTreeAsync(string repository, string baseTreeSha, IDictionary<string, string> files, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseTreeSha);
         ArgumentNullException.ThrowIfNull(files);
 
+        return CreateTreeInternalAsync(repository, baseTreeSha, files, cancellationToken);
+    }
+
+    private async Task<string> CreateTreeInternalAsync(string repository, string baseTreeSha, IDictionary<string, string> files, CancellationToken cancellationToken)
+    {
         var body = new JObject
         {
             ["base_tree"] = baseTreeSha,
@@ -239,10 +254,22 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
         headers.UserAgent.ParseAdd(UserAgent);
     }
 
-    public static async Task<HttpResponseMessage> SendRequestAsync(HttpClient client, HttpRequestMessage request, string operation, CancellationToken cancellationToken)
+    public static Task<HttpResponseMessage> SendRequestAsync(HttpClient client, HttpRequestMessage request, string operation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(client);
 
+        return SendRequestInternalAsync(client, request, operation, cancellationToken);
+    }
+
+    public static async Task<HttpResponseMessage> SendRequestAsync(HttpClient client, HttpMethod method, string url, HttpContent content, string operation,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(method, url) { Content = content };
+        return await SendRequestAsync(client, request, operation, cancellationToken);
+    }
+
+    private static async Task<HttpResponseMessage> SendRequestInternalAsync(HttpClient client, HttpRequestMessage request, string operation, CancellationToken cancellationToken)
+    {
         try
         {
             return await client.SendAsync(request, cancellationToken);
@@ -257,27 +284,30 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
         }
     }
 
-    public static async Task<HttpResponseMessage> SendRequestAsync(HttpClient client, HttpMethod method, string url, HttpContent content, string operation,
-        CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(method, url) { Content = content };
-        return await SendRequestAsync(client, request, operation, cancellationToken);
-    }
-
-    public static async Task EnsureSuccessAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+    public static Task EnsureSuccessAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(response);
 
+        return EnsureSuccessInternalAsync(response, operation, cancellationToken);
+    }
+
+    private static async Task EnsureSuccessInternalAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+    {
         if (!response.IsSuccessStatusCode)
         {
             throw CreateException(response, await response.Content.ReadAsStringAsync(cancellationToken), operation);
         }
     }
 
-    public static async Task<T> ReadAsAsync<T>(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+    public static Task<T> ReadAsAsync<T>(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(response);
 
+        return ReadAsInternalAsync<T>(response, operation, cancellationToken);
+    }
+
+    private static async Task<T> ReadAsInternalAsync<T>(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+    {
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {

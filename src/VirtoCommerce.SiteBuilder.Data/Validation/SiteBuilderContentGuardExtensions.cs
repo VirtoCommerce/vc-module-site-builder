@@ -12,10 +12,6 @@ public static class SiteBuilderContentGuardExtensions
     public static string GuardPageContent(this ISiteBuilderContentGuard guard, string content, string name, JObject catalog, ICollection<string> errors) =>
         Guard(content, token => guard.GuardPage(token, name, catalog), errors);
 
-    /// <param name="file">The path in the theme folder.</param>
-    public static string GuardThemeFileContent(this ISiteBuilderContentGuard guard, string file, string content, JObject catalog, ICollection<string> errors) =>
-        Guard(content, token => guard.GuardThemeFile(file, token, catalog), errors);
-
     /// <exception cref="InvalidDataException">Something in the content can run script.</exception>
     public static string GuardPageContent(this ISiteBuilderContentGuard guard, string content, string name, JObject catalog)
     {
@@ -25,6 +21,10 @@ public static class SiteBuilderContentGuardExtensions
 
         return result;
     }
+
+    /// <param name="file">The path in the theme folder.</param>
+    public static string GuardThemeFileContent(this ISiteBuilderContentGuard guard, string file, string content, JObject catalog, ICollection<string> errors) =>
+        Guard(content, token => guard.GuardThemeFile(file, token, catalog), errors);
 
     /// <exception cref="InvalidDataException">There are errors; every save path answers it with 400.</exception>
     public static void ThrowIfAny(ICollection<string> errors)

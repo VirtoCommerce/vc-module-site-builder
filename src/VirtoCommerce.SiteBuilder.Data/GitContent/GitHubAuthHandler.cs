@@ -62,14 +62,9 @@ public class GitHubAuthHandler(IGitHubConnectionService gitHubConnectionService,
 
     protected virtual string GetOwner(HttpRequestMessage request, GitHubConnection connection)
     {
-        // also under a GitHub Enterprise "/api/v3/" prefix
-        var segments = request.RequestUri?.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
-        for (var i = 0; i < segments.Length - 1; i++)
+        if (GetPathOwner(request.RequestUri) is { } pathOwner)
         {
-            if (segments[i] is "repos" or "orgs")
-            {
-                return Uri.UnescapeDataString(segments[i + 1]);
-            }
+            return pathOwner;
         }
 
         if (request.Options.TryGetValue(OwnerOptionKey, out var owner) && !string.IsNullOrWhiteSpace(owner))
@@ -81,6 +76,21 @@ public class GitHubAuthHandler(IGitHubConnectionService gitHubConnectionService,
         return string.IsNullOrWhiteSpace(fallback)
             ? throw new GitContentException($"Cannot tell which GitHub account the request to {request.RequestUri} acts on.")
             : fallback.Trim();
+    }
+
+    // also under a GitHub Enterprise "/api/v3/" prefix
+    private static string GetPathOwner(Uri requestUri)
+    {
+        var segments = requestUri?.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            if (segments[i] is "repos" or "orgs")
+            {
+                return Uri.UnescapeDataString(segments[i + 1]);
+            }
+        }
+
+        return null;
     }
 
     protected virtual async Task<string> GetTokenAsync(GitHubConnection connection, string owner, CancellationToken cancellationToken)

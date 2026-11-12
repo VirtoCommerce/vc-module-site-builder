@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -25,8 +26,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Authorization
 
             var storeIds = GetStoreIds(context.Resource);
             var user = await GetUser(context);
-            // an account bound to a store works in that store only
-            if (user == null || (!string.IsNullOrEmpty(user.StoreId) && storeIds?.All(x => x.EqualsIgnoreCase(user.StoreId)) != true))
+            if (user == null || IsBoundToAnotherStore(user, storeIds))
             {
                 return;
             }
@@ -42,14 +42,24 @@ namespace VirtoCommerce.SiteBuilder.Data.Authorization
                 return;
             }
 
-            var scopedStoreIds = context.User.FindPermissions(requirement.Permission, jsonOptions.Value.SerializerSettings)
-                .SelectMany(x => x.AssignedScopes.OfType<StoreSelectedScope>())
-                .Select(x => x.StoreId)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (scopedStoreIds.Count > 0 && storeIds.All(x => x != null && scopedStoreIds.Contains(x)))
+            if (HasPermissionInStores(context.User, requirement.Permission, storeIds))
             {
                 context.Succeed(requirement);
             }
+        }
+
+        // an account bound to a store works in that store only
+        private static bool IsBoundToAnotherStore(ApplicationUser user, IList<string> storeIds) =>
+            !string.IsNullOrEmpty(user.StoreId) && storeIds?.All(x => x.EqualsIgnoreCase(user.StoreId)) != true;
+
+        private bool HasPermissionInStores(ClaimsPrincipal principal, string permission, IList<string> storeIds)
+        {
+            var scopedStoreIds = principal.FindPermissions(permission, jsonOptions.Value.SerializerSettings)
+                .SelectMany(x => x.AssignedScopes.OfType<StoreSelectedScope>())
+                .Select(x => x.StoreId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            return scopedStoreIds.Count > 0 && storeIds.All(x => x != null && scopedStoreIds.Contains(x));
         }
 
         private static IList<string> GetStoreIds(object resource) => resource switch
