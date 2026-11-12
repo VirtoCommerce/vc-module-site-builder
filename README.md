@@ -1,4 +1,6 @@
-﻿# Site Builder
+﻿# Site Builder (Beta)
+
+> **Beta.** Site Builder is ready to try and its storage stays compatible with Page Builder, but its APIs and theme formats may still change before the first stable release.
 
 Site Builder lets a merchandiser build the storefront's pages, catalog templates and theme in a visual designer, next to a live preview of the real storefront.
 

@@ -20,8 +20,8 @@
     <module id="VirtoCommerce.PageBuilderModule" version="3.0.0" />
   </incompatibilities>
 
-  <title>Site Builder</title>
-  <description>Build storefront pages, catalog templates and theme in a visual designer with live preview.</description>
+  <title>Site Builder (Beta)</title>
+  <description>Beta. Build storefront pages, catalog templates and theme in a visual designer with live preview.</description>
 
   <apps>
     <app id="site-builder-shell">
