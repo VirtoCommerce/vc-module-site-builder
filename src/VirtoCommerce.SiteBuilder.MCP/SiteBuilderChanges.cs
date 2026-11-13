@@ -31,6 +31,10 @@ public sealed class SiteBuilderChange : McpChangePreview
     // A created page's sections, in order.
     [JsonPropertyName("sections")]
     public IList<SectionRow> Sections { get; set; }
+
+    // A publish or unpublish of a page stored as a file: where it stands, a pull request in git.
+    [JsonPropertyName("shipment")]
+    public FilePageShipmentRow Shipment { get; set; }
 }
 
 // Runs a write of an operation service the way every page tool does: the operation's own dry run first, as the user of
@@ -56,7 +60,8 @@ public static class SiteBuilderChanges
         Func<bool, Task<TResult>> run,
         Action<SiteBuilderOperationResult> ensureSucceeded,
         bool dryRun,
-        bool unpublishedOnly = false)
+        bool unpublishedOnly = false,
+        bool includeWarnings = false)
         where TResult : SiteBuilderOperationResult
     {
         var check = await run(true);
@@ -65,6 +70,14 @@ public static class SiteBuilderChanges
         change.DryRun = true;
         change.AffectsPublished = check.AffectsPublished;
         change.AddChanges(check.Preview);
+        if (includeWarnings)
+        {
+            // What a write of a page stored as a file does in git (the branches it merges) is told only here.
+            foreach (var warning in check.Preview?.Warnings ?? [])
+            {
+                change.AddWarning(warning);
+            }
+        }
 
         if (check.Preview?.Objects.Count == 0)
         {

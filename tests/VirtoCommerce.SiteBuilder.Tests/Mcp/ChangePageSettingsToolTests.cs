@@ -164,12 +164,12 @@ public sealed class ChangePageSettingsToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task APageStoredAsAFile_IsNotAvailableYet()
+    public async Task APageStoredAsAFile_IsRefused()
     {
         var result = await _context.CallAsync(Editor(), Tool, new { page_id = "pages/about.md", name = "About", unpublished_only = true });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("not available for pages stored as files yet", result.Error);
+        Assert.Contains("database pages only", result.Error);
         Assert.Empty((await _pages.GetAsync(["pages/about.md"])).ToList());
     }
 }

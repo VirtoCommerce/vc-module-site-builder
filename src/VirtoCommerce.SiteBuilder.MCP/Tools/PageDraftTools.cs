@@ -18,8 +18,10 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The content author's edits of a database page's draft: what customers see changes only when the draft is published,
-// so the edit needs no second person. It saves through the designer's own save, with its checks, sanitizing and history.
+// The content author's edits of a page's draft: what customers see changes only when the draft is published, so the
+// edit needs no second person. It saves through the designer's own save, with its checks, sanitizing and history. A page
+// stored as a file has no version of its own; its version token is the hash of its content, checked again against what
+// the save's own dry run reads just before the save.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageDraftTools(
@@ -28,26 +30,33 @@ public class PageDraftTools(
     IGroupedPageContentService pageContentService,
     IDesignerOperationService designerOperationService,
     ISiteBuilderSharedComponentService sharedComponentService,
-    ISiteBuilderSharedComponentContentService sharedComponentContentService)
+    ISiteBuilderSharedComponentContentService sharedComponentContentService,
+    ISiteBuilderContentQueryService contentQueryService)
 {
     private const int MaxOperations = 100;
+    private const string TemplateSetting = "template";
 
     [McpServerTool(Name = "edit_page_draft", ReadOnly = false, Destructive = false, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
-    [Description("Edit the draft of a database page: add, duplicate, move, hide, show and remove sections and their " +
+    [Description("Edit the draft of a page: add, duplicate, move, hide, show and remove sections and their " +
         "blocks, change section and block settings (texts, images, links), change page settings such as " +
-        "seoInfo.pageTitle, seoInfo.metaDescription and layout, copy sections from another page, place a Shared " +
+        "seoInfo.pageTitle, seoInfo.metaDescription, layout and template (the page's own template, which comes before " +
+        "every template rule: the key of a page template of the theme or of the storefront, such as 'page' or " +
+        "'page.landing'; search_templates lists them, null removes it), copy sections from another page, place a Shared " +
         "Component or detach one into the page's own sections. Read the page first with search_site_pages (page_id) " +
         "and pass its version_token; the operations apply in order, and all or none are saved. Customers see the " +
         "change only after the draft is published. Returns the changes section by section, the new version_token and " +
-        "the page's sections. Call it with dryRun first to show the user the change. Not for the page's name, address, " +
-        "language, audience or dates, nor for pages kept as files.")]
+        "the page's sections. Call it with dryRun first to show the user the change. A page stored as a file is named " +
+        "by its path ('pages/about.page') with store_id, and holds no Shared Component. Not for the page's name, address, " +
+        "language, audience or dates.")]
     public async Task<PageDraftEdit> EditPageDraft(
         RequestContext<CallToolRequestParams> context,
-        [Description("Id of the page (a Landing Page or a language version of a Multilanguage Page), as search_site_pages returns it.")] string page_id,
+        [Description("Id of the page (a Landing Page or a language version of a Multilanguage Page), as search_site_pages returns it, " +
+            "or the path of a page stored as a file.")] string page_id,
         [Description("version_token of the page as search_site_pages with page_id returned it. An edit of an older version is refused.")] string version_token,
         [Description("The changes, applied in order.")] PageEditOperation[] operations,
+        [Description("With a page stored as a file: the store of the page.")] string store_id = null,
         [Description("true to check the edit and return what it would change, without saving it. Ids of sections a dry run adds are not kept.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
@@ -56,20 +65,16 @@ public class PageDraftTools(
             throw new McpException("Pass page_id; search_site_pages finds it.");
         }
 
+        if (PageLookup.IsFilePagePath(page_id))
+        {
+            return await EditFilePageAsync(context, store_id, page_id, version_token, operations, dryRun, cancellationToken);
+        }
+
         var group = await groupedPageService.GetByIdAsync(page_id)
             ?? throw new McpException($"Page '{page_id}' was not found. Call search_site_pages to find its id.");
 
         await authorizationService.EnsureAllowedAsync(context.User, group, group.StoreId);
-
-        if (operations == null || operations.Length == 0)
-        {
-            throw new McpException("Pass operations: the changes to make.");
-        }
-
-        if (operations.Length > MaxOperations)
-        {
-            throw new McpException($"Pass at most {MaxOperations} operations in one call.");
-        }
+        EnsureOperations(operations);
 
         var current = await PageEditSources.LoadDraftAsync(pageContentService, group, cancellationToken);
         if (string.IsNullOrWhiteSpace(version_token) || version_token.Trim() != current.ETag)
@@ -80,10 +85,9 @@ public class PageDraftTools(
         var editor = PageDocumentEditor.Read(current.Content)
             ?? throw new McpException($"The content of page '{page_id}' is not a page document, so it cannot be edited here. Open it in the designer.");
         var before = PageDocumentEditor.Read(current.Content);
+        var templateWarnings = await CheckTemplatesAsync(operations, context.User, group.StoreId, cancellationToken);
 
-        var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
-            sharedComponentContentService, context.User, group.StoreId);
-        await editor.ApplyAsync(operations, sources, cancellationToken);
+        await editor.ApplyAsync(operations, CreateSources(context, group.StoreId), cancellationToken);
         var content = editor.Write();
 
         var preview = new PageDraftEdit
@@ -130,7 +134,174 @@ public class PageDraftTools(
             preview.AddWarning("The page is published: customers keep seeing the published version until this draft is published.");
         }
 
+        foreach (var warning in templateWarnings)
+        {
+            preview.AddWarning(warning);
+        }
+
         return preview;
+    }
+
+    // The save of a file page takes no version, so the token is checked twice: against the content read for the edit, and
+    // against what the save's own dry run reads as the current draft. A save by someone else between that dry run and the
+    // write is not seen; the designer's own saves of file pages have the same window.
+    private async Task<PageDraftEdit> EditFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId, string versionToken,
+        PageEditOperation[] operations, bool dryRun, CancellationToken cancellationToken)
+    {
+        var page = await FilePages.LoadAsync(authorizationService, context.User, storeId, pageId);
+        EnsureOperations(operations);
+
+        var current = await FilePages.RequireAsync(contentQueryService, context.User, page, cancellationToken);
+        var version = FilePages.VersionOf(current);
+        if (string.IsNullOrWhiteSpace(versionToken) || versionToken.Trim() != version)
+        {
+            throw StaleVersion(page.PageId, page.StoreId);
+        }
+
+        var editor = PageDocumentEditor.Read(current, PageDocumentKind.FilePage)
+            ?? throw new McpException($"The content of page '{page.PageId}' is not a page document, so it cannot be edited here. Open it in the designer.");
+        var before = PageDocumentEditor.Read(current, PageDocumentKind.FilePage);
+        var templateWarnings = await CheckTemplatesAsync(operations, context.User, page.StoreId, cancellationToken);
+
+        await editor.ApplyAsync(operations, CreateSources(context, page.StoreId), cancellationToken);
+
+        var preview = new PageDraftEdit
+        {
+            Action = "edit_page_draft",
+            ObjectType = ChangePreview.FilePage,
+            ObjectId = page.PageId,
+            ObjectName = page.PageId,
+            DryRun = dryRun,
+            VersionToken = version,
+        };
+
+        if (PageDocumentChanges.Compare(before, editor).Count == 0)
+        {
+            preview.Sections = SectionRow.From(editor.Sections);
+            preview.AddWarning("The operations change nothing, so nothing was saved.");
+            return preview;
+        }
+
+        Task<SiteBuilderOperationResult<DesignerSaveResult>> SaveAsync(bool isDryRun) => FilePages.RunAsync(() => designerOperationService.SaveAsync(
+            new DesignerSaveOperationRequest
+            {
+                StoreId = page.StoreId,
+                Changes = new DesignerSaveRequest
+                {
+                    Page = new DesignerSavePage { Path = page.Path, Type = page.ContentType, Content = editor.Write() },
+                },
+                SaveId = Guid.NewGuid().ToString("N"),
+                DryRun = isDryRun,
+            }, context.User, cancellationToken));
+
+        var check = await SaveAsync(true);
+        EnsureFilePageSaved(check, page);
+        var saving = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.FilePage)?.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
+        if (FilePages.VersionOf(saving?.From) != version)
+        {
+            throw StaleVersion(page.PageId, page.StoreId);
+        }
+
+        var saved = PageDocumentEditor.Read(saving?.To, PageDocumentKind.FilePage)
+            ?? throw new McpException($"The edit of page '{page.PageId}' could not be previewed.");
+        foreach (var change in PageDocumentChanges.Compare(before, saved))
+        {
+            preview.AddChange(change.Field, change.From, change.To);
+        }
+
+        preview.Sections = SectionRow.From(saved.Sections);
+        foreach (var warning in templateWarnings)
+        {
+            preview.AddWarning(warning);
+        }
+
+        if (dryRun)
+        {
+            return preview;
+        }
+
+        EnsureFilePageSaved(await SaveAsync(false), page);
+        preview.VersionToken = FilePages.VersionOf(await FilePages.ReadAsync(contentQueryService, context.User, page, draft: true, cancellationToken));
+
+        return preview;
+    }
+
+    // The page's own template is a page template the theme has, as a draft or published, or one of the storefront's own:
+    // the storefront ignores a key it cannot find, which would leave the page on the rules without anyone noticing.
+    private async Task<IList<string>> CheckTemplatesAsync(PageEditOperation[] operations, ClaimsPrincipal user, string storeId,
+        CancellationToken cancellationToken)
+    {
+        var values = operations
+            .Where(x => string.Equals(x.Op?.Trim(), "set_page_settings", StringComparison.OrdinalIgnoreCase) && x.Settings?.ContainsKey(TemplateSetting) == true)
+            .Select(x => x.Settings[TemplateSetting])
+            .Where(x => x != null)
+            .ToList();
+        if (values.Count == 0)
+        {
+            return [];
+        }
+
+        var templates = (await ThemeTemplates.ListAsync(contentQueryService, user, storeId, cancellationToken))
+            .Where(x => TemplateRulesDocument.PageTypeOf(x.Key) == "page")
+            .ToList();
+        var known = templates.Select(x => x.Key).Concat(ThemeTemplates.BuiltIn.Where(x => TemplateRulesDocument.PageTypeOf(x) == "page"))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        var warnings = new List<string>();
+        foreach (var value in values)
+        {
+            if (value is not JsonValue text || !text.TryGetValue<string>(out var key) || string.IsNullOrWhiteSpace(key))
+            {
+                throw new McpException("The page setting 'template' is the key of a page template, such as 'page' or 'page.landing', or null to remove it. Nothing was changed.");
+            }
+
+            if (!known.Contains(key, StringComparer.Ordinal))
+            {
+                throw new McpException($"There is no page template '{key}' in the theme of store '{storeId}' or among the storefront's own, so the " +
+                    $"storefront would ignore it. The page templates: {string.Join(", ", known)}. Pick one of them, or create the template with " +
+                    "edit_template first. Nothing was changed.");
+            }
+
+            if (templates.FirstOrDefault(x => x.Key == key) is { Published: false })
+            {
+                warnings.Add($"Template '{key}' is only in the theme's draft: the storefront uses it once the theme is published (publish_theme).");
+            }
+        }
+
+        return warnings;
+    }
+
+    private PageEditSources CreateSources(RequestContext<CallToolRequestParams> context, string storeId) =>
+        new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, context.User, storeId);
+
+    private static void EnsureOperations(PageEditOperation[] operations)
+    {
+        if (operations == null || operations.Length == 0)
+        {
+            throw new McpException("Pass operations: the changes to make.");
+        }
+
+        if (operations.Length > MaxOperations)
+        {
+            throw new McpException($"Pass at most {MaxOperations} operations in one call.");
+        }
+
+        if (Array.IndexOf(operations, null) is var empty and >= 0)
+        {
+            throw new McpException($"Operation {empty + 1} is empty.");
+        }
+    }
+
+    private static void EnsureFilePageSaved(SiteBuilderOperationResult result, FilePage page)
+    {
+        if (result.Status is SiteBuilderOperationStatus.Conflict or SiteBuilderOperationStatus.VersionRequired)
+        {
+            throw StaleVersion(page.PageId, page.StoreId);
+        }
+
+        FilePages.EnsureSucceeded(result, page, "edit");
     }
 
     // A dry run does not refuse a stale version (the save checks it under its lock); it answers the current one instead.
@@ -167,9 +338,9 @@ public class PageDraftTools(
         }
     }
 
-    private static McpException StaleVersion(string pageId) =>
+    private static McpException StaleVersion(string pageId, string storeId = null) =>
         new($"Page '{pageId}' changed since you read it, or version_token is not its version. Read it again with " +
-            "search_site_pages (page_id) and make the edit on that content with its version_token.");
+            $"search_site_pages (page_id{(storeId == null ? string.Empty : $" and store_id '{storeId}'")}) and make the edit on that content with its version_token.");
 }
 
 public sealed class PageDraftEdit : McpChangePreview

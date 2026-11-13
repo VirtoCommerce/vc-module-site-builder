@@ -14,7 +14,8 @@ namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // Dropping a draft loses its author's unpublished work, and customers see nothing of it either way: the user confirms
 // it in the chat, and a client that cannot ask does not discard. What is discarded is named by kind, each with its own
-// argument: a page by page_id, a file of the theme by theme_file. The question lists the arguments, which name it.
+// argument: a page by page_id (a database page by its id, a page stored as a file by its path and store_id), a file of
+// the theme by theme_file. The question lists the arguments, which name it.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class DraftTools(
@@ -24,7 +25,8 @@ public class DraftTools(
     IDesignerOperationService designerOperationService,
     IThemeOperationService themeOperationService,
     ISiteBuilderContentQueryService contentQueryService,
-    IContentPermissionService contentPermissionService)
+    IContentPermissionService contentPermissionService,
+    IFilePageOperationService filePageOperationService)
 {
     public const string PageKind = "page";
     public const string ThemeFileKind = "theme_file";
@@ -33,8 +35,10 @@ public class DraftTools(
     [McpPermission(Read)]
     [Authorize(Update)]
     [McpRequiresConfirmation(Fallback = McpConfirmationFallback.Refuse)]
-    [Description("Discard the draft of a database page or of a theme file: its unpublished changes are deleted and it is its " +
-        "published version again. Something never published has nothing to go back to and is refused. A theme file is a " +
+    [Description("Discard the draft of a page or of a theme file: its unpublished changes are deleted and it is its " +
+        "published version again. Something never published has nothing to go back to and is refused. A page is a " +
+        "database page by its id, or a page stored as a file by its path ('pages/about.page') with store_id; in git, its " +
+        "draft is your own draft branch of the page. A theme file is a " +
         "template, the template rules, the header, the footer, the brand or a palette, named by its path as search_templates " +
         "and list_versions name it; discarding it needs builder:templates for templates and rules, builder:theme for the others. " +
         "The user confirms the call in the chat; a client that cannot ask refuses it, and the user discards the draft in the " +
@@ -42,8 +46,8 @@ public class DraftTools(
     public async Task<SiteBuilderChange> DiscardDraft(
         RequestContext<CallToolRequestParams> context,
         [Description("What to discard the draft of: 'page' or 'theme_file'.")] string kind,
-        [Description("page: id of a Landing Page or of a language version (search_site_pages).")] string page_id = null,
-        [Description("theme_file: the store of the theme.")] string store_id = null,
+        [Description("page: id of a Landing Page or of a language version (search_site_pages), or the path of a page stored as a file.")] string page_id = null,
+        [Description("theme_file, or a page stored as a file: the store of the theme or of the page.")] string store_id = null,
         [Description("theme_file: the file with the theme folder, for example 'default/templates/product.bicycles.json' or 'default/config/palette.json'.")] string theme_file = null,
         [Description("true to return what the discard would undo, without discarding.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
@@ -56,6 +60,11 @@ public class DraftTools(
         if (kind != PageKind)
         {
             throw new McpException($"kind must be '{PageKind}' or '{ThemeFileKind}'.");
+        }
+
+        if (PageLookup.IsFilePagePath(page_id))
+        {
+            return await DiscardFilePageAsync(context, store_id, page_id, dryRun, cancellationToken);
         }
 
         var group = await groupedPageService.LoadPageAsync(authorizationService, context.User, page_id);
@@ -149,6 +158,75 @@ public class DraftTools(
 
         change.DryRun = false;
         return change;
+    }
+
+    // In blob storage the draft is a file next to the page; a store that keeps its pages in git refuses that, and its draft is
+    // the user's own draft branch of the page instead.
+    private async Task<SiteBuilderChange> DiscardFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId, bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        var page = await FilePages.LoadAsync(authorizationService, context.User, storeId, pageId);
+        var change = new SiteBuilderChange
+        {
+            Action = "discard_draft",
+            ObjectType = ChangePreview.FilePage,
+            ObjectId = page.Path,
+            ObjectName = page.PageId,
+            PageId = page.PageId,
+        };
+
+        FileDraftDiscardOperationRequest BlobRequest(bool isDryRun) => new()
+        {
+            StoreId = page.StoreId,
+            ContentType = page.ContentType,
+            Path = page.Path,
+            SaveId = Guid.NewGuid().ToString("N"),
+            DryRun = isDryRun,
+        };
+
+        var blob = await FilePages.RunAsync(() => filePageOperationService.DiscardDraftAsync(BlobRequest(true), context.User, cancellationToken));
+        if (blob.Status == SiteBuilderOperationStatus.Invalid && blob.Value?.KeptInGit == true)
+        {
+            await SiteBuilderChanges.RunAsync(change,
+                isDryRun => FilePages.RunAsync(() => filePageOperationService.DiscardGitDraftAsync(new FilePageOperationRequest
+                {
+                    StoreId = page.StoreId,
+                    ContentType = page.ContentType,
+                    Path = page.Path,
+                    DryRun = isDryRun,
+                }, context.User, cancellationToken)),
+                x => EnsureFileDiscarded(x, page, onlyCopy: IsOnlyCopy(x.Preview)),
+                dryRun,
+                includeWarnings: true);
+
+            return change;
+        }
+
+        await SiteBuilderChanges.RunAsync(change,
+            isDryRun => FilePages.RunAsync(() => filePageOperationService.DiscardDraftAsync(BlobRequest(isDryRun), context.User, cancellationToken)),
+            x => EnsureFileDiscarded(x, page, onlyCopy: x is SiteBuilderOperationResult<FileDraftDiscard> { Status: SiteBuilderOperationStatus.Invalid, Value.Status: DraftDiscardStatus.OnlyCopy }),
+            dryRun);
+
+        return change;
+    }
+
+    // A draft branch of a page the base branch does not hold is all there is of the page.
+    private static bool IsOnlyCopy(SiteBuilderChangePreview preview) =>
+        preview?.Objects.Any(x => x.Fields.Any(field => field.Name == ChangePreview.Content && field.To == null)) == true;
+
+    private static void EnsureFileDiscarded(SiteBuilderOperationResult result, FilePage page, bool onlyCopy)
+    {
+        if (onlyCopy)
+        {
+            throw new McpException($"Page '{page.PageId}' was never published, so its draft is all there is and is not discarded. Edit it with edit_page_draft instead.");
+        }
+
+        if (result.Succeeded && result.Preview?.Objects.Count == 0)
+        {
+            throw new McpException($"Page '{page.PageId}' has no unpublished changes of yours, so there is nothing to discard.");
+        }
+
+        FilePages.EnsureSucceeded(result, page, "discard the draft of");
     }
 
     private static void EnsureDiscarded(SiteBuilderOperationResult result, GroupedSiteBuilderPage group)

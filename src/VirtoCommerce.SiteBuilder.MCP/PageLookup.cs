@@ -25,8 +25,9 @@ public static class PageLookup
 
         if (IsFilePagePath(pageId))
         {
-            throw new McpException($"'{pageId}' is a page stored as a file. This tool is not available for pages stored as files yet; " +
-                "use the designer for it.");
+            throw new McpException($"'{pageId}' is a page stored as a file, and this tool works on database pages only. A page stored " +
+                "as a file is read with search_site_pages and changed with edit_page_draft, publish_page, unpublish_page, discard_draft " +
+                "and restore_version; anything else, in the designer.");
         }
 
         var group = await groupedPageService.GetByIdAsync(pageId)

@@ -207,11 +207,50 @@ public sealed class EditPageDraftToolTests : IAsyncDisposable
         Assert.Empty(_context.SavedVersions.Records);
     }
 
+    [Fact]
+    public async Task ThePagesOwnTemplate_IsSet_WhenTheThemeOrTheStorefrontHasIt()
+    {
+        _context.SeedThemeFile(StoreA, "templates/page.landing.json", ProductTemplate);
+
+        var own = await EditAsync(Editor(), "a1", Token("a1"), [SetTemplate("page.landing")]);
+        var builtIn = await EditAsync(Editor(), "a1", own.VersionToken, [SetTemplate("page")]);
+
+        Assert.Contains(own.Changes, x => x.Field.Contains("template", StringComparison.Ordinal) && x.To?.ToString() == "page.landing");
+        Assert.Contains(builtIn.Changes, x => x.Field.Contains("template", StringComparison.Ordinal) && x.To?.ToString() == "page");
+    }
+
+    [Theory]
+    [InlineData("page.missing")]
+    [InlineData("product")]
+    public async Task ATemplateThatIsNotAPageTemplateOfTheStore_IsRefused(string template)
+    {
+        _context.SeedThemeFile(StoreA, "templates/page.landing.json", ProductTemplate);
+
+        var result = await _context.CallAsync(Editor(), Tool, new { page_id = "a1", version_token = Token("a1"), operations = new[] { SetTemplate(template) } });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains($"no page template '{template}'", result.Error, StringComparison.Ordinal);
+        Assert.Contains("page.landing", result.Error, StringComparison.Ordinal);
+        Assert.Equal(Content, (await DraftAsync("a1")).Content);
+    }
+
+    [Fact]
+    public async Task ATemplateOnlyInTheThemeDraft_IsSet_WithAWarning()
+    {
+        _context.SeedThemeFile(StoreA, "templates/page.new.json", ProductTemplate, draft: true);
+
+        var edit = await EditAsync(Editor(), "a1", Token("a1"), [SetTemplate("page.new")]);
+
+        Assert.Contains(edit.Warnings, x => x.Contains("only in the theme's draft", StringComparison.Ordinal));
+    }
+
     private async Task<PageDraftEdit> EditAsync(McpTestUser user, string pageId, string token, object[] operations, bool dryRun = false)
     {
         var result = await _context.CallAsync(user, Tool, new { page_id = pageId, version_token = token, operations, dryRun });
         return result.EnsureSucceeded().Read<PageDraftEdit>();
     }
+
+    private static object SetTemplate(string template) => new { op = "set_page_settings", settings = new { template } };
 
     private static object SetTitle(string title) => new { op = "set_section_settings", section_id = "hero", settings = new { title } };
 

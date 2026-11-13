@@ -19,14 +19,17 @@ public interface IPageEditSources
     Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken);
 }
 
-// What a document is: a page, a template of the theme, or the theme's header or footer. A template and a group hold
-// sections as a page does, but no Shared Component (the storefront shows those on pages only), and a group has no
-// settings of its own.
+// What a document is: a database page, a page stored as a file, a template of the theme, the theme's header or footer,
+// or a Shared Component. Each holds sections as a page does, but only a database page holds a Shared Component: the
+// storefront resolves placements on database pages, and the save of a page stored as a file does not check them. A
+// group has no settings of its own.
 public enum PageDocumentKind
 {
     Page,
     Template,
     SectionGroup,
+    FilePage,
+    SharedComponent,
 }
 
 // Applies the operations of edit_page_draft to a page document the way the designer's own edits change it (see the
@@ -86,6 +89,8 @@ public sealed class PageDocumentEditor
     {
         PageDocumentKind.Template => "template",
         PageDocumentKind.SectionGroup => GetString(_root?[TypeKey]) ?? "section group",
+        PageDocumentKind.FilePage => "page stored as a file",
+        PageDocumentKind.SharedComponent => "Shared Component",
         _ => "page",
     };
 
@@ -93,8 +98,13 @@ public sealed class PageDocumentEditor
     {
         PageDocumentKind.Template => "Read the template with search_templates (template_key) for its section ids.",
         PageDocumentKind.SectionGroup => "Call edit_theme_draft with this part, dryRun and no operations for its section ids.",
+        PageDocumentKind.FilePage => "Read the page with search_site_pages (page_id and store_id) for its section ids.",
+        PageDocumentKind.SharedComponent => "Read the component with search_shared_components (shared_component_id) for its section ids.",
         _ => "Read the page with search_site_pages (page_id) for its section ids.",
     };
+
+    // Whose settings are the page's own: the name, address and language follow the page, or the component's name.
+    private bool HasPageSettings => _kind is PageDocumentKind.Page or PageDocumentKind.FilePage or PageDocumentKind.SharedComponent;
 
     // In the shape it was read in, so a page stored the older way stays readable by what reads it that way.
     public string Write()
@@ -180,7 +190,7 @@ public sealed class PageDocumentEditor
                     throw new EditException($"The {Noun} has no settings of its own; set the settings of one of its sections with set_section_settings.");
                 }
 
-                SetValues(Settings, operation.Settings, operation.Language, page: _kind == PageDocumentKind.Page);
+                SetValues(Settings, operation.Settings, operation.Language, page: HasPageSettings);
                 break;
             case "copy_sections_from":
                 await CopySectionsAsync(operation, sources, cancellationToken);
@@ -343,6 +353,11 @@ public sealed class PageDocumentEditor
 
     private void EnsureCanHoldPlacements()
     {
+        if (_kind == PageDocumentKind.FilePage)
+        {
+            throw new EditException("A page stored as a file cannot hold a Shared Component: the storefront resolves them on database pages only.");
+        }
+
         if (_kind != PageDocumentKind.Page)
         {
             throw new EditException($"A {Noun} cannot hold a Shared Component: the storefront shows Shared Components on pages only.");
@@ -509,7 +524,8 @@ public sealed class PageDocumentEditor
     {
         if (PageOwnedSettings.Contains(key))
         {
-            throw new EditException($"'{key}' follows the page's own name, address and language, which edit_page_draft does not change.");
+            throw new EditException($"'{key}' follows the page's own name, address and language (or the component's name), which this tool does not " +
+                "change: change_page_settings changes those of a database page, revise_shared_component the name of a component.");
         }
     }
 

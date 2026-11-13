@@ -13,6 +13,7 @@ using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -21,7 +22,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // Database pages of the stores the user reads: the pages list of the designer, one row per Landing Page and per
-// Multilanguage Page, and one page with its content.
+// Multilanguage Page, and one page with its content. A page stored as a file is read by its path; it is not listed, as
+// listing the files of a store is the designer's endpoint's own work and not a service yet.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageTools(
@@ -31,7 +33,9 @@ public class PageTools(
     IGroupedPageService groupedPageService,
     IGroupedPageContentService pageContentService,
     ISiteBuilderSectionScanner sectionScanner,
-    Func<UserManager<ApplicationUser>> userManagerFactory)
+    Func<UserManager<ApplicationUser>> userManagerFactory,
+    ISiteBuilderContentQueryService contentQueryService,
+    ISiteBuilderPublishStatusQueryService publishStatusQueryService)
 {
     // The pages list has no date filter: the tool finds the pages by their versions changed in the period first. More
     // versions than this is a scan; the agent narrows the period instead.
@@ -44,6 +48,7 @@ public class PageTools(
         "language version (page id, status, unpublished changes, outdated translation). Most recently changed first. " +
         "Pass page_id to read one page instead: its settings (name, address, language, audience, dates), its content " +
         "(page settings and sections, each with its id) and the version token of that content, which edit_page_draft takes. " +
+        "A page stored as a file is not listed here; read it with page_id set to its path ('pages/about.page') and store_id. " +
         "Pass section_type to find the pages that use a section, optionally with a condition on its settings: the pages are " +
         "read one by one, take of them per call, and the answer lists per language version the matching section ids and " +
         "says how many pages were scanned; continue with next_skip until is_complete or has_more is false before saying a " +
@@ -53,7 +58,7 @@ public class PageTools(
         IMcpPageSizeResolver pageSizeResolver,
         [Description("Store id. Omit it to search every store you read pages of.")] string store_id = null,
         [Description("Id of one page (a Landing Page, or a language version of a Multilanguage Page) to read with its " +
-            "content. The other filters are ignored.")] string page_id = null,
+            "content, or the path of a page stored as a file with store_id. The other filters are ignored.")] string page_id = null,
         [Description("Text in the page name or address.")] string keyword = null,
         [Description("Draft (has unpublished changes or was never published), Published (has a published version) or " +
             "Archived. Several, comma-separated.")] string status = null,
@@ -170,10 +175,34 @@ public class PageTools(
             .ToList();
     }
 
-    private async Task<SitePageDetails> GetPageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId,
+    private async Task<object> GetFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId, bool published,
+        CancellationToken cancellationToken)
+    {
+        var page = await FilePages.LoadAsync(authorizationService, context.User, storeId, pageId);
+        var content = await FilePages.ReadAsync(contentQueryService, context.User, page, draft: !published, cancellationToken);
+        if (content == null && (!published || await FilePages.ReadAsync(contentQueryService, context.User, page, draft: true, cancellationToken) == null))
+        {
+            throw new McpException($"Page '{page.PageId}' was not found in store '{page.StoreId}'. Check the folder and path the designer shows for it.");
+        }
+
+        var status = await FilePages.RunAsync(() => publishStatusQueryService.GetFilePageStatusAsync(new SiteBuilderFilePageQueryRequest
+        {
+            StoreId = page.StoreId,
+            ContentType = page.ContentType,
+            Path = page.Path,
+        }, context.User, cancellationToken));
+
+        return FilePageDetails.From(page, content, published, status.Succeeded ? status.Value : null);
+    }
+
+    private async Task<object> GetPageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId,
         string version, CancellationToken cancellationToken)
     {
         var published = SitePageFilters.ParseVersion(version);
+        if (PageLookup.IsFilePagePath(pageId))
+        {
+            return await GetFilePageAsync(context, storeId, pageId, published, cancellationToken);
+        }
 
         var group = await groupedPageService.GetByIdAsync(pageId)
             ?? throw new McpException($"Page '{pageId}' was not found. Call search_site_pages without page_id to find its id.");
@@ -371,6 +400,65 @@ public sealed class SitePageDetails
             ContentNote = snapshot.Content == null
                 ? "The page has no content in this version."
                 : content == null ? "The stored content is not a page document." : null,
+        };
+    }
+}
+
+public sealed class FilePageDetails
+{
+    // The path with its folder, as page_id of the tools takes it.
+    public string Id { get; init; }
+
+    public string StoreId { get; init; }
+
+    // pages or blogs.
+    public string ContentType { get; init; }
+
+    public string Path { get; init; }
+
+    // git or blob: in git, a publish is a pull request.
+    public string Flow { get; init; }
+
+    public bool? Published { get; init; }
+
+    public bool? HasUnpublishedChanges { get; init; }
+
+    // In git: a pull request of the page is open; it waits for checks or for a person to merge it.
+    public bool? PublishPending { get; init; }
+
+    // draft or published: the version the content below is of. The draft of a store in git is your own draft branch.
+    public string ContentVersion { get; init; }
+
+    // The hash of the content: edit_page_draft and restore_version refuse it once the content changed.
+    public string VersionToken { get; init; }
+
+    public JsonObject Settings { get; init; }
+
+    public JsonArray Sections { get; init; }
+
+    public string ContentNote { get; init; }
+
+    public static FilePageDetails From(FilePage page, string content, bool published, PagePublishStatus status)
+    {
+        var document = content == null ? null : SiteBuilderPageDocument.Read(content);
+
+        return new FilePageDetails
+        {
+            Id = page.PageId,
+            StoreId = page.StoreId,
+            ContentType = page.ContentType,
+            Path = page.Path,
+            Flow = status?.Flow,
+            Published = status?.Published,
+            HasUnpublishedChanges = status?.HasChanges,
+            PublishPending = status == null ? null : status.Pending || status.AwaitingMerge,
+            ContentVersion = published ? "published" : "draft",
+            VersionToken = FilePages.VersionOf(content),
+            Settings = document?.Settings,
+            Sections = document?.Sections,
+            ContentNote = content == null
+                ? "The page is not published."
+                : document == null ? "The stored content is not a page document." : null,
         };
     }
 }

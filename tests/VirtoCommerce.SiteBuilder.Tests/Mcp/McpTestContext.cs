@@ -22,6 +22,7 @@ using VirtoCommerce.Platform.Core;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.JsonConverters;
 using VirtoCommerce.Platform.Core.Security;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
@@ -95,6 +96,11 @@ internal sealed class McpTestContext : IAsyncDisposable
         new Store { Id = StoreC, DefaultLanguage = "en-US", Languages = ["en-US"], DynamicProperties = [] });
 
     public Mock<ISiteBuilderPreviewQueryService> Previews { get; } = new();
+
+    // The writes of pages stored as files: git is the operation service's own business, tested with it.
+    public Mock<IFilePageOperationService> FilePageOperations { get; } = new();
+
+    public Mock<ISiteBuilderPublishStatusQueryService> PublishStatuses { get; } = new();
 
     // The page writes the tools run; without one, the module's operation service over the page store.
     public IGroupedPageOperationService GroupedPageOperations { get; set; }
@@ -287,6 +293,13 @@ internal sealed class McpTestContext : IAsyncDisposable
         }
 
         services.AddSingleton<IDesignerOperationService>(provider => CreateDesignerOperations(provider.GetRequiredService<IAuthorizationService>()));
+        services.AddSingleton<IContentHistoryOperationService>(provider => CreateHistoryOperations(provider.GetRequiredService<IAuthorizationService>()));
+        services.AddSingleton<ISiteBuilderSharedComponentOperationService>(provider => TestServices.SharedComponentOperations(
+            provider.GetRequiredService<IAuthorizationService>(), SharedComponents.Object, SharedComponentContents.Object, SharedComponentUsages.Object, Stores,
+            SharedComponentSearch.Object));
+        services
+            .AddSingleton(FilePageOperations.Object)
+            .AddSingleton(PublishStatuses.Object);
         services.AddSingleton(provider => GroupedPageOperations ?? CreateGroupedPageOperations(provider.GetRequiredService<IAuthorizationService>()));
         services.AddSingleton(MultilanguagePageOperations.Object);
 
@@ -306,7 +319,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton<IThemeOperationService>(provider => new ThemeOperationService(provider.GetRequiredService<IAuthorizationService>(),
                 RequestValidators.Stores(StoreA, StoreB, StoreC), new NewSiteBuilderStores(), CreateThemePublisher(), SavedVersions))
             .AddSingleton<ISiteBuilderContentQueryService>(provider => new SiteBuilderContentQueryService(provider.GetRequiredService<IAuthorizationService>(),
-                RequestValidators.Content(StoreA, StoreB, StoreC), Blobs, Blobs, Blobs, ThemeStorage, null, null, null, null));
+                RequestValidators.Content(StoreA, StoreB, StoreC), Blobs, Blobs, Blobs, ThemeStorage, new FakeGitContentPolicy(enabled: false), null, null, null));
 
         // The bulk tools and their jobs as SiteBuilderMcpRegistration adds them; the job engine is the test's dispatcher.
         var principals = new Mock<IUserClaimsPrincipalFactory<ApplicationUser>>();
@@ -341,6 +354,12 @@ internal sealed class McpTestContext : IAsyncDisposable
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService));
     }
 
+    // The history's restore as the module wires it, over the page store and the designer; the versions come from History.
+    private ContentHistoryOperationService CreateHistoryOperations(IAuthorizationService authorizationService) =>
+        new(authorizationService, History.Object, PageStore ?? GroupedPages.Object, GetDesigner().Designer, TestServices.Permissions(authorizationService),
+            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService),
+            RequestValidators.Stores(StoreA, StoreB, StoreC), RequestValidators.History(StoreA, StoreB, StoreC), RequestValidators.Restore(StoreA, StoreB, StoreC));
+
     // The page group writes as the module wires them, over the page store.
     private GroupedPageOperationService CreateGroupedPageOperations(IAuthorizationService authorizationService)
     {
@@ -357,7 +376,10 @@ internal sealed class McpTestContext : IAsyncDisposable
         if (_designer == default)
         {
             var themes = new ThemeDraftService(ThemeStorage, Lock, Blobs, NullLogger<ThemeDraftService>.Instance);
-            _designer = (TestServices.Designer(SavedVersions, themeDrafts: themes, pages: PageStore, themePublisher: CreateThemePublisher(),
+            // Pages stored as files are kept in the blob storage of the test: no store of the test keeps them in git.
+            var filePages = TestServices.FilePageDrafts(Options.Create(new GitContentOptions()), connection: null, policy: new FakeGitContentPolicy(enabled: false),
+                storeService: Stores, pathResolver: Blobs, blobs: Blobs, publishing: Blobs, events: Blobs);
+            _designer = (TestServices.Designer(SavedVersions, filePageDrafts: filePages, themeDrafts: themes, pages: PageStore, themePublisher: CreateThemePublisher(),
                 themeSnapshots: new NewSiteBuilderStores(), catalogs: new SchemaCatalogService(ThemeStorage)), themes);
         }
 
@@ -412,6 +434,15 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public string ReadThemeFile(string storeId, string pathInTheme, bool draft = false) =>
         Blobs.Files.GetValueOrDefault(ThemeFileKey(storeId, pathInTheme, draft));
+
+    // A page stored as a file in the store's blob storage: what is published, or the draft next to it.
+    public void SeedFilePage(string storeId, string path, string content, bool draft = false) =>
+        Blobs.Files[FilePageKey(storeId, path, draft)] = content;
+
+    public string ReadFilePage(string storeId, string path, bool draft = false) =>
+        Blobs.Files.GetValueOrDefault(FilePageKey(storeId, path, draft));
+
+    public static string FilePageKey(string storeId, string path, bool draft = false) => $"pages/{storeId}/{path}{(draft ? "-draft" : string.Empty)}";
 
     public static string ThemeFileKey(string storeId, string pathInTheme, bool draft = false) =>
         $"themes/{storeId}/default/{pathInTheme}{(draft ? "-draft" : string.Empty)}";

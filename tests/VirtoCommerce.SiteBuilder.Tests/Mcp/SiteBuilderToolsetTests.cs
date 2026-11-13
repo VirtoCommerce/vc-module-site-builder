@@ -56,8 +56,8 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
         Assert.Equal(
             [
                 "change_page_settings", "discard_draft", "edit_page_draft", "get_preview", "link_page_language", "list_versions",
-                "reset_language_overrides", "search_site_pages", "search_templates", "set_translations", "unlink_page_language",
-                "update_sections_bulk",
+                "reset_language_overrides", "restore_version", "search_site_pages", "search_templates", "set_translations",
+                "unlink_page_language", "update_sections_bulk",
             ],
             _context.Harness.GetVisibleToolNames(user));
     }

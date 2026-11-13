@@ -45,7 +45,7 @@ public class SectionBulkTools(
         "up to 200 pages and shows the change on the first pages, with how many pages were scanned and matched. The real " +
         "call fixes the pages and their versions and starts a background job (follow it with get_job_status); a page " +
         "saved by someone after the call is skipped, not overwritten. Sections that a placed Shared Component brings are " +
-        "not changed: the component is changed on its own. For one page use edit_page_draft.")]
+        "not changed: change the component itself with revise_shared_component. For one page use edit_page_draft.")]
     public async Task<object> UpdateSectionsBulk(
         RequestContext<CallToolRequestParams> context,
         [Description("Type of the sections to change, for example 'hero-banner'.")] string section_type,
@@ -233,7 +233,8 @@ public class SectionBulkTools(
         if (componentSections > 0)
         {
             preview.AddWarning($"{componentSections} matching sections come from placed Shared Components and are not changed: " +
-                "a change of a component shows on every page it is placed on, so it is made to the component itself.");
+                "a change of a component shows on every page it is placed on, so it is made to the component itself with " +
+                "revise_shared_component (search_site_pages with section_type lists their shared_component_id).");
         }
 
         if (targets.Count == 0)

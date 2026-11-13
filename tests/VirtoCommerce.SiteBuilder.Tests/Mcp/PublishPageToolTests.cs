@@ -88,17 +88,6 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         Assert.Equal("Draft", (await _pages.GetByIdAsync("b1")).Status);
     }
 
-    [Theory]
-    [InlineData("publish_page")]
-    [InlineData("unpublish_page")]
-    public async Task APageStoredAsAFile_IsNotAvailableYet(string tool)
-    {
-        var result = await _context.CallAsync(Publisher(), tool, new { page_id = "pages/about.md" }, Approved);
-
-        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("not available for pages stored as files yet", result.Error);
-    }
-
     [Fact]
     public async Task ChosenLanguages_ArePublishedSourceLanguageFirst()
     {
