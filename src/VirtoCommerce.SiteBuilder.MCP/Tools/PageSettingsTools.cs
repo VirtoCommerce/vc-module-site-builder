@@ -103,7 +103,7 @@ public class PageSettingsTools(
             MultilanguagePageId = group.MultilanguagePageId,
         };
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => groupedPageOperationService.UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, DryRun = isDryRun }, user, cancellationToken),
+            isDryRun => groupedPageOperationService.UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, DryRun = isDryRun, ReportImpact = true }, user, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
             dryRun, unpublishedOnly);
 
@@ -139,7 +139,7 @@ public class PageSettingsTools(
             MultilanguagePageId = root.Id,
         };
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => multilanguagePageOperationService.UpdateAsync(new MultilanguagePageSaveOperationRequest { Page = model, DryRun = isDryRun }, user,
+            isDryRun => multilanguagePageOperationService.UpdateAsync(new MultilanguagePageSaveOperationRequest { Page = model, DryRun = isDryRun, ReportImpact = true }, user,
                 cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
             dryRun, unpublishedOnly);

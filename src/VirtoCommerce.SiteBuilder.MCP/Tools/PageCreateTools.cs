@@ -166,6 +166,7 @@ public class PageCreateTools(
                 CultureName = language,
                 CopyContent = copyContent,
                 DryRun = isDryRun,
+                ReportImpact = true,
             }, user, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
             dryRun);
@@ -190,7 +191,7 @@ public class PageCreateTools(
             DryRun = dryRun,
         };
         var (_, result) = await SiteBuilderChanges.RunAsync(change,
-            isDryRun => multilanguagePageOperationService.CloneAsync(new MultilanguagePageOperationRequest { MultilanguagePageId = root.Id, DryRun = isDryRun },
+            isDryRun => multilanguagePageOperationService.CloneAsync(new MultilanguagePageOperationRequest { MultilanguagePageId = root.Id, DryRun = isDryRun, ReportImpact = true },
                 user, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
             dryRun);

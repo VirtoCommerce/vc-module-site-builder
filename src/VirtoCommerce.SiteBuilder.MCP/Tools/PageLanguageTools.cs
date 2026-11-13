@@ -57,7 +57,7 @@ public class PageLanguageTools(
         var change = NewPageChange("convert_page_to_multilanguage", group);
 
         var (_, result) = await SiteBuilderChanges.RunAsync(change,
-            isDryRun => multilanguagePageOperationService.ConvertAsync(new GroupedPageOperationRequest { GroupId = group.Id, DryRun = isDryRun },
+            isDryRun => multilanguagePageOperationService.ConvertAsync(new GroupedPageOperationRequest { GroupId = group.Id, DryRun = isDryRun, ReportImpact = true },
                 context.User, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
             dryRun, unpublished_only);
@@ -93,6 +93,7 @@ public class PageLanguageTools(
                 MultilanguagePageId = root.Id,
                 GroupId = group.Id,
                 DryRun = isDryRun,
+                ReportImpact = true,
             }, context.User, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", $"{PageLookup.ForbiddenPage(group)} {PageLookup.ForbiddenMultilanguagePage(root)}"),
             dryRun, unpublished_only);
@@ -122,7 +123,7 @@ public class PageLanguageTools(
 
         var change = NewPageChange("unlink_page_language", group);
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => multilanguagePageOperationService.UnlinkAsync(new GroupedPageOperationRequest { GroupId = group.Id, DryRun = isDryRun },
+            isDryRun => multilanguagePageOperationService.UnlinkAsync(new GroupedPageOperationRequest { GroupId = group.Id, DryRun = isDryRun, ReportImpact = true },
                 context.User, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
             dryRun, unpublished_only);
@@ -171,6 +172,7 @@ public class PageLanguageTools(
                 MultilanguagePageId = root.Id,
                 Fields = fields.Select(x => InheritableFields[x]).Distinct().ToList(),
                 DryRun = isDryRun,
+                ReportImpact = true,
             }, context.User, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
             dryRun, unpublished_only);

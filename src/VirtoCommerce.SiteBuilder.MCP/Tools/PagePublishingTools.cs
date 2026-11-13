@@ -141,6 +141,7 @@ public class PagePublishingTools(
                     Path = page.Path,
                     Rebase = rebase,
                     DryRun = isDryRun,
+                    ReportImpact = true,
                 }, user, cancellationToken)
                 : filePageOperationService.UnpublishAsync(new FilePageOperationRequest
                 {
@@ -148,6 +149,7 @@ public class PagePublishingTools(
                     ContentType = page.ContentType,
                     Path = page.Path,
                     DryRun = isDryRun,
+                    ReportImpact = true,
                 }, user, cancellationToken)),
             x => EnsureShipped(x, page, publish),
             dryRun,
@@ -223,7 +225,7 @@ public class PagePublishingTools(
     {
         var change = NewMultilanguageChange(root);
         var (_, result) = await SiteBuilderChanges.RunAsync(change,
-            isDryRun => multilanguagePageOperationService.PublishAllAsync(new MultilanguagePageOperationRequest { MultilanguagePageId = root.Id, DryRun = isDryRun },
+            isDryRun => multilanguagePageOperationService.PublishAllAsync(new MultilanguagePageOperationRequest { MultilanguagePageId = root.Id, DryRun = isDryRun, ReportImpact = true },
                 user, cancellationToken),
             x => SiteBuilderChanges.EnsureSucceeded(x, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
             dryRun);
@@ -298,6 +300,7 @@ public class PagePublishingTools(
             Publish = publish,
             SaveId = Guid.NewGuid().ToString("N"),
             DryRun = isDryRun,
+            ReportImpact = true,
         }, user, cancellationToken);
 
     private static void EnsurePublished(SiteBuilderOperationResult result, GroupedSiteBuilderPage group, bool publish)

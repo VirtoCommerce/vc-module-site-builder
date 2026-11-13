@@ -154,6 +154,7 @@ public class VersionRestoreTools(
             Path = page.Path,
             Sha = versionId,
             DryRun = isDryRun,
+            ReportImpact = true,
         };
 
         var check = await FilePages.RunAsync(() => filePageOperationService.RestoreVersionAsync(Request(true), user, cancellationToken));

@@ -266,10 +266,10 @@ public class SharedComponentWriteTools(
         new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, user, storeId);
 
     private static SharedComponentContentSaveOperationRequest ContentRequest(SiteBuilderSharedComponent component, JObject content, bool isDryRun) =>
-        new() { Id = component.Id, Content = content, DryRun = isDryRun };
+        new() { Id = component.Id, Content = content, DryRun = isDryRun, ReportImpact = true };
 
     private static SharedComponentUpdateOperationRequest RenameRequest(SiteBuilderSharedComponent component, string name, bool isDryRun) =>
-        new() { Id = component.Id, Name = name, DryRun = isDryRun };
+        new() { Id = component.Id, Name = name, DryRun = isDryRun, ReportImpact = true };
 
     private static void EnsureSucceeded(SiteBuilderOperationResult result, string subject, string storeId, string permission)
     {

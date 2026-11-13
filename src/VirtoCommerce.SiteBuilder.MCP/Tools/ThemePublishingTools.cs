@@ -108,6 +108,7 @@ public class ThemePublishingTools(
             StoreId = store_id,
             CatalogHash = catalogHash,
             ExpectedVersions = expected_versions,
+            ReportImpact = true,
         }, context.User, cancellationToken);
         EnsurePublished(result, store_id);
 

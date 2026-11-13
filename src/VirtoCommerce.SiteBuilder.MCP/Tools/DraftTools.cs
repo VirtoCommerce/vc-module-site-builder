@@ -84,6 +84,7 @@ public class DraftTools(
                 GroupId = group.Id,
                 SaveId = Guid.NewGuid().ToString("N"),
                 DryRun = isDryRun,
+                ReportImpact = true,
             }, context.User, cancellationToken),
             x => EnsureDiscarded(x, group),
             dryRun);
@@ -182,6 +183,7 @@ public class DraftTools(
             Path = page.Path,
             SaveId = Guid.NewGuid().ToString("N"),
             DryRun = isDryRun,
+            ReportImpact = true,
         };
 
         var blob = await FilePages.RunAsync(() => filePageOperationService.DiscardDraftAsync(BlobRequest(true), context.User, cancellationToken));
@@ -194,6 +196,7 @@ public class DraftTools(
                     ContentType = page.ContentType,
                     Path = page.Path,
                     DryRun = isDryRun,
+                    ReportImpact = true,
                 }, context.User, cancellationToken)),
                 x => EnsureFileDiscarded(x, page, onlyCopy: IsOnlyCopy(x.Preview)),
                 dryRun,
