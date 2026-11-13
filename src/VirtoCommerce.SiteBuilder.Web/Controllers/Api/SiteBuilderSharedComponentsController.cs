@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
@@ -21,7 +20,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 
 [Route("api/site-builder-shared-components")]
 [Authorize]
-[method: ActivatorUtilitiesConstructor]
 public class SiteBuilderSharedComponentsController(
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
@@ -30,26 +28,12 @@ public class SiteBuilderSharedComponentsController(
     ISiteBuilderSharedComponentOperationService sharedComponentOperationService)
     : Controller
 {
-    // Preserve the published constructor for extensions; request services supply the new dependencies.
-    public SiteBuilderSharedComponentsController(
-        ISiteBuilderSharedComponentService sharedComponentService,
-        ISiteBuilderSharedComponentSearchService sharedComponentSearchService,
-        ISiteBuilderSharedComponentContentService sharedComponentContentService,
-        ISiteBuilderSharedComponentUsageService sharedComponentUsageService,
-        IAuthorizationService authorizationService)
-        : this(sharedComponentService, sharedComponentContentService, sharedComponentUsageService, authorizationService, null)
-    {
-    }
-
-    private ISiteBuilderSharedComponentOperationService Operations =>
-        sharedComponentOperationService ?? HttpContext.RequestServices.GetRequiredService<ISiteBuilderSharedComponentOperationService>();
-
     [HttpPost("search")]
     public async Task<ActionResult<SiteBuilderSharedComponentSearchResult>> Search(
         [FromBody] SiteBuilderSharedComponentSearchCriteria criteria,
         CancellationToken cancellationToken = default)
     {
-        return (await Operations.SearchAsync(criteria, User, cancellationToken)).ToPageActionResult();
+        return (await sharedComponentOperationService.SearchAsync(criteria, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpGet("{id}")]
@@ -59,7 +43,7 @@ public class SiteBuilderSharedComponentsController(
     {
         var request = new SharedComponentOperationRequest { Id = id };
 
-        return (await Operations.GetAsync(request, User, cancellationToken)).ToPageActionResult();
+        return (await sharedComponentOperationService.GetAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpPost]
@@ -75,7 +59,7 @@ public class SiteBuilderSharedComponentsController(
             Name = request?.Name,
             Content = request?.Content,
         };
-        var result = await Operations.CreateAsync(operationRequest, User, cancellationToken);
+        var result = await sharedComponentOperationService.CreateAsync(operationRequest, User, cancellationToken);
 
         return result.Succeeded ? CreatedAtAction(nameof(Get), new { id = result.Value.Id }, result.Value) : result.ToPageRefusal();
     }
@@ -89,7 +73,7 @@ public class SiteBuilderSharedComponentsController(
     {
         var operationRequest = new SharedComponentUpdateOperationRequest { Id = id, StoreId = request?.StoreId, Name = request?.Name };
 
-        return (await Operations.UpdateAsync(operationRequest, User, cancellationToken)).ToPageActionResult();
+        return (await sharedComponentOperationService.UpdateAsync(operationRequest, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpDelete("{id}")]
@@ -173,7 +157,7 @@ public class SiteBuilderSharedComponentsController(
     {
         var request = new SharedComponentContentSaveOperationRequest { Id = id, Content = content };
 
-        return (await Operations.SaveContentAsync(request, User, cancellationToken)).ToPageRefusal() ?? NoContent();
+        return (await sharedComponentOperationService.SaveContentAsync(request, User, cancellationToken)).ToPageRefusal() ?? NoContent();
     }
 
     private Task EnrichUsageAsync(

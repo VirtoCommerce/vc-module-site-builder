@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
@@ -92,30 +91,6 @@ public class SiteBuilderSharedComponentCreateStoreTests
         Assert.IsType<BadRequestObjectResult>(response.Result);
         Assert.Null(stores.LastRequestedId);
         Assert.Null(components.SavedModel);
-    }
-
-    [Fact]
-    public async Task Create_PublishedConstructor_ResolvesItsDependenciesFromRequestServices()
-    {
-        var stores = new FakeStoreService(new Store { Id = "store" });
-        var components = new RecordingComponentService();
-        using var services = new ServiceCollection()
-            .AddSingleton<ISiteBuilderSharedComponentOperationService>(
-                TestServices.SharedComponentOperations(new FakeAuthorizationService(true), components, storeService: stores))
-            .BuildServiceProvider();
-        var controller = new SiteBuilderSharedComponentsController(components, null, null, null,
-            new FakeAuthorizationService(true))
-        {
-            ControllerContext = new ControllerContext
-            {
-                HttpContext = new DefaultHttpContext { RequestServices = services },
-            },
-        };
-
-        var response = await controller.Create(Request("store"), TestContext.Current.CancellationToken);
-
-        Assert.IsType<CreatedAtActionResult>(response.Result);
-        Assert.False(stores.LastClone);
     }
 
     [Fact]
