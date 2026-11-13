@@ -19,6 +19,10 @@ public interface IDesignerContentService
     /// <exception cref="InvalidDataException">Something in the content can run script: nothing is written.</exception>
     Task<DesignerSaveResult> SaveAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
+    /// <summary>Sanitizes the content as <see cref="SaveAsync"/> does and answers what it would write over what the drafts hold now, writing nothing.</summary>
+    /// <exception cref="InvalidDataException">Something in the content can run script.</exception>
+    Task<SiteBuilderChangePreview> PreviewSaveAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
+
     /// <summary>A theme file never published keeps its draft.</summary>
     /// <exception cref="InvalidDataException">The page has never been published.</exception>
     Task<ContentSaveResult> DiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);

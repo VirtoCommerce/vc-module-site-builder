@@ -49,6 +49,26 @@ public class FilePageDraftService(
         await SaveBlobDraftAsync(storeId, page, cancellationToken);
     }
 
+    public virtual async Task<string> ReadDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        if (await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+            var location = gitContentOptions.Value.GetPageLocation(repository, contentType, path, user?.Identity?.Name);
+            var fromGit = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken)
+                ?? await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath,
+                    (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch, cancellationToken);
+            // a page the store had before it opted in reaches git at its first save: until then the blob copy is the page
+            if (fromGit != null)
+            {
+                return fromGit;
+            }
+        }
+
+        return await ReadBlobDraftAsync(storeId, contentType, path);
+    }
+
     public virtual Task<GitPageCommit> CommitDraftAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
@@ -149,6 +169,22 @@ public class FilePageDraftService(
         }
 
         await PublishChangedEventAsync(contentType, page.Path, cancellationToken);
+    }
+
+    protected virtual async Task<string> ReadBlobDraftAsync(string storeId, string contentType, string path)
+    {
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType.ToLowerInvariant(), theme: null);
+        var blobInfo = await storageProvider.GetBlobInfoAsync(publishingService.GetRelativeDraftUrl(path, true))
+            ?? await storageProvider.GetBlobInfoAsync(publishingService.GetRelativeDraftUrl(path, false));
+        if (blobInfo == null)
+        {
+            return null;
+        }
+
+        await using var stream = await storageProvider.OpenReadAsync(blobInfo.RelativeUrl);
+        using var reader = new StreamReader(stream);
+
+        return await reader.ReadToEndAsync();
     }
 
     protected virtual async Task<IBlobContentStorageProvider> CreateStorageProviderAsync(string storeId, string contentType, string theme)

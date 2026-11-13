@@ -8,6 +8,9 @@ public interface IFilePageDraftService
 {
     Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
+    /// <summary>The page as the editor edits it: their draft, else what is published; <c>null</c> when there is neither.</summary>
+    Task<string> ReadDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user, CancellationToken cancellationToken = default);
+
     Task<GitPageCommit> CommitDraftAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 

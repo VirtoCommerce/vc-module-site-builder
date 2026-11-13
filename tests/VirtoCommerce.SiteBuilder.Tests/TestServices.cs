@@ -1,11 +1,13 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.ContentModule.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
@@ -61,6 +63,17 @@ internal static class TestServices
         return new DesignerContentService(themeDrafts, themePublisher, themeSnapshots, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
             pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs());
     }
+
+    public static DesignerOperationService DesignerOperations(
+        IAuthorizationService authorizationService,
+        IContentPermissionService contentPermissionService,
+        IValidator<SiteBuilderContentRequest> requestValidator,
+        IDesignerContentService designerContentService,
+        IThemeDraftService themeDraftService = null,
+        IGroupedPageService groupedPageService = null,
+        ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator = null) =>
+        new(authorizationService, contentPermissionService, requestValidator, RequestValidators.DesignerSave, RequestValidators.DesignerDiscard,
+            groupedPageService, sharedComponentPlacementValidator, designerContentService, themeDraftService);
 
     private sealed class NoSchemaCatalogs : ISchemaCatalogService
     {

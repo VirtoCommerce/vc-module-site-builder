@@ -61,6 +61,15 @@ namespace VirtoCommerce.SiteBuilder.Core
             public const string SaveId = "X-SiteBuilder-Save";
         }
 
+        public static class ChangePreview
+        {
+            public const string Page = "page";
+            public const string FilePage = "file-page";
+            public const string ThemeFile = "theme-file";
+
+            public const string Content = "content";
+        }
+
         public static class PageStatuses
         {
             public const string Draft = "Draft";

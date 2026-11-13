@@ -400,13 +400,13 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = Store })), new SiteBuilderContentFileValidator()),
                 contentHistory: new NoContentHistory(),
                 themeDraftService: null,
-                groupedPageService: null,
-                sharedComponentPlacementValidator: null,
-                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null),
+                designerOperationService: TestServices.DesignerOperations(
+                    authorizationService: authorizationService ?? new ScopedAuthorizationService(storeAccess, granted),
+                    contentPermissionService: TestServices.Permissions(authorizationService ?? new ScopedAuthorizationService(storeAccess, granted)),
+                    requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = Store })), new SiteBuilderContentFileValidator()),
+                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null)),
                 contentPermissionService: TestServices.Permissions(authorizationService ?? new ScopedAuthorizationService(storeAccess, granted)),
                 filePageDraftService: filePageDrafts,
-            designerSaveValidator: RequestValidators.DesignerSave,
-            designerDiscardValidator: RequestValidators.DesignerDiscard,
             contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(new FakeStoreService(new Store { Id = Store }), null, null, null));
 

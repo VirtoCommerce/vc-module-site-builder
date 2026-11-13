@@ -257,13 +257,13 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 requestValidator: RequestValidators.Content("s1", "vccom"),
                 contentHistory: new NoContentHistory(),
                 themeDraftService: null,
-                groupedPageService: null,
-                sharedComponentPlacementValidator: null,
-                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null),
+                designerOperationService: TestServices.DesignerOperations(
+                    authorizationService: new FakeAuthorizationService(allowed),
+                    contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
+                    requestValidator: RequestValidators.Content("s1", "vccom"),
+                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null)),
                 contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
                 filePageDraftService: filePageDrafts,
-            designerSaveValidator: RequestValidators.DesignerSave,
-            designerDiscardValidator: RequestValidators.DesignerDiscard,
             contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(new FakeStoreService(new Store { Id = "vccom" }), null, null, null));
 

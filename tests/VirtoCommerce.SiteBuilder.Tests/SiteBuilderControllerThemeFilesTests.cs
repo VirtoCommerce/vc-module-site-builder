@@ -419,14 +419,15 @@ public class SiteBuilderControllerThemeFilesTests
             requestValidator: RequestValidators.Content("s1"),
             contentHistory: history ?? new NoContentHistory(),
             themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance),
-            groupedPageService: null,
-            sharedComponentPlacementValidator: null,
-            designerContentService: TestServices.Designer(history ?? new NoContentHistory(), filePageDrafts, null, null, eventPublisher ?? _live, themePublisher, new ThemeSnapshotService(_live.StoreService, _settings, _themeStorageFactory, themePublisher, null,
-                Options.Create(new ThemeSnapshotOptions()))),
+            designerOperationService: TestServices.DesignerOperations(
+                authorizationService: authorization ?? new FakeAuthorizationService(true),
+                contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),
+                requestValidator: RequestValidators.Content("s1"),
+                designerContentService: TestServices.Designer(history ?? new NoContentHistory(), filePageDrafts, null, null, eventPublisher ?? _live, themePublisher, new ThemeSnapshotService(_live.StoreService, _settings, _themeStorageFactory, themePublisher, null,
+                    Options.Create(new ThemeSnapshotOptions()))),
+                themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance)),
             contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),
             filePageDraftService: filePageDrafts,
-            designerSaveValidator: RequestValidators.DesignerSave,
-            designerDiscardValidator: RequestValidators.DesignerDiscard,
             contentGuard: TestServices.ContentGuard,
             themeStorageFactory: _themeStorageFactory);
         controller.ControllerContext = new ControllerContext

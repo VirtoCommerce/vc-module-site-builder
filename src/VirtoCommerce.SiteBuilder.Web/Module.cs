@@ -157,6 +157,7 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IThemeDraftService, ThemeDraftService>();
             serviceCollection.AddTransient<IFilePageDraftService, FilePageDraftService>();
             serviceCollection.AddTransient<IDesignerContentService, DesignerContentService>();
+            serviceCollection.AddTransient<IDesignerOperationService, DesignerOperationService>();
             serviceCollection.AddTransient<IContentPermissionService, ContentPermissionService>();
             serviceCollection.AddTransient<IThemeSnapshotService, ThemeSnapshotService>();
             serviceCollection.AddTransient<IThemePaletteService, ThemePaletteService>();

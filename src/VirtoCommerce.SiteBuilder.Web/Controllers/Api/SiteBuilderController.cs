@@ -60,13 +60,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             IValidator<SiteBuilderContentRequest> requestValidator,
             IContentHistory contentHistory,
             IThemeDraftService themeDraftService,
-            IGroupedPageService groupedPageService,
-            ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator,
-            IDesignerContentService designerContentService,
+            IDesignerOperationService designerOperationService,
             IContentPermissionService contentPermissionService,
             IFilePageDraftService filePageDraftService,
-            IValidator<DesignerSaveRequest> designerSaveValidator,
-            IValidator<DesignerDiscardRequest> designerDiscardValidator,
             IThemeStorageFactory themeStorageFactory,
             ISiteBuilderContentGuard contentGuard
             )
@@ -100,7 +96,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         // this many copies is a naming problem, not a paging problem.
         private const int MaxCopyIndex = 100;
         private const string OnlyCopyError = "Nothing is published: the draft is the only copy.";
-        private const string CatalogRequiredError = "Theme files are checked against the storefront's schema catalog: name it with catalogHash (preview the storefront first).";
         private const string SaveAction = "save";
 
 
@@ -605,7 +600,8 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
                 return unsafePages;
             }
 
-            if (themeFiles.Count > 0 && await ValidateThemeFilesAsync(storeId, themeFiles, draft, catalogHash) is { } refusedThemeFiles)
+            if (themeFiles.Count > 0 && (await designerOperationService.ValidateThemeFilesAsync(storeId, themeFiles.ConvertAll(ToContentFile), draft, catalogHash,
+                    HttpContext.RequestAborted)).ToRefusal() is { } refusedThemeFiles)
             {
                 return refusedThemeFiles;
             }
@@ -636,34 +632,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
         private async Task<bool> HasPermissionsAsync(IEnumerable<string> permissions) =>
             await contentPermissionService.HasPermissionsAsync(User, permissions);
-
-        private async Task<ActionResult> ValidateThemeFilesAsync(string storeId, List<SaveFileModel> files, bool draft, string catalogHash)
-        {
-            if (!DesignerThemeFiles.AreNamedOnce(files.ConvertAll(x => x.Path)))
-            {
-                return BadRequest(new { error = DesignerThemeFiles.NamingError });
-            }
-
-            var contents = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
-            foreach (var file in files)
-            {
-                contents[file.Path] = AsToken(file.Content);
-            }
-
-            try
-            {
-                await designerContentService.ValidateThemeFilesAsync(storeId, contents, draft, catalogHash, HttpContext.RequestAborted);
-                return null;
-            }
-            catch (InvalidDataException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (ThemeValidationException ex)
-            {
-                return BadRequest(new { error = ex.Message, errors = ex.Errors });
-            }
-        }
 
         /// <summary>Sanitizes the HTML of the pages in place, so that what is written is sanitized.</summary>
         private BadRequestObjectResult GuardPages(List<SaveFileModel> files)
@@ -735,13 +703,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<ActionResult<ThemeFileContent>> GetDesignerThemeFile([FromQuery] string storeId, [FromQuery] string path)
         {
-            var request = new SiteBuilderContentRequest { StoreId = storeId, Files = [new SiteBuilderContentFile { ContentType = Themes, Path = path }] };
-            if (await CheckRequestAsync(request) is { } refused)
-            {
-                return refused;
-            }
+            var request = new DesignerThemeFileRequest { StoreId = storeId, Path = path, BindingErrors = ModelState.GetBindingErrors() };
 
-            return Ok(await themeDraftService.ReadAsync(storeId, path, HttpContext.RequestAborted));
+            return (await designerOperationService.ReadThemeFileAsync(request, User, HttpContext.RequestAborted)).ToActionResult();
         }
 
         [HttpGet]
@@ -774,76 +738,16 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         public async Task<ActionResult<DesignerSaveResult>> SaveDesignerChanges([FromQuery] string storeId, [FromBody] DesignerSaveRequest value,
             [FromQuery] string catalogHash = null)
         {
-            var cancellationToken = HttpContext.RequestAborted;
-            var page = value?.Page;
-            var themeFiles = value?.ThemeFiles ?? [];
-            var request = new SiteBuilderContentRequest { StoreId = storeId, CatalogHash = catalogHash };
-            var (group, refused) = await CheckDesignerRequestAsync(request, GetPaths(themeFiles), page?.GroupId, designerSaveValidator, value);
-            if (refused != null)
+            var request = new DesignerSaveOperationRequest
             {
-                return refused;
-            }
+                StoreId = storeId,
+                Changes = value,
+                CatalogHash = catalogHash,
+                SaveId = Request.GetOrCreateSaveId(),
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
 
-            if (!TryParseDesignerFiles(page, themeFiles, out var files, out var parseError))
-            {
-                return BadRequest(new { error = parseError });
-            }
-
-            request.Files = files.ConvertAll(ToContentFile);
-            if (await ValidateAsync(request) is { } invalid)
-            {
-                return invalid;
-            }
-
-            if (await CheckDesignerPageAsync(storeId, group, page, cancellationToken) is { } refusedPage)
-            {
-                return refusedPage;
-            }
-
-            if (await CheckDesignerThemeFilesAsync(storeId, themeFiles, files, catalogHash) is { } refusedThemeFiles)
-            {
-                return refusedThemeFiles;
-            }
-
-            var command = CreateDesignerSaveCommand(storeId, group, page, files, themeFiles, catalogHash);
-
-            return await SaveDesignerChangesAsync(command, cancellationToken);
-        }
-
-        private DesignerSaveCommand CreateDesignerSaveCommand(string storeId, GroupedSiteBuilderPage group, DesignerSavePage page, List<SaveFileModel> files,
-            IList<DesignerSaveFile> themeFiles, string catalogHash)
-        {
-            var command = AbstractTypeFactory<DesignerSaveCommand>.TryCreateInstance();
-            command.StoreId = storeId;
-            command.SaveId = Request.GetOrCreateSaveId();
-            command.Group = group;
-            command.PageContent = page?.Content;
-            command.PageETag = page?.ETag?.Trim();
-            command.FilePage = files.Where(x => !IsThemeFile(x)).Select(ToContentFile).FirstOrDefault();
-            command.ThemeFiles = themeFiles;
-            command.CatalogHash = catalogHash;
-
-            return command;
-        }
-
-        private async Task<ActionResult<DesignerSaveResult>> SaveDesignerChangesAsync(DesignerSaveCommand command, CancellationToken cancellationToken)
-        {
-            try
-            {
-                return Ok(await designerContentService.SaveAsync(command, User, cancellationToken));
-            }
-            catch (SiteBuilderContentConflictException ex)
-            {
-                return StatusCode(StatusCodes.Status412PreconditionFailed, ex.Message);
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-            catch (InvalidDataException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
+            return (await designerOperationService.SaveAsync(request, User, HttpContext.RequestAborted)).ToActionResult();
         }
 
         [HttpPost]
@@ -854,176 +758,15 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<ActionResult<ContentSaveResult>> DiscardDesignerChanges([FromQuery] string storeId, [FromBody] DesignerDiscardRequest value)
         {
-            var page = value?.Page;
-            var themePaths = value?.ThemeFiles ?? [];
-            var request = new SiteBuilderContentRequest { StoreId = storeId };
-            var (group, refused) = await CheckDesignerRequestAsync(request, themePaths, page?.GroupId, designerDiscardValidator, value);
-            if (refused != null)
+            var request = new DesignerDiscardOperationRequest
             {
-                return refused;
-            }
+                StoreId = storeId,
+                Changes = value,
+                SaveId = Request.GetOrCreateSaveId(),
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
 
-            request.Files = themePaths.Select(x => new SiteBuilderContentFile { ContentType = Themes, Path = x }).ToList();
-            var filePage = GetDesignerFilePage(page);
-            if (filePage != null)
-            {
-                request.ContentType = filePage.ContentType;
-                request.Pages = [filePage.Path];
-            }
-
-            if (await ValidateAsync(request) is { } invalid)
-            {
-                return invalid;
-            }
-
-            var command = AbstractTypeFactory<DesignerDiscardCommand>.TryCreateInstance();
-            command.StoreId = storeId;
-            command.SaveId = Request.GetOrCreateSaveId();
-            command.Group = group;
-            command.FilePage = filePage;
-            command.ThemeFiles = themePaths;
-            try
-            {
-                return Ok(await designerContentService.DiscardAsync(command, User, HttpContext.RequestAborted));
-            }
-            catch (InvalidDataException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-        }
-
-        private static IEnumerable<string> GetPaths(IEnumerable<DesignerSaveFile> files) => files.Select(x => x?.Path);
-
-        private static SiteBuilderContentFile GetDesignerFilePage(DesignerSavePage page) =>
-            string.IsNullOrEmpty(page?.Path) ? null : new SiteBuilderContentFile { ContentType = page.Type.ToLowerInvariant(), Path = page.Path };
-
-        /// <returns>The group of the page the request names, and the answer that refuses the request, if any.</returns>
-        private async Task<(GroupedSiteBuilderPage Group, ActionResult Refused)> CheckDesignerRequestAsync<T>(SiteBuilderContentRequest request,
-            IEnumerable<string> themePaths, string groupId, IValidator<T> validator, T value)
-            where T : class, new()
-        {
-            if ((await CheckStoreAccessAsync(request) ?? await CheckThemeFilesAccessAsync(themePaths)) is { } forbidden)
-            {
-                return (null, forbidden);
-            }
-
-            if (await validator.ValidateRequestAsync(value ?? new T(), HttpContext.RequestAborted) is { } invalidRequest)
-            {
-                return (null, invalidRequest);
-            }
-
-            if (string.IsNullOrEmpty(groupId))
-            {
-                return (null, null);
-            }
-
-            var group = await groupedPageService.GetByIdAsync(groupId);
-            return (group, await CheckDesignerGroupAccessAsync(request.StoreId, group));
-        }
-
-        private async Task<ActionResult> CheckDesignerThemeFilesAsync(string storeId, IList<DesignerSaveFile> themeFiles, List<SaveFileModel> files, string catalogHash)
-        {
-            if (themeFiles.Any(x => string.IsNullOrWhiteSpace(x.ETag)))
-            {
-                return StatusCode(StatusCodes.Status428PreconditionRequired, "Read each theme file with designer/theme-file and send its ETag before saving.");
-            }
-
-            var themeSaveFiles = files.Where(IsThemeFile).ToList();
-            if (themeSaveFiles.Count == 0)
-            {
-                return null;
-            }
-
-            if (string.IsNullOrEmpty(catalogHash))
-            {
-                return BadRequest(new { error = CatalogRequiredError });
-            }
-
-            return await ValidateThemeFilesAsync(storeId, themeSaveFiles, draft: true, catalogHash);
-        }
-
-        /// <summary>Reads the JSON of the file page and the theme files as they are, dates included.</summary>
-        private static bool TryParseDesignerFiles(DesignerSavePage page, IList<DesignerSaveFile> themeFiles, out List<SaveFileModel> files, out string error)
-        {
-            files = [];
-            error = null;
-            var named = themeFiles.Select(x => (x.Path, Type: Themes, x.Content)).ToList();
-            if (!string.IsNullOrEmpty(page?.Path))
-            {
-                named.Insert(0, (page.Path, page.Type.ToLowerInvariant(), page.Content));
-            }
-
-            foreach (var (path, type, content) in named)
-            {
-                if (!TryParseJson(content, out var token))
-                {
-                    error = $"\"{path}\" is not a JSON document.";
-                    return false;
-                }
-
-                files.Add(new SaveFileModel { Path = path, Type = type, Content = token });
-            }
-
-            return true;
-        }
-
-        private static bool TryParseJson(string content, out JToken token)
-        {
-            token = null;
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                return false;
-            }
-
-            try
-            {
-                using var reader = new JsonTextReader(new StringReader(content)) { DateParseHandling = DateParseHandling.None };
-                var parsed = JToken.ReadFrom(reader);
-                // a theme file is saved as sent, so nothing may follow the document that was checked
-                if (reader.Read())
-                {
-                    return false;
-                }
-
-                token = parsed;
-                return true;
-            }
-            catch (JsonException)
-            {
-                return false;
-            }
-        }
-
-        private async Task<ActionResult> CheckThemeFilesAccessAsync(IEnumerable<string> themePaths)
-        {
-            var permissions = themePaths.Select(contentPermissionService.GetThemeFileEditPermission).ToList();
-
-            return await HasPermissionsAsync(permissions) ? null : Forbid();
-        }
-
-        private async Task<ActionResult> CheckDesignerGroupAccessAsync(string storeId, GroupedSiteBuilderPage group)
-        {
-            if (group == null)
-            {
-                return NotFound();
-            }
-
-            return await contentPermissionService.CanAccessPageAsync(User, group, storeId) ? null : Forbid();
-        }
-
-        private async Task<ActionResult> CheckDesignerPageAsync(string storeId, GroupedSiteBuilderPage group, DesignerSavePage page, CancellationToken cancellationToken)
-        {
-            if (group == null)
-            {
-                return null;
-            }
-
-            if (string.IsNullOrWhiteSpace(page.ETag))
-            {
-                return StatusCode(StatusCodes.Status428PreconditionRequired, "Read the page content and send its ETag before saving.");
-            }
-
-            return (await sharedComponentPlacementValidator.ValidateAsync(User, storeId, page.Content, cancellationToken)).ToActionResult();
+            return (await designerOperationService.DiscardAsync(request, User, HttpContext.RequestAborted)).ToActionResult();
         }
 
         /// <summary>

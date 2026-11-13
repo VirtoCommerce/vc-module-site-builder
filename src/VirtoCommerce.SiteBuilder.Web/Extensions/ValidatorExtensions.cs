@@ -23,10 +23,7 @@ public static class ValidatorExtensions
     public static Task<BadRequestObjectResult> ValidateRequestAsync<T>(this IValidator<T> validator, T request, ModelStateDictionary modelState,
         CancellationToken cancellationToken)
     {
-        var bindingErrors = modelState?.Values
-            .SelectMany(entry => entry.Errors)
-            .Select(error => string.IsNullOrEmpty(error.ErrorMessage) ? "The request could not be read." : error.ErrorMessage)
-            .ToList() ?? [];
+        var bindingErrors = modelState.GetBindingErrors();
 
         return bindingErrors.Count > 0
             ? Task.FromResult(new BadRequestObjectResult(new { error = string.Join(" ", bindingErrors) }))

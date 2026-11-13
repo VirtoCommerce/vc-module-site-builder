@@ -161,13 +161,14 @@ public class ThemeWriteLockTests
             requestValidator: RequestValidators.Content("s1"),
             contentHistory: new NoContentHistory(),
             themeDraftService: ThemeDrafts(),
-            groupedPageService: null,
-            sharedComponentPlacementValidator: null,
-            designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, ThemeDrafts(), null, _live, null, null),
+            designerOperationService: TestServices.DesignerOperations(
+                authorizationService: new FakeAuthorizationService(true),
+                contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
+                requestValidator: RequestValidators.Content("s1"),
+                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, ThemeDrafts(), null, _live, null, null),
+                themeDraftService: ThemeDrafts()),
             contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
             filePageDraftService: filePageDrafts,
-            designerSaveValidator: RequestValidators.DesignerSave,
-            designerDiscardValidator: RequestValidators.DesignerDiscard,
             contentGuard: TestServices.ContentGuard,
             themeStorageFactory: new ThemeStorageFactory(_live.StoreService, _live, _live, _live)));
     }

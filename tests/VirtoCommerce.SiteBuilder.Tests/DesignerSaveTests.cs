@@ -1086,14 +1086,17 @@ public class DesignerSaveTests
             requestValidator: RequestValidators.Content("s1"),
             contentHistory: history ?? _history,
             themeDraftService: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance),
-            groupedPageService: _pages,
-            sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization),
-            designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(), null,
-                new SchemaCatalogService(_themes)),
+            designerOperationService: TestServices.DesignerOperations(
+                authorizationService: authorization,
+                contentPermissionService: TestServices.Permissions(authorization),
+                requestValidator: RequestValidators.Content("s1"),
+                designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(), null,
+                    new SchemaCatalogService(_themes)),
+                themeDraftService: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance),
+                groupedPageService: _pages,
+                sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization)),
             contentPermissionService: TestServices.Permissions(authorization),
             filePageDraftService: filePageDrafts,
-            designerSaveValidator: RequestValidators.DesignerSave,
-            designerDiscardValidator: RequestValidators.DesignerDiscard,
             contentGuard: TestServices.ContentGuard,
             themeStorageFactory: _themes);
         controller.ControllerContext = new ControllerContext

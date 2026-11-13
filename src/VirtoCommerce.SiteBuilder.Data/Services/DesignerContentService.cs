@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
@@ -106,6 +107,39 @@ public class DesignerContentService(
         await contentHistory.RecordAsync(command.StoreId, record, cancellationToken);
 
         return result;
+    }
+
+    public virtual Task<SiteBuilderChangePreview> PreviewSaveAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        return PreviewSaveInternalAsync(command, user, cancellationToken);
+    }
+
+    private async Task<SiteBuilderChangePreview> PreviewSaveInternalAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        await GuardAsync(command, cancellationToken);
+
+        var preview = AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
+        if (command.Group != null)
+        {
+            var current = await groupedPageContentService.LoadGroupContentAsync(command.Group, draft: true, cancellationToken);
+            preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.Page, command.Group.Id, current.ETag, current.Content, command.PageContent));
+        }
+        else if (command.FilePage != null)
+        {
+            var current = await filePageDraftService.ReadDraftAsync(command.StoreId, command.FilePage.ContentType, command.FilePage.Path, user, cancellationToken);
+            preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.FilePage, command.FilePage.Path, eTag: null, current,
+                PageJson.Serialize(command.FilePage.Content)));
+        }
+
+        foreach (var file in command.ThemeFiles)
+        {
+            var current = await themeDraftService.ReadAsync(command.StoreId, file.Path, cancellationToken);
+            preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, file.Path, current.ETag, current.Content, file.Content));
+        }
+
+        return preview;
     }
 
     public virtual Task<ContentSaveResult> DiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
@@ -316,6 +350,22 @@ public class DesignerContentService(
         version.ETag = SiteBuilderContentVersion.CreateForThemeFile(storeId, file.Path, file.Content);
 
         return version;
+    }
+
+    protected virtual SiteBuilderObjectChange CreateContentChange(string objectType, string objectId, string eTag, string from, string to)
+    {
+        var field = AbstractTypeFactory<SiteBuilderFieldChange>.TryCreateInstance();
+        field.Name = ModuleConstants.ChangePreview.Content;
+        field.From = from;
+        field.To = to;
+
+        var change = AbstractTypeFactory<SiteBuilderObjectChange>.TryCreateInstance();
+        change.ObjectType = objectType;
+        change.ObjectId = objectId;
+        change.ETag = eTag;
+        change.Fields.Add(field);
+
+        return change;
     }
 
     protected virtual string GetRestoredDescription(string versionId) =>
