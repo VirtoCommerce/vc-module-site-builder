@@ -66,8 +66,23 @@ namespace VirtoCommerce.SiteBuilder.Core
             public const string Page = "page";
             public const string FilePage = "file-page";
             public const string ThemeFile = "theme-file";
+            public const string MultilanguagePage = "multilanguage-page";
 
             public const string Content = "content";
+            public const string Status = "status";
+            public const string Name = "name";
+            public const string Permalink = "permalink";
+            public const string StoreId = "storeId";
+            public const string CultureName = "cultureName";
+            public const string DefaultCultureName = "defaultCultureName";
+            public const string OrganizationId = "organizationId";
+            public const string Visibility = "visibility";
+            public const string UserGroups = "userGroups";
+            public const string StartDate = "startDate";
+            public const string EndDate = "endDate";
+            public const string MultilanguagePageId = "multilanguagePageId";
+            public const string OverriddenFields = "overriddenFields";
+            public const string SourceRevisionDate = "sourceRevisionDate";
         }
 
         public static class PageStatuses

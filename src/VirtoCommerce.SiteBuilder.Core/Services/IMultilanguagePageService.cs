@@ -72,4 +72,32 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
 
     /// <summary>Archives every language version.</summary>
     Task<MultilanguagePageBatchResult> ArchiveAllAsync(string multilanguagePageId, CancellationToken cancellationToken = default);
+
+    // Each preview checks the request as its write does, throwing the same exceptions, and answers what the write would change
+    // over what is stored now, writing nothing.
+
+    Task<SiteBuilderChangePreview> PreviewCreateAsync(MultilanguagePage model, CancellationToken cancellationToken = default);
+
+    Task<SiteBuilderChangePreview> PreviewUpdateAsync(MultilanguagePage model, CancellationToken cancellationToken = default);
+
+    Task<SiteBuilderChangePreview> PreviewLinkAsync(string multilanguagePageId, string groupId, CancellationToken cancellationToken = default);
+
+    Task<SiteBuilderChangePreview> PreviewUnlinkAsync(string groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>The new root has no id yet, and neither has the link to it.</summary>
+    Task<SiteBuilderChangePreview> PreviewConvertAsync(string groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>The copies have no ids yet; their content is not compared.</summary>
+    Task<SiteBuilderChangePreview> PreviewCloneAsync(string multilanguagePageId, CancellationToken cancellationToken = default);
+
+    Task<SiteBuilderChangePreview> PreviewMarkUpToDateAsync(string groupId, CancellationToken cancellationToken = default);
+
+    Task<SiteBuilderChangePreview> PreviewResetOverridesAsync(string multilanguagePageId, IList<string> fields, CancellationToken cancellationToken = default);
+
+    /// <summary>The new version has no id yet; its content is not compared.</summary>
+    Task<SiteBuilderChangePreview> PreviewCreateLanguageAsync(string multilanguagePageId, string cultureName, bool copyContent,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Lists the versions whose draft would be published; the others are skipped by the write too.</summary>
+    Task<SiteBuilderChangePreview> PreviewPublishAllAsync(string multilanguagePageId, CancellationToken cancellationToken = default);
 }

@@ -245,13 +245,13 @@ public class PageContentConcurrencyContractTests
         var pageService = new PublishedRenameContentPreservationTests.FakeSiteBuilderPageService(service);
         var contentService = new SiteBuilderPageContentService(pageService, service,
             new PublishedRenameContentPreservationTests.NoopEventPublisher(), NullLogger<SiteBuilderPageContentService>.Instance);
-        return new SiteBuilderPageController(pageService, service,
+        var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
+        return new SiteBuilderPageController(service,
             new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-            new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+            authorization,
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(), contentService,
-            NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
-            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard)
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, service, contentService, pageService))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

@@ -142,6 +142,28 @@ public class DesignerContentService(
         return preview;
     }
 
+    public virtual Task<SiteBuilderChangePreview> PreviewDiscardPageAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+
+        return PreviewDiscardPageInternalAsync(group, cancellationToken);
+    }
+
+    private async Task<SiteBuilderChangePreview> PreviewDiscardPageInternalAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    {
+        var publishedPage = GetPublishedPage(group);
+
+        var preview = AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
+        if (group.Pages.Any(x => x.Status == Draft))
+        {
+            var current = await groupedPageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken);
+            var publishedContent = await groupedPageService.LoadContent(publishedPage.Id, cancellationToken);
+            preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.Page, group.Id, current.ETag, current.Content, publishedContent));
+        }
+
+        return preview;
+    }
+
     public virtual Task<ContentSaveResult> DiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
@@ -314,8 +336,7 @@ public class DesignerContentService(
 
     protected virtual async Task<string> DiscardPageDraftsAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken)
     {
-        var publishedPage = SiteBuilderPageSelection.Order(group.Pages).FirstOrDefault(x => x.Status == Published)
-            ?? throw new InvalidDataException(NeverPublishedError);
+        var publishedPage = GetPublishedPage(group);
 
         var draftIds = group.Pages.Where(x => x.Status == Draft).Select(x => x.Id).ToList();
         if (draftIds.Count == 0)
@@ -329,6 +350,11 @@ public class DesignerContentService(
 
         return publishedContent;
     }
+
+    /// <exception cref="InvalidDataException">The page has never been published: its draft is the only copy.</exception>
+    protected virtual SiteBuilderPage GetPublishedPage(GroupedSiteBuilderPage group) =>
+        SiteBuilderPageSelection.Order(group.Pages).FirstOrDefault(x => x.Status == Published)
+        ?? throw new InvalidDataException(NeverPublishedError);
 
     protected virtual async Task<bool> RestorePageAsync(GroupedSiteBuilderPage group, string content, CancellationToken cancellationToken)
     {

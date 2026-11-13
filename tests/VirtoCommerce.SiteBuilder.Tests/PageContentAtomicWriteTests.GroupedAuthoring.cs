@@ -525,10 +525,9 @@ public partial class PageContentAtomicWriteTests
         var pages = new SiteBuilderPageService(() => new SiteBuilderRepository(CreateContext(connectionString)), cache, events);
         var content = new SiteBuilderPageContentService(pages, service, events,
             NullLogger<SiteBuilderPageContentService>.Instance);
-        return new SiteBuilderPageController(pages, service, null, new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
-            null, content, NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
-            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard)
+        var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
+        return new SiteBuilderPageController(service, null, authorization, null, content, NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, service, content, pages))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

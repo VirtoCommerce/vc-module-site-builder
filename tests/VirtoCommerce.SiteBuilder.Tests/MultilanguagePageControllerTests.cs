@@ -313,16 +313,15 @@ public class MultilanguagePageControllerTests
 
     private static SiteBuilderPageController CreatePagesController(Fixture fixture)
     {
+        var authorization = new PredicateAuthorizationService(_ => true);
         return new SiteBuilderPageController(
-            null!,
             fixture.Groups,
             fixture.GroupSearch,
-            new PredicateAuthorizationService(_ => true),
+            authorization,
             null!,
             null!,
-            NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
-            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PredicateAuthorizationService(_ => true)),
-            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard)
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, fixture.Groups))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -331,12 +330,12 @@ public class MultilanguagePageControllerTests
     private static MultilanguagePageController CreateController(Fixture fixture, Func<object, bool> isAllowed = null,
         IMultilanguagePageService roots = null)
     {
+        var authorization = new PredicateAuthorizationService(isAllowed ?? (_ => true));
         return new MultilanguagePageController(
             roots ?? fixture.Roots,
             null!,
-            fixture.Groups,
-            new PredicateAuthorizationService(isAllowed ?? (_ => true)),
-            fixture.StoreService)
+            authorization,
+            new MultilanguagePageOperationService(authorization, roots ?? fixture.Roots, fixture.Groups, fixture.StoreService))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

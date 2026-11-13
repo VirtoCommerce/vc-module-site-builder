@@ -219,18 +219,21 @@ public class PageContentSaveFailureControllerTests
     private SiteBuilderPageContentService ContentService() =>
         new(new Fakes.FakeSiteBuilderPageService(_pages), _pages, new Fakes.NoopEventPublisher(), NullLogger<SiteBuilderPageContentService>.Instance);
 
-    private SiteBuilderPageController PageController() =>
-        WithUser(new SiteBuilderPageController(
-            crudService: new Fakes.FakeSiteBuilderPageService(_pages),
+    private SiteBuilderPageController PageController()
+    {
+        var authorization = new Fakes.AllowAllAuthorizationService();
+        var contentService = ContentService();
+
+        return WithUser(new SiteBuilderPageController(
             groupedPageService: _pages,
             groupedPageSearchService: new Fakes.FakeGroupedPageSearchService(),
-            authorizationService: new Fakes.AllowAllAuthorizationService(),
+            authorizationService: authorization,
             pageDocumentSearchService: new Fakes.NoopPageDocumentSearchService(),
-            pageContentService: ContentService(),
+            pageContentService: contentService,
             logger: NullLogger<SiteBuilderPageController>.Instance,
-            contentHistory: _history,
-            sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new Fakes.AllowAllAuthorizationService()),
-            designerContentService: TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages), contentGuard: TestServices.ContentGuard));
+            groupedPageOperationService: TestServices.GroupedPageOperations(authorization, _pages, contentService, new Fakes.FakeSiteBuilderPageService(_pages),
+                designerContentService: TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages), contentHistory: _history)));
+    }
 
     private HistoryController HistoryController()
     {

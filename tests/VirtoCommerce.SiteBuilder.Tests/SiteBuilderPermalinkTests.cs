@@ -202,16 +202,15 @@ public class SiteBuilderPermalinkTests
             service,
             new PublishedRenameContentPreservationTests.NoopEventPublisher(),
             NullLogger<SiteBuilderPageContentService>.Instance);
+        var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
         var controller = new SiteBuilderPageController(
-            pageService,
             service,
             new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-            new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+            authorization,
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
             pageContentService,
-            NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
-            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard);
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) },

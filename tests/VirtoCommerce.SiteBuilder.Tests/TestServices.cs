@@ -75,6 +75,18 @@ internal static class TestServices
         new(authorizationService, contentPermissionService, requestValidator, RequestValidators.DesignerSave, RequestValidators.DesignerDiscard,
             groupedPageService, sharedComponentPlacementValidator, designerContentService, themeDraftService);
 
+    public static GroupedPageOperationService GroupedPageOperations(
+        IAuthorizationService authorizationService,
+        IGroupedPageService groupedPageService,
+        SiteBuilderPageContentService pageContentService = null,
+        ISiteBuilderPageService pageService = null,
+        ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator = null,
+        IDesignerContentService designerContentService = null,
+        IContentHistory contentHistory = null) =>
+        new(authorizationService, groupedPageService, pageService, pageContentService,
+            sharedComponentPlacementValidator ?? new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService),
+            designerContentService ?? Designer(contentHistory ?? new NoContentHistory()), ContentGuard, contentHistory ?? new NoContentHistory());
+
     private sealed class NoSchemaCatalogs : ISchemaCatalogService
     {
         public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();

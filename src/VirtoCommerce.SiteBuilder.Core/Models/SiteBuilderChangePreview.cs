@@ -4,4 +4,7 @@ namespace VirtoCommerce.SiteBuilder.Core.Models;
 public class SiteBuilderChangePreview
 {
     public IList<SiteBuilderObjectChange> Objects { get; set; } = [];
+
+    /// <summary>The write would reach what the storefront serves; see <see cref="SiteBuilderOperationResult.AffectsPublished"/>.</summary>
+    public bool AffectsPublished { get; set; }
 }

@@ -252,15 +252,14 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
             NullLogger<SiteBuilderPageContentService>.Instance);
         authorizationService ??= new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
         var controller = new SiteBuilderPageController(
-            pageService,
             service,
             new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
             authorizationService,
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
             pageContentService,
-            NullLogger<SiteBuilderPageController>.Instance, new NoContentHistory(),
-            new SiteBuilderSharedComponentPlacementValidator(referenceIndex, authorizationService),
-            TestServices.Designer(new NoContentHistory()), TestServices.ContentGuard);
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorizationService, service, pageContentService, pageService,
+                new SiteBuilderSharedComponentPlacementValidator(referenceIndex, authorizationService)));
         var httpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity()),

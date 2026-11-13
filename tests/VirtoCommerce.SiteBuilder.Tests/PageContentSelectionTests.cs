@@ -253,16 +253,15 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 service,
                 new PublishedRenameContentPreservationTests.NoopEventPublisher(),
                 NullLogger<SiteBuilderPageContentService>.Instance);
+            var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
             var controller = new SiteBuilderPageController(
-                crudService: pageService,
                 groupedPageService: service,
                 groupedPageSearchService: new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-                authorizationService: new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+                authorizationService: authorization,
                 pageDocumentSearchService: new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance, contentHistory: new NoContentHistory(),
-                sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-                designerContentService: TestServices.Designer(new NoContentHistory()), contentGuard: TestServices.ContentGuard);
+                logger: NullLogger<SiteBuilderPageController>.Instance,
+                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Response.Body = new MemoryStream();
@@ -279,16 +278,15 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 service,
                 new PublishedRenameContentPreservationTests.NoopEventPublisher(),
                 NullLogger<SiteBuilderPageContentService>.Instance);
+            var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
             var controller = new SiteBuilderPageController(
-                crudService: pageService,
                 groupedPageService: service,
                 groupedPageSearchService: new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-                authorizationService: new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+                authorizationService: authorization,
                 pageDocumentSearchService: new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance, contentHistory: new NoContentHistory(),
-                sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-                designerContentService: TestServices.Designer(new NoContentHistory()), contentGuard: TestServices.ContentGuard);
+                logger: NullLogger<SiteBuilderPageController>.Instance,
+                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             var body = new MemoryStream();

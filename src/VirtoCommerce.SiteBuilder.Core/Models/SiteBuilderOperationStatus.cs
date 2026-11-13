@@ -12,4 +12,7 @@ public enum SiteBuilderOperationStatus
 
     /// <summary>The caller has to send the version it read before it may write.</summary>
     VersionRequired,
+
+    /// <summary>A request running at the same time changed what this one relied on; what this one wrote is undone.</summary>
+    ConcurrentChange,
 }

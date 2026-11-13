@@ -16,12 +16,23 @@ public class SiteBuilderOperationResult
     /// <summary>What a dry run would change; <c>null</c> for an operation that ran.</summary>
     public SiteBuilderChangePreview Preview { get; init; }
 
-    public static SiteBuilderOperationResult Success() => new() { Status = SiteBuilderOperationStatus.Succeeded };
+    /// <summary>
+    /// The write reaches what the storefront serves: it publishes or unpublishes a page, or changes the settings, the language
+    /// links or the content of a published one. Told on a dry run too, so that a caller can ask for an approval first.
+    /// </summary>
+    public bool AffectsPublished { get; init; }
 
-    public static SiteBuilderOperationResult<T> Success<T>(T value) => new() { Status = SiteBuilderOperationStatus.Succeeded, Value = value };
+    public static SiteBuilderOperationResult Success(bool affectsPublished = false) =>
+        new() { Status = SiteBuilderOperationStatus.Succeeded, AffectsPublished = affectsPublished };
+
+    public static SiteBuilderOperationResult<T> Success<T>(T value, bool affectsPublished = false) =>
+        new() { Status = SiteBuilderOperationStatus.Succeeded, Value = value, AffectsPublished = affectsPublished };
+
+    public static SiteBuilderOperationResult DryRun(SiteBuilderChangePreview preview) =>
+        new() { Status = SiteBuilderOperationStatus.Succeeded, Preview = preview, AffectsPublished = preview?.AffectsPublished == true };
 
     public static SiteBuilderOperationResult<T> DryRun<T>(SiteBuilderChangePreview preview) =>
-        new() { Status = SiteBuilderOperationStatus.Succeeded, Preview = preview };
+        new() { Status = SiteBuilderOperationStatus.Succeeded, Preview = preview, AffectsPublished = preview?.AffectsPublished == true };
 
     public static SiteBuilderOperationResult Forbidden() => new() { Status = SiteBuilderOperationStatus.Forbidden };
 
@@ -34,8 +45,10 @@ public class SiteBuilderOperationResult
 
     public static SiteBuilderOperationResult VersionRequired(string error) => new() { Status = SiteBuilderOperationStatus.VersionRequired, Error = error };
 
+    public static SiteBuilderOperationResult ConcurrentChange(string error) => new() { Status = SiteBuilderOperationStatus.ConcurrentChange, Error = error };
+
     /// <summary>The same outcome, for an operation that answers a <typeparamref name="T"/>.</summary>
-    public SiteBuilderOperationResult<T> As<T>() => new() { Status = Status, Error = Error, Errors = Errors, Preview = Preview };
+    public SiteBuilderOperationResult<T> As<T>() => new() { Status = Status, Error = Error, Errors = Errors, Preview = Preview, AffectsPublished = AffectsPublished };
 }
 
 public class SiteBuilderOperationResult<T> : SiteBuilderOperationResult

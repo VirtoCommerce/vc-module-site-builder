@@ -77,6 +77,7 @@ namespace VirtoCommerce.SiteBuilder.Web
                 ?? ActivatorUtilities.CreateInstance<GroupedPageService>(provider));
             serviceCollection.AddTransient<IGroupedPageSearchService, GroupedPageSearchService>();
             serviceCollection.AddTransient<IMultilanguagePageService, MultilanguagePageService>();
+            serviceCollection.AddTransient<IMultilanguagePageOperationService, MultilanguagePageOperationService>();
             serviceCollection.AddTransient<IMultilanguagePageSearchService, MultilanguagePageSearchService>();
             serviceCollection.AddTransient<ISiteBuilderPageListService, SiteBuilderPageListService>();
             serviceCollection.AddTransient<ISiteBuilderAssetReferenceService, SiteBuilderAssetReferenceService>();
@@ -93,6 +94,7 @@ namespace VirtoCommerce.SiteBuilder.Web
                 ISiteBuilderSharedComponentAssetReferenceIndexService,
                 SiteBuilderSharedComponentAssetReferenceIndexService>();
             serviceCollection.AddTransient<SiteBuilderPageContentService>();
+            serviceCollection.AddTransient<IGroupedPageOperationService, GroupedPageOperationService>();
             serviceCollection.AddTransient<IGroupedPageContentWriter, GroupedPageContentWriter>();
             // Site Builder's own: another module registers the platform's IHtmlSanitizer with its own profile
             serviceCollection.AddSingleton<ISiteBuilderHtmlSanitizer, SiteBuilderHtmlSanitizer>();

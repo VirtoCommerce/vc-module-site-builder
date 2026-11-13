@@ -27,6 +27,10 @@ public interface IDesignerContentService
     /// <exception cref="InvalidDataException">The page has never been published.</exception>
     Task<ContentSaveResult> DiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
+    /// <summary>Answers what discarding the drafts of the page would change: its content goes back to what is published. Writes nothing.</summary>
+    /// <exception cref="InvalidDataException">The page has never been published.</exception>
+    Task<SiteBuilderChangePreview> PreviewDiscardPageAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default);
+
     /// <exception cref="InvalidDataException">Something in the version can run script: nothing is written.</exception>
     Task<ContentSaveResult> RestoreAsync(ContentRestoreCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 }

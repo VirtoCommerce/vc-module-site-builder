@@ -137,16 +137,15 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 service,
                 new NoopEventPublisher(),
                 NullLogger<SiteBuilderPageContentService>.Instance);
+            var authorization = new AllowAllAuthorizationService();
             var controller = new SiteBuilderPageController(
-                crudService: pageService,
                 groupedPageService: service,
                 groupedPageSearchService: new FakeGroupedPageSearchService(),
-                authorizationService: new AllowAllAuthorizationService(),
+                authorizationService: authorization,
                 pageDocumentSearchService: new NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance, contentHistory: new NoContentHistory(),
-                sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.AllowAllAuthorizationService()),
-                designerContentService: TestServices.Designer(new NoContentHistory()), contentGuard: TestServices.ContentGuard);
+                logger: NullLogger<SiteBuilderPageController>.Instance,
+                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Response.Body = new MemoryStream();
