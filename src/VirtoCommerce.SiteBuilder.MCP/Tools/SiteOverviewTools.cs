@@ -279,8 +279,8 @@ public class SiteOverviewTools(
             Available = true,
             State = result.Value.Flow,
             Note = git
-                ? "Git flow: a page stored as a file goes live through a pull request in the store's repository."
-                : "Pages stored as files go live at once in blob storage. Database pages go live at once in either flow.",
+                ? "Git flow: a page stored as a file goes live through a pull request in the store's repository, and list_versions reads its commits."
+                : "Pages stored as files go live at once in blob storage and keep no versions. Database pages go live at once in either flow.",
         };
     }
 }

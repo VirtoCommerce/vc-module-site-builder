@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -21,9 +22,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Database pages of the stores the user reads: the pages list of the designer, one row per Landing Page and per
-// Multilanguage Page, and one page with its content. A page stored as a file is read by its path; it is not listed, as
-// listing the files of a store is the designer's endpoint's own work and not a service yet.
+// Pages of the stores the user reads: the pages list of the designer, one row per Landing Page and per Multilanguage
+// Page, then the store's pages stored as files as its file tree lists a folder; and one page with its content.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageTools(
@@ -43,27 +43,30 @@ public class PageTools(
 
     [McpServerTool(Name = "search_site_pages", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
-    [Description("Find database pages of Site Builder (pages created in the designer, not pages from files). Returns one " +
-        "page of compact rows: a Landing Page is a row with its language; a Multilanguage Page is one row with every " +
-        "language version (page id, status, unpublished changes, outdated translation). Most recently changed first. " +
-        "Pass page_id to read one page instead: its settings (name, address, language, audience, dates), its content " +
-        "(page settings and sections, each with its id) and the version token of that content, which edit_page_draft takes. " +
-        "A page stored as a file is not listed here; read it with page_id set to its path ('pages/about.page') and store_id. " +
-        "Pass section_type to find the pages that use a section, optionally with a condition on its settings: the pages are " +
+    [Description("Find pages of Site Builder. Returns one page of compact rows: a Landing Page is a row with its language; a " +
+        "Multilanguage Page is one row with every language version (page id, status, unpublished changes, outdated " +
+        "translation), most recently changed first. With store_id and no status, language or date filter, the store's pages " +
+        "stored as files follow, with type File and their path as id ('pages/about.page'), which the other tools take with " +
+        "store_id; page_type File or folder lists only them. Pass page_id to read one page instead: its settings (name, " +
+        "address, language, audience, dates), its content (page settings and sections, each with its id) and the version " +
+        "token of that content, which edit_page_draft takes; for a page stored as a file, also its publication state. " +
+        "Pass section_type to find the database pages that use a section, optionally with a condition on its settings: the pages are " +
         "read one by one, take of them per call, and the answer lists per language version the matching section ids and " +
         "says how many pages were scanned; continue with next_skip until is_complete or has_more is false before saying a " +
         "section is used nowhere. To change the matching sections on every page, use update_sections_bulk.")]
     public async Task<object> SearchSitePages(
         RequestContext<CallToolRequestParams> context,
         IMcpPageSizeResolver pageSizeResolver,
-        [Description("Store id. Omit it to search every store you read pages of.")] string store_id = null,
+        [Description("Store id. Omit it to search the database pages of every store you read; pages stored as files are listed per store.")] string store_id = null,
         [Description("Id of one page (a Landing Page, or a language version of a Multilanguage Page) to read with its " +
             "content, or the path of a page stored as a file with store_id. The other filters are ignored.")] string page_id = null,
-        [Description("Text in the page name or address.")] string keyword = null,
+        [Description("Text in the page name or address; for a page stored as a file, also in its path.")] string keyword = null,
         [Description("Draft (has unpublished changes or was never published), Published (has a published version) or " +
             "Archived. Several, comma-separated.")] string status = null,
         [Description("Language code, for example en-US: Landing Pages in it and Multilanguage Pages that have it.")] string language = null,
-        [Description("Landing or Multilanguage. Omit it for both.")] string page_type = null,
+        [Description("Landing, Multilanguage or File (pages stored as files, with store_id). Omit it for all of them.")] string page_type = null,
+        [Description("Pages stored as files of one folder: 'pages', 'blogs' or a folder inside them such as 'pages/landing'. " +
+            "Its subfolders are not listed; without it, the pages right in 'pages' and 'blogs' are.")] string folder = null,
         [Description("Pages changed at or after this UTC time, ISO 8601. A change of a Shared Component on the page counts.")] DateTime? modified_since = null,
         [Description("Pages not changed after this UTC time, ISO 8601.")] DateTime? modified_before = null,
         [Description("With page_id or section_type: 'draft' (default) for the content the designer edits, which is the " +
@@ -90,38 +93,21 @@ public class PageTools(
             return await GetPageAsync(context, store_id, page_id, version, cancellationToken);
         }
 
-        var condition = SitePageFilters.ParseCondition(setting_path, setting_equals, setting_contains, setting_language);
-        if (condition != null && string.IsNullOrWhiteSpace(section_type))
+        var condition = ParseSectionCondition(section_type, setting_path, setting_equals, setting_contains, setting_language);
+        var sources = SitePageSources.Parse(page_type, folder, store_id, HasDatabaseFilters(status, language, modified_since, modified_before));
+        var paging = await pageSizeResolver.GetPagingAsync(skip, take);
+        if (!sources.Database)
         {
-            throw new McpException("A setting condition needs section_type: the type of the sections whose setting it compares.");
+            return await ListFilePagesAsync(context.User, store_id, sources.Folder, keyword, section_type, paging, cancellationToken);
         }
 
-        var criteria = new SiteBuilderPageSearchCriteria
-        {
-            StoreId = store_id,
-            Keyword = keyword,
-            Statuses = SitePageFilters.ParseStatuses(status),
-            LanguageCode = language,
-            PageType = SitePageFilters.ParsePageType(page_type),
-            Sort = $"{nameof(SiteBuilderPageListItem.ModifiedDate)}:desc;{nameof(SiteBuilderPageListItem.CreatedDate)}:desc",
-        }.WithPaging(await pageSizeResolver.GetPagingAsync(skip, take));
-
-        if (string.IsNullOrEmpty(store_id))
-        {
-            criteria.StoreIds = await authorizationService.GetStoreIdsAsync(context.User, userManagerFactory);
-            if (criteria.StoreIds?.Count == 0)
-            {
-                throw new McpForbiddenException("Your builder:read permission does not name a store you work in, so there are no pages to search.");
-            }
-        }
-
-        var paging = new McpPaging(criteria.Skip, criteria.Take);
+        var criteria = await CreateCriteriaAsync(context.User, store_id, keyword, status, language, sources.DatabasePageType, paging);
         if (modified_since != null || modified_before != null)
         {
             criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, criteria.StoreIds, ToUtc(modified_since), ToUtc(modified_before));
             if (criteria.ObjectIds.Count == 0)
             {
-                return string.IsNullOrWhiteSpace(section_type) ? McpPage<SitePageRow>.Create([], 0, paging) : SitePageSectionSearch.Empty();
+                return NoPages(section_type, paging);
             }
         }
 
@@ -130,9 +116,82 @@ public class PageTools(
             return await SearchSectionsAsync(context, criteria, section_type.Trim(), condition, SitePageFilters.ParseVersion(version), cancellationToken);
         }
 
-        var result = await pageListService.SearchAsync(criteria, cancellationToken);
+        return await ListAsync(context.User, criteria, paging, sources, keyword, cancellationToken);
+    }
 
-        return result.ToMcpPage(paging, SitePageRow.From);
+    private static SiteBuilderSectionSettingCondition ParseSectionCondition(string sectionType, string settingPath, string settingEquals,
+        string settingContains, string settingLanguage)
+    {
+        var condition = SitePageFilters.ParseCondition(settingPath, settingEquals, settingContains, settingLanguage);
+        if (condition != null && string.IsNullOrWhiteSpace(sectionType))
+        {
+            throw new McpException("A setting condition needs section_type: the type of the sections whose setting it compares.");
+        }
+
+        return condition;
+    }
+
+    // The filters only database pages answer: the list of pages stored as files has no status, language or dates.
+    private static bool HasDatabaseFilters(string status, string language, DateTime? modifiedSince, DateTime? modifiedBefore) =>
+        !string.IsNullOrWhiteSpace(status) || !string.IsNullOrWhiteSpace(language) || modifiedSince != null || modifiedBefore != null;
+
+    private static object NoPages(string sectionType, McpPaging paging) =>
+        string.IsNullOrWhiteSpace(sectionType) ? McpPage<SitePageRow>.Create([], 0, paging) : SitePageSectionSearch.Empty();
+
+    private async Task<SiteBuilderPageSearchCriteria> CreateCriteriaAsync(ClaimsPrincipal user, string storeId, string keyword, string status,
+        string language, string pageType, McpPaging paging)
+    {
+        var criteria = new SiteBuilderPageSearchCriteria
+        {
+            StoreId = storeId,
+            Keyword = keyword,
+            Statuses = SitePageFilters.ParseStatuses(status),
+            LanguageCode = language,
+            PageType = pageType,
+            Sort = $"{nameof(SiteBuilderPageListItem.ModifiedDate)}:desc;{nameof(SiteBuilderPageListItem.CreatedDate)}:desc",
+        }.WithPaging(paging);
+
+        if (string.IsNullOrEmpty(storeId))
+        {
+            criteria.StoreIds = await authorizationService.GetStoreIdsAsync(user, userManagerFactory);
+            if (criteria.StoreIds?.Count == 0)
+            {
+                throw new McpForbiddenException("Your builder:read permission does not name a store you work in, so there are no pages to search.");
+            }
+        }
+
+        return criteria;
+    }
+
+    // The database pages of the filters, then the store's pages stored as files: a page takes the files where the
+    // database pages run out, so next_skip walks both lists once. The files come as one list; the tool pages it.
+    private async Task<McpPage<SitePageRow>> ListAsync(ClaimsPrincipal user, SiteBuilderPageSearchCriteria criteria, McpPaging paging,
+        SitePageSources sources, string keyword, CancellationToken cancellationToken)
+    {
+        var result = await pageListService.SearchAsync(criteria, cancellationToken);
+        if (!sources.Files)
+        {
+            return result.ToMcpPage(paging, SitePageRow.From);
+        }
+
+        var files = await FilePageList.ListAsync(contentQueryService, user, criteria.StoreId, sources.Folder, keyword, cancellationToken);
+        var rows = result.Results.Select(SitePageRow.From).ToList();
+        rows.AddRange(files.Skip(Math.Max(0, paging.Skip - result.TotalCount)).Take(paging.Take - rows.Count));
+
+        return McpPage<SitePageRow>.Create(rows, result.TotalCount + files.Count, paging);
+    }
+
+    private async Task<McpPage<SitePageRow>> ListFilePagesAsync(ClaimsPrincipal user, string storeId, string folder, string keyword, string sectionType,
+        McpPaging paging, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(sectionType))
+        {
+            throw new McpException("section_type scans database pages only. Read a page stored as a file with page_id for its sections.");
+        }
+
+        var files = await FilePageList.ListAsync(contentQueryService, user, storeId, folder, keyword, cancellationToken);
+
+        return McpPage<SitePageRow>.FromList(files, paging);
     }
 
     // The pages of the filters, read one by one from skip; take is how many are read in this call.
@@ -282,6 +341,17 @@ public sealed class SitePageRow
             ModifiedBy = page?.ModifiedBy ?? page?.CreatedBy ?? root?.ModifiedBy ?? root?.CreatedBy,
         };
     }
+
+    // A page stored as a file: its id is the path the other tools take with store_id. The file list has no status,
+    // language or dates; reading the page with page_id gives its publication state.
+    public static SitePageRow FromFile(string storeId, string contentType, SiteBuilderFileSearchItem item) => new()
+    {
+        Id = new FilePage(storeId, contentType, item.Path?.Trim('/') ?? string.Empty).PageId,
+        Type = SitePageSources.FileType,
+        Name = item.Name,
+        Permalink = item.PreviewUrl,
+        StoreId = storeId,
+    };
 }
 
 public sealed class SitePageLanguageRow

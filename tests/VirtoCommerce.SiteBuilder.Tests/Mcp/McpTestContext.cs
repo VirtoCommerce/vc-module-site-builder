@@ -106,6 +106,12 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public Mock<ISiteBuilderPublishStatusQueryService> PublishStatuses { get; } = new();
 
+    // The stores keep their pages stored as files in git: the history of such a page is read from GitHistory. Reads and
+    // writes of the pages themselves stay in the blob storage of the test, so a test that sets it only lists versions.
+    public bool GitFlow { get; set; }
+
+    public Mock<IGitContentHistory> GitHistory { get; } = new();
+
     // Every store, for a user who reads all of them: the overview pages through the stores the store search finds.
     public Mock<IStoreSearchService> StoreSearch { get; } = new();
 
@@ -330,7 +336,8 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton<IThemeOperationService>(provider => new ThemeOperationService(provider.GetRequiredService<IAuthorizationService>(),
                 RequestValidators.Stores(StoreA, StoreB, StoreC), new NewSiteBuilderStores(), CreateThemePublisher(), SavedVersions))
             .AddSingleton<ISiteBuilderContentQueryService>(provider => new SiteBuilderContentQueryService(provider.GetRequiredService<IAuthorizationService>(),
-                RequestValidators.Content(StoreA, StoreB, StoreC), Blobs, Blobs, Blobs, ThemeStorage, new FakeGitContentPolicy(enabled: false), null, null, null));
+                RequestValidators.Content(StoreA, StoreB, StoreC), Blobs, Blobs, Blobs, ThemeStorage, new FakeGitContentPolicy(enabled: GitFlow), null,
+                GitHubConnections.CreateService(new GitContentOptions()), Options.Create(new GitContentOptions()), GitHistory.Object));
 
         // The bulk tools and their jobs as SiteBuilderMcpRegistration adds them; the job engine is the test's dispatcher.
         var principals = new Mock<IUserClaimsPrincipalFactory<ApplicationUser>>();

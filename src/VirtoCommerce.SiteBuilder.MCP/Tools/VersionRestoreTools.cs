@@ -41,7 +41,7 @@ public class VersionRestoreTools(
         "the drafts they have now are overwritten, and customers see nothing until the draft is published (publish_page, " +
         "publish_theme). Name the version with version_id from list_versions and the items with page_id, theme_files or both " +
         "(a database page and theme files of one version are restored together). A page stored as a file in git is named by " +
-        "its path with store_id, and version_id is the commit of the version. First call it with dryRun: it shows what each " +
+        "its path with store_id, and version_id is a commit list_versions gives for that path. First call it with dryRun: it shows what each " +
         "draft would lose and answers expected_versions, the versions of the drafts now. Then call it without dryRun and with " +
         "those expected_versions (or the version_token search_site_pages or search_templates gave for each item); a draft " +
         "changed since is not overwritten. Theme files need builder:templates for templates and rules, builder:theme for the " +
@@ -49,7 +49,7 @@ public class VersionRestoreTools(
     public async Task<VersionRestore> RestoreVersion(
         RequestContext<CallToolRequestParams> context,
         [Description("Store id.")] string store_id,
-        [Description("version_id of list_versions; for a page stored as a file in git, the commit of the version.")] string version_id,
+        [Description("version_id of list_versions; for a page stored as a file in git, the commit list_versions gives for its path.")] string version_id,
         [Description("Id of a database page, or the path of a page stored as a file ('pages/about.page').")] string page_id = null,
         [Description("Theme files by their path with the theme folder, as list_versions names them, for example 'default/templates/product.json'.")] string[] theme_files = null,
         [Description("The versions of the drafts the restore overwrites, by item: 'page:<page_id>' or 'theme:<path>', as the dry run answers " +
