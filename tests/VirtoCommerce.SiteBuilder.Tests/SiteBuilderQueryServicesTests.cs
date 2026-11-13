@@ -323,9 +323,169 @@ public class SiteBuilderQueryServicesTests
         Assert.Equal("""{"published":false,"hasChanges":false,"pending":false,"awaitingMerge":false,"flow":"blob","liveBehind":false}""", PlatformJson.Serialize(result.Value));
     }
 
-    private SiteBuilderContentQueryService ContentQueries(FakeAuthorizationService authorization = null, bool git = false) =>
+    [Fact]
+    public async Task Search_PagesInAFolder_AnswersEachReadablePageByTypeAndPathWithItsNameAndPermalink()
+    {
+        _live.Files["pages/s1/landing/about-us.page"] = """{ "settings": { "name": "About us", "permalink": "/about" } }""";
+        _live.Files["pages/s1/landing/contacts.page"] = """{ "settings": { "name": "Contacts", "permalink": "/contacts" } }""";
+        _live.Files["pages/s1/landing/no-settings.page"] = """{ "content": [] }""";
+        _live.Files["pages/s1/landing/broken.page"] = "not json";
+        _live.Files["pages/s1/landing/old/post.page"] = """{ "settings": { "name": "Post", "permalink": "/post" } }""";
+
+        var result = await Controller().Search("s1", null, "pages", "landing");
+
+        var content = Assert.IsType<ContentResult>(result.Result);
+        Assert.Null(content.ContentType);
+        Assert.Equal(
+            """{"pages::landing/about-us.page": {"name":"About us","previewUrl":"/about","path":"landing/about-us.page"}, "pages::landing/contacts.page": {"name":"Contacts","previewUrl":"/contacts","path":"landing/contacts.page"}}""",
+            content.Content);
+    }
+
+    [Fact]
+    public async Task Search_Pattern_KeepsTheFilesWhoseNameContainsItLiterally()
+    {
+        _live.Files["pages/s1/landing/about-us.page"] = """{ "settings": { "name": "About us", "permalink": "/about" } }""";
+        _live.Files["pages/s1/landing/a.b.page"] = """{ "settings": { "name": "A.B", "permalink": "/ab" } }""";
+        _live.Files["pages/s1/landing/axb.page"] = """{ "settings": { "name": "AxB", "permalink": "/axb" } }""";
+
+        var result = await Controller().Search("s1", null, "pages", "landing", pattern: "a.b");
+
+        Assert.Equal("""{"pages::landing/a.b.page": {"name":"A.B","previewUrl":"/ab","path":"landing/a.b.page"}}""", Assert.IsType<ContentResult>(result.Result).Content);
+    }
+
+    [Fact]
+    public async Task Search_StoreOnGit_ListsWhatBlobStorageHolds()
+    {
+        _live.Files["pages/s1/landing/about-us.page"] = """{ "settings": { "name": "About us", "permalink": "/about" } }""";
+
+        var result = await Controller(git: true).Search("s1", null, "pages", "landing");
+
+        Assert.Equal("""{"pages::landing/about-us.page": {"name":"About us","previewUrl":"/about","path":"landing/about-us.page"}}""",
+            Assert.IsType<ContentResult>(result.Result).Content);
+    }
+
+    [Fact]
+    public async Task Search_NothingFound_AnswersAnEmptyObject()
+    {
+        var result = await Controller().Search("s1", null, "pages", "landing");
+
+        Assert.Equal("{}", Assert.IsType<ContentResult>(result.Result).Content);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Pages_AnswersTheirKeysNamesAndPermalinks()
+    {
+        _live.Files["pages/s1/landing/about-us.page"] = """{ "settings": { "name": "About us", "permalink": "/about" } }""";
+
+        var result = await ContentQueries().SearchFilesAsync(new SiteBuilderFileSearchRequest { StoreId = "s1", ContentType = "pages", Folder = "landing" }, User, Ct);
+
+        var item = Assert.Single(result.Value);
+        Assert.Equal(("pages::landing/about-us.page", "About us", "/about", "landing/about-us.page"), (item.Key, item.Name, item.PreviewUrl, item.Path));
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_UserOfAnotherStoreSendingABadKeyword_IsForbiddenBeforeTheRequestIsChecked()
+    {
+        var request = new SiteBuilderFileSearchRequest { StoreId = "s1", ContentType = "pages", Keyword = "a/b" };
+
+        var result = await ContentQueries(new FakeAuthorizationService("s2", Permissions.Read)).SearchFilesAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Forbidden, result.Status);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_ValueThatDidNotBindOrABadKeyword_IsInvalid()
+    {
+        var unbound = new SiteBuilderFileSearchRequest { StoreId = "s1", ContentType = "pages", BindingErrors = ["The value is not valid."] };
+        var badKeyword = new SiteBuilderFileSearchRequest { StoreId = "s1", ContentType = "pages", Keyword = "a/b" };
+
+        Assert.Equal((SiteBuilderOperationStatus.Invalid, "The value is not valid."),
+            ((await ContentQueries().SearchFilesAsync(unbound, User, Ct)).Status, (await ContentQueries().SearchFilesAsync(unbound, User, Ct)).Error));
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, (await ContentQueries().SearchFilesAsync(badKeyword, User, Ct)).Status);
+    }
+
+    [Fact]
+    public async Task GitHistory_StoreWithoutGit_IsNotFound()
+    {
+        var result = await Controller().GitHistory("s1", "about-us.page", "pages");
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GitHistory_NoPath_AnswersNoVersions()
+    {
+        var history = new RecordingGitHistory(new GitPageHistory());
+
+        var result = await Controller(git: true, history: history).GitHistory("s1", null, null);
+
+        Assert.Equal("""{"versions":[],"truncated":false,"endCursor":null,"otherDraftCount":0,"myDraftBranch":null}""", PlatformJson.SerializeBodyWithNulls(result));
+        Assert.Null(history.Query);
+    }
+
+    [Fact]
+    public async Task GitHistory_Page_AnswersItsVersionsTellingWhichAreTheUsersOwn()
+    {
+        var myBranch = new GitContentOptions().GetPageLocation("o/r", "pages", "about-us.page", "alice").Branch;
+        var history = new RecordingGitHistory(new GitPageHistory
+        {
+            Versions =
+            [
+                new GitPageVersion { Sha = "aaaaaaaaaa", Message = "mine", AuthorName = "alice", Branches = [myBranch] },
+                new GitPageVersion { Sha = "bbbbbbbbbb", Message = "theirs", Branches = ["designer/kate/about-us"] },
+                new GitPageVersion { Sha = "cccccccccc", Message = "live", Branches = ["main"], Published = true, ChangedFiles = 1 },
+            ],
+            Truncated = true,
+            EndCursor = "Y3Vyc29y",
+        });
+
+        var result = await Controller(git: true, history: history).GitHistory("s1", "about-us.page", null, take: 5, after: "Y3Vyc29y");
+
+        Assert.Equal(
+            "{\"versions\":[" +
+            $$"""{"sha":"aaaaaaaaaa","shortSha":"aaaaaaa","date":null,"message":"mine","author":{"name":"alice","email":null,"login":null},"vcUser":null,"branches":["{{myBranch}}"],"published":false,"mine":true,"bulk":false,"changedFiles":null},""" +
+            """{"sha":"bbbbbbbbbb","shortSha":"bbbbbbb","date":null,"message":"theirs","author":{"name":null,"email":null,"login":null},"vcUser":null,"branches":["designer/kate/about-us"],"published":false,"mine":false,"bulk":false,"changedFiles":null},""" +
+            """{"sha":"cccccccccc","shortSha":"ccccccc","date":null,"message":"live","author":{"name":null,"email":null,"login":null},"vcUser":null,"branches":["main"],"published":true,"mine":false,"bulk":false,"changedFiles":1}],""" +
+            $$"""
+            "truncated":true,"endCursor":"Y3Vyc29y","otherDraftCount":1,"myDraftBranch":"{{myBranch}}"}
+            """,
+            PlatformJson.SerializeBodyWithNulls(result));
+        Assert.Equal(("o/r", "pages/about-us.page", 5, "Y3Vyc29y"), (history.Repository, history.RepoPath, history.Query.PublishedDepth, history.Query.After));
+    }
+
+    [Fact]
+    public async Task GetFilePageHistoryAsync_UserOfAnotherStorePagingOutOfRange_IsForbiddenBeforeTheRequestIsChecked()
+    {
+        var request = new SiteBuilderFilePageHistoryRequest { StoreId = "s1", Path = "about-us.page", Take = 0 };
+
+        var result = await ContentQueries(new FakeAuthorizationService("s2", Permissions.Read), git: true).GetFilePageHistoryAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Forbidden, result.Status);
+    }
+
+    [Fact]
+    public async Task GetFilePageHistoryAsync_StoreWithoutGitPagingOutOfRange_IsInvalidBeforeTheFlowIsAsked()
+    {
+        var request = new SiteBuilderFilePageHistoryRequest { StoreId = "s1", Path = "about-us.page", Take = 101 };
+
+        var result = await ContentQueries().GetFilePageHistoryAsync(request, User, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Invalid, "take must be between 1 and 100."), (result.Status, result.Error));
+    }
+
+    [Fact]
+    public async Task GetFilePageHistoryAsync_StoreWithoutGit_IsNotFound()
+    {
+        var request = new SiteBuilderFilePageHistoryRequest { StoreId = "s1", Path = "about-us.page" };
+
+        var result = await ContentQueries().GetFilePageHistoryAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.NotFound, result.Status);
+    }
+
+    private SiteBuilderContentQueryService ContentQueries(FakeAuthorizationService authorization = null, bool git = false, IGitContentHistory history = null) =>
         new(authorization ?? new FakeAuthorizationService(true), RequestValidators.Content("s1", "s2"), _live, _live, _live, Themes(), new FakeGitContentPolicy(enabled: git),
-            null, null, Options.Create(new GitContentOptions()));
+            null, GitHubConnections.CreateService(new GitContentOptions()), Options.Create(new GitContentOptions()), history);
 
     private SiteBuilderPreviewQueryService Previews(FakeAuthorizationService authorization = null) =>
         new(authorization ?? new FakeAuthorizationService(true), RequestValidators.Content("s1", "s2"), _stores, new FakeSettingsManager(), _pages,
@@ -337,7 +497,7 @@ public class SiteBuilderQueryServicesTests
 
     private ThemeStorageFactory Themes() => new(_stores, _live, _live, _live);
 
-    private SiteBuilderController Controller(bool git = false)
+    private SiteBuilderController Controller(bool git = false, IGitContentHistory history = null)
     {
         var authorization = new FakeAuthorizationService(true);
         var controller = TestServices.CreateSiteBuilderController(
@@ -347,10 +507,10 @@ public class SiteBuilderQueryServicesTests
             publishingService: _live,
             eventPublisher: _live,
             gitContentOptions: Options.Create(new GitContentOptions()),
-            gitHubConnectionService: null,
+            gitHubConnectionService: GitHubConnections.CreateService(new GitContentOptions()),
             gitContentPolicy: new FakeGitContentPolicy(enabled: git),
             gitContentRepository: null,
-            gitContentHistory: null,
+            gitContentHistory: history,
             gitContentPublisher: null,
             gitLivePageService: null,
             settingsManager: new FakeSettingsManager(),
@@ -376,4 +536,24 @@ public class SiteBuilderQueryServicesTests
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = User } },
         };
+
+    private sealed class RecordingGitHistory(GitPageHistory history) : IGitContentHistory
+    {
+        public string Repository { get; private set; }
+
+        public string RepoPath { get; private set; }
+
+        public GitHistoryQuery Query { get; private set; }
+
+        public Task<GitPageHistory> GetHistoryAsync(string repository, string repoPath, GitHistoryQuery query, CancellationToken cancellationToken = default)
+        {
+            (Repository, RepoPath, Query) = (repository, repoPath, query);
+            return Task.FromResult(history);
+        }
+
+        public void Invalidate(string repository, string repoPath)
+        {
+            // the history is fixed for the test
+        }
+    }
 }

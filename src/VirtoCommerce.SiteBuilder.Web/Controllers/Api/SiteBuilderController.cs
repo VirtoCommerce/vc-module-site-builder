@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation;
@@ -48,7 +47,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             IGitHubConnectionService gitHubConnectionService,
             IGitContentPolicy gitContentPolicy,
             IGitContentRepository gitContentRepository,
-            IGitContentHistory gitContentHistory,
             IAuthorizationService authorizationService,
             IDistributedLock distributedLock,
             IValidator<SiteBuilderContentRequest> requestValidator,
@@ -195,25 +193,28 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("search")]
         public async Task<ActionResult<string>> Search(string storeId, string theme, string type, string folder, string pattern = null, string keyword = null)
         {
-            var request = new SiteBuilderContentRequest { StoreId = storeId, ContentType = type, Theme = theme, Paths = PathsOf(folder), Keyword = keyword };
-            if (await CheckRequestAsync(request) is { } refused)
+            var request = new SiteBuilderFileSearchRequest
             {
-                return refused;
-            }
+                StoreId = storeId,
+                Theme = theme,
+                ContentType = type,
+                Folder = folder,
+                Pattern = pattern,
+                Keyword = keyword,
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
+            var result = await contentQueryService.SearchFilesAsync(request, User, HttpContext.RequestAborted);
 
-            var basePath = GetContentBasePath(storeId, type, theme);
-            var storageProvider = blobContentStorageProviderFactory.CreateProvider(basePath);
-            var regexp = pattern == null ? null : new Regex(Regex.Escape(pattern), RegexOptions.None, TimeSpan.FromSeconds(1));
-            var files = (await storageProvider.SearchAsync(folder, keyword))
-                .Results.Where(x => x.Type != "folder" && (regexp?.IsMatch(x.Name) ?? true));
-            var fileInfoes = new Dictionary<string, string>();
+            return result.Succeeded ? Content(FileSearchContent(result.Value)) : result.ToRefusal();
+        }
+
+        private static string FileSearchContent(IList<SiteBuilderFileSearchItem> items)
+        {
             var jsonSettings = new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() };
-            foreach (var file in files)
-            {
-                TryAddFileContent(file, type, storageProvider, fileInfoes, jsonSettings);
-            }
-            var result = $"{{{string.Join(", ", fileInfoes.Keys.Select(x => $"\"{x}\": {fileInfoes[x]}"))}}}";
-            return Content(result);
+            var files = items.Select(x =>
+                $"\"{x.Key}\": {JsonConvert.SerializeObject(new ContentModel { Name = x.Name, PreviewUrl = x.PreviewUrl, Path = x.Path }, jsonSettings)}");
+
+            return $"{{{string.Join(", ", files)}}}";
         }
 
         [HttpPost]
@@ -541,40 +542,17 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/history")]
         public async Task<ActionResult> GitHistory(string storeId, string path, string type, int? take = null, string after = null)
         {
-            var contentType = type.IsNullOrEmpty() ? PagesContentType : type;
-            var request = PageRequest(storeId, contentType, PathsOf(path));
-            request.HistoryTake = take;
-            request.HistoryAfter = after;
-            if (await CheckRequestAsync(request) is { } refused)
+            var request = new SiteBuilderFilePageHistoryRequest
             {
-                return refused;
-            }
-
-            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, HttpContext.RequestAborted);
-            if (repository == null)
-            {
-                // there is no history to show: the blob flow overwrites in place and keeps no versions
-                return NotFound();
-            }
-
-            if (path.IsNullOrEmpty())
-            {
-                // a page that does not exist yet — the blade asking about one it is about to create
-                return Ok(PageHistoryModel.Empty);
-            }
-
-            var location = GitLocation(repository, contentType, path);
-
-            var history = await gitContentHistory.GetHistoryAsync(location.Repository, location.RepoPath, new GitHistoryQuery
-            {
-                BaseBranch = await GetBaseBranchAsync(),
-                PublishedDepth = take,
+                StoreId = storeId,
+                ContentType = type,
+                Path = path,
+                Take = take,
                 After = after,
-            }, HttpContext.RequestAborted);
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
 
-            // "mine" is the server's contribution: the repository knows which branches hold a commit, only
-            // this end knows which of those branches is the caller's.
-            return Ok(PageHistoryModel.From(history, location.Branch));
+            return (await contentQueryService.GetFilePageHistoryAsync(request, User, HttpContext.RequestAborted)).ToActionResult();
         }
 
         /// <summary>
@@ -1121,57 +1099,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             file.Type = type;
 
             return new GenericChangedEntry<FileEntity>(file, state);
-        }
-
-        private void TryAddFileContent(BlobEntry file, string type, IBlobContentStorageProvider storageProvider, Dictionary<string, string> fileInfoes, JsonSerializerSettings jsonSettings)
-        {
-            try
-            {
-                var key = GetKey(type, file);
-                if (fileInfoes.ContainsKey(key))
-                {
-                    return;
-                }
-
-                var pageContent = GetPageContent(file, storageProvider);
-                if (pageContent != null)
-                {
-                    var content = JsonConvert.SerializeObject(pageContent, jsonSettings);
-                    fileInfoes.Add(key, content);
-                }
-            }
-            catch
-            {
-                // Skip files that cannot be read or parsed
-            }
-        }
-
-        private static string GetKey(string type, BlobEntry entry)
-        {
-            return type == null
-                ? Path.GetFileNameWithoutExtension(entry.Name)
-                : $"{type}::{entry.RelativeUrl}";
-        }
-
-        private ContentModel GetPageContent(BlobEntry entry, IBlobContentStorageProvider provider)
-        {
-            try
-            {
-                using var reader = new StreamReader(provider.OpenRead(entry.RelativeUrl));
-                var content = reader.ReadToEnd();
-                dynamic json = JsonConvert.DeserializeObject(content);
-                var result = new ContentModel
-                {
-                    Name = json.settings.name.ToString(),
-                    PreviewUrl = json.settings.permalink.ToString(),
-                    Path = entry.RelativeUrl
-                };
-                return result;
-            }
-            catch
-            {
-                return null;
-            }
         }
 
         private string GetContentBasePath(string storeId, string contentType, string theme)

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 
@@ -38,6 +39,21 @@ public interface ISiteBuilderContentQueryService
     /// what is published; a page git does not hold yet is read from blob storage. Not found tells where the file was looked for.
     /// </summary>
     Task<SiteBuilderOperationResult<SiteBuilderFileContent>> ReadFileAsync(SiteBuilderFileReadRequest request, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The pages in a folder of blob storage, with the name and permalink their settings give them, in the order the storage lists them.
+    /// A store on the git flow is searched in blob storage too. A file that cannot be read as a page is left out, and of two with the same
+    /// key the first is kept.
+    /// </summary>
+    Task<SiteBuilderOperationResult<IList<SiteBuilderFileSearchItem>>> SearchFilesAsync(SiteBuilderFileSearchRequest request, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The versions of a page kept in git: commits on the production branch, and commits on other branches it does not have yet, with which
+    /// are the user's own. Not found for a store that keeps no pages in git; without a path, no versions.
+    /// </summary>
+    Task<SiteBuilderOperationResult<PageHistory>> GetFilePageHistoryAsync(SiteBuilderFilePageHistoryRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
     /// <summary>The templates of the theme, the default one of each type and the alternate ones, with whether each has a draft.</summary>

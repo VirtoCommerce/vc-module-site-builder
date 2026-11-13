@@ -1,17 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using VirtoCommerce.SiteBuilder.Core.GitContent;
-
-namespace VirtoCommerce.SiteBuilder.Web.Models
+namespace VirtoCommerce.SiteBuilder.Core.GitContent
 {
     /// <summary>
     /// A page's versions as the builder sees them: the repository's answer plus the one thing only the
     /// server can add — which of them are the current editor's own.
     /// </summary>
-    public class PageHistoryModel
+    public class PageHistory
     {
-        public IList<PageVersionModel> Versions { get; set; } = [];
+        public IList<PageVersion> Versions { get; set; } = [];
 
         /// <summary>
         /// The repository has more branches than this answer looked at, so there may be unpublished
@@ -34,17 +29,17 @@ namespace VirtoCommerce.SiteBuilder.Web.Models
         /// <summary>The branch this editor's own draft of the page lives on, whether or not it exists yet.</summary>
         public string MyDraftBranch { get; set; }
 
-        public static PageHistoryModel Empty => new();
+        public static PageHistory Empty => new();
 
-        public static PageHistoryModel From(GitPageHistory history, string myBranch)
+        public static PageHistory From(GitPageHistory history, string myBranch)
         {
             ArgumentNullException.ThrowIfNull(history);
 
             var versions = history.Versions
-                .Select(version => PageVersionModel.From(version, myBranch))
+                .Select(version => PageVersion.From(version, myBranch))
                 .ToList();
 
-            return new PageHistoryModel
+            return new PageHistory
             {
                 Versions = versions,
                 Truncated = history.Truncated,
@@ -55,7 +50,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Models
         }
     }
 
-    public class PageVersionModel
+    public class PageVersion
     {
         public string Sha { get; set; }
 
@@ -65,7 +60,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Models
 
         public string Message { get; set; }
 
-        public PageVersionAuthorModel Author { get; set; }
+        public PageVersionAuthor Author { get; set; }
 
         /// <summary>Platform login the server recorded in the commit; absent for edits made outside the module.</summary>
         public string VcUser { get; set; }
@@ -86,13 +81,13 @@ namespace VirtoCommerce.SiteBuilder.Web.Models
 
         public int? ChangedFiles { get; set; }
 
-        public static PageVersionModel From(GitPageVersion version, string myBranch) => new()
+        public static PageVersion From(GitPageVersion version, string myBranch) => new()
         {
             Sha = version.Sha,
             ShortSha = version.ShortSha,
             Date = version.Date,
             Message = version.Message,
-            Author = new PageVersionAuthorModel
+            Author = new PageVersionAuthor
             {
                 Name = version.AuthorName,
                 Email = version.AuthorEmail,
@@ -107,7 +102,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Models
         };
     }
 
-    public class PageVersionAuthorModel
+    public class PageVersionAuthor
     {
         public string Name { get; set; }
 

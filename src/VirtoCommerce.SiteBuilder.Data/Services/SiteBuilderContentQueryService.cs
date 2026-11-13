@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
@@ -32,9 +33,11 @@ public class SiteBuilderContentQueryService(
     IGitContentPolicy gitContentPolicy,
     IGitContentRepository gitContentRepository,
     IGitHubConnectionService gitHubConnectionService,
-    IOptions<GitContentOptions> gitContentOptions) : ISiteBuilderContentQueryService
+    IOptions<GitContentOptions> gitContentOptions,
+    IGitContentHistory gitContentHistory) : ISiteBuilderContentQueryService
 {
     private const string Themes = "themes";
+    private const string PagesContentType = "pages";
     private const string JsonExtension = ".json";
     private const string FolderEntryType = "folder";
 
@@ -311,6 +314,106 @@ public class SiteBuilderContentQueryService(
         return SiteBuilderOperationResult.Success<IList<ThemeTemplate>>([.. templates.Values]);
     }
 
+    public virtual Task<SiteBuilderOperationResult<IList<SiteBuilderFileSearchItem>>> SearchFilesAsync(SiteBuilderFileSearchRequest request,
+        ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return SearchFilesInternalAsync(request, user, cancellationToken);
+    }
+
+    private async Task<SiteBuilderOperationResult<IList<SiteBuilderFileSearchItem>>> SearchFilesInternalAsync(SiteBuilderFileSearchRequest request,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var contentRequest = new SiteBuilderContentRequest
+        {
+            StoreId = request.StoreId,
+            ContentType = request.ContentType,
+            Theme = request.Theme,
+            Paths = string.IsNullOrEmpty(request.Folder) ? [] : [request.Folder],
+            Keyword = request.Keyword,
+        };
+        if (await CheckRequestAsync(contentRequest, request.BindingErrors, user, cancellationToken) is { } refused)
+        {
+            return refused.As<IList<SiteBuilderFileSearchItem>>();
+        }
+
+        var storageProvider = blobContentStorageProviderFactory.CreateProvider(GetContentBasePath(request.StoreId, request.ContentType, request.Theme));
+        var files = await FindFilesAsync(storageProvider, request.Folder, request.Keyword, request.Pattern);
+
+        return SiteBuilderOperationResult.Success(ReadSearchItems(files, request.ContentType, storageProvider));
+    }
+
+    private IList<SiteBuilderFileSearchItem> ReadSearchItems(IEnumerable<BlobEntry> files, string contentType, IBlobContentStorageProvider storageProvider)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        var items = new List<SiteBuilderFileSearchItem>();
+        foreach (var file in files)
+        {
+            // a file without a name has no key to be listed by
+            var key = GetSearchKey(contentType, file);
+            if (key != null && !keys.Contains(key) && ReadSearchItem(file, storageProvider) is { } item)
+            {
+                item.Key = key;
+                keys.Add(key);
+                items.Add(item);
+            }
+        }
+
+        return items;
+    }
+
+    public virtual Task<SiteBuilderOperationResult<PageHistory>> GetFilePageHistoryAsync(SiteBuilderFilePageHistoryRequest request, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return GetFilePageHistoryInternalAsync(request, user, cancellationToken);
+    }
+
+    private async Task<SiteBuilderOperationResult<PageHistory>> GetFilePageHistoryInternalAsync(SiteBuilderFilePageHistoryRequest request,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var contentType = string.IsNullOrEmpty(request.ContentType) ? PagesContentType : request.ContentType;
+        var contentRequest = new SiteBuilderContentRequest
+        {
+            StoreId = request.StoreId,
+            ContentType = contentType,
+            Pages = string.IsNullOrEmpty(request.Path) ? [] : [request.Path],
+            HistoryTake = request.Take,
+            HistoryAfter = request.After,
+        };
+        if (await CheckRequestAsync(contentRequest, request.BindingErrors, user, cancellationToken) is { } refused)
+        {
+            return refused.As<PageHistory>();
+        }
+
+        var repository = await gitContentPolicy.GetRepositoryAsync(request.StoreId, cancellationToken);
+        if (repository == null)
+        {
+            // there is no history to show: the blob flow overwrites in place and keeps no versions
+            return SiteBuilderOperationResult.NotFound().As<PageHistory>();
+        }
+
+        if (string.IsNullOrEmpty(request.Path))
+        {
+            // a page that does not exist yet — the blade asking about one it is about to create
+            return SiteBuilderOperationResult.Success(PageHistory.Empty);
+        }
+
+        var location = gitContentOptions.Value.GetPageLocation(repository, contentType, request.Path, user?.Identity?.Name);
+        var history = await gitContentHistory.GetHistoryAsync(location.Repository, location.RepoPath, new GitHistoryQuery
+        {
+            BaseBranch = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch,
+            PublishedDepth = request.Take,
+            After = request.After,
+        }, cancellationToken);
+
+        // "mine" is the server's contribution: the repository knows which branches hold a commit, only
+        // this end knows which of those branches is the caller's.
+        return SiteBuilderOperationResult.Success(PageHistory.From(history, location.Branch));
+    }
+
     /// <summary>Store access first, so a user bound to another store cannot tell from a refused request which stores exist.</summary>
     protected virtual async Task<SiteBuilderOperationResult> CheckRequestAsync(SiteBuilderContentRequest request, IList<string> bindingErrors,
         ClaimsPrincipal user, CancellationToken cancellationToken) =>
@@ -469,6 +572,38 @@ public class SiteBuilderContentQueryService(
 
         return await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, cancellationToken);
     }
+
+    /// <summary>The page's name and permalink from its settings; <c>null</c> for a file that cannot be read as a page.</summary>
+    protected virtual SiteBuilderFileSearchItem ReadSearchItem(BlobEntry entry, IBlobContentStorageProvider provider)
+    {
+        try
+        {
+            using var reader = new StreamReader(provider.OpenRead(entry.RelativeUrl));
+            var content = reader.ReadToEnd();
+            dynamic json = JsonConvert.DeserializeObject(content);
+            var item = AbstractTypeFactory<SiteBuilderFileSearchItem>.TryCreateInstance();
+            item.Name = json.settings.name.ToString();
+            item.PreviewUrl = json.settings.permalink.ToString();
+            item.Path = entry.RelativeUrl;
+            return item;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The files, not the folders, of the search whose name contains the pattern taken literally.</summary>
+    protected virtual async Task<IList<BlobEntry>> FindFilesAsync(IBlobContentStorageProvider storageProvider, string folder, string keyword, string pattern)
+    {
+        var regexp = pattern == null ? null : new Regex(Regex.Escape(pattern), RegexOptions.None, TimeSpan.FromSeconds(1));
+        var found = await storageProvider.SearchAsync(folder, keyword);
+
+        return found.Results.Where(x => x.Type != FolderEntryType && (regexp?.IsMatch(x.Name) ?? true)).ToList();
+    }
+
+    private static string GetSearchKey(string contentType, BlobEntry entry) =>
+        contentType == null ? Path.GetFileNameWithoutExtension(entry.Name) : $"{contentType}::{entry.RelativeUrl}";
 
     protected virtual string GetContentBasePath(string storeId, string contentType, string theme) =>
         pathResolver.GetContentBasePath(contentType, storeId, theme);

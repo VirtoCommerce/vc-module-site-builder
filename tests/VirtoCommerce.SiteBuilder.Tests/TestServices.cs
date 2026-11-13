@@ -161,7 +161,7 @@ internal static class TestServices
         IGroupedPageService groupedPageService = null)
     {
         var contentQueries = new SiteBuilderContentQueryService(authorizationService, requestValidator, pathResolver, blobContentStorageProviderFactory,
-            publishingService, themeStorageFactory, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions);
+            publishingService, themeStorageFactory, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions, gitContentHistory);
         var previews = new SiteBuilderPreviewQueryService(authorizationService, requestValidator, storeService, settingsManager, groupedPageService,
             contentQueries, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions);
         var publishStatuses = new SiteBuilderPublishStatusQueryService(authorizationService, requestValidator, groupedPageService, publishingService,
@@ -172,7 +172,7 @@ internal static class TestServices
             contentHistory, contentPermissionService, contentGuard);
 
         return new SiteBuilderController(pathResolver, blobContentStorageProviderFactory, publishingService, eventPublisher, gitContentOptions,
-            gitHubConnectionService, gitContentPolicy, gitContentRepository, gitContentHistory, authorizationService, distributedLock, requestValidator,
+            gitHubConnectionService, gitContentPolicy, gitContentRepository, authorizationService, distributedLock, requestValidator,
             contentHistory, designerOperationService, contentPermissionService, filePageDraftService, themeStorageFactory, contentGuard, contentQueries,
             previews, publishStatuses, filePageOperations);
     }

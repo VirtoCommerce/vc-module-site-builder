@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Data.GitContent;
-using VirtoCommerce.SiteBuilder.Web.Models;
 using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests
@@ -11,7 +10,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
     /// What the history endpoint adds to the repository's answer: whose version each one is, and how many
     /// of them are somebody else's unpublished work.
     /// </summary>
-    public class PageHistoryModelTests
+    public class PageHistoryTests
     {
         private const string MyBranch = "designer/john/about-us-1a2b3c4";
 
@@ -22,7 +21,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 Version("aaa", branches: [MyBranch]),
                 Version("bbb", branches: ["designer/kate/about-us-1a2b3c4"]));
 
-            var model = PageHistoryModel.From(history, MyBranch);
+            var model = PageHistory.From(history, MyBranch);
 
             Assert.True(model.Versions.Single(version => version.Sha == "aaa").Mine);
             Assert.False(model.Versions.Single(version => version.Sha == "bbb").Mine);
@@ -35,7 +34,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // mine, continuing from it is not adopting somebody else's work
             var history = History(Version("aaa", branches: ["content/hero-copy", MyBranch]));
 
-            Assert.True(PageHistoryModel.From(history, MyBranch).Versions.Single().Mine);
+            Assert.True(PageHistory.From(history, MyBranch).Versions.Single().Mine);
         }
 
         [Fact]
@@ -45,7 +44,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // somebody's, and the server will not guess whose
             var history = History(Version("aaa", branches: ["content/hero-copy"]));
 
-            Assert.False(PageHistoryModel.From(history, MyBranch).Versions.Single().Mine);
+            Assert.False(PageHistory.From(history, MyBranch).Versions.Single().Mine);
         }
 
         [Fact]
@@ -57,7 +56,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 Version("theirs", branches: ["content/hero-copy"]),
                 Version("also-theirs", branches: ["designer/kate/about-us-1a2b3c4"]));
 
-            Assert.Equal(2, PageHistoryModel.From(history, MyBranch).OtherDraftCount);
+            Assert.Equal(2, PageHistory.From(history, MyBranch).OtherDraftCount);
         }
 
         [Fact]
@@ -69,7 +68,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 Version("import", branches: ["content/seed"], bulk: true, changedFiles: 366),
                 Version("theirs", branches: ["content/hero-copy"]));
 
-            var model = PageHistoryModel.From(history, MyBranch);
+            var model = PageHistory.From(history, MyBranch);
 
             Assert.Equal(1, model.OtherDraftCount);
             Assert.True(model.Versions.Single(version => version.Sha == "import").Bulk);
@@ -80,7 +79,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             var history = new GitPageHistory { Versions = [], Truncated = true, EndCursor = "cursor" };
 
-            var model = PageHistoryModel.From(history, MyBranch);
+            var model = PageHistory.From(history, MyBranch);
 
             Assert.True(model.Truncated);
             Assert.Equal("cursor", model.EndCursor);
@@ -102,7 +101,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 Branches = ["content/hero-copy"],
             });
 
-            var version = PageHistoryModel.From(history, MyBranch).Versions.Single();
+            var version = PageHistory.From(history, MyBranch).Versions.Single();
 
             Assert.Equal("70a3c34", version.ShortSha);
             Assert.Equal("Svetlana Tumanova", version.Author.Name);
@@ -114,9 +113,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
         public void Empty_IsAnAnswerRatherThanAFailure()
         {
             // a page the designer is about to create has no versions and no branch of its own yet
-            Assert.Empty(PageHistoryModel.Empty.Versions);
-            Assert.Equal(0, PageHistoryModel.Empty.OtherDraftCount);
-            Assert.False(PageHistoryModel.Empty.Truncated);
+            Assert.Empty(PageHistory.Empty.Versions);
+            Assert.Equal(0, PageHistory.Empty.OtherDraftCount);
+            Assert.False(PageHistory.Empty.Truncated);
         }
 
         [Fact]
