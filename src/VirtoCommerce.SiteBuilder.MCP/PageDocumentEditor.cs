@@ -19,9 +19,20 @@ public interface IPageEditSources
     Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken);
 }
 
+// What a document is: a page, a template of the theme, or the theme's header or footer. A template and a group hold
+// sections as a page does, but no Shared Component (the storefront shows those on pages only), and a group has no
+// settings of its own.
+public enum PageDocumentKind
+{
+    Page,
+    Template,
+    SectionGroup,
+}
+
 // Applies the operations of edit_page_draft to a page document the way the designer's own edits change it (see the
 // designer's useDesigner.ts and schema.ts): new items get new ids, a copy gets new ids for itself and its blocks, a
-// placement of a Shared Component is never hidden or edited in place.
+// placement of a Shared Component is never hidden or edited in place. Templates and the header and footer are edited
+// with the same operations (edit_template, edit_theme_draft).
 public sealed class PageDocumentEditor
 {
     public static readonly JsonSerializerOptions WriteOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -33,10 +44,12 @@ public sealed class PageDocumentEditor
 
     private readonly JsonObject _root;
     private readonly HashSet<string> _ids;
+    private readonly PageDocumentKind _kind;
 
-    private PageDocumentEditor(JsonObject root, SiteBuilderPageDocument content)
+    private PageDocumentEditor(JsonObject root, SiteBuilderPageDocument content, PageDocumentKind kind)
     {
         _root = root;
+        _kind = kind;
         Settings = content.Settings;
         Sections = content.Sections;
         IsLegacyShape = content.IsLegacyShape;
@@ -50,7 +63,9 @@ public sealed class PageDocumentEditor
     public bool IsLegacyShape { get; }
 
     // Null when the content is not a page document. A page without content starts empty, as in the designer.
-    public static PageDocumentEditor Read(string content)
+    public static PageDocumentEditor Read(string content) => Read(content, PageDocumentKind.Page);
+
+    public static PageDocumentEditor Read(string content, PageDocumentKind kind)
     {
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -63,8 +78,23 @@ public sealed class PageDocumentEditor
             return null;
         }
 
-        return new PageDocumentEditor(document.IsLegacyShape ? null : (JsonObject)JsonNode.Parse(content), document);
+        return new PageDocumentEditor(document.IsLegacyShape ? null : (JsonObject)JsonNode.Parse(content), document, kind);
     }
+
+    // What the document is called in a refusal, and where the agent reads its section ids.
+    private string Noun => _kind switch
+    {
+        PageDocumentKind.Template => "template",
+        PageDocumentKind.SectionGroup => GetString(_root?[TypeKey]) ?? "section group",
+        _ => "page",
+    };
+
+    private string ReadHint => _kind switch
+    {
+        PageDocumentKind.Template => "Read the template with search_templates (template_key) for its section ids.",
+        PageDocumentKind.SectionGroup => "Call edit_theme_draft with this part, dryRun and no operations for its section ids.",
+        _ => "Read the page with search_site_pages (page_id) for its section ids.",
+    };
 
     // In the shape it was read in, so a page stored the older way stays readable by what reads it that way.
     public string Write()
@@ -75,7 +105,12 @@ public sealed class PageDocumentEditor
         }
 
         var root = (JsonObject)_root.DeepClone();
-        root["settings"] = Settings.DeepClone();
+        // a header or footer file is { type, name, content }: it gets no settings it did not have
+        if (_kind != PageDocumentKind.SectionGroup || root.ContainsKey("settings"))
+        {
+            root["settings"] = Settings.DeepClone();
+        }
+
         root["content"] = Sections.DeepClone();
         return root.ToJsonString(WriteOptions);
     }
@@ -140,7 +175,12 @@ public sealed class PageDocumentEditor
                 RemoveBlock(operation);
                 break;
             case "set_page_settings":
-                SetValues(Settings, operation.Settings, operation.Language, page: true);
+                if (_kind == PageDocumentKind.SectionGroup)
+                {
+                    throw new EditException($"The {Noun} has no settings of its own; set the settings of one of its sections with set_section_settings.");
+                }
+
+                SetValues(Settings, operation.Settings, operation.Language, page: _kind == PageDocumentKind.Page);
                 break;
             case "copy_sections_from":
                 await CopySectionsAsync(operation, sources, cancellationToken);
@@ -303,6 +343,11 @@ public sealed class PageDocumentEditor
 
     private void EnsureCanHoldPlacements()
     {
+        if (_kind != PageDocumentKind.Page)
+        {
+            throw new EditException($"A {Noun} cannot hold a Shared Component: the storefront shows Shared Components on pages only.");
+        }
+
         if (IsLegacyShape)
         {
             throw new EditException("This page is stored in the older format, which cannot hold a Shared Component.");
@@ -317,11 +362,11 @@ public sealed class PageDocumentEditor
         }
 
         var section = Sections.OfType<JsonObject>().FirstOrDefault(x => GetId(x) == sectionId)
-            ?? throw new EditException($"The page has no section '{sectionId}'. Read the page with search_site_pages (page_id) for its section ids.");
+            ?? throw new EditException($"The {Noun} has no section '{sectionId}'. {ReadHint}");
 
         if (IsInGroup(section))
         {
-            throw new EditException($"Section '{sectionId}' belongs to the theme's header or footer, not to the page.");
+            throw new EditException($"Section '{sectionId}' belongs to the theme's header or footer, not to the {Noun}; edit it with edit_theme_draft.");
         }
 
         return section;

@@ -31,22 +31,23 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
         var user = McpTestUser.Create("designer").WithPermissions(Permissions.Read, Permissions.SharedComponentsRead, AssetRead);
 
         Assert.Equal(
-            ["list_versions", "search_assets", "search_shared_components", "search_site_pages"],
+            ["get_preview", "list_versions", "search_assets", "search_shared_components", "search_site_pages", "search_templates"],
             _context.Harness.GetVisibleToolNames(user));
     }
 
     [Fact]
     public void BuilderRead_ShowsThePageAndHistoryTools_TheOthersNeedTheirOwnPermission()
     {
-        Assert.Equal(["list_versions", "search_site_pages"], _context.Harness.GetVisibleToolNames(Reader()));
+        Assert.Equal(["get_preview", "list_versions", "search_site_pages", "search_templates"], _context.Harness.GetVisibleToolNames(Reader()));
     }
 
     [Fact]
     public void BuilderRead_LimitedToAStore_ShowsTheSameTools()
     {
-        Assert.Equal(["list_versions", "search_site_pages"], _context.Harness.GetVisibleToolNames(StoreAReader()));
+        Assert.Equal(["get_preview", "list_versions", "search_site_pages", "search_templates"], _context.Harness.GetVisibleToolNames(StoreAReader()));
     }
 
+    // builder:update alone edits pages: the template and theme writes need builder:templates or builder:theme besides.
     [Fact]
     public void BuilderReadAndUpdate_ShowTheEditAndBulkTools()
     {
@@ -54,10 +55,24 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
 
         Assert.Equal(
             [
-                "change_page_settings", "discard_draft", "edit_page_draft", "link_page_language", "list_versions", "reset_language_overrides",
-                "search_site_pages", "set_translations", "unlink_page_language", "update_sections_bulk",
+                "change_page_settings", "discard_draft", "edit_page_draft", "get_preview", "link_page_language", "list_versions",
+                "reset_language_overrides", "search_site_pages", "search_templates", "set_translations", "unlink_page_language",
+                "update_sections_bulk",
             ],
             _context.Harness.GetVisibleToolNames(user));
+    }
+
+    [Fact]
+    public void BuilderTemplates_AddsTheTemplateAndRuleEdits_BuilderTheme_TheThemeEdit()
+    {
+        var templates = McpTestUser.Create("templates").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Templates);
+        var theme = McpTestUser.Create("theme").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Theme);
+        var withoutUpdate = McpTestUser.Create("no-update").WithPermissions(Permissions.Read, Permissions.Templates, Permissions.Theme);
+
+        string[] designTools = ["edit_template", "edit_template_rules", "edit_theme_draft", "publish_theme"];
+        Assert.Equal(["edit_template", "edit_template_rules"], _context.Harness.GetVisibleToolNames(templates).Intersect(designTools));
+        Assert.Equal(["edit_theme_draft"], _context.Harness.GetVisibleToolNames(theme).Intersect(designTools));
+        Assert.Empty(_context.Harness.GetVisibleToolNames(withoutUpdate).Intersect(designTools));
     }
 
     [Fact]
@@ -65,7 +80,9 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     {
         var user = McpTestUser.Create("publisher").WithPermissions(Permissions.Read, Permissions.Create, Permissions.Publish);
 
-        Assert.Equal(["create_page", "list_versions", "publish_page", "search_site_pages", "unpublish_page"], _context.Harness.GetVisibleToolNames(user));
+        Assert.Equal(
+            ["create_page", "get_preview", "list_versions", "publish_page", "publish_theme", "search_site_pages", "search_templates", "unpublish_page"],
+            _context.Harness.GetVisibleToolNames(user));
     }
 
     [Fact]

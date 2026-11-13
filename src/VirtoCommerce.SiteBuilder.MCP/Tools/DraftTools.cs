@@ -13,36 +13,49 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // Dropping a draft loses its author's unpublished work, and customers see nothing of it either way: the user confirms
-// it in the chat, and a client that cannot ask does not discard. What is discarded is named by kind, so that other
-// kinds of drafts can be added without changing the arguments of the pages.
+// it in the chat, and a client that cannot ask does not discard. What is discarded is named by kind, each with its own
+// argument: a page by page_id, a file of the theme by theme_file. The question lists the arguments, which name it.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class DraftTools(
     IAuthorizationService authorizationService,
     IGroupedPageService groupedPageService,
-    IGroupedPageOperationService groupedPageOperationService)
+    IGroupedPageOperationService groupedPageOperationService,
+    IDesignerOperationService designerOperationService,
+    IThemeOperationService themeOperationService,
+    ISiteBuilderContentQueryService contentQueryService,
+    IContentPermissionService contentPermissionService)
 {
     public const string PageKind = "page";
+    public const string ThemeFileKind = "theme_file";
 
     [McpServerTool(Name = "discard_draft", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
-    [McpRequiresConfirmation("Discard the unpublished changes of {kind} {page_id}? The draft is deleted and the page goes back to its published version.",
-        Fallback = McpConfirmationFallback.Refuse)]
-    [Description("Discard the draft of a database page: its unpublished changes are deleted and the page is its published " +
-        "version again. A page that was never published has nothing to go back to and is refused. The user confirms the " +
-        "call in the chat; a client that cannot ask refuses it, and the user discards the draft in the designer instead. " +
-        "Returns the changes the discard undoes. Call it with dryRun first to show them.")]
+    [McpRequiresConfirmation(Fallback = McpConfirmationFallback.Refuse)]
+    [Description("Discard the draft of a database page or of a theme file: its unpublished changes are deleted and it is its " +
+        "published version again. Something never published has nothing to go back to and is refused. A theme file is a " +
+        "template, the template rules, the header, the footer, the brand or a palette, named by its path as search_templates " +
+        "and list_versions name it; discarding it needs builder:templates for templates and rules, builder:theme for the others. " +
+        "The user confirms the call in the chat; a client that cannot ask refuses it, and the user discards the draft in the " +
+        "designer instead. Returns the changes the discard undoes. Call it with dryRun first to show them.")]
     public async Task<SiteBuilderChange> DiscardDraft(
         RequestContext<CallToolRequestParams> context,
-        [Description("What to discard the draft of: 'page'.")] string kind,
-        [Description("Id of a Landing Page or of a language version (search_site_pages).")] string page_id,
+        [Description("What to discard the draft of: 'page' or 'theme_file'.")] string kind,
+        [Description("page: id of a Landing Page or of a language version (search_site_pages).")] string page_id = null,
+        [Description("theme_file: the store of the theme.")] string store_id = null,
+        [Description("theme_file: the file with the theme folder, for example 'default/templates/product.bicycles.json' or 'default/config/palette.json'.")] string theme_file = null,
         [Description("true to return what the discard would undo, without discarding.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
+        if (kind == ThemeFileKind)
+        {
+            return await DiscardThemeFileAsync(context, store_id, theme_file, dryRun, cancellationToken);
+        }
+
         if (kind != PageKind)
         {
-            throw new McpException($"kind must be '{PageKind}'.");
+            throw new McpException($"kind must be '{PageKind}' or '{ThemeFileKind}'.");
         }
 
         var group = await groupedPageService.LoadPageAsync(authorizationService, context.User, page_id);
@@ -66,6 +79,75 @@ public class DraftTools(
             x => EnsureDiscarded(x, group),
             dryRun);
 
+        return change;
+    }
+
+    // The draft's changes over the live file, then, without dryRun, the designer's discard, which checks the part's
+    // permission. The designer's discard keeps a draft without a live file silently; here it is refused, as a page's is.
+    private async Task<SiteBuilderChange> DiscardThemeFileAsync(RequestContext<CallToolRequestParams> context, string storeId, string themeFile, bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(storeId) || string.IsNullOrWhiteSpace(themeFile))
+        {
+            throw new McpException("Pass store_id and theme_file, the file with the theme folder such as 'default/config/palette.json'.");
+        }
+
+        await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+
+        var path = themeFile.Trim().TrimStart('/');
+        var pathInTheme = ThemeFileEdits.GetPathInTheme(path);
+        var permission = contentPermissionService.GetThemeFileEditPermission(path);
+        var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = storeId }, context.User, cancellationToken);
+        SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{storeId}'", $"Your builder:read permission does not cover store '{storeId}'.");
+
+        if (!status.Value.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new McpException($"'{path}' has no unpublished changes, so there is nothing to discard. The files with drafts: " +
+                $"{(status.Value.Drafts.Count == 0 ? "none" : string.Join(", ", status.Value.Drafts))}.");
+        }
+
+        if (status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new McpException($"'{path}' was never published, so its draft is all there is and is not discarded. Change it with the design tools instead.");
+        }
+
+        var draft = await ThemeFiles.ReadAsync(designerOperationService, context.User, storeId, path, cancellationToken);
+        var live = await ThemeFiles.ReadLiveAsync(contentQueryService, context.User, storeId, path, cancellationToken);
+        var change = new SiteBuilderChange
+        {
+            Action = "discard_draft",
+            ObjectType = ChangePreview.ThemeFile,
+            ObjectId = path,
+            ObjectName = path,
+            DryRun = true,
+        };
+
+        var changes = ThemeFileEdits.Compare(path, draft.Content, live);
+        foreach (var item in changes)
+        {
+            change.AddChange(item.Field, item.From, item.To);
+        }
+
+        if (changes.Count == 0)
+        {
+            change.AddChange("draft", "saved draft", "published version");
+        }
+
+        if (dryRun)
+        {
+            return change;
+        }
+
+        var result = await designerOperationService.DiscardAsync(new DesignerDiscardOperationRequest
+        {
+            StoreId = storeId,
+            Changes = new DesignerDiscardRequest { ThemeFiles = [path] },
+            SaveId = Guid.NewGuid().ToString("N"),
+        }, context.User, cancellationToken);
+        SiteBuilderChanges.EnsureSucceeded(result, $"'{path}'",
+            $"You may not discard '{path}': it needs builder:update and {permission}, and builder:read in store '{storeId}'.");
+
+        change.DryRun = false;
         return change;
     }
 

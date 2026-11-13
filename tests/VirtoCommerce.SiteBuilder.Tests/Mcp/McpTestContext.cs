@@ -18,6 +18,7 @@ using Newtonsoft.Json;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.Platform.Core;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.JsonConverters;
 using VirtoCommerce.Platform.Core.Security;
@@ -53,6 +54,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     private string _boundStoreId;
     private McpToolHarness _harness;
     private (DesignerContentService Designer, ThemeDraftService Themes) _designer;
+    private ThemeStorageFactory _themeStorage;
 
     // The claim types the platform reads the user id from, as its startup sets them: a bulk tool stores the id for its job.
     static McpTestContext()
@@ -83,6 +85,16 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Fakes.FakeGroupedPageService PageStore { get; private set; }
 
     public RecordingContentHistory SavedVersions { get; } = new();
+
+    // The theme files of every store, as "themes/{storeId}/{theme}/{path}", drafts with "-draft".
+    public FakeBlobStorage Blobs { get; } = new();
+
+    public FakeStoreService Stores { get; } = new(
+        new Store { Id = StoreA, DefaultLanguage = "en-US", Languages = ["en-US"], DynamicProperties = [] },
+        new Store { Id = StoreB, DefaultLanguage = "en-US", Languages = ["en-US"], DynamicProperties = [] },
+        new Store { Id = StoreC, DefaultLanguage = "en-US", Languages = ["en-US"], DynamicProperties = [] });
+
+    public Mock<ISiteBuilderPreviewQueryService> Previews { get; } = new();
 
     // The page writes the tools run; without one, the module's operation service over the page store.
     public IGroupedPageOperationService GroupedPageOperations { get; set; }
@@ -237,7 +249,16 @@ internal sealed class McpTestContext : IAsyncDisposable
         var pageSize = new Mock<IMcpPageSizeResolver>();
         pageSize.Setup(x => x.GetPageSizeAsync(It.IsAny<int?>())).ReturnsAsync((int? take) => Math.Clamp(take ?? 20, 1, 50));
 
-        services.AddAuthorizationCore();
+        // The platform's permission policies, which the module's services ask by name: granted globally, or to an administrator.
+        services.AddAuthorizationCore(options =>
+        {
+            foreach (var permission in Permissions.AllPermissions)
+            {
+                options.AddPolicy(permission, policy => policy.RequireAssertion(x =>
+                    x.User.IsInRole(PlatformConstants.Security.SystemRoles.Administrator) ||
+                    x.User.HasClaim(PlatformConstants.Security.Claims.PermissionClaimType, permission)));
+            }
+        });
         services.AddSingleton<Func<UserManager<ApplicationUser>>>(CreateUserManager);
         services.AddSingleton<IAuthorizationHandler>(new SiteBuilderAuthorizationHandler(CreateUserManager, Options.Create(CreateJsonOptions())));
         services.AddSingleton<IContentPermissionService>(provider => new ContentPermissionService(provider.GetRequiredService<IAuthorizationService>()));
@@ -274,7 +295,18 @@ internal sealed class McpTestContext : IAsyncDisposable
             provider.GetRequiredService<IGroupedPageContentService>(),
             SharedComponents.Object,
             SharedComponentContents.Object,
-            new Mock<IThemeStorageFactory>().Object));
+            ThemeStorage));
+
+        // The theme as the designer and the publication keep it, in the blob storage of the test.
+        services
+            .AddSingleton<IThemeStorageFactory>(ThemeStorage)
+            .AddSingleton<ISchemaCatalogService>(new SchemaCatalogService(ThemeStorage))
+            .AddSingleton<IThemePaletteService>(new ThemePaletteService())
+            .AddSingleton(Previews.Object)
+            .AddSingleton<IThemeOperationService>(provider => new ThemeOperationService(provider.GetRequiredService<IAuthorizationService>(),
+                RequestValidators.Stores(StoreA, StoreB, StoreC), new NewSiteBuilderStores(), CreateThemePublisher(), SavedVersions))
+            .AddSingleton<ISiteBuilderContentQueryService>(provider => new SiteBuilderContentQueryService(provider.GetRequiredService<IAuthorizationService>(),
+                RequestValidators.Content(StoreA, StoreB, StoreC), Blobs, Blobs, Blobs, ThemeStorage, null, null, null, null));
 
         // The bulk tools and their jobs as SiteBuilderMcpRegistration adds them; the job engine is the test's dispatcher.
         var principals = new Mock<IUserClaimsPrincipalFactory<ApplicationUser>>();
@@ -324,13 +356,73 @@ internal sealed class McpTestContext : IAsyncDisposable
     {
         if (_designer == default)
         {
-            var blobs = new FakeBlobStorage();
-            var themes = new ThemeDraftService(new ThemeStorageFactory(blobs.StoreService, blobs, blobs, blobs), new InProcessDistributedLock(), blobs,
-                NullLogger<ThemeDraftService>.Instance);
-            _designer = (TestServices.Designer(SavedVersions, themeDrafts: themes, pages: PageStore), themes);
+            var themes = new ThemeDraftService(ThemeStorage, Lock, Blobs, NullLogger<ThemeDraftService>.Instance);
+            _designer = (TestServices.Designer(SavedVersions, themeDrafts: themes, pages: PageStore, themePublisher: CreateThemePublisher(),
+                themeSnapshots: new NewSiteBuilderStores(), catalogs: new SchemaCatalogService(ThemeStorage)), themes);
         }
 
         return _designer;
+    }
+
+    private InProcessDistributedLock Lock { get; } = new();
+
+    public ThemeStorageFactory ThemeStorage => _themeStorage ??= new ThemeStorageFactory(Stores, Blobs, Blobs, Blobs);
+
+    private ThemePublisher CreateThemePublisher() =>
+        new(ThemeStorage, new ThemeSnapshotBuilder(), new ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
+            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService());
+
+    // The schema catalog a storefront preview sends: the section types the theme may hold, and its palette tokens.
+    public Task SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null)
+    {
+        var catalog = new Newtonsoft.Json.Linq.JObject
+        {
+            ["hash"] = $"catalog-{storeId}",
+            ["sections"] = new Newtonsoft.Json.Linq.JObject(sections.Select(x => new Newtonsoft.Json.Linq.JProperty(x, new Newtonsoft.Json.Linq.JObject()))),
+        };
+        if (paletteTokens != null)
+        {
+            catalog["paletteTokens"] = Newtonsoft.Json.Linq.JObject.Parse(paletteTokens);
+        }
+
+        return new SchemaCatalogService(ThemeStorage).SaveAsync(storeId, catalog.ToString(), Xunit.TestContext.Current.CancellationToken);
+    }
+
+    public const string ProductTemplate = """{ "settings": {}, "content": [ { "id": "main", "type": "product-info" }, { "id": "reviews", "type": "product-reviews" } ] }""";
+
+    public static readonly string[] ThemeSections =
+        ["product-info", "product-reviews", "category-listing", "page-content", "site-header", "site-footer", "announcement-bar", "text"];
+
+    // A store's theme as a storefront preview leaves it: the catalog with the storefront's palette tokens, and a live
+    // product template.
+    public async Task SeedThemeAsync(string storeId)
+    {
+        var tokens = new Newtonsoft.Json.Linq.JObject
+        {
+            ["light"] = new Newtonsoft.Json.Linq.JArray(StorefrontPaletteTokens.Light),
+            ["dark"] = new Newtonsoft.Json.Linq.JArray(StorefrontPaletteTokens.Dark),
+        };
+        await SeedCatalogAsync(storeId, ThemeSections, tokens.ToString());
+        SeedThemeFile(storeId, "templates/product.json", ProductTemplate);
+    }
+
+    // A theme file of the store's default theme: its live copy, or its draft.
+    public void SeedThemeFile(string storeId, string pathInTheme, string content, bool draft = false) =>
+        Blobs.Files[ThemeFileKey(storeId, pathInTheme, draft)] = content;
+
+    public string ReadThemeFile(string storeId, string pathInTheme, bool draft = false) =>
+        Blobs.Files.GetValueOrDefault(ThemeFileKey(storeId, pathInTheme, draft));
+
+    public static string ThemeFileKey(string storeId, string pathInTheme, bool draft = false) =>
+        $"themes/{storeId}/default/{pathInTheme}{(draft ? "-draft" : string.Empty)}";
+
+    // Every store of the test uses the new Site Builder, which publishes its theme from drafts.
+    private sealed class NewSiteBuilderStores : IThemeSnapshotService
+    {
+        public Task<ThemeSnapshot> GetPublishedAsync(string storeId, string cultureName, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<bool> IsNewSiteBuilderEnabledAsync(string storeId, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 
     private UserManager<ApplicationUser> CreateUserManager()
