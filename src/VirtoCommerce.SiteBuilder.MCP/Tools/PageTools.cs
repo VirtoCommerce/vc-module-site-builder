@@ -44,7 +44,7 @@ public class PageTools(
         "page of compact rows: a Landing Page is a row with its language; a Multilanguage Page is one row with every " +
         "language version (page id, status, unpublished changes, outdated translation). Most recently changed first. " +
         "Pass page_id to read one page instead: its settings (name, address, language, audience, dates), its content " +
-        "(page settings and sections) and the version token of that content.")]
+        "(page settings and sections, each with its id) and the version token of that content, which edit_page_draft takes.")]
     public async Task<object> SearchSitePages(
         RequestContext<CallToolRequestParams> context,
         IMcpPageSizeResolver pageSizeResolver,

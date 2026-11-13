@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Newtonsoft.Json;
@@ -20,10 +21,13 @@ using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
+using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.StoreModule.Core.Model;
 using VirtoCommerce.StoreModule.Core.Security;
+using Fakes = VirtoCommerce.SiteBuilder.Tests.PublishedRenameContentPreservationTests;
 using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
@@ -55,6 +59,11 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Mock<ISiteBuilderSharedComponentUsageService> SharedComponentUsages { get; } = new();
     public Mock<IContentHistory> History { get; } = new();
 
+    // Pages with their content, saved through the designer's own save; null unless a test calls UsePageStore.
+    public Fakes.FakeGroupedPageService PageStore { get; private set; }
+
+    public RecordingContentHistory SavedVersions { get; } = new();
+
     public McpToolHarness Harness => _harness ??= McpToolHarness.Create<McpAssemblyMarker>(Register);
 
     public static McpTestUser Reader(string name = "reader") =>
@@ -72,6 +81,13 @@ internal sealed class McpTestContext : IAsyncDisposable
     }
 
     public void BindAccountsTo(string storeId) => _boundStoreId = storeId;
+
+    // The pages the read and edit tools load and the designer's save writes, instead of the mocked page services.
+    public Fakes.FakeGroupedPageService UsePageStore()
+    {
+        PageStore = new Fakes.FakeGroupedPageService();
+        return PageStore;
+    }
 
     public ValueTask DisposeAsync() => _harness?.DisposeAsync() ?? ValueTask.CompletedTask;
 
@@ -124,6 +140,32 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton(SharedComponentContents.Object)
             .AddSingleton(SharedComponentUsages.Object)
             .AddSingleton(History.Object);
+
+        if (PageStore != null)
+        {
+            services
+                .AddSingleton<IGroupedPageService>(PageStore)
+                .AddSingleton<IGroupedPageContentService>(PageStore);
+        }
+
+        services.AddSingleton<IDesignerOperationService>(provider => CreateDesignerOperations(provider.GetRequiredService<IAuthorizationService>()));
+    }
+
+    // The designer's save as the module wires it, over the page store; theme files live in a blob storage of the test.
+    private DesignerOperationService CreateDesignerOperations(IAuthorizationService authorizationService)
+    {
+        var blobs = new FakeBlobStorage();
+        var themes = new ThemeDraftService(new ThemeStorageFactory(blobs.StoreService, blobs, blobs, blobs), new InProcessDistributedLock(), blobs,
+            NullLogger<ThemeDraftService>.Instance);
+
+        return TestServices.DesignerOperations(
+            authorizationService: authorizationService,
+            contentPermissionService: TestServices.Permissions(authorizationService),
+            requestValidator: RequestValidators.Content(StoreA, StoreB, StoreC),
+            designerContentService: TestServices.Designer(SavedVersions, themeDrafts: themes, pages: PageStore),
+            themeDraftService: themes,
+            groupedPageService: PageStore,
+            sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService));
     }
 
     private UserManager<ApplicationUser> CreateUserManager()
