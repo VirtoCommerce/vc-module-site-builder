@@ -33,6 +33,10 @@ using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Jobs;
+using VirtoCommerce.SiteBuilder.MCP.Tools;
+using VirtoCommerce.CustomerModule.Core.Services;
+using VirtoCommerce.Platform.Core.Settings;
+using VirtoCommerce.StoreModule.Core.Services;
 using VirtoCommerce.StoreModule.Core.Model;
 using VirtoCommerce.StoreModule.Core.Security;
 using Fakes = VirtoCommerce.SiteBuilder.Tests.PublishedRenameContentPreservationTests;
@@ -101,6 +105,13 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Mock<IFilePageOperationService> FilePageOperations { get; } = new();
 
     public Mock<ISiteBuilderPublishStatusQueryService> PublishStatuses { get; } = new();
+
+    // Every store, for a user who reads all of them: the overview pages through the stores the store search finds.
+    public Mock<IStoreSearchService> StoreSearch { get; } = new();
+
+    public Mock<ISettingsManager> Settings { get; } = new();
+
+    public Mock<IMemberSearchService> Members { get; } = new();
 
     // The page writes the tools run; without one, the module's operation service over the page store.
     public IGroupedPageOperationService GroupedPageOperations { get; set; }
@@ -336,7 +347,16 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddTransient<TranslationSources>()
             .AddTransient<SiteBuilderJobUsers>()
             .AddTransient<UpdateSectionsBulkJob>()
-            .AddTransient<SetTranslationsJob>();
+            .AddTransient<SetTranslationsJob>()
+            .AddTransient<SiteThemeStates>()
+            .AddTransient<PublicationDryRuns>();
+
+        // The stores, settings and members the overview and the resources read.
+        services
+            .AddSingleton<IStoreService>(Stores)
+            .AddSingleton(StoreSearch.Object)
+            .AddSingleton(Settings.Object)
+            .AddSingleton(Members.Object);
     }
 
     // The designer's save as the module wires it, over the page store; theme files live in a blob storage of the test.

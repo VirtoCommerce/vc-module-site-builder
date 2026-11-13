@@ -31,6 +31,10 @@ public static class TemplateRuleConditions
 
     public static bool IsBuiltIn(string name) => name != null && BuiltIn.ContainsKey(name);
 
+    // Every built-in condition with the page types it applies to and the shape of its value, as the rules panel offers them.
+    public static IEnumerable<(string Name, IReadOnlyList<string> PageTypes, string Shape)> All =>
+        BuiltIn.Select(x => (x.Key, (IReadOnlyList<string>)x.Value.PageTypes, x.Value.Shape));
+
     public static bool IsPluginCondition(string name) => name?.Contains('.') == true;
 
     public static string Vocabulary(string pageType) =>

@@ -124,14 +124,7 @@ public sealed class ContentVersionsAnswer
 
     public static ContentVersionsAnswer From(string storeId, ContentVersionPage page)
     {
-        var (history, note) = page.Status switch
-        {
-            ContentHistoryStatus.Enabled => ("enabled", null),
-            ContentHistoryStatus.SetupRequired => ("setup_required",
-                $"Store '{storeId}' keeps no history yet: Site Builder's GitHub connection or the store's repository is not set up."),
-            _ => ("unavailable",
-                $"Store '{storeId}' keeps no history: its repository was assigned by hand, so database pages and theme files are not versioned."),
-        };
+        var (history, note) = Describe(storeId, page.Status);
 
         return new ContentVersionsAnswer
         {
@@ -143,6 +136,16 @@ public sealed class ContentVersionsAnswer
             NextCursor = page.Cursor,
         };
     }
+
+    // The state of a store's history as the tools name it, with why there is none.
+    public static (string History, string Note) Describe(string storeId, ContentHistoryStatus status) => status switch
+    {
+        ContentHistoryStatus.Enabled => ("enabled", null),
+        ContentHistoryStatus.SetupRequired => ("setup_required",
+            $"Store '{storeId}' keeps no history yet: Site Builder's GitHub connection or the store's repository is not set up."),
+        _ => ("unavailable",
+            $"Store '{storeId}' keeps no history: its repository was assigned by hand, so database pages and theme files are not versioned."),
+    };
 }
 
 public sealed class ContentVersionRow
