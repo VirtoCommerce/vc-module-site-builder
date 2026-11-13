@@ -52,6 +52,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     // the platform sets at startup, so here every lookup answers the same account.
     private string _boundStoreId;
     private McpToolHarness _harness;
+    private (DesignerContentService Designer, ThemeDraftService Themes) _designer;
 
     // The claim types the platform reads the user id from, as its startup sets them: a bulk tool stores the id for its job.
     static McpTestContext()
@@ -71,6 +72,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Mock<ISiteBuilderSharedComponentUsageService> SharedComponentUsages { get; } = new();
     public Mock<IContentHistory> History { get; } = new();
     public Mock<IMultilanguagePageService> MultilanguagePages { get; } = new();
+    public Mock<IMultilanguagePageOperationService> MultilanguagePageOperations { get; } = new();
     public Mock<IUserNameResolver> UserNames { get; } = new();
     public RecordingJobDispatcher Jobs { get; } = new();
 
@@ -81,6 +83,9 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Fakes.FakeGroupedPageService PageStore { get; private set; }
 
     public RecordingContentHistory SavedVersions { get; } = new();
+
+    // The page writes the tools run; without one, the module's operation service over the page store.
+    public IGroupedPageOperationService GroupedPageOperations { get; set; }
 
     public McpToolHarness Harness => _harness ??= McpToolHarness.Create<McpAssemblyMarker>(Register);
 
@@ -108,6 +113,40 @@ internal sealed class McpTestContext : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => _harness?.DisposeAsync() ?? ValueTask.CompletedTask;
+
+    // A page of the page store with a published version, a draft, or both, each holding the content.
+    public GroupedSiteBuilderPage SeedPage(string id, string storeId, bool published, bool draft, string content = SampleContent)
+    {
+        var group = new GroupedSiteBuilderPage
+        {
+            Id = id,
+            StoreId = storeId,
+            Name = $"Page {id}",
+            Permalink = $"/{id}",
+            CultureName = "en-US",
+            Visibility = true,
+        };
+
+        if (published)
+        {
+            group.Pages.Add(new SiteBuilderPage { Id = $"{id}-published", GroupId = id, StoreId = storeId, Status = "Published", ModifiedDate = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc) });
+        }
+
+        if (draft)
+        {
+            group.Pages.Add(new SiteBuilderPage { Id = $"{id}-draft", GroupId = id, StoreId = storeId, Status = "Draft", ModifiedDate = new DateTime(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc) });
+        }
+
+        PageStore.SeedGroup(group);
+        foreach (var page in group.Pages)
+        {
+            PageStore.SeedContent(page.Id, page.Status == "Draft" ? content.Replace("Spring", "Summer", StringComparison.Ordinal) : content);
+        }
+
+        return group;
+    }
+
+    public const string SampleContent = """{ "settings": { "name": "Home" }, "content": [ { "id": "hero", "type": "hero-banner", "title": "Spring" } ] }""";
 
     // The rows the pages list answers, filtered by store and paged, as the list service does.
     public void ListPages(Func<IEnumerable<SiteBuilderPageListItem>> rows)
@@ -151,8 +190,26 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     private static string StoreOf(SiteBuilderPageListItem row) => row.Page?.StoreId ?? row.MultilanguagePage?.StoreId;
 
-    public Task<McpToolCallResult> CallAsync(McpTestUser user, string tool, object arguments) =>
-        Harness.CallAsync(user, tool, arguments, cancellationToken: Xunit.TestContext.Current.CancellationToken);
+    public Task<McpToolCallResult> CallAsync(McpTestUser user, string tool, object arguments, McpToolCallOptions options = null) =>
+        Harness.CallAsync(user, tool, arguments, options, Xunit.TestContext.Current.CancellationToken);
+
+    // The groups and the language versions the multilanguage page service finds.
+    public void AddMultilanguagePages(params MultilanguagePage[] roots)
+    {
+        MultilanguagePages
+            .Setup(x => x.GetAsync(It.IsAny<IList<string>>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .ReturnsAsync((IList<string> ids, string _, bool _) => roots.Where(x => ids.Contains(x.Id)).ToList());
+    }
+
+    public static MultilanguagePage Root(string id, string storeId) => new()
+    {
+        Id = id,
+        StoreId = storeId,
+        Name = $"Root {id}",
+        Permalink = $"/{id}",
+        DefaultCultureName = "en-US",
+        Visibility = true,
+    };
 
     // The groups GetByIdAsync finds.
     public void AddGroups(params GroupedSiteBuilderPage[] groups)
@@ -209,6 +266,8 @@ internal sealed class McpTestContext : IAsyncDisposable
         }
 
         services.AddSingleton<IDesignerOperationService>(provider => CreateDesignerOperations(provider.GetRequiredService<IAuthorizationService>()));
+        services.AddSingleton(provider => GroupedPageOperations ?? CreateGroupedPageOperations(provider.GetRequiredService<IAuthorizationService>()));
+        services.AddSingleton(MultilanguagePageOperations.Object);
 
         services.AddSingleton<ISiteBuilderSectionScanner>(provider => new SiteBuilderSectionScanner(
             provider.GetRequiredService<ISiteBuilderPageListService>(),
@@ -238,18 +297,40 @@ internal sealed class McpTestContext : IAsyncDisposable
     // The designer's save as the module wires it, over the page store; theme files live in a blob storage of the test.
     private DesignerOperationService CreateDesignerOperations(IAuthorizationService authorizationService)
     {
-        var blobs = new FakeBlobStorage();
-        var themes = new ThemeDraftService(new ThemeStorageFactory(blobs.StoreService, blobs, blobs, blobs), new InProcessDistributedLock(), blobs,
-            NullLogger<ThemeDraftService>.Instance);
+        var (designer, themes) = GetDesigner();
 
         return TestServices.DesignerOperations(
             authorizationService: authorizationService,
             contentPermissionService: TestServices.Permissions(authorizationService),
             requestValidator: RequestValidators.Content(StoreA, StoreB, StoreC),
-            designerContentService: TestServices.Designer(SavedVersions, themeDrafts: themes, pages: PageStore),
+            designerContentService: designer,
             themeDraftService: themes,
             groupedPageService: PageStore,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService));
+    }
+
+    // The page group writes as the module wires them, over the page store.
+    private GroupedPageOperationService CreateGroupedPageOperations(IAuthorizationService authorizationService)
+    {
+        var pageService = new Fakes.FakeSiteBuilderPageService(PageStore);
+        var contentService = new SiteBuilderPageContentService(pageService, PageStore, new Fakes.NoopEventPublisher(),
+            NullLogger<SiteBuilderPageContentService>.Instance);
+
+        return TestServices.GroupedPageOperations(authorizationService, PageStore, contentService, pageService,
+            designerContentService: GetDesigner().Designer, contentHistory: SavedVersions);
+    }
+
+    private (DesignerContentService Designer, ThemeDraftService Themes) GetDesigner()
+    {
+        if (_designer == default)
+        {
+            var blobs = new FakeBlobStorage();
+            var themes = new ThemeDraftService(new ThemeStorageFactory(blobs.StoreService, blobs, blobs, blobs), new InProcessDistributedLock(), blobs,
+                NullLogger<ThemeDraftService>.Instance);
+            _designer = (TestServices.Designer(SavedVersions, themeDrafts: themes, pages: PageStore), themes);
+        }
+
+        return _designer;
     }
 
     private UserManager<ApplicationUser> CreateUserManager()

@@ -53,8 +53,19 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
         var user = McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
 
         Assert.Equal(
-            ["edit_page_draft", "list_versions", "search_site_pages", "set_translations", "update_sections_bulk"],
+            [
+                "change_page_settings", "discard_draft", "edit_page_draft", "link_page_language", "list_versions", "reset_language_overrides",
+                "search_site_pages", "set_translations", "unlink_page_language", "update_sections_bulk",
+            ],
             _context.Harness.GetVisibleToolNames(user));
+    }
+
+    [Fact]
+    public void BuilderCreateAndPublish_ShowTheCreateAndPublishingTools()
+    {
+        var user = McpTestUser.Create("publisher").WithPermissions(Permissions.Read, Permissions.Create, Permissions.Publish);
+
+        Assert.Equal(["create_page", "list_versions", "publish_page", "search_site_pages", "unpublish_page"], _context.Harness.GetVisibleToolNames(user));
     }
 
     [Fact]

@@ -71,7 +71,7 @@ public class PageDraftTools(
             throw new McpException($"Pass at most {MaxOperations} operations in one call.");
         }
 
-        var current = await LoadDraftAsync(group, cancellationToken);
+        var current = await PageEditSources.LoadDraftAsync(pageContentService, group, cancellationToken);
         if (string.IsNullOrWhiteSpace(version_token) || version_token.Trim() != current.ETag)
         {
             throw StaleVersion(page_id);
@@ -81,7 +81,9 @@ public class PageDraftTools(
             ?? throw new McpException($"The content of page '{page_id}' is not a page document, so it cannot be edited here. Open it in the designer.");
         var before = PageDocumentEditor.Read(current.Content);
 
-        await editor.ApplyAsync(operations, new Sources(this, context.User, group.StoreId), cancellationToken);
+        var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
+            sharedComponentContentService, context.User, group.StoreId);
+        await editor.ApplyAsync(operations, sources, cancellationToken);
         var content = editor.Write();
 
         var preview = new PageDraftEdit
@@ -131,18 +133,6 @@ public class PageDraftTools(
         return preview;
     }
 
-    private async Task<SiteBuilderContentSnapshot> LoadDraftAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await pageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken);
-        }
-        catch (KeyNotFoundException)
-        {
-            throw new McpException($"Page '{group.Id}' was deleted while it was read.");
-        }
-    }
-
     // A dry run does not refuse a stale version (the save checks it under its lock); it answers the current one instead.
     private static PageDocumentEditor ReadPreviewContent(SiteBuilderChangePreview preview, string pageId, string versionToken)
     {
@@ -180,50 +170,6 @@ public class PageDraftTools(
     private static McpException StaleVersion(string pageId) =>
         new($"Page '{pageId}' changed since you read it, or version_token is not its version. Read it again with " +
             "search_site_pages (page_id) and make the edit on that content with its version_token.");
-
-    private async Task<JsonArray> GetPageSectionsAsync(ClaimsPrincipal user, string pageId, CancellationToken cancellationToken)
-    {
-        var group = await groupedPageService.GetByIdAsync(pageId)
-            ?? throw new McpException($"Page '{pageId}' to copy from was not found. Call search_site_pages to find its id.");
-
-        await authorizationService.EnsureAllowedAsync(user, group, group.StoreId);
-
-        var snapshot = await LoadDraftAsync(group, cancellationToken);
-        return SiteBuilderPageDocument.Read(snapshot.Content)?.Sections ?? [];
-    }
-
-    private async Task<SiteBuilderSharedComponent> GetSharedComponentAsync(ClaimsPrincipal user, string storeId, string sharedComponentId)
-    {
-        var component = await sharedComponentService.GetByIdAsync(sharedComponentId);
-        if (component == null || !storeId.EqualsIgnoreCase(component.StoreId))
-        {
-            throw new McpException($"Shared Component '{sharedComponentId}' was not found in store '{storeId}'. Call search_shared_components to find its id.");
-        }
-
-        await authorizationService.EnsureAllowedAsync(user, component, component.StoreId, SharedComponentsRead);
-        return component;
-    }
-
-    private async Task<JsonArray> GetSharedComponentSectionsAsync(ClaimsPrincipal user, string storeId, string sharedComponentId,
-        CancellationToken cancellationToken)
-    {
-        var component = await GetSharedComponentAsync(user, storeId, sharedComponentId);
-        var content = SiteBuilderPageDocument.Read(await sharedComponentContentService.TryLoadContentAsync(component, cancellationToken));
-
-        return content?.Sections ?? throw new McpException($"Shared Component '{sharedComponentId}' has no content to detach.");
-    }
-
-    private sealed class Sources(PageDraftTools tools, ClaimsPrincipal user, string storeId) : IPageEditSources
-    {
-        public Task<JsonArray> GetPageSectionsAsync(string pageId, CancellationToken cancellationToken) =>
-            tools.GetPageSectionsAsync(user, pageId, cancellationToken);
-
-        public Task EnsureSharedComponentAsync(string sharedComponentId, CancellationToken cancellationToken) =>
-            tools.GetSharedComponentAsync(user, storeId, sharedComponentId);
-
-        public Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken) =>
-            tools.GetSharedComponentSectionsAsync(user, storeId, sharedComponentId, cancellationToken);
-    }
 }
 
 public sealed class PageDraftEdit : McpChangePreview
