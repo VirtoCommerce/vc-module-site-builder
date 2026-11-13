@@ -401,9 +401,13 @@ public class FilePageOperationService(
 
         var location = GetLocation(repository, type, path, user);
 
-        // a promotion decides on the branches as they are now, so an edit made on GitHub a moment ago counts
-        gitContentRepository.InvalidateRead(location.Repository, location.RepoPath, baseBranch);
-        gitContentRepository.InvalidateRead(location.Repository, location.RepoPath, options.ReleaseBranch);
+        // A promotion decides on the branches as they are now, so an edit made on GitHub a moment ago counts.
+        // A dry run changes nothing, the read cache included: it reads the branches as they are cached.
+        if (!request.DryRun)
+        {
+            gitContentRepository.InvalidateRead(location.Repository, location.RepoPath, baseBranch);
+            gitContentRepository.InvalidateRead(location.Repository, location.RepoPath, options.ReleaseBranch);
+        }
 
         var onBase = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, cancellationToken);
         if (onBase == null)

@@ -231,6 +231,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Empty(repository.CreatedBranches);
             Assert.Empty(repository.DeletedBranches);
             Assert.Empty(publisher.Merges);
+            Assert.DoesNotContain(repository.Calls, x => x.StartsWith("invalidate ", StringComparison.Ordinal));
         }
 
         private static RecordingRepository Repository(string onDev = OnDev)
