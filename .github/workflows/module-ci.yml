@@ -393,7 +393,7 @@ jobs:
         ((github.ref == 'refs/heads/dev') && (github.event_name == 'push')) ||
         (github.event_name == 'workflow_dispatch') || ((github.base_ref == 'dev') && (github.event_name == 'pull_request'))) }}
     needs: ci
-    uses: VirtoCommerce/.github/.github/workflows/playwright-tests.yml@v3.1000.9
+    uses: ivan-kalachikov/.github/.github/workflows/playwright-tests.yml@feat/VCST-6571-skip-incompatible-modules
     with:
       installModules: 'false'
       installCustomModule: 'true'
@@ -425,7 +425,7 @@ jobs:
         uses: VirtoCommerce/.github/actions/setup-vcbuild@v3.1000.9
 
       - name: Swagger validation
-        uses: VirtoCommerce/.github/actions/docker-env@v3.1000.9
+        uses: ivan-kalachikov/.github/actions/docker-env@feat/VCST-6571-skip-incompatible-modules
         with:
           appInsightsInstrumentationKey: ${{ secrets.E2E_APPINSIGHTSINSTRUMENTATIONKEY }}
           githubUser: ${{ github.actor }}
