@@ -81,7 +81,7 @@ public class FilePageOperationService(
 
             // the switch is off for this store: publish means what it always meant
             await publishingService.PublishingAsync(type ?? PagesContentType, storeId, path, publish: true);
-            return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false));
+            return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false), request);
         }
 
         var location = GetLocation(storeRepository.Name, type, path, user);
@@ -118,7 +118,7 @@ public class FilePageOperationService(
             await SyncPublishedLivePageAsync(storeId, type, path, location, cancellationToken);
         }
 
-        return Shipped(shipment);
+        return Shipped(shipment, request);
     }
 
     protected virtual async Task<SiteBuilderOperationResult<FilePageShipment>> RespondToNothingToPublishAsync(StoreRepository storeRepository,
@@ -144,7 +144,7 @@ public class FilePageOperationService(
             await SyncPublishedLivePageAsync(request.StoreId, request.ContentType, request.Path, location, cancellationToken);
         }
 
-        return Shipped(CreateShipment(GitPublishState.AlreadyPublished, gitFlow: true));
+        return Shipped(CreateShipment(GitPublishState.AlreadyPublished, gitFlow: true), request);
     }
 
     protected virtual async Task<SiteBuilderChangePreview> CreatePublishPreviewAsync(GitPageFileLocation location, string draft,
@@ -272,7 +272,7 @@ public class FilePageOperationService(
             }
 
             await publishingService.PublishingAsync(type ?? PagesContentType, storeId, path, publish: false);
-            return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false));
+            return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false), request);
         }
 
         var baseBranch = await GetBaseBranchAsync(cancellationToken);
@@ -303,7 +303,7 @@ public class FilePageOperationService(
             await SyncUnpublishedLivePageAsync(storeId, type, path, location, cancellationToken);
         }
 
-        return Shipped(shipment);
+        return Shipped(shipment, request);
     }
 
     protected virtual async Task<SiteBuilderOperationResult<FilePageShipment>> RespondToNothingToUnpublishAsync(StoreRepository storeRepository,
@@ -322,7 +322,7 @@ public class FilePageOperationService(
             }
 
             await SyncUnpublishedLivePageAsync(request.StoreId, request.ContentType, request.Path, location, cancellationToken);
-            return Shipped(CreateShipment(GitPublishState.AlreadyPublished, gitFlow: true));
+            return Shipped(CreateShipment(GitPublishState.AlreadyPublished, gitFlow: true), request);
         }
 
         return SiteBuilderOperationResult.NotFound(AbstractTypeFactory<FilePageShipment>.TryCreateInstance());
@@ -435,7 +435,7 @@ public class FilePageOperationService(
         {
             // production already holds this exact page; opening a pull request would only produce an
             // empty one, and the editor would be left waiting for a merge that means nothing
-            return Shipped(CreateShipment(GitPublishState.AlreadyPublished, gitFlow: true));
+            return Shipped(CreateShipment(GitPublishState.AlreadyPublished, gitFlow: true), request);
         }
 
         await PreparePromoteBranchAsync(location.Repository, branch, location.RepoPath, options.ReleaseBranch, cancellationToken);
@@ -455,7 +455,7 @@ public class FilePageOperationService(
             location.Repository, branch, $"promote {path} (store: {storeId})", options.ReleaseBranch, cancellationToken);
 
         return Shipped(await RespondToShipAsync(result, location.Repository, location.RepoPath, branch, options.ReleaseBranch, path, canRebase: false,
-            cancellationToken));
+            cancellationToken), request);
     }
 
     /// <summary>
@@ -966,8 +966,8 @@ public class FilePageOperationService(
 
     protected virtual SiteBuilderChangePreview CreatePreview() => AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
 
-    private static SiteBuilderOperationResult<FilePageShipment> Shipped(FilePageShipment shipment) =>
-        SiteBuilderOperationResult.Success(shipment, affectsPublished: true);
+    private static SiteBuilderOperationResult<FilePageShipment> Shipped(FilePageShipment shipment, FilePageOperationRequest request) =>
+        SiteBuilderOperationResult.Success(shipment, affectsPublished: request.ReportImpact);
 
     /// <summary>A publish, an unpublish and a promotion reach what the storefront serves, even when there turns out to be nothing to merge.</summary>
     private static SiteBuilderOperationResult<FilePageShipment> DryRunShipment(SiteBuilderChangePreview preview)

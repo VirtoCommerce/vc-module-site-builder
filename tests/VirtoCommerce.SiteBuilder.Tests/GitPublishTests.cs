@@ -483,6 +483,20 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Empty(live.Files);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task PublishOperation_Merged_AffectsPublishedWhenAskedForTheImpact(bool reportImpact)
+        {
+            var publisher = Publisher(GitPublishState.Merged);
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ReportImpact = reportImpact };
+
+            var result = await Operations(Repository(), publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal((true, reportImpact), (result.Succeeded, result.AffectsPublished));
+            Assert.Single(publisher.Merges);
+        }
+
         [Fact]
         public async Task PublishOperation_StoreTheUserDoesNotWorkIn_IsForbiddenBeforeTheInvalidPath()
         {

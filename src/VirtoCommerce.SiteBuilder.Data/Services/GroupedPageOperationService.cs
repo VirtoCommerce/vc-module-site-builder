@@ -217,7 +217,7 @@ public class GroupedPageOperationService(
             return SiteBuilderOperationResult.Invalid(writeResult.ErrorMessage).As<GroupedSiteBuilderPage>();
         }
 
-        return SiteBuilderOperationResult.Success(groupedPage, preview.AffectsPublished);
+        return SiteBuilderOperationResult.Success(groupedPage, request.ReportImpact && preview.AffectsPublished);
     }
 
     public virtual Task<SiteBuilderOperationResult> PublishAsync(GroupedPagePublishOperationRequest request, ClaimsPrincipal user,
@@ -290,7 +290,7 @@ public class GroupedPageOperationService(
             await RecordHistoryAsync(groupedPage, publishedContent, ModuleConstants.GitHistory.PublishedSummary, request.SaveId, user, cancellationToken);
         }
 
-        return SiteBuilderOperationResult.Success(affectsPublished: true);
+        return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
 
     public virtual Task<SiteBuilderOperationResult> DiscardDraftAsync(GroupedPageDiscardOperationRequest request, ClaimsPrincipal user,

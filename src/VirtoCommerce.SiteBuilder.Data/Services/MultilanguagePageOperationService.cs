@@ -10,8 +10,8 @@ using VirtoCommerce.StoreModule.Core.Services;
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
 /// <summary>
-/// The checks of the request and of the user, around the writes of <see cref="IMultilanguagePageService"/>. Each write runs its preview first:
-/// the preview makes the same checks, and tells whether the write reaches what the storefront serves.
+/// The checks of the request and of the user, around the writes of <see cref="IMultilanguagePageService"/>. A dry run answers the write's preview,
+/// which makes the same checks as the write; a write runs its preview first only for a caller that asks whether it reaches what the storefront serves.
 /// </summary>
 public class MultilanguagePageOperationService(
     IAuthorizationService authorizationService,
@@ -56,7 +56,7 @@ public class MultilanguagePageOperationService(
 
         try
         {
-            return await RunAsync(request.DryRun,
+            return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewCreateAsync(model, cancellationToken),
                 () => multilanguagePageService.CreateAsync(model, cancellationToken));
         }
@@ -99,7 +99,7 @@ public class MultilanguagePageOperationService(
 
         try
         {
-            return await RunAsync(request.DryRun,
+            return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewUpdateAsync(model, cancellationToken),
                 () => multilanguagePageService.UpdateAsync(model, cancellationToken));
         }
@@ -158,7 +158,7 @@ public class MultilanguagePageOperationService(
 
         try
         {
-            return await RunAsync(request.DryRun,
+            return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewConvertAsync(request.GroupId, cancellationToken),
                 () => multilanguagePageService.ConvertAsync(request.GroupId, cancellationToken));
         }
@@ -197,7 +197,7 @@ public class MultilanguagePageOperationService(
 
         try
         {
-            return await RunAsync(request.DryRun,
+            return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewMarkUpToDateAsync(request.GroupId, cancellationToken),
                 () => multilanguagePageService.MarkUpToDateAsync(request.GroupId, cancellationToken));
         }
@@ -223,7 +223,7 @@ public class MultilanguagePageOperationService(
             return refused.As<GroupedSiteBuilderPage>();
         }
 
-        return await RunAsync(request.DryRun,
+        return await RunAsync(request.DryRun, request.ReportImpact,
             () => multilanguagePageService.PreviewUnlinkAsync(request.GroupId, cancellationToken),
             () => multilanguagePageService.UnlinkAsync(request.GroupId, cancellationToken));
     }
@@ -275,7 +275,7 @@ public class MultilanguagePageOperationService(
 
         try
         {
-            return await RunAsync(request.DryRun, preview, write);
+            return await RunAsync(request.DryRun, request.ReportImpact, preview, write);
         }
         catch (KeyNotFoundException)
         {
@@ -292,12 +292,18 @@ public class MultilanguagePageOperationService(
         }
     }
 
-    /// <summary>The preview runs on a write too: it makes the checks of the write, and tells whether the write reaches the storefront.</summary>
-    protected virtual async Task<SiteBuilderOperationResult<T>> RunAsync<T>(bool dryRun, Func<Task<SiteBuilderChangePreview>> preview, Func<Task<T>> write)
+    /// <summary>The write makes its own checks, so it runs its preview only to tell whether it reaches the storefront, when asked to.</summary>
+    protected virtual async Task<SiteBuilderOperationResult<T>> RunAsync<T>(bool dryRun, bool reportImpact, Func<Task<SiteBuilderChangePreview>> preview,
+        Func<Task<T>> write)
     {
-        var change = await preview();
+        if (dryRun)
+        {
+            return SiteBuilderOperationResult.DryRun<T>(await preview());
+        }
 
-        return dryRun ? SiteBuilderOperationResult.DryRun<T>(change) : SiteBuilderOperationResult.Success(await write(), change.AffectsPublished);
+        var affectsPublished = reportImpact && (await preview()).AffectsPublished;
+
+        return SiteBuilderOperationResult.Success(await write(), affectsPublished);
     }
 
     /// <returns>The page, and the refusal when it does not exist or the user may not reach its store.</returns>

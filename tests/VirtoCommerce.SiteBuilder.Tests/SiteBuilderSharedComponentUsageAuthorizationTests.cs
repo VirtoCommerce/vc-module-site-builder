@@ -249,17 +249,35 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
     [Theory]
     [InlineData("Draft", false)]
     [InlineData("Published", true)]
-    public async Task SaveContentOperation_TellsWhetherAPublishedPageShowsTheContent(string pageStatus, bool affectsPublished)
+    public async Task SaveContentOperation_AskedForTheImpact_TellsWhetherAPublishedPageShowsTheContent(string pageStatus, bool affectsPublished)
     {
         var component = CreateAuthorizedComponent();
         var contentService = new StubSharedComponentContentService { ConditionalSaveResult = true };
         var operations = TestServices.SharedComponentOperations(new StubAuthorizationService(canReadPages: true), new StubSharedComponentService(component),
             contentService, new StubUsageService(pageStatus: pageStatus));
+        var request = ContentRequest(component, dryRun: false);
+        request.ReportImpact = true;
 
-        var result = await operations.SaveContentAsync(ContentRequest(component, dryRun: false), User, TestContext.Current.CancellationToken);
+        var result = await operations.SaveContentAsync(request, User, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Equal(affectsPublished, result.AffectsPublished);
+        Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text"}]}""", contentService.SavedContent);
+    }
+
+    [Fact]
+    public async Task SaveContentOperation_NotAskedForTheImpact_SavesWithoutReadingWhereTheComponentIsPlaced()
+    {
+        var component = CreateAuthorizedComponent();
+        var contentService = new StubSharedComponentContentService { ConditionalSaveResult = true };
+        var usageService = new StubUsageService(pageStatus: "Published");
+        var operations = TestServices.SharedComponentOperations(new StubAuthorizationService(canReadPages: true), new StubSharedComponentService(component),
+            contentService, usageService);
+
+        var result = await operations.SaveContentAsync(ContentRequest(component, dryRun: false), User, TestContext.Current.CancellationToken);
+
+        Assert.Equal((true, false), (result.Succeeded, result.AffectsPublished));
+        Assert.Equal(0, usageService.Calls);
         Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text"}]}""", contentService.SavedContent);
     }
 
@@ -435,12 +453,15 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
     {
         public bool LastIncludePages { get; private set; }
 
+        public int Calls { get; private set; }
+
         public Task<IList<SiteBuilderSharedComponentUsage>> GetUsageAsync(
             IEnumerable<string> sharedComponentIds,
             string storeId,
             bool includePages = true,
             CancellationToken cancellationToken = default)
         {
+            Calls++;
             LastIncludePages = includePages;
             IList<SiteBuilderSharedComponentUsage> result =
             [

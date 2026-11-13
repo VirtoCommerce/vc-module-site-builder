@@ -3,8 +3,10 @@ using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Moq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.Platform.Core.Common;
 using Xunit;
@@ -90,6 +92,7 @@ public class MultilanguagePageOperationServiceTests
         var request = new MultilanguagePageLinkOperationRequest { MultilanguagePageId = root.Id, GroupId = landing.Id, DryRun = true };
         var dryRun = await Operations(fixture).LinkAsync(request, _user, Ct);
         request.DryRun = false;
+        request.ReportImpact = true;
         var linked = await Operations(fixture).LinkAsync(request, _user, Ct);
 
         Assert.True(dryRun.AffectsPublished);
@@ -217,6 +220,29 @@ public class MultilanguagePageOperationServiceTests
 
         Assert.True(result.AffectsPublished);
         Assert.Equal(root.Id, (await fixture.LoadGroupAsync(version.Id)).MultilanguagePageId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnlinkAsync_PublishedVersion_RunsThePreviewOnlyWhenAskedForTheImpact(bool reportImpact)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var version = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+        await fixture.PublishNewDraftAsync(version.Id, content: null);
+        var roots = new Mock<IMultilanguagePageService>();
+        roots.Setup(x => x.PreviewUnlinkAsync(version.Id, It.IsAny<CancellationToken>()))
+            .Returns((string groupId, CancellationToken cancellationToken) => fixture.Roots.PreviewUnlinkAsync(groupId, cancellationToken));
+        roots.Setup(x => x.UnlinkAsync(version.Id, It.IsAny<CancellationToken>()))
+            .Returns((string groupId, CancellationToken cancellationToken) => fixture.Roots.UnlinkAsync(groupId, cancellationToken));
+        var operations = new MultilanguagePageOperationService(new FakeAuthorizationService(StoreId), roots.Object, fixture.Groups, fixture.StoreService);
+
+        var result = await operations.UnlinkAsync(new GroupedPageOperationRequest { GroupId = version.Id, ReportImpact = reportImpact }, _user, Ct);
+
+        Assert.Equal((true, reportImpact), (result.Succeeded, result.AffectsPublished));
+        roots.Verify(x => x.PreviewUnlinkAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), reportImpact ? Times.Once() : Times.Never());
+        Assert.Null((await fixture.LoadGroupAsync(version.Id)).MultilanguagePageId);
     }
 
     [Fact]

@@ -18,7 +18,8 @@ public class SiteBuilderOperationResult
 
     /// <summary>
     /// The write reaches what the storefront serves: it publishes or unpublishes a page, or changes the settings, the language
-    /// links or the content of a published one. Told on a dry run too, so that a caller can ask for an approval first.
+    /// links or the content of a published one. Told on a dry run, so that a caller can ask for an approval first, and on a write that ran only
+    /// when its request sets <c>ReportImpact</c>: telling it can take reads the write itself does not need. <c>false</c> when not told.
     /// </summary>
     public bool AffectsPublished { get; init; }
 

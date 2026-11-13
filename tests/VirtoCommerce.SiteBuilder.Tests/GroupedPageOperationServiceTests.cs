@@ -102,22 +102,24 @@ public class GroupedPageOperationServiceTests
         model.Permalink = "/sales";
 
         var dryRun = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, DryRun = true }, _user, Ct);
-        var saved = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model }, _user, Ct);
+        var saved = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, ReportImpact = true }, _user, Ct);
 
         Assert.False(dryRun.AffectsPublished);
         Assert.Equal((true, false), (saved.Succeeded, saved.AffectsPublished));
         Assert.Equal("/sales", (await GetAsync("draft-only")).Permalink);
     }
 
-    [Fact]
-    public async Task UpdateAsync_PublishedPage_SavedAndAffectsPublished()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UpdateAsync_PublishedPage_SavedAndAffectsPublishedWhenAskedForTheImpact(bool reportImpact)
     {
         var model = await GetAsync("live");
         model.Permalink = "/start";
 
-        var result = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model }, _user, Ct);
+        var result = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, ReportImpact = reportImpact }, _user, Ct);
 
-        Assert.Equal((true, true), (result.Succeeded, result.AffectsPublished));
+        Assert.Equal((true, reportImpact), (result.Succeeded, result.AffectsPublished));
         Assert.Equal("/start", (await GetAsync("live")).Permalink);
     }
 
@@ -260,14 +262,16 @@ public class GroupedPageOperationServiceTests
         Assert.Equal(Published, (await GetAsync("live")).Status);
     }
 
-    [Fact]
-    public async Task PublishAsync_Published_RecordsTheHistoryAndAffectsPublished()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PublishAsync_Published_RecordsTheHistoryAndAffectsPublishedWhenAskedForTheImpact(bool reportImpact)
     {
-        var request = new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, SaveId = "save-0001" };
+        var request = new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, SaveId = "save-0001", ReportImpact = reportImpact };
 
         var result = await Operations().PublishAsync(request, _user, Ct);
 
-        Assert.Equal((true, true), (result.Succeeded, result.AffectsPublished));
+        Assert.Equal((true, reportImpact), (result.Succeeded, result.AffectsPublished));
         Assert.Equal(Published, (await GetAsync("edited")).Pages.Single().Status);
         Assert.Equal(("save-0001", ModuleConstants.GitHistory.PublishedSummary), (_history.Records.Single().Record.SaveId, _history.Records.Single().Record.Description));
     }

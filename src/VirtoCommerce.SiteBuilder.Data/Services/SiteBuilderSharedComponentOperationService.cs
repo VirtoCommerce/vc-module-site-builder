@@ -218,12 +218,15 @@ public class SiteBuilderSharedComponentOperationService(
         try
         {
             var content = GuardContent(request.Content);
-            var usage = await GetUsageAsync(component, cancellationToken);
-            var affectsPublished = usage.Pages.Any(IsPublished);
             if (request.DryRun)
             {
-                return SiteBuilderOperationResult.DryRun(await CreateContentPreviewAsync(component, content, usage, affectsPublished, user, cancellationToken));
+                var usage = await GetUsageAsync(component, cancellationToken);
+                return SiteBuilderOperationResult.DryRun(await CreateContentPreviewAsync(component, content, usage, usage.Pages.Any(IsPublished), user,
+                    cancellationToken));
             }
+
+            // the save does not need the pages the component is placed on: they are read only for a caller that asks how far it reaches
+            var affectsPublished = request.ReportImpact && (await GetUsageAsync(component, cancellationToken)).Pages.Any(IsPublished);
 
             if (!await sharedComponentContentService.TrySaveContentAsync(component, content, cancellationToken))
             {

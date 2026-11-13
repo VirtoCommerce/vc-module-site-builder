@@ -9,6 +9,12 @@ public class ThemePublishOperationRequest : SiteBuilderOperationRequest
     public bool DryRun { get; set; }
 
     /// <summary>
+    /// A write that runs also tells <see cref="SiteBuilderOperationResult.AffectsPublished"/>, at the cost of the reads that tell it.
+    /// A dry run always tells it; a write without this answers <c>false</c>.
+    /// </summary>
+    public bool ReportImpact { get; set; }
+
+    /// <summary>
     /// The version of every draft the caller reviewed, by its path with the theme folder, as a dry run answers it. The publication is refused
     /// when the drafts are not those any more: one changed, appeared or went. <c>null</c> publishes the drafts whatever they hold.
     /// </summary>

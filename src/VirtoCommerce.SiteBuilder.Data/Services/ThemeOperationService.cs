@@ -55,7 +55,7 @@ public class ThemeOperationService(
             var result = AbstractTypeFactory<ThemePublicationPointer>.TryCreateInstance();
             result.Publication = await themePublisher.PublishAsync(request.StoreId, request.CatalogHash, request.ExpectedVersions, user, cancellationToken);
 
-            return SiteBuilderOperationResult.Success(result, affectsPublished: true);
+            return SiteBuilderOperationResult.Success(result, affectsPublished: request.ReportImpact);
         }
         catch (ThemeValidationException ex)
         {

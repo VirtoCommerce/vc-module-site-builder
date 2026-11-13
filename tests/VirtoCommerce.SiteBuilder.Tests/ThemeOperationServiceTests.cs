@@ -115,16 +115,20 @@ public class ThemeOperationServiceTests
         Assert.Equal(["The store keeps no content history, so who last changed the drafts is not known."], result.Preview.Warnings);
     }
 
-    [Fact]
-    public async Task PublishAsync_DraftsAtTheVersionsReviewed_PublishesThem()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PublishAsync_DraftsAtTheVersionsReviewed_PublishesThem(bool reportImpact)
     {
         await SeedThemeAsync();
         var reviewed = await Service().PublishAsync(DryRun(), User, Ct);
+        var request = Publish(reviewed.Preview.Objects.ToDictionary(x => x.ObjectId, x => x.ETag));
+        request.ReportImpact = reportImpact;
 
-        var result = await Service().PublishAsync(Publish(reviewed.Preview.Objects.ToDictionary(x => x.ObjectId, x => x.ETag)), User, Ct);
+        var result = await Service().PublishAsync(request, User, Ct);
 
         Assert.True(result.Succeeded);
-        Assert.True(result.AffectsPublished);
+        Assert.Equal(reportImpact, result.AffectsPublished);
         Assert.Equal(1, result.Value.Publication);
         Assert.False(_storage.Files.ContainsKey(Theme(Product + "-draft")));
     }
