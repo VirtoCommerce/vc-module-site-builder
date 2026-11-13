@@ -139,7 +139,8 @@ public class PageControllerResponseTests
         Assert.IsType<NoContentResult>(result);
         Assert.Equal("\"v2\"", controller.Response.Headers.ETag.ToString());
         var request = Assert.IsType<GroupedPageContentSaveOperationRequest>(_operations.Request);
-        Assert.Equal(("g1", """{"settings":{},"content":[]}""", "\"v1\"", null), (request.GroupId, request.Content, request.IfMatch, request.ETag));
+        Assert.Equal(("g1", "\"v1\"", null), (request.GroupId, request.IfMatch, request.ETag));
+        Assert.Equal("""{"settings":{},"content":[]}""", await request.ContentReader(Ct));
     }
 
     [Fact]

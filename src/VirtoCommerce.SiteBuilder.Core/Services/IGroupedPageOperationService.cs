@@ -40,7 +40,7 @@ public interface IGroupedPageOperationService
 
     /// <summary>
     /// Saves any well-formed JSON into the draft, with its HTML sanitized: content stored by older designer versions can be an array.
-    /// The content is checked after the access to the page.
+    /// The content is read and checked after the access to the page.
     /// </summary>
     Task<SiteBuilderOperationResult<UpdatePageContentResult>> SaveRawContentAsync(GroupedPageContentSaveOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);

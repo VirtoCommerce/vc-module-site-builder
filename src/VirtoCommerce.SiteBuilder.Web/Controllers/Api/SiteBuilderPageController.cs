@@ -384,7 +384,7 @@ public class SiteBuilderPageController : Controller
         var request = new GroupedPageContentSaveOperationRequest
         {
             GroupId = groupId,
-            Content = await ReadRequestContentAsync(cancellationToken),
+            ContentReader = ReadRequestContentAsync,
             IfMatch = ifMatch,
             SaveId = Request.GetOrCreateSaveId(),
         };

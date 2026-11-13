@@ -379,7 +379,7 @@ public class GroupedPageOperationService(
             return refused.As<UpdatePageContentResult>();
         }
 
-        var content = request.Content;
+        var content = request.ContentReader == null ? request.Content : await request.ContentReader(cancellationToken);
         if (string.IsNullOrWhiteSpace(content) || !IsWellFormedJson(content))
         {
             return SiteBuilderOperationResult.Invalid(MalformedContentError).As<UpdatePageContentResult>();
