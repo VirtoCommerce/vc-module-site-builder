@@ -1,5 +1,5 @@
 using System.Text.Json.Nodes;
-using static VirtoCommerce.SiteBuilder.MCP.PageItems;
+using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
 

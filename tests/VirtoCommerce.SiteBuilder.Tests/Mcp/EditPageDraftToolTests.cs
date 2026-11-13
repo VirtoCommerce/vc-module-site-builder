@@ -7,6 +7,7 @@ using Moq;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
@@ -54,7 +55,7 @@ public sealed class EditPageDraftToolTests : IAsyncDisposable
 
         var draft = await DraftAsync("a1");
         Assert.False(edit.DryRun);
-        Assert.Equal("Summer", PageItems.GetString(JsonNode.Parse(draft.Content)!["content"]![0]!["title"]));
+        Assert.Equal("Summer", SiteBuilderPageItems.GetString(JsonNode.Parse(draft.Content)!["content"]![0]!["title"]));
         Assert.Equal(draft.ETag, edit.VersionToken);
         Assert.Contains(edit.Changes, x => x.Field == "section hero-banner 'hero': title" && x.From?.ToString() == "Spring" && x.To?.ToString() == "Summer");
         Assert.Equal(["hero", "text"], edit.Sections.Select(x => x.Id));

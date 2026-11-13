@@ -17,7 +17,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.ContentModule.Core.Extensions;
 using VirtoCommerce.ContentModule.Core.Search;
-using VirtoCommerce.MCP.Core.Extensions;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Extensions;
@@ -175,6 +174,7 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IContentHistoryOperationService, ContentHistoryOperationService>();
             serviceCollection.AddTransient<ISiteBuilderSharedComponentOperationService, SiteBuilderSharedComponentOperationService>();
             serviceCollection.AddTransient<IContentPermissionService, ContentPermissionService>();
+            serviceCollection.AddTransient<ISiteBuilderSectionScanner, SiteBuilderSectionScanner>();
             serviceCollection.AddTransient<IThemeSnapshotService, ThemeSnapshotService>();
             serviceCollection.AddTransient<IThemePaletteService, ThemePaletteService>();
             serviceCollection.AddTransient<IValidator<SiteBuilderStoreRequest>, SiteBuilderStoreRequestValidator>();
@@ -204,8 +204,8 @@ namespace VirtoCommerce.SiteBuilder.Web
 
             if (ModuleService.IsInstalled(McpModuleId))
             {
-                // The Site Builder toolset, in the MCP module's admin scope.
-                serviceCollection.AddMcpCapabilities<McpAssemblyMarker>();
+                // The Site Builder toolset, in the MCP module's admin scope, and the jobs of its bulk tools.
+                serviceCollection.AddSiteBuilderMcp();
             }
         }
 

@@ -1,13 +1,14 @@
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.Data.Services;
 
 // The sections and blocks of a page document as the designer keeps them: each has an id and a type, a section may
 // hold blocks, a section of the theme's header or footer carries __group, and a Shared Component is placed with
 // { id, type: "componentRef", componentRef } and nothing else.
-public static class PageItems
+public static partial class SiteBuilderPageItems
 {
     public const string IdKey = "id";
     public const string TypeKey = "type";
@@ -123,6 +124,17 @@ public static class PageItems
         }
     }
 
+    public static bool IsLanguageCode(string value) => value != null && LanguagePattern().IsMatch(value);
+
+    // The designer's rule (translatable.ts): an object whose keys are language codes, one with a subtag, and whose
+    // values are texts; a row such as { "sku": "X1" } is not one.
+    public static bool IsTranslations(JsonNode node)
+    {
+        return node is JsonObject value && value.Count > 0
+            && value.Any(x => LanguageWithSubtagPattern().IsMatch(x.Key))
+            && value.All(x => LanguagePattern().IsMatch(x.Key) && x.Value is JsonValue text && text.TryGetValue<string>(out _));
+    }
+
     private static string Slug(string type)
     {
         var slug = new string((type ?? string.Empty).Where(char.IsAsciiLetterOrDigit).ToArray());
@@ -139,4 +151,10 @@ public static class PageItems
 
         return candidate;
     }
+
+    [GeneratedRegex("^[a-z]{2,3}(-[a-z0-9]{2,8})*$", RegexOptions.IgnoreCase)]
+    private static partial Regex LanguagePattern();
+
+    [GeneratedRegex("^[a-z]{2,3}(-[a-z0-9]{2,8})+$", RegexOptions.IgnoreCase)]
+    private static partial Regex LanguageWithSubtagPattern();
 }

@@ -1,12 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.Data.Services;
 
-// The settings and the sections of a stored page or Shared Component document. Pages are stored as
-// { settings, content: [...] }, older ones as [settings, ...sections]; the agent gets both in the first shape, with an
-// id on every section and block (see PageItems.AssignMissingIds), so that edit_page_draft can name them.
-public sealed class PageContent
+// The settings and the sections of a stored page, template or Shared Component document. Pages are stored as
+// { settings, content: [...] }, older ones as [settings, ...sections]; both are read into the first shape, with an id
+// on every section and block (see SiteBuilderPageItems.AssignMissingIds), so that whoever reads a version and whoever
+// edits the same version name its sections alike.
+public sealed class SiteBuilderPageDocument
 {
     public JsonObject Settings { get; init; }
 
@@ -16,7 +17,7 @@ public sealed class PageContent
     public bool IsLegacyShape { get; init; }
 
     // Null when there is no document, or it is not JSON of either shape.
-    public static PageContent Read(string content)
+    public static SiteBuilderPageDocument Read(string content)
     {
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -33,10 +34,10 @@ public sealed class PageContent
             return null;
         }
 
-        PageContent result = null;
+        SiteBuilderPageDocument result = null;
         if (root is JsonObject document && document["content"] is JsonArray sections)
         {
-            result = new PageContent
+            result = new SiteBuilderPageDocument
             {
                 Settings = (document["settings"] as JsonObject)?.DeepClone() as JsonObject ?? [],
                 Sections = (JsonArray)sections.DeepClone(),
@@ -44,7 +45,7 @@ public sealed class PageContent
         }
         else if (root is JsonArray legacy && legacy.Count > 0 && legacy[0] is JsonObject legacySettings)
         {
-            result = new PageContent
+            result = new SiteBuilderPageDocument
             {
                 Settings = (JsonObject)legacySettings.DeepClone(),
                 Sections = [.. legacy.Skip(1).Select(x => x?.DeepClone())],
@@ -54,7 +55,7 @@ public sealed class PageContent
 
         if (result != null)
         {
-            PageItems.AssignMissingIds(result.Sections);
+            SiteBuilderPageItems.AssignMissingIds(result.Sections);
         }
 
         return result;

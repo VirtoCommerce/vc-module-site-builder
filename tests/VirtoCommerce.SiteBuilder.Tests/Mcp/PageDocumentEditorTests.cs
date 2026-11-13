@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ModelContextProtocol;
 using VirtoCommerce.MCP.Core;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.MCP;
 using Xunit;
 
@@ -305,7 +306,7 @@ public sealed class PageDocumentEditorTests
     [Fact]
     public async Task CopySectionsFrom_CopiesThePickedSectionsWithNewIds()
     {
-        _sources.Pages["other"] = PageContent.Read("""
+        _sources.Pages["other"] = SiteBuilderPageDocument.Read("""
             { "settings": {}, "content": [ { "id": "s1", "type": "faq", "blocks": [ { "id": "q1", "type": "question" } ] }, { "id": "s2", "type": "cta" }, { "id": "s3", "type": "text" } ] }
             """)!.Sections;
 
@@ -319,7 +320,7 @@ public sealed class PageDocumentEditorTests
     [Fact]
     public async Task CopySectionsFrom_ASectionThePageLacks_IsRefused()
     {
-        _sources.Pages["other"] = PageContent.Read("""{ "settings": {}, "content": [ { "id": "s1", "type": "faq" } ] }""")!.Sections;
+        _sources.Pages["other"] = SiteBuilderPageDocument.Read("""{ "settings": {}, "content": [ { "id": "s1", "type": "faq" } ] }""")!.Sections;
 
         Assert.Contains("has no section 's9'", await RefusedAsync(new PageEditOperation { Op = "copy_sections_from", SourcePageId = "other", SectionIds = ["s9"] }));
     }
@@ -350,7 +351,7 @@ public sealed class PageDocumentEditorTests
     [Fact]
     public async Task DetachSharedComponent_PutsCopiesOfItsSectionsInItsPlace()
     {
-        _sources.Components["sc1"] = PageContent.Read("""{ "settings": {}, "content": [ { "id": "c1", "type": "banner" }, { "id": "c2", "type": "text" } ] }""")!.Sections;
+        _sources.Components["sc1"] = SiteBuilderPageDocument.Read("""{ "settings": {}, "content": [ { "id": "c1", "type": "banner" }, { "id": "c2", "type": "text" } ] }""")!.Sections;
 
         var editor = await EditAsync(Op("detach_shared_component", sectionId: "promo"));
 
@@ -389,7 +390,7 @@ public sealed class PageDocumentEditorTests
     {
         const string content = """{ "settings": {}, "content": [ { "type": "hero" }, { "type": "text", "blocks": [ { "type": "item" } ] }, { "id": "hero1", "type": "x" } ] }""";
 
-        var first = PageContent.Read(content)!.Sections;
+        var first = SiteBuilderPageDocument.Read(content)!.Sections;
         var second = PageDocumentEditor.Read(content)!.Sections;
 
         Assert.Equal(first.Select(x => Text(x!["id"])), second.Select(x => Text(x!["id"])));
@@ -459,7 +460,7 @@ public sealed class PageDocumentEditorTests
 
     private static List<string> Ids(PageDocumentEditor editor) => editor.Sections.Select(x => Text(x!["id"])).ToList();
 
-    private static string Text(JsonNode node) => PageItems.GetString(node);
+    private static string Text(JsonNode node) => SiteBuilderPageItems.GetString(node);
 
     private sealed class FakeSources : IPageEditSources
     {

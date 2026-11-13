@@ -12,6 +12,7 @@ using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Security;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -29,14 +30,12 @@ public class PageTools(
     ISiteBuilderPageSearchService pageVersionSearchService,
     IGroupedPageService groupedPageService,
     IGroupedPageContentService pageContentService,
+    ISiteBuilderSectionScanner sectionScanner,
     Func<UserManager<ApplicationUser>> userManagerFactory)
 {
     // The pages list has no date filter: the tool finds the pages by their versions changed in the period first. More
     // versions than this is a scan; the agent narrows the period instead.
     private const int MaxChangedVersions = 1000;
-
-    private const string PublishedVersion = "published";
-    private const string DraftVersion = "draft";
 
     [McpServerTool(Name = "search_site_pages", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
@@ -44,7 +43,11 @@ public class PageTools(
         "page of compact rows: a Landing Page is a row with its language; a Multilanguage Page is one row with every " +
         "language version (page id, status, unpublished changes, outdated translation). Most recently changed first. " +
         "Pass page_id to read one page instead: its settings (name, address, language, audience, dates), its content " +
-        "(page settings and sections, each with its id) and the version token of that content, which edit_page_draft takes.")]
+        "(page settings and sections, each with its id) and the version token of that content, which edit_page_draft takes. " +
+        "Pass section_type to find the pages that use a section, optionally with a condition on its settings: the pages are " +
+        "read one by one, take of them per call, and the answer lists per language version the matching section ids and " +
+        "says how many pages were scanned; continue with next_skip until is_complete or has_more is false before saying a " +
+        "section is used nowhere. To change the matching sections on every page, use update_sections_bulk.")]
     public async Task<object> SearchSitePages(
         RequestContext<CallToolRequestParams> context,
         IMcpPageSizeResolver pageSizeResolver,
@@ -58,10 +61,17 @@ public class PageTools(
         [Description("Landing or Multilanguage. Omit it for both.")] string page_type = null,
         [Description("Pages changed at or after this UTC time, ISO 8601. A change of a Shared Component on the page counts.")] DateTime? modified_since = null,
         [Description("Pages not changed after this UTC time, ISO 8601.")] DateTime? modified_before = null,
-        [Description("With page_id: 'draft' (default) for the content the designer edits, which is the published one " +
-            "when the page has no unpublished changes, or 'published' for what the storefront shows.")] string version = DraftVersion,
-        [Description("Rows to skip, from 0. Use next_skip of the previous page.")] int? skip = null,
-        [Description("Rows to return. Omit it for the default page size.")] int? take = null,
+        [Description("With page_id or section_type: 'draft' (default) for the content the designer edits, which is the " +
+            "published one when the page has no unpublished changes, or 'published' for what the storefront shows.")] string version = SitePageFilters.DraftVersion,
+        [Description("Only pages with a section of this type, for example 'hero-banner', in the version 'version' names " +
+            "(draft by default). A section that a placed Shared Component brings is listed with shared_component_id.")] string section_type = null,
+        [Description("With section_type: a setting of the section to compare, a name or a dotted path such as 'title', " +
+            "'button.url' or 'blocks.*.text' (* is any item of a list).")] string setting_path = null,
+        [Description("With setting_path: the exact value the setting has. A text per language matches when one language's text does.")] string setting_equals = null,
+        [Description("With setting_path: text the setting contains, ignoring case.")] string setting_contains = null,
+        [Description("With setting_path: compare only this language's text of a setting that holds a text per language, for example fr-FR.")] string setting_language = null,
+        [Description("Rows to skip, from 0. Use next_skip of the previous page. With section_type: the pages already scanned.")] int? skip = null,
+        [Description("Rows to return. Omit it for the default page size. With section_type: the pages to scan.")] int? take = null,
         CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrEmpty(store_id))
@@ -75,13 +85,19 @@ public class PageTools(
             return await GetPageAsync(context, store_id, page_id, version, cancellationToken);
         }
 
+        var condition = SitePageFilters.ParseCondition(setting_path, setting_equals, setting_contains, setting_language);
+        if (condition != null && string.IsNullOrWhiteSpace(section_type))
+        {
+            throw new McpException("A setting condition needs section_type: the type of the sections whose setting it compares.");
+        }
+
         var criteria = new SiteBuilderPageSearchCriteria
         {
             StoreId = store_id,
             Keyword = keyword,
-            Statuses = ParseStatuses(status),
+            Statuses = SitePageFilters.ParseStatuses(status),
             LanguageCode = language,
-            PageType = ParsePageType(page_type),
+            PageType = SitePageFilters.ParsePageType(page_type),
             Sort = $"{nameof(SiteBuilderPageListItem.ModifiedDate)}:desc;{nameof(SiteBuilderPageListItem.CreatedDate)}:desc",
         }.WithPaging(await pageSizeResolver.GetPagingAsync(skip, take));
 
@@ -100,13 +116,35 @@ public class PageTools(
             criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, criteria.StoreIds, ToUtc(modified_since), ToUtc(modified_before));
             if (criteria.ObjectIds.Count == 0)
             {
-                return McpPage<SitePageRow>.Create([], 0, paging);
+                return string.IsNullOrWhiteSpace(section_type) ? McpPage<SitePageRow>.Create([], 0, paging) : SitePageSectionSearch.Empty();
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(section_type))
+        {
+            return await SearchSectionsAsync(context, criteria, section_type.Trim(), condition, SitePageFilters.ParseVersion(version), cancellationToken);
         }
 
         var result = await pageListService.SearchAsync(criteria, cancellationToken);
 
         return result.ToMcpPage(paging, SitePageRow.From);
+    }
+
+    // The pages of the filters, read one by one from skip; take is how many are read in this call.
+    private async Task<SitePageSectionSearch> SearchSectionsAsync(RequestContext<CallToolRequestParams> context, SiteBuilderPageSearchCriteria criteria,
+        string sectionType, SiteBuilderSectionSettingCondition condition, bool published, CancellationToken cancellationToken)
+    {
+        var scan = await sectionScanner.ScanPagesAsync(new SiteBuilderSectionScanCriteria
+        {
+            Pages = criteria,
+            MaxPages = criteria.Take,
+            Published = published,
+            SectionType = sectionType,
+            Condition = condition,
+            SharedComponentStoreIds = await authorizationService.GetStoreIdsAsync(context.User, userManagerFactory, criteria.StoreId, SharedComponentsRead),
+        }, cancellationToken);
+
+        return SitePageSectionSearch.From(scan);
     }
 
     private async Task<IList<string>> GetChangedPageIdsAsync(string storeId, IList<string> storeIds, DateTime? modifiedSince, DateTime? modifiedBefore)
@@ -135,12 +173,7 @@ public class PageTools(
     private async Task<SitePageDetails> GetPageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId,
         string version, CancellationToken cancellationToken)
     {
-        var published = (version ?? DraftVersion).ToLowerInvariant() switch
-        {
-            DraftVersion => false,
-            PublishedVersion => true,
-            _ => throw new McpException("version must be 'draft' or 'published'."),
-        };
+        var published = SitePageFilters.ParseVersion(version);
 
         var group = await groupedPageService.GetByIdAsync(pageId)
             ?? throw new McpException($"Page '{pageId}' was not found. Call search_site_pages without page_id to find its id.");
@@ -163,35 +196,6 @@ public class PageTools(
         }
 
         return SitePageDetails.From(group, snapshot);
-    }
-
-    private static string ParseStatuses(string status)
-    {
-        if (string.IsNullOrWhiteSpace(status))
-        {
-            return null;
-        }
-
-        string[] known = [PageStatuses.Draft, PageStatuses.Published, PageStatuses.Archived];
-        var statuses = status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(x => known.FirstOrDefault(y => y.EqualsIgnoreCase(x))
-                ?? throw new McpException($"Status '{x}' is unknown. Use {string.Join(", ", known)}."))
-            .Distinct();
-
-        return string.Join(',', statuses);
-    }
-
-    private static string ParsePageType(string pageType)
-    {
-        if (string.IsNullOrWhiteSpace(pageType))
-        {
-            return null;
-        }
-
-        string[] known = [PageTypes.Landing, PageTypes.Multilanguage];
-
-        return known.FirstOrDefault(x => x.EqualsIgnoreCase(pageType.Trim()))
-            ?? throw new McpException($"Page type '{pageType}' is unknown. Use {string.Join(" or ", known)}.");
     }
 
     // A time without a kind is read as UTC, as the stored dates are.
@@ -300,6 +304,10 @@ public sealed class SitePageDetails
 
     public string MultilanguagePageId { get; init; }
 
+    // A source language version: when it was last published. A translation: the source publication it is based on.
+    // set_translations takes the source's value as source_revision_date to mark a translation up to date.
+    public DateTime? SourceRevisionDate { get; init; }
+
     public bool Visibility { get; init; }
 
     public string UserGroups { get; init; }
@@ -333,7 +341,7 @@ public sealed class SitePageDetails
 
     public static SitePageDetails From(GroupedSiteBuilderPage group, SiteBuilderContentSnapshot snapshot)
     {
-        var content = PageContent.Read(snapshot.Content);
+        var content = SiteBuilderPageDocument.Read(snapshot.Content);
         var shownPage = group.Pages?.FirstOrDefault(x => x.Id == snapshot.PageId);
 
         return new SitePageDetails
@@ -346,6 +354,7 @@ public sealed class SitePageDetails
             Status = group.Status,
             HasUnpublishedChanges = group.Status == PageStatuses.Published && group.HasChanges,
             MultilanguagePageId = group.MultilanguagePageId,
+            SourceRevisionDate = group.SourceRevisionDate,
             Visibility = group.Visibility,
             UserGroups = group.UserGroups,
             OrganizationId = group.OrganizationId,

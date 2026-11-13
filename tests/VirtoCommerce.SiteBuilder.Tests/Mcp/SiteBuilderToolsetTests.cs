@@ -1,7 +1,11 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.Platform.Core.Jobs;
 using VirtoCommerce.SiteBuilder.MCP;
+using VirtoCommerce.SiteBuilder.MCP.Jobs;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
 using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
@@ -41,6 +45,27 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     public void BuilderRead_LimitedToAStore_ShowsTheSameTools()
     {
         Assert.Equal(["list_versions", "search_site_pages"], _context.Harness.GetVisibleToolNames(StoreAReader()));
+    }
+
+    [Fact]
+    public void BuilderReadAndUpdate_ShowTheEditAndBulkTools()
+    {
+        var user = McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
+
+        Assert.Equal(
+            ["edit_page_draft", "list_versions", "search_site_pages", "set_translations", "update_sections_bulk"],
+            _context.Harness.GetVisibleToolNames(user));
+    }
+
+    [Fact]
+    public void TheRegistration_AddsTheJobsOfTheBulkTools()
+    {
+        var jobs = new ServiceCollection().AddSiteBuilderMcp()
+            .Where(x => x.ServiceType == typeof(BackgroundJobDescriptor))
+            .Select(x => ((BackgroundJobDescriptor)x.ImplementationInstance!).Name)
+            .Order();
+
+        Assert.Equal([nameof(SetTranslationsJob), nameof(UpdateSectionsBulkJob)], jobs);
     }
 
     [Fact]

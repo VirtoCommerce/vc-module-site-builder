@@ -10,6 +10,7 @@ using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -188,7 +189,7 @@ public class PageDraftTools(
         await authorizationService.EnsureAllowedAsync(user, group, group.StoreId);
 
         var snapshot = await LoadDraftAsync(group, cancellationToken);
-        return PageContent.Read(snapshot.Content)?.Sections ?? [];
+        return SiteBuilderPageDocument.Read(snapshot.Content)?.Sections ?? [];
     }
 
     private async Task<SiteBuilderSharedComponent> GetSharedComponentAsync(ClaimsPrincipal user, string storeId, string sharedComponentId)
@@ -207,7 +208,7 @@ public class PageDraftTools(
         CancellationToken cancellationToken)
     {
         var component = await GetSharedComponentAsync(user, storeId, sharedComponentId);
-        var content = PageContent.Read(await sharedComponentContentService.TryLoadContentAsync(component, cancellationToken));
+        var content = SiteBuilderPageDocument.Read(await sharedComponentContentService.TryLoadContentAsync(component, cancellationToken));
 
         return content?.Sections ?? throw new McpException($"Shared Component '{sharedComponentId}' has no content to detach.");
     }
@@ -257,11 +258,11 @@ public sealed class SectionRow
         sections.OfType<JsonObject>()
             .Select(x => new SectionRow
             {
-                Id = PageItems.GetId(x),
-                Type = PageItems.GetItemType(x),
-                Hidden = PageItems.IsHidden(x),
-                SharedComponentId = PageItems.IsPlacement(x) ? PageItems.GetComponentId(x) : null,
-                BlockCount = PageItems.GetBlocks(x)?.Count ?? 0,
+                Id = SiteBuilderPageItems.GetId(x),
+                Type = SiteBuilderPageItems.GetItemType(x),
+                Hidden = SiteBuilderPageItems.IsHidden(x),
+                SharedComponentId = SiteBuilderPageItems.IsPlacement(x) ? SiteBuilderPageItems.GetComponentId(x) : null,
+                BlockCount = SiteBuilderPageItems.GetBlocks(x)?.Count ?? 0,
             })
             .ToList();
 }

@@ -431,6 +431,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     StartDate = group.StartDate,
                     EndDate = group.EndDate,
                     OrganizationId = group.OrganizationId,
+                    MultilanguagePageId = group.MultilanguagePageId,
+                    OverriddenFields = group.OverriddenFields,
+                    SourceRevisionDate = group.SourceRevisionDate,
                     CreatedDate = group.CreatedDate,
                     ModifiedDate = group.ModifiedDate,
                     Pages = group.Pages.Select(p => new SiteBuilderPage

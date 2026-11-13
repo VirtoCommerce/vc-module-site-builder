@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation;
@@ -10,8 +11,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using Moq;
 using Newtonsoft.Json;
+using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.Platform.Core.Common;
@@ -20,11 +24,13 @@ using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.MCP;
+using VirtoCommerce.SiteBuilder.MCP.Jobs;
 using VirtoCommerce.StoreModule.Core.Model;
 using VirtoCommerce.StoreModule.Core.Security;
 using Fakes = VirtoCommerce.SiteBuilder.Tests.PublishedRenameContentPreservationTests;
@@ -47,6 +53,12 @@ internal sealed class McpTestContext : IAsyncDisposable
     private string _boundStoreId;
     private McpToolHarness _harness;
 
+    // The claim types the platform reads the user id from, as its startup sets them: a bulk tool stores the id for its job.
+    static McpTestContext()
+    {
+        ClaimsPrincipalExtensions.UserIdClaimTypes = ["sub", ClaimTypes.NameIdentifier];
+    }
+
     public Mock<ISiteBuilderPageListService> PageList { get; } = new();
     public Mock<ISiteBuilderPageSearchService> PageVersionSearch { get; } = new();
     public Mock<IGroupedPageService> GroupedPages { get; } = new();
@@ -58,6 +70,12 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Mock<ISiteBuilderSharedComponentContentService> SharedComponentContents { get; } = new();
     public Mock<ISiteBuilderSharedComponentUsageService> SharedComponentUsages { get; } = new();
     public Mock<IContentHistory> History { get; } = new();
+    public Mock<IMultilanguagePageService> MultilanguagePages { get; } = new();
+    public Mock<IUserNameResolver> UserNames { get; } = new();
+    public RecordingJobDispatcher Jobs { get; } = new();
+
+    // The accounts a job runs as, by user id, as a sign-in would give them when the job runs; a missing one no longer exists.
+    public Dictionary<string, ClaimsPrincipal> JobUsers { get; } = new(StringComparer.Ordinal);
 
     // Pages with their content, saved through the designer's own save; null unless a test calls UsePageStore.
     public Fakes.FakeGroupedPageService PageStore { get; private set; }
@@ -90,6 +108,48 @@ internal sealed class McpTestContext : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => _harness?.DisposeAsync() ?? ValueTask.CompletedTask;
+
+    // The rows the pages list answers, filtered by store and paged, as the list service does.
+    public void ListPages(Func<IEnumerable<SiteBuilderPageListItem>> rows)
+    {
+        PageList
+            .Setup(x => x.SearchAsync(It.IsAny<SiteBuilderPageSearchCriteria>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SiteBuilderPageSearchCriteria criteria, CancellationToken _) =>
+            {
+                var matches = rows()
+                    .Where(x => criteria.StoreId == null || StoreOf(x) == criteria.StoreId)
+                    .Where(x => criteria.StoreIds == null || criteria.StoreIds.Contains(StoreOf(x)))
+                    .ToList();
+
+                return new SiteBuilderPageListSearchResult
+                {
+                    TotalCount = matches.Count,
+                    Results = matches.Skip(criteria.Skip).Take(criteria.Take).ToList(),
+                };
+            });
+    }
+
+    public static SiteBuilderPageListItem LandingRow(GroupedSiteBuilderPage page) => new()
+    {
+        Type = "Landing",
+        Id = page.Id,
+        Name = page.Name,
+        Permalink = page.Permalink,
+        CreatedDate = page.CreatedDate,
+        Page = page,
+    };
+
+    // Runs a job of a bulk tool as the job engine would, with the services the module registers.
+    public async Task<RecordingJobContext> RunJobAsync<THandler, TPayload>(TPayload payload)
+        where THandler : class, VirtoCommerce.Platform.Core.Jobs.IBackgroundJobHandler<TPayload>
+        where TPayload : class
+    {
+        var context = new RecordingJobContext();
+        await Harness.Services.GetRequiredService<THandler>().Execute(payload, context, Xunit.TestContext.Current.CancellationToken);
+        return context;
+    }
+
+    private static string StoreOf(SiteBuilderPageListItem row) => row.Page?.StoreId ?? row.MultilanguagePage?.StoreId;
 
     public Task<McpToolCallResult> CallAsync(McpTestUser user, string tool, object arguments) =>
         Harness.CallAsync(user, tool, arguments, cancellationToken: Xunit.TestContext.Current.CancellationToken);
@@ -149,6 +209,30 @@ internal sealed class McpTestContext : IAsyncDisposable
         }
 
         services.AddSingleton<IDesignerOperationService>(provider => CreateDesignerOperations(provider.GetRequiredService<IAuthorizationService>()));
+
+        services.AddSingleton<ISiteBuilderSectionScanner>(provider => new SiteBuilderSectionScanner(
+            provider.GetRequiredService<ISiteBuilderPageListService>(),
+            provider.GetRequiredService<IGroupedPageContentService>(),
+            SharedComponents.Object,
+            SharedComponentContents.Object,
+            new Mock<IThemeStorageFactory>().Object));
+
+        // The bulk tools and their jobs as SiteBuilderMcpRegistration adds them; the job engine is the test's dispatcher.
+        var principals = new Mock<IUserClaimsPrincipalFactory<ApplicationUser>>();
+        principals
+            .Setup(x => x.CreateAsync(It.IsAny<ApplicationUser>()))
+            .ReturnsAsync((ApplicationUser account) => JobUsers.GetValueOrDefault(account.Id));
+        services
+            .AddSingleton<IMcpJobDispatcher>(Jobs)
+            .AddSingleton(MultilanguagePages.Object)
+            .AddSingleton(UserNames.Object)
+            .AddSingleton(principals.Object)
+            .AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>))
+            .AddTransient<PageDraftJobRunner>()
+            .AddTransient<TranslationSources>()
+            .AddTransient<SiteBuilderJobUsers>()
+            .AddTransient<UpdateSectionsBulkJob>()
+            .AddTransient<SetTranslationsJob>();
     }
 
     // The designer's save as the module wires it, over the page store; theme files live in a blob storage of the test.
@@ -191,5 +275,44 @@ internal sealed class McpTestContext : IAsyncDisposable
         options.SerializerSettings.Converters.Add(new PolymorphJsonConverter());
         options.SerializerSettings.NullValueHandling = NullValueHandling.Ignore;
         return options;
+    }
+}
+
+// The job engine of the tests: records what a bulk tool queues, or fails as a platform without background jobs does.
+internal sealed class RecordingJobDispatcher : IMcpJobDispatcher
+{
+    public List<(Type Handler, object Payload, McpJobRequest Request)> Enqueued { get; } = [];
+
+    public Exception Failure { get; set; }
+
+    public Task<McpJobHandle> EnqueueAsync<THandler>(RequestContext<CallToolRequestParams> context, object payload, McpJobRequest request)
+        where THandler : class
+    {
+        if (Failure != null)
+        {
+            throw Failure;
+        }
+
+        Enqueued.Add((typeof(THandler), payload, request));
+        return Task.FromResult(new McpJobHandle { JobId = $"job-{Enqueued.Count}", Status = "Queued", Title = request.Title, TotalCount = request.TotalCount, Preview = request.Preview });
+    }
+}
+
+internal sealed class RecordingJobContext : VirtoCommerce.Platform.Core.Jobs.IJobExecutionContext, VirtoCommerce.Platform.Core.Jobs.IJobProgress
+{
+    public List<VirtoCommerce.Platform.Core.Jobs.JobProgressInfo> Reports { get; } = [];
+
+    public string JobId => "engine-job";
+
+    public VirtoCommerce.Platform.Core.Jobs.IJobProgress Progress => this;
+
+    public IReadOnlyDictionary<string, string> Headers { get; } = new Dictionary<string, string>();
+
+    public string FinalMessage => Reports.Count == 0 ? null : Reports[^1].Message;
+
+    public Task Report(VirtoCommerce.Platform.Core.Jobs.JobProgressInfo progress, CancellationToken cancellationToken = default)
+    {
+        Reports.Add(progress);
+        return Task.CompletedTask;
     }
 }

@@ -1,10 +1,10 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using ModelContextProtocol;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
-using static VirtoCommerce.SiteBuilder.MCP.PageItems;
+using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
 
@@ -22,7 +22,7 @@ public interface IPageEditSources
 // Applies the operations of edit_page_draft to a page document the way the designer's own edits change it (see the
 // designer's useDesigner.ts and schema.ts): new items get new ids, a copy gets new ids for itself and its blocks, a
 // placement of a Shared Component is never hidden or edited in place.
-public sealed partial class PageDocumentEditor
+public sealed class PageDocumentEditor
 {
     public static readonly JsonSerializerOptions WriteOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -34,7 +34,7 @@ public sealed partial class PageDocumentEditor
     private readonly JsonObject _root;
     private readonly HashSet<string> _ids;
 
-    private PageDocumentEditor(JsonObject root, PageContent content)
+    private PageDocumentEditor(JsonObject root, SiteBuilderPageDocument content)
     {
         _root = root;
         Settings = content.Settings;
@@ -57,7 +57,7 @@ public sealed partial class PageDocumentEditor
             content = DefaultPageContent;
         }
 
-        var document = PageContent.Read(content);
+        var document = SiteBuilderPageDocument.Read(content);
         if (document == null)
         {
             return null;
@@ -435,7 +435,7 @@ public sealed partial class PageDocumentEditor
             throw new EditException("Pass settings: the values to set.");
         }
 
-        if (language != null && !LanguagePattern().IsMatch(language))
+        if (language != null && !IsLanguageCode(language))
         {
             throw new EditException($"'{language}' is not a language code such as en-US.");
         }
@@ -593,15 +593,6 @@ public sealed partial class PageDocumentEditor
         return translations;
     }
 
-    // The designer's rule (translatable.ts): an object whose keys are language codes, one with a subtag, and whose
-    // values are texts; a row such as { "sku": "X1" } is not one.
-    public static bool IsTranslations(JsonNode node)
-    {
-        return node is JsonObject value && value.Count > 0
-            && value.Any(x => LanguageWithSubtagPattern().IsMatch(x.Key))
-            && value.All(x => LanguagePattern().IsMatch(x.Key) && x.Value is JsonValue text && text.TryGetValue<string>(out _));
-    }
-
     private static JsonNode GetChild(JsonNode parent, string segment) => parent switch
     {
         JsonObject value => value[segment],
@@ -628,12 +619,6 @@ public sealed partial class PageDocumentEditor
 
         return int.TryParse(segment, out var index) && index >= 0 && index < list.Count ? index : -1;
     }
-
-    [GeneratedRegex("^[a-z]{2,3}(-[a-z0-9]{2,8})*$", RegexOptions.IgnoreCase)]
-    private static partial Regex LanguagePattern();
-
-    [GeneratedRegex("^[a-z]{2,3}(-[a-z0-9]{2,8})+$", RegexOptions.IgnoreCase)]
-    private static partial Regex LanguageWithSubtagPattern();
 
     private sealed class EditException(string message) : Exception(message);
 }

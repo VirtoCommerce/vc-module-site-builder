@@ -9,6 +9,7 @@ using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.MCP.Core.Extensions;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
@@ -75,7 +76,7 @@ public class SharedComponentTools(
 
         var canReadPages = await authorizationService.IsAllowedAsync(context.User, component);
         var usages = await GetUsagesAsync(component.StoreId, [component], canReadPages, cancellationToken);
-        var content = PageContent.Read(await sharedComponentContentService.TryLoadContentAsync(component, cancellationToken));
+        var content = SiteBuilderPageDocument.Read(await sharedComponentContentService.TryLoadContentAsync(component, cancellationToken));
 
         return SharedComponentDetails.From(component, usages.GetValueOrDefault(component.Id), canReadPages, content);
     }
@@ -151,7 +152,7 @@ public sealed class SharedComponentDetails
     public JsonArray Sections { get; init; }
 
     public static SharedComponentDetails From(SiteBuilderSharedComponent component, SiteBuilderSharedComponentUsage usage,
-        bool canReadPages, PageContent content)
+        bool canReadPages, SiteBuilderPageDocument content)
     {
         return new SharedComponentDetails
         {
