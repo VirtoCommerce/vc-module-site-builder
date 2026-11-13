@@ -20,7 +20,7 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Extensions;
-using VirtoCommerce.SiteBuilder.Web.Services;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.Pages.Core.Search;
 using VirtoCommerce.Platform.Core.Common;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;

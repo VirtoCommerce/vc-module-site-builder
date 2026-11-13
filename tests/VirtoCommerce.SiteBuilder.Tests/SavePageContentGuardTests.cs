@@ -14,7 +14,6 @@ using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Events;
 using Xunit;

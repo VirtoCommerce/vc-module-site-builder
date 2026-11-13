@@ -8,13 +8,12 @@ using Microsoft.Extensions.Logging;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
-using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Events;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
 
-namespace VirtoCommerce.SiteBuilder.Web.Services;
+namespace VirtoCommerce.SiteBuilder.Data.Services;
 
 [method: ActivatorUtilitiesConstructor]
 public sealed class SiteBuilderPageContentService(

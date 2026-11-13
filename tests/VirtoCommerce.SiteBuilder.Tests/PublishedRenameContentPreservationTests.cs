@@ -14,7 +14,6 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Pages.Core.Models;
 using VirtoCommerce.Pages.Core.Search;
 using VirtoCommerce.Platform.Core.Common;

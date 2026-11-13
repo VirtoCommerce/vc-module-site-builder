@@ -16,7 +16,6 @@ using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;

@@ -20,7 +20,6 @@ using VirtoCommerce.SiteBuilder.Data.Models;
 using VirtoCommerce.SiteBuilder.Data.Repositories;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Caching;
 using VirtoCommerce.Platform.Core.Modularity;

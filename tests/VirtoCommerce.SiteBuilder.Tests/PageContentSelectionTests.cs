@@ -11,7 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
 
