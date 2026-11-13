@@ -182,11 +182,14 @@ public class ThemeOperationServiceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task PublishAsync_PaletteThatFailsTheContrast_IsRefusedWithTheFailingPairs(bool dark)
+    public async Task PublishAsync_PaletteDraftThatFailsTheContrast_IsRefusedWithTheFailingPairs(bool dark)
     {
         await SeedThemeAsync();
-        _storage.Files[Theme(Palette)] = dark ? PassingPalette : FailingPalette;
-        _storage.Files[Theme(DarkPalette + "-draft")] = dark ? FailingPalette : PassingPalette;
+        _storage.Files[Theme(dark ? Palette : Palette + "-draft")] = dark ? PassingPalette : FailingPalette;
+        if (dark)
+        {
+            _storage.Files[Theme(DarkPalette + "-draft")] = FailingPalette;
+        }
 
         var result = await Service().PublishAsync(Publish(), User, Ct);
         var dryRun = await Service().PublishAsync(DryRun(), User, Ct);
@@ -197,6 +200,37 @@ public class ThemeOperationServiceTests
         Assert.Equal(SiteBuilderOperationStatus.Invalid, dryRun.Status);
         Assert.Equal([error], dryRun.Errors);
         AssertNothingPublished();
+    }
+
+    [Fact]
+    public async Task PublishAsync_LivePaletteThatFailsTheContrastAndNoPaletteDraft_PublishesAndTheDryRunWarnsOfIt()
+    {
+        await SeedThemeAsync();
+        _storage.Files.Remove(Theme(Product + "-draft"));
+        _storage.Files[Theme("default/sections/header-group.json-draft")] = """{ "content": [] }""";
+        _storage.Files[Theme(Palette)] = FailingPalette;
+
+        var dryRun = await Service().PublishAsync(DryRun(), User, Ct);
+        var result = await Service().PublishAsync(Publish(), User, Ct);
+
+        Assert.True(dryRun.Succeeded);
+        Assert.Contains($"The live palette fails WCAG 2.2 AA and stays as it is: config/palette.json: {FailingPair}", dryRun.Preview.Warnings);
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, result.Value.Publication);
+    }
+
+    [Fact]
+    public async Task PublishAsync_PaletteDraftThatMeetsTheContrastOverAFailingLiveOne_PublishesWithoutWarning()
+    {
+        await SeedThemeAsync();
+        _storage.Files[Theme(Palette)] = FailingPalette;
+        _storage.Files[Theme(Palette + "-draft")] = PassingPalette;
+
+        var dryRun = await Service().PublishAsync(DryRun(), User, Ct);
+        var result = await Service().PublishAsync(Publish(), User, Ct);
+
+        Assert.DoesNotContain(dryRun.Preview.Warnings, x => x.Contains("palette", StringComparison.Ordinal));
+        Assert.True(result.Succeeded);
     }
 
     [Fact]

@@ -71,7 +71,7 @@ public class ThemePublisher(
         return result.Publication;
     }
 
-    public virtual async Task<IList<ThemeFileVersion>> PreviewPublishAsync(string storeId, string catalogHash, CancellationToken cancellationToken = default)
+    public virtual async Task<ThemePublicationPreview> PreviewPublishAsync(string storeId, string catalogHash, CancellationToken cancellationToken = default)
     {
         var catalog = await GetCatalogAsync(storeId, catalogHash, cancellationToken);
         _ = await storeService.GetNoCloneAsync(storeId) ?? throw new KeyNotFoundException($"Store '{storeId}' not found.");
@@ -79,14 +79,23 @@ public class ThemePublisher(
 
         // read without the theme lock: nothing is written, and the publication checks the versions again under it
         var source = await GetThemeSourceAsync(storage, includeDrafts: true);
-        var versions = GetDraftVersions(storeId, storage, source);
+        var result = AbstractTypeFactory<ThemePublicationPreview>.TryCreateInstance();
+        result.Drafts = GetDraftVersions(storeId, storage, source);
         var errors = ValidateThemeSource(source, catalog, includeDrafts: true);
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
         }
 
-        return versions;
+        if (!HasPaletteDraft(source))
+        {
+            foreach (var error in ValidatePalette(source, catalog))
+            {
+                result.Warnings.Add($"The live palette fails WCAG 2.2 AA and stays as it is: {error}");
+            }
+        }
+
+        return result;
     }
 
     public virtual Task<int> PublishFirstAsync(string storeId, CancellationToken cancellationToken = default)
@@ -211,9 +220,14 @@ public class ThemePublisher(
     {
         var errors = GuardThemeSource(source, catalog).Concat(themeValidator.Validate(source, catalog));
 
-        // a publication of the drafts is what an editor asks for; a first publication puts the live files out as they are
-        return (includeDrafts ? errors.Concat(ValidatePalette(source, catalog)) : errors).ToList();
+        // A palette is refused when it is published: a live palette that fails stays live whatever else is published, and a first
+        // publication puts the live files out as they are.
+        return (includeDrafts && HasPaletteDraft(source) ? errors.Concat(ValidatePalette(source, catalog)) : errors).ToList();
     }
+
+    /// <summary>The publication puts a light or a dark palette live; the palette is then checked as a whole, as the storefront gets both.</summary>
+    protected virtual bool HasPaletteDraft(ThemeSource source) =>
+        source.Drafts.ContainsKey(ThemeStorage.PaletteFile) || source.Drafts.ContainsKey(ThemeStorage.DarkPaletteFile);
 
     /// <summary>
     /// The palette as the storefront gets it must meet WCAG 2.2 AA in both color schemes. The pairs are the designer's palette check,

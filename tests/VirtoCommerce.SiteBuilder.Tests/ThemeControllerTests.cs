@@ -251,10 +251,10 @@ public class ThemeControllerTests
             return Task.FromResult(1);
         }
 
-        public Task<IList<ThemeFileVersion>> PreviewPublishAsync(string storeId, string catalogHash, CancellationToken cancellationToken = default)
+        public Task<ThemePublicationPreview> PreviewPublishAsync(string storeId, string catalogHash, CancellationToken cancellationToken = default)
         {
             Calls.Add($"preview publish {storeId}");
-            return Task.FromResult<IList<ThemeFileVersion>>([]);
+            return Task.FromResult(new ThemePublicationPreview());
         }
 
         public Task<int> PublishFirstAsync(string storeId, CancellationToken cancellationToken = default)

@@ -9,7 +9,8 @@ public interface IThemeOperationService
 {
     /// <summary>
     /// Publishes the theme with its drafts, or previews the publication on a dry run: every draft it would put live, with its version and who
-    /// last changed it. A theme whose palette fails the WCAG 2.2 AA contrast is refused, with the failing pairs.
+    /// last changed it. A palette draft that leaves the palette short of the WCAG 2.2 AA contrast is refused, with the failing pairs;
+    /// a live palette that fails and is not published again is told in the dry run's warnings.
     /// </summary>
     Task<SiteBuilderOperationResult<ThemePublicationPointer>> PublishAsync(ThemePublishOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);

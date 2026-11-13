@@ -48,8 +48,8 @@ public class ThemeOperationService(
         {
             if (request.DryRun)
             {
-                var drafts = await themePublisher.PreviewPublishAsync(request.StoreId, request.CatalogHash, cancellationToken);
-                return SiteBuilderOperationResult.DryRun<ThemePublicationPointer>(await CreatePublishPreviewAsync(request.StoreId, drafts, cancellationToken));
+                var publication = await themePublisher.PreviewPublishAsync(request.StoreId, request.CatalogHash, cancellationToken);
+                return SiteBuilderOperationResult.DryRun<ThemePublicationPointer>(await CreatePublishPreviewAsync(request.StoreId, publication, cancellationToken));
             }
 
             var result = AbstractTypeFactory<ThemePublicationPointer>.TryCreateInstance();
@@ -94,14 +94,14 @@ public class ThemeOperationService(
         ?? await storeRequestValidator.CheckOperationRequestAsync(request, bindingErrors, cancellationToken);
 
     /// <summary>Every draft goes live, at the version it has now; the publication itself reaches what the storefront serves even with none.</summary>
-    protected virtual async Task<SiteBuilderChangePreview> CreatePublishPreviewAsync(string storeId, IList<ThemeFileVersion> drafts,
+    protected virtual async Task<SiteBuilderChangePreview> CreatePublishPreviewAsync(string storeId, ThemePublicationPreview publication,
         CancellationToken cancellationToken)
     {
         var preview = AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
         preview.AffectsPublished = true;
 
         var historyKept = true;
-        foreach (var draft in drafts)
+        foreach (var draft in publication.Drafts)
         {
             var change = preview.AddObject(ThemeFile, draft.Path, draft.ETag).AddField(Status, Draft, Published);
             if (historyKept)
@@ -113,6 +113,11 @@ public class ThemeOperationService(
         if (!historyKept)
         {
             preview.Warnings.Add(NoHistoryWarning);
+        }
+
+        foreach (var warning in publication.Warnings)
+        {
+            preview.Warnings.Add(warning);
         }
 
         return preview;
