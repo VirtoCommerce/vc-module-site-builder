@@ -393,7 +393,7 @@ jobs:
         ((github.ref == 'refs/heads/dev') && (github.event_name == 'push')) ||
         (github.event_name == 'workflow_dispatch') || ((github.base_ref == 'dev') && (github.event_name == 'pull_request'))) }}
     needs: ci
-    uses: ivan-kalachikov/.github/.github/workflows/playwright-tests.yml@feat/VCST-6571-skip-incompatible-modules
+    uses: VirtoCommerce/.github/.github/workflows/playwright-tests.yml@v3.1000.9
     with:
       installModules: 'false'
       installCustomModule: 'true'
@@ -401,7 +401,7 @@ jobs:
       customModuleUrl:  ${{ needs.ci.outputs.artifactUrl }}
       requiredModulesListUrl: ${{ needs.ci.outputs.requiredModulesListUrl }}
       moduleDependencies: ${{ needs.ci.outputs.moduleDependencies }}
-      vctestingRepoBranch: 'fix/VCST-6571-page-builder-shell-app'
+      vctestingRepoBranch: 'dev'
       frontendZipUrl: 'latest'
       testSuites: 'graphql,restapi,e2e'
     secrets:
@@ -425,7 +425,7 @@ jobs:
         uses: VirtoCommerce/.github/actions/setup-vcbuild@v3.1000.9
 
       - name: Swagger validation
-        uses: ivan-kalachikov/.github/actions/docker-env@feat/VCST-6571-skip-incompatible-modules
+        uses: VirtoCommerce/.github/actions/docker-env@v3.1000.9
         with:
           appInsightsInstrumentationKey: ${{ secrets.E2E_APPINSIGHTSINSTRUMENTATIONKEY }}
           githubUser: ${{ github.actor }}
