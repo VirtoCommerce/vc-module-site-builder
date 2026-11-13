@@ -160,6 +160,10 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IFilePageDraftService, FilePageDraftService>();
             serviceCollection.AddTransient<IDesignerContentService, DesignerContentService>();
             serviceCollection.AddTransient<IDesignerOperationService, DesignerOperationService>();
+            serviceCollection.AddTransient<IThemeOperationService, ThemeOperationService>();
+            serviceCollection.AddTransient<ISiteBuilderContentQueryService, SiteBuilderContentQueryService>();
+            serviceCollection.AddTransient<ISiteBuilderPreviewQueryService, SiteBuilderPreviewQueryService>();
+            serviceCollection.AddTransient<ISiteBuilderPublishStatusQueryService, SiteBuilderPublishStatusQueryService>();
             serviceCollection.AddTransient<IContentPermissionService, ContentPermissionService>();
             serviceCollection.AddTransient<IThemeSnapshotService, ThemeSnapshotService>();
             serviceCollection.AddTransient<IThemePaletteService, ThemePaletteService>();

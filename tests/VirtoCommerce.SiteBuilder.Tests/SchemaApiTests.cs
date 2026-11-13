@@ -3,7 +3,7 @@ using System.Linq;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Validation;
-using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests;
@@ -33,25 +33,25 @@ public class IsStaticEntryTests
 {
     [Fact]
     public void Returns_false_when_static_property_absent() =>
-        Assert.False(SiteBuilderController.IsStaticEntry(JObject.Parse("{}")));
+        Assert.False(SiteBuilderSchemas.IsStaticEntry(JObject.Parse("{}")));
 
     [Fact]
     public void Returns_false_when_static_is_null() =>
-        Assert.False(SiteBuilderController.IsStaticEntry(JObject.Parse("""{"static":null}""")));
+        Assert.False(SiteBuilderSchemas.IsStaticEntry(JObject.Parse("""{"static":null}""")));
 
     [Fact]
     public void Returns_false_when_static_is_false() =>
-        Assert.False(SiteBuilderController.IsStaticEntry(JObject.Parse("""{"static":false}""")));
+        Assert.False(SiteBuilderSchemas.IsStaticEntry(JObject.Parse("""{"static":false}""")));
 
     [Fact]
     public void Returns_true_when_static_is_true() =>
-        Assert.True(SiteBuilderController.IsStaticEntry(JObject.Parse("""{"static":true}""")));
+        Assert.True(SiteBuilderSchemas.IsStaticEntry(JObject.Parse("""{"static":true}""")));
 
     [Theory]
     [InlineData("top")]
     [InlineData("bottom")]
     public void Returns_true_for_top_or_bottom(string value) =>
-        Assert.True(SiteBuilderController.IsStaticEntry(JObject.Parse($$"""{"static":"{{value}}"}""")));
+        Assert.True(SiteBuilderSchemas.IsStaticEntry(JObject.Parse($$"""{"static":"{{value}}"}""")));
 
     [Theory]
     [InlineData("yes")]
@@ -59,15 +59,15 @@ public class IsStaticEntryTests
     [InlineData("")]
     [InlineData("TOP")]
     public void Returns_false_for_other_string_values(string value) =>
-        Assert.False(SiteBuilderController.IsStaticEntry(JObject.Parse($$"""{"static":"{{value}}"}""")));
+        Assert.False(SiteBuilderSchemas.IsStaticEntry(JObject.Parse($$"""{"static":"{{value}}"}""")));
 
     [Fact]
     public void Returns_false_for_numeric_static_value() =>
-        Assert.False(SiteBuilderController.IsStaticEntry(JObject.Parse("""{"static":1}""")));
+        Assert.False(SiteBuilderSchemas.IsStaticEntry(JObject.Parse("""{"static":1}""")));
 
     [Fact]
     public void Returns_false_for_null_entry() =>
-        Assert.False(SiteBuilderController.IsStaticEntry(null));
+        Assert.False(SiteBuilderSchemas.IsStaticEntry(null));
 }
 
 public class CopySchemaMetadataTests
@@ -77,7 +77,7 @@ public class CopySchemaMetadataTests
     {
         var source = JObject.Parse("""{"name":"Hero"}""");
         var target = new JObject();
-        SiteBuilderController.CopySchemaMetadata(source, target, "sections");
+        SiteBuilderSchemas.CopySchemaMetadata(source, target, "sections");
         Assert.Equal("Hero", (string)target["name"]);
     }
 
@@ -89,7 +89,7 @@ public class CopySchemaMetadataTests
     {
         var source = JObject.Parse("""{"description":"Use when..."}""");
         var target = new JObject();
-        SiteBuilderController.CopySchemaMetadata(source, target, kind);
+        SiteBuilderSchemas.CopySchemaMetadata(source, target, kind);
         Assert.Equal("Use when...", (string)target["description"]);
     }
 
@@ -98,7 +98,7 @@ public class CopySchemaMetadataTests
     {
         var source = JObject.Parse("""{"description":"Hero banner. Use when: top of page. Skip when: elsewhere."}""");
         var target = new JObject();
-        SiteBuilderController.CopySchemaMetadata(source, target, "sections");
+        SiteBuilderSchemas.CopySchemaMetadata(source, target, "sections");
         Assert.Equal("Hero banner.", (string)target["description"]);
     }
 
@@ -109,7 +109,7 @@ public class CopySchemaMetadataTests
     {
         var source = JObject.Parse("""{"description":"Use when..."}""");
         var target = new JObject();
-        SiteBuilderController.CopySchemaMetadata(source, target, kind);
+        SiteBuilderSchemas.CopySchemaMetadata(source, target, kind);
         Assert.Null(target["description"]);
     }
 
@@ -124,7 +124,7 @@ public class CopySchemaMetadataTests
             }
             """);
         var target = new JObject();
-        SiteBuilderController.CopySchemaMetadata(source, target, "sections");
+        SiteBuilderSchemas.CopySchemaMetadata(source, target, "sections");
         Assert.Equal(new[] { "name" }, target.Properties().Select(p => p.Name).ToArray());
     }
 
@@ -133,7 +133,7 @@ public class CopySchemaMetadataTests
     {
         var source = JObject.Parse("""{"name":null,"description":null}""");
         var target = new JObject();
-        SiteBuilderController.CopySchemaMetadata(source, target, "sections");
+        SiteBuilderSchemas.CopySchemaMetadata(source, target, "sections");
         Assert.Empty(target.Properties());
     }
 
@@ -142,7 +142,7 @@ public class CopySchemaMetadataTests
     {
         var source = JObject.Parse("""{"name":"Hero"}""");
         var target = new JObject { ["key"] = "hero" };
-        SiteBuilderController.CopySchemaMetadata(source, target, "sections");
+        SiteBuilderSchemas.CopySchemaMetadata(source, target, "sections");
         Assert.Equal("hero", (string)target["key"]);
         Assert.Equal("Hero", (string)target["name"]);
     }
@@ -154,12 +154,12 @@ public class DeriveCatalogSummaryTests
     [InlineData(null)]
     [InlineData("")]
     public void Returns_null_or_empty_unchanged(string input) =>
-        Assert.Equal(input, SiteBuilderController.DeriveCatalogSummary(input));
+        Assert.Equal(input, SiteBuilderSchemas.DeriveCatalogSummary(input));
 
     [Fact]
     public void Cuts_at_use_when_marker()
     {
-        var result = SiteBuilderController.DeriveCatalogSummary(
+        var result = SiteBuilderSchemas.DeriveCatalogSummary(
             "Author profile card with avatar and bio. Use when: showing a post author. Skip when: ...");
         Assert.Equal("Author profile card with avatar and bio.", result);
     }
@@ -167,7 +167,7 @@ public class DeriveCatalogSummaryTests
     [Fact]
     public void Is_case_insensitive_on_marker()
     {
-        var result = SiteBuilderController.DeriveCatalogSummary("What it is. USE WHEN: something.");
+        var result = SiteBuilderSchemas.DeriveCatalogSummary("What it is. USE WHEN: something.");
         Assert.Equal("What it is.", result);
     }
 
@@ -175,7 +175,7 @@ public class DeriveCatalogSummaryTests
     public void Keeps_full_text_when_no_use_when_and_under_cap()
     {
         const string input = "A compact contact form with name, email and message.";
-        Assert.Equal(input, SiteBuilderController.DeriveCatalogSummary(input));
+        Assert.Equal(input, SiteBuilderSchemas.DeriveCatalogSummary(input));
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public class DeriveCatalogSummaryTests
     {
         // Marker at index 0 is not a head boundary — keep the text as-is.
         const string input = "Use when you need a hero.";
-        Assert.Equal(input, SiteBuilderController.DeriveCatalogSummary(input));
+        Assert.Equal(input, SiteBuilderSchemas.DeriveCatalogSummary(input));
     }
 
     [Fact]
@@ -191,25 +191,25 @@ public class DeriveCatalogSummaryTests
     {
         var sentence1 = new string('a', 120) + ".";
         var input = sentence1 + " " + new string('b', 120); // > 200, no "Use when"
-        var result = SiteBuilderController.DeriveCatalogSummary(input);
+        var result = SiteBuilderSchemas.DeriveCatalogSummary(input);
         Assert.Equal(sentence1, result);
-        Assert.True(result.Length <= SiteBuilderController.CatalogSummaryMaxLength);
+        Assert.True(result.Length <= SiteBuilderSchemas.CatalogSummaryMaxLength);
     }
 
     [Fact]
     public void Hard_cuts_with_ellipsis_when_no_sentence_boundary()
     {
         var input = new string('a', 250); // no punctuation, exceeds cap
-        var result = SiteBuilderController.DeriveCatalogSummary(input);
+        var result = SiteBuilderSchemas.DeriveCatalogSummary(input);
         Assert.EndsWith("…", result);
-        Assert.True(result.Length <= SiteBuilderController.CatalogSummaryMaxLength + 1);
+        Assert.True(result.Length <= SiteBuilderSchemas.CatalogSummaryMaxLength + 1);
     }
 }
 
 public class MergeStaticSectionsIntoTemplateTests
 {
     private static string Merge(string templateJson, IReadOnlyDictionary<string, string> sections) =>
-        SiteBuilderController.MergeStaticSectionsIntoTemplate(templateJson, sections);
+        SiteBuilderSchemas.MergeStaticSectionsIntoTemplate(templateJson, sections);
 
     [Fact]
     public void Returns_input_unchanged_when_template_json_invalid()

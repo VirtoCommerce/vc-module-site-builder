@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json.Linq;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
@@ -27,4 +29,16 @@ public static class ThemePaletteValues
 
     /// <summary>The shape of a token name, for when the storefront's list of tokens is not known.</summary>
     public static bool IsTokenName(string name) => name != null && TokenNamePattern.IsMatch(name);
+
+    /// <summary>The colors of a palette file as the storefront gets them: a value that is not a color is left out, as the storefront would set it as a custom property as it is.</summary>
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means no color was set, so the snapshot has no palette; an empty one would replace the preset colors with nothing.")]
+    public static Dictionary<string, string> ReadColors(JToken token)
+    {
+        var colors = (token as JObject)?.Properties()
+            .Where(x => IsTokenName(x.Name) && x.Value is JValue { Type: JTokenType.String } value && IsColor((string)value))
+            .ToDictionary(x => x.Name, x => (string)x.Value);
+
+        return colors?.Count > 0 ? colors : null;
+    }
 }

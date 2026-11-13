@@ -268,7 +268,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 pageDocumentSearchService: new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
                 logger: NullLogger<SiteBuilderPageController>.Instance,
-                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService));
+                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService),
+                publishStatusQueryService: TestServices.PublishStatuses(authorization, service));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));

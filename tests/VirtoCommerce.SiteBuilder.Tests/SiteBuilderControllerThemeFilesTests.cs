@@ -119,6 +119,23 @@ public class SiteBuilderControllerThemeFilesTests
     }
 
     [Fact]
+    public async Task SaveTemplates_TemplateDraftLosingItsMainSection_ReturnsBadRequestWithErrorsAndWritesNothing()
+    {
+        const string template = "default/templates/category.json";
+        _live.Files[Theme(template)] = """{ "content": [ { "id": "m", "type": "category-listing" } ] }""";
+        var files = new SiteBuilderController.SaveFilesModel
+        {
+            Files = JsonConvert.SerializeObject(new[] { new { path = template, type = "themes", content = new { content = new[] { new { id = "t", type = "text" } } } } }),
+        };
+
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true);
+
+        const string error = "templates/category.json: the template's main section 'category-listing' cannot be removed";
+        Assert.Equal($$"""{"error":"The theme is not valid: {{error}}","errors":["{{error}}"]}""", PlatformJson.SerializeBody(Assert.IsType<BadRequestObjectResult>(result)));
+        Assert.False(_live.Files.ContainsKey(Theme($"{template}-draft")));
+    }
+
+    [Fact]
     public async Task DiscardDraft_ThemeFileWithoutThemePermission_ReturnsForbidAndKeepsDraft()
     {
         _live.Files[Theme(Path)] = "{}";
@@ -398,9 +415,9 @@ public class SiteBuilderControllerThemeFilesTests
     {
         var options = Options.Create(new GitContentOptions { Enabled = true, Organization = "acme", Token = "t0ken", BaseBranch = "main" });
         var themePublisher = new ThemePublisher(_themeStorageFactory, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themeStorageFactory),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard());
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), GitHubConnections.CreatePolicy(options, new FakeSettingsManager(true), _ownership), null, null, new FakeGitContentProvisioner());
-        var controller = new SiteBuilderController(
+        var controller = TestServices.CreateSiteBuilderController(
             storeService: _live.StoreService,
             pathResolver: _live,
             blobContentStorageProviderFactory: _live,
@@ -423,7 +440,8 @@ public class SiteBuilderControllerThemeFilesTests
                 authorizationService: authorization ?? new FakeAuthorizationService(true),
                 contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),
                 requestValidator: RequestValidators.Content("s1"),
-                designerContentService: TestServices.Designer(history ?? new NoContentHistory(), filePageDrafts, null, null, eventPublisher ?? _live, themePublisher, new ThemeSnapshotService(_live.StoreService, _settings, _themeStorageFactory, themePublisher, null,
+                designerContentService: TestServices.Designer(history ?? new NoContentHistory(), filePageDrafts,
+                    new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance), null, eventPublisher ?? _live, themePublisher, new ThemeSnapshotService(_live.StoreService, _settings, _themeStorageFactory, themePublisher, null,
                     Options.Create(new ThemeSnapshotOptions()))),
                 themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance)),
             contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),

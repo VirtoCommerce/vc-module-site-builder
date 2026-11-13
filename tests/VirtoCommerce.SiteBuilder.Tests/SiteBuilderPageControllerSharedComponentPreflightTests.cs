@@ -259,7 +259,8 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
             pageContentService,
             NullLogger<SiteBuilderPageController>.Instance,
             TestServices.GroupedPageOperations(authorizationService, service, pageContentService, pageService,
-                new SiteBuilderSharedComponentPlacementValidator(referenceIndex, authorizationService)));
+                new SiteBuilderSharedComponentPlacementValidator(referenceIndex, authorizationService)),
+            TestServices.PublishStatuses(authorizationService, service));
         var httpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity()),

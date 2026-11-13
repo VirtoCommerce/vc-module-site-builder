@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Web.Extensions;
 using VirtoCommerce.Platform.Core.Common;
@@ -18,10 +19,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 [Route("api/site-builder")]
 [Authorize]
 public class ThemeController(
-    IThemePublisher themePublisher,
+    IThemeOperationService themeOperationService,
     ISchemaCatalogService schemaCatalogService,
     IThemePaletteService themePaletteService,
-    IThemeSnapshotService themeSnapshotService,
     IAuthorizationService authorizationService,
     IValidator<SiteBuilderStoreRequest> storeRequestValidator,
     IValidator<ThemePaletteGenerationRequest> paletteGenerationRequestValidator,
@@ -34,26 +34,9 @@ public class ThemeController(
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ThemePublicationPointer>> Publish([FromQuery] string storeId, [FromQuery] string catalogHash, CancellationToken cancellationToken = default)
     {
-        if (await CheckRequestAsync(storeId, cancellationToken, catalogHash) is { } refused)
-        {
-            return refused;
-        }
+        var request = new ThemePublishOperationRequest { StoreId = storeId, CatalogHash = catalogHash, BindingErrors = ModelState.GetBindingErrors() };
 
-        if (!await themeSnapshotService.IsNewSiteBuilderEnabledAsync(storeId, cancellationToken))
-        {
-            return BadRequest(new { error = "The store does not use the new Site Builder: its theme is not published with theme/publish." });
-        }
-
-        try
-        {
-            var result = AbstractTypeFactory<ThemePublicationPointer>.TryCreateInstance();
-            result.Publication = await themePublisher.PublishAsync(storeId, catalogHash, User, cancellationToken);
-            return Ok(result);
-        }
-        catch (ThemeValidationException ex)
-        {
-            return BadRequest(new { error = ex.Message, errors = ex.Errors });
-        }
+        return (await themeOperationService.PublishAsync(request, User, cancellationToken)).ToActionResult();
     }
 
     [HttpGet("theme/status")]
@@ -62,12 +45,9 @@ public class ThemeController(
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ThemeStatus>> GetStatus([FromQuery] string storeId, CancellationToken cancellationToken = default)
     {
-        if (await CheckRequestAsync(storeId, cancellationToken) is { } refused)
-        {
-            return refused;
-        }
+        var request = new SiteBuilderOperationRequest { StoreId = storeId, BindingErrors = ModelState.GetBindingErrors() };
 
-        return Ok(await themePublisher.GetStatusAsync(storeId, cancellationToken));
+        return (await themeOperationService.GetStatusAsync(request, User, cancellationToken)).ToActionResult();
     }
 
     [HttpPut("catalog")]

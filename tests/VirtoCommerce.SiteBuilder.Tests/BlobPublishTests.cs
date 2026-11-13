@@ -106,7 +106,7 @@ public class BlobPublishTests
     {
         // The git dependencies are left null on purpose: a store off the git flow must not reach them.
         var filePageDrafts = TestServices.FilePageDrafts(Options.Create(new GitContentOptions()), GitHubConnections.CreateService(Options.Create(new GitContentOptions()).Value), new FakeGitContentPolicy(enabled: false), null, null, new FakeGitContentProvisioner(), new FakeStoreService(new Store { Id = "vccom" }), null, null, publishing, null);
-        var controller = new SiteBuilderController(
+        var controller = TestServices.CreateSiteBuilderController(
             storeService: new FakeStoreService(new Store { Id = "vccom" }),
             pathResolver: null,
             blobContentStorageProviderFactory: null,

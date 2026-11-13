@@ -33,8 +33,6 @@ using VirtoCommerce.SiteBuilder.Web.Models;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.DistributedLock;
 using VirtoCommerce.Platform.Core.Events;
-using VirtoCommerce.Platform.Core.Settings;
-using VirtoCommerce.StoreModule.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 {
@@ -42,7 +40,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
     [Authorize]
     [RepositoryOwnershipConflict]
     [GitContentFailure]
-    public class SiteBuilderController(IStoreService storeService,
+    public class SiteBuilderController(
             IContentPathResolver pathResolver,
             IBlobContentStorageProviderFactory blobContentStorageProviderFactory,
             IPublishingService publishingService,
@@ -54,7 +52,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             IGitContentHistory gitContentHistory,
             IGitContentPublisher gitContentPublisher,
             IGitLivePageService gitLivePageService,
-            ISettingsManager settingsManager,
             IAuthorizationService authorizationService,
             IDistributedLock distributedLock,
             IValidator<SiteBuilderContentRequest> requestValidator,
@@ -64,7 +61,10 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             IContentPermissionService contentPermissionService,
             IFilePageDraftService filePageDraftService,
             IThemeStorageFactory themeStorageFactory,
-            ISiteBuilderContentGuard contentGuard
+            ISiteBuilderContentGuard contentGuard,
+            ISiteBuilderContentQueryService contentQueryService,
+            ISiteBuilderPreviewQueryService previewQueryService,
+            ISiteBuilderPublishStatusQueryService publishStatusQueryService
             )
         : Controller
     {
@@ -73,17 +73,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         // in a subfolder (see GitPageLocation.ContentPath). Themes, schemas and settings stay in blob
         // storage. PagesContentType is the default assumed when a caller sends no type at all.
         private const string PagesContentType = "pages";
-        private const string DefaultPreviewPath = "/designer-preview";
-        // How a client names the two flows in the publish-status answer.
-        private const string GitFlow = "git";
-        private const string BlobFlow = "blob";
         private const string JsonContentType = "application/json";
-        private const string JsonExtension = ".json";
-        private const string SchemaKindSections = ModuleConstants.SchemaKinds.Sections;
         private const string SchemaKindTemplates = ModuleConstants.SchemaKinds.Templates;
-        private const string SchemaKindBlocks = ModuleConstants.SchemaKinds.Blocks;
         private const string SchemaKindObjects = ModuleConstants.SchemaKinds.Objects;
-        private const string SchemaKindShared = ModuleConstants.SchemaKinds.Shared;
         // The blob name of a draft in the flow that came before git: the page's name with this appended.
         // Only the legacy-draft cleanup deals in these; everywhere else GitPageLocation strips the suffix.
         private const string DraftSuffix = ModuleConstants.DraftSuffix;
@@ -103,74 +95,28 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("template")]
         public async Task<ActionResult> GetTemplate(string storeId, string theme, string path, string type, bool draft = false, [FromQuery(Name = "ref")] string gitRef = null)
         {
-            var request = new SiteBuilderContentRequest { StoreId = storeId, ContentType = type, Theme = theme, Paths = PathsOf(path), Ref = gitRef };
-            if (await CheckRequestAsync(request) is { } refused)
+            var request = new SiteBuilderFileReadRequest
             {
-                return refused;
+                StoreId = storeId,
+                Theme = theme,
+                ContentType = type,
+                Path = path,
+                Draft = draft,
+                Ref = gitRef,
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
+            var result = await contentQueryService.ReadFileAsync(request, User, HttpContext.RequestAborted);
+            if (result.Status == SiteBuilderOperationStatus.NotFound && result.Value is { } notFound)
+            {
+                return notFound.Ref != null
+                    ? NotFound(new { templatePath = path, gitRef = notFound.Ref })
+                    : NotFound(new { basePath = notFound.BasePath, templatePath = path });
             }
 
-            // With the git flow on, a page is read from git: the caller's URL does not change, because
-            // resolving "this editor's draft, else what is published" is the server's job.
-            var repository = GitPageLocation.IsPageContent(type) && !path.IsNullOrEmpty()
-                ? await gitContentPolicy.GetRepositoryAsync(storeId, HttpContext.RequestAborted)
-                : null;
-            if (repository != null)
-            {
-                var fromGit = await ReadPageFromGitAsync(repository, type, path, draft, gitRef);
-                if (fromGit != null)
-                {
-                    return PageContent(fromGit);
-                }
-
-                if (!string.IsNullOrEmpty(gitRef))
-                {
-                    // an exact commit was asked for; blob storage cannot answer that question
-                    return NotFound(new { templatePath = path, gitRef });
-                }
-
-                // Not in the repository — fall through to blob storage. A store that opts in keeps every
-                // page it had: those only reach git at their first save from the designer, and until then
-                // the blob copy is the page. Refusing to read it would make opting in look like the
-                // builder lost the store's content.
-            }
-
-            return await ReadTemplateFromBlobAsync(storeId, theme, path, type, draft);
+            return result.Succeeded ? FileContent(result.Value) : result.ToRefusal();
         }
 
-        private async Task<ActionResult> ReadTemplateFromBlobAsync(string storeId, string theme, string path, string type, bool draft)
-        {
-            var basePath = GetContentBasePath(storeId, type, theme);
-            if (!path.IsNullOrEmpty())
-            {
-                var storageProvider = blobContentStorageProviderFactory.CreateProvider(basePath);
-
-                var blobInfo = await storageProvider.GetBlobInfoAsync(publishingService.GetRelativeDraftUrl(path, draft));
-                if (blobInfo == null && draft)
-                {
-                    blobInfo = await storageProvider.GetBlobInfoAsync(publishingService.GetRelativeDraftUrl(path, false));
-                }
-
-                if (blobInfo != null)
-                {
-                    var stream = await storageProvider.OpenReadAsync(blobInfo.RelativeUrl);
-                    return File(stream, MimeTypeResolver.ResolveContentType(blobInfo.Name));
-                }
-            }
-
-            return NotFound(new
-            {
-                basePath,
-                templatePath = path
-            });
-        }
-
-        /// <summary>
-        /// Reads a page out of the content repository, or <c>null</c> when the repository does not have
-        /// it. Without an explicit ref: the editor's draft of this page when they have one, otherwise the
-        /// published version. That fallback is what keeps the contract of the blob-backed endpoint — "the
-        /// draft, else what is live" — intact, so the callers of this URL never learn that pages moved to
-        /// git.
-        /// </summary>
+        /// <summary>The page at the ref, else the editor's draft when asked for, else what is published; <c>null</c> when git does not hold it.</summary>
         private async Task<string> ReadPageFromGitAsync(string repository, string type, string path, bool draft, string gitRef)
         {
             var location = GitLocation(repository, type, path);
@@ -211,326 +157,74 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         private GitPageFileLocation GitLocation(string repository, string type, string path) =>
             gitContentOptions.Value.GetPageLocation(repository, type, path, User?.Identity?.Name);
 
-        private ContentResult PageContent(string json) => Content(json, JsonContentType);
+        private ActionResult FileContent(SiteBuilderFileContent file) =>
+            file.Stream != null ? File(file.Stream, MimeTypeResolver.ResolveContentType(file.Name)) : Content(file.Text, JsonContentType);
 
         [HttpGet]
         [Route("settings")]
         public async Task<ActionResult> GetSettings(string storeId, string theme)
         {
-            if (await CheckRequestAsync(storeId, Themes, theme) is { } refused)
-            {
-                return refused;
-            }
+            var result = await contentQueryService.GetBuilderSettingsAsync(ThemeQuery(storeId, theme), User, HttpContext.RequestAborted);
 
-            var themeName = await GetCurrentThemeName(storeId, theme);
-            var filePath = $"{themeName}/config/builder_settings.json";
-            var basePath = GetContentBasePath(storeId, Themes, themeName);
-            var storageProvider = blobContentStorageProviderFactory.CreateProvider(basePath);
-
-            var blobInfo = await storageProvider.GetBlobInfoAsync(filePath);
-            var gitFlow = await gitContentPolicy.IsEnabledForStoreAsync(storeId, HttpContext.RequestAborted);
-
-            if (blobInfo == null)
-            {
-                return Content(gitFlow ? GitBuilderDescriptors().ToString(Formatting.None) : "{}", JsonContentType);
-            }
-
-            if (!gitFlow)
-            {
-                var stream = await storageProvider.OpenReadAsync(blobInfo.RelativeUrl);
-                return File(stream, MimeTypeResolver.ResolveContentType(blobInfo.Name));
-            }
-
-            // The builder overlays this response on top of its bundled data/settings.json, server wins.
-            // That is how a store on the git flow gets git urls for publishing without anyone editing the
-            // app's static config — and how a store that is not on it keeps the bytes it has always got.
-            var settings = await ReadJsonBlobAsync(storageProvider, blobInfo.RelativeUrl);
-            settings.Merge(GitBuilderDescriptors(), new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
-
-            return Content(settings.ToString(Formatting.None), JsonContentType);
-        }
-
-        /// <summary>
-        /// The publish-related request descriptors for a store on the git flow. <c>unpublish</c> is one of
-        /// them: with pages in git, taking a page down is deleting the file from the production branch, so
-        /// it ships the same way a publish does — a commit on the work branch and a merge.
-        /// <para>
-        /// The same mechanism switches version history on: the panel exists only for a store whose pages
-        /// are in git, and it learns where to ask from here rather than from the app's bundled config.
-        /// </para>
-        /// </summary>
-        public static JObject GitBuilderDescriptors()
-        {
-            const string storeIdArg = "storeId={{location.params.storeId}}";
-
-            // Every url carries the content type: pages and blogs are the same kind of file in two
-            // folders, and the server cannot tell them apart from the path alone.
-            const string pageArgs = "path={{path}}&type={{type}}";
-
-            return new JObject
-            {
-                ["publish"] = new JObject
-                {
-                    ["status"] = $"/api/site-builder/git/publish-status?{storeIdArg}&{pageArgs}",
-                    ["publish"] = new JObject
-                    {
-                        ["url"] = $"/api/site-builder/git/publish?{storeIdArg}&{pageArgs}",
-                        ["method"] = "POST",
-                    },
-                    ["unpublish"] = new JObject
-                    {
-                        ["url"] = $"/api/site-builder/git/unpublish?{storeIdArg}&{pageArgs}",
-                        ["method"] = "POST",
-                    },
-                    // Offered whether or not a release branch is configured; the status endpoint reports
-                    // production as null when there is none, and the client shows no production stage at
-                    // all. Gating the descriptor as well would mean two places to keep in agreement.
-                    ["promote"] = new JObject
-                    {
-                        ["url"] = $"/api/site-builder/git/promote?{storeIdArg}&{pageArgs}",
-                        ["method"] = "POST",
-                    },
-                },
-                ["externalPreview"] = new JObject
-                {
-                    ["url"] = $"/api/site-builder/git/preview?{storeIdArg}&{pageArgs}",
-                },
-                ["history"] = new JObject
-                {
-                    ["url"] = $"/api/site-builder/git/history?{storeIdArg}&{pageArgs}",
-                    // a version is addressed by its sha, which the panel substitutes per row
-                    ["preview"] = new JObject
-                    {
-                        ["url"] = $"/api/site-builder/git/preview?{storeIdArg}&{pageArgs}&ref={{{{sha}}}}",
-                    },
-                    ["restore"] = new JObject
-                    {
-                        ["url"] = $"/api/site-builder/git/restore-version?{storeIdArg}&{pageArgs}&sha={{{{sha}}}}",
-                        ["method"] = "POST",
-                    },
-                },
-            };
-        }
-
-        private static async Task<JObject> ReadJsonBlobAsync(IBlobContentStorageProvider storageProvider, string relativeUrl)
-        {
-            await using var stream = await storageProvider.OpenReadAsync(relativeUrl);
-            using var reader = new StreamReader(stream);
-            var json = await reader.ReadToEndAsync();
-
-            return string.IsNullOrWhiteSpace(json) ? [] : JObject.Parse(json);
+            return result.Succeeded ? FileContent(result.Value) : result.ToRefusal();
         }
 
         [HttpGet]
         [Route("templates")]
         public async Task<ActionResult> GetTemplates(string storeId, string theme)
         {
-            if (await CheckRequestAsync(storeId, Themes, theme) is { } refused)
-            {
-                return refused;
-            }
+            var result = await contentQueryService.GetSchemasAsync(SchemaQuery(storeId, theme, SchemaKindTemplates), User, HttpContext.RequestAborted);
 
-            var result = await GetSettingsFilesFromFolder(storeId, theme, "templates");
-            return Content(result, JsonContentType);
+            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
         }
 
         [HttpGet]
         [Route("objects")]
         public async Task<ActionResult> GetObjects(string storeId, string theme)
         {
-            if (await CheckRequestAsync(storeId, Themes, theme) is { } refused)
-            {
-                return refused;
-            }
+            var result = await contentQueryService.GetSchemasAsync(SchemaQuery(storeId, theme, SchemaKindObjects), User, HttpContext.RequestAborted);
 
-            var result = await GetSettingsFilesFromFolder(storeId, theme, SchemaKindObjects);
-            return Ok(result);
+            return result.Succeeded ? Ok(result.Value) : result.ToRefusal();
         }
 
         [HttpGet]
         [Route("sections")]
         public async Task<ActionResult> GetSectionsSettings(string storeId, string theme)
         {
-            if (await CheckRequestAsync(storeId, Themes, theme) is { } refused)
-            {
-                return refused;
-            }
+            var result = await contentQueryService.GetSectionSchemasAsync(ThemeQuery(storeId, theme), User, HttpContext.RequestAborted);
 
-            var sections = await GetSettingsFilesFromFolder(storeId, theme, SchemaKindSections);
-            var blocks = await GetSettingsFilesFromFolder(storeId, theme, SchemaKindBlocks);
-            var objects = await GetSettingsFilesFromFolder(storeId, theme, SchemaKindObjects);
-            var shared = await GetSettingsFilesFromFolder(storeId, theme, SchemaKindShared);
-            return Content($"{{ \"{SchemaKindSections}\": {sections}, \"{SchemaKindBlocks}\": {blocks}, \"{SchemaKindObjects}\": {objects}, \"{SchemaKindShared}\": {shared} }}", JsonContentType);
+            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
         }
 
         [HttpGet]
         [Route("schemas")]
         public async Task<ActionResult> GetSchemasCatalog(string storeId, string theme)
         {
-            if (await CheckRequestAsync(storeId, Themes, theme) is { } refused)
-            {
-                return refused;
-            }
+            var result = await contentQueryService.GetSchemaCatalogAsync(ThemeQuery(storeId, theme), User, HttpContext.RequestAborted);
 
-            var catalog = new JObject
-            {
-                [SchemaKindSections] = await GetSchemasCatalogForFolder(storeId, theme, SchemaKindSections, filterInternal: true),
-                [SchemaKindTemplates] = await GetSchemasCatalogForFolder(storeId, theme, SchemaKindTemplates, filterInternal: true),
-                [SchemaKindBlocks] = await GetSchemasCatalogForFolder(storeId, theme, SchemaKindBlocks, filterInternal: true),
-                [SchemaKindObjects] = await GetSchemasCatalogForFolder(storeId, theme, SchemaKindObjects, filterInternal: true),
-                [SchemaKindShared] = await GetSchemasCatalogForFolder(storeId, theme, SchemaKindShared, filterInternal: false),
-            };
-            return Content(catalog.ToString(Formatting.None), JsonContentType);
+            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
         }
 
         [HttpGet]
         [Route("schemas/{kind}/{key}")]
         public async Task<ActionResult> GetSchemaByKey(string storeId, string theme, string kind, string key)
         {
-            var request = new SiteBuilderContentRequest { StoreId = storeId, ContentType = Themes, Theme = theme, SchemaKind = kind, SchemaKey = key };
-            if (await CheckRequestAsync(request) is { } refused)
-            {
-                return refused;
-            }
-
-            // Underscore-prefixed keys are theme-internal; only `shared` exposes them (e.g. _sections, _blocks).
-            if (kind != SchemaKindShared && key.StartsWith('_'))
+            var request = SchemaQuery(storeId, theme, kind);
+            request.Key = key;
+            var result = await contentQueryService.GetSchemaAsync(request, User, HttpContext.RequestAborted);
+            if (result.Status == SiteBuilderOperationStatus.NotFound)
             {
                 return NotFound(new { kind, key });
             }
 
-            var themeName = await GetCurrentThemeName(storeId, theme);
-            var schemasFolder = $"{themeName}/config/schemas/{kind}";
-            var basePath = GetContentBasePath(storeId, Themes, themeName);
-            var storageProvider = blobContentStorageProviderFactory.CreateProvider(basePath);
-            var allFiles = await storageProvider.SearchAsync(schemasFolder, null);
-            var file = allFiles.Results.FirstOrDefault(x =>
-                x.Type != "folder" &&
-                x.Name.EndsWith(JsonExtension, StringComparison.OrdinalIgnoreCase) &&
-                Path.GetFileNameWithoutExtension(x.Name).Equals(key, StringComparison.OrdinalIgnoreCase));
-
-            if (file == null)
-            {
-                return NotFound(new { kind, key });
-            }
-
-            var content = GetContent(file, storageProvider);
-
-            if (kind == SchemaKindTemplates)
-            {
-                content = await MergeStaticSectionsIntoTemplateAsync(content, storeId, themeName);
-            }
-
-            return Content(content, JsonContentType);
+            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
         }
 
+        private SiteBuilderThemeQueryRequest ThemeQuery(string storeId, string theme) =>
+            new() { StoreId = storeId, Theme = theme, BindingErrors = ModelState.GetBindingErrors() };
 
-        internal static bool IsStaticEntry(JToken entry)
-        {
-            var token = entry?["static"];
-            if (token == null || token.Type == JTokenType.Null)
-            {
-                return false;
-            }
-            if (token.Type == JTokenType.Boolean)
-            {
-                return token.Value<bool>();
-            }
-            if (token.Type == JTokenType.String)
-            {
-                var value = token.Value<string>();
-                return value == "top" || value == "bottom";
-            }
-            return false;
-        }
-
-        internal static string MergeStaticSectionsIntoTemplate(string templateJson, IReadOnlyDictionary<string, string> sectionSchemasByKey)
-        {
-            JObject template;
-            try
-            {
-                template = JObject.Parse(templateJson);
-            }
-            catch
-            {
-                return templateJson;
-            }
-
-            // Template's `sections` filter (if present and non-empty) restricts which sections apply
-            // to this template — for both regular and static. Missing/empty means "all sections".
-            HashSet<string> allowedKeys = null;
-            if (template["sections"] is JArray sectionsFilter && sectionsFilter.Count > 0)
-            {
-                allowedKeys = new HashSet<string>(
-                    sectionsFilter.OfType<JValue>().Select(v => v.Value?.ToString()).Where(s => s != null),
-                    StringComparer.OrdinalIgnoreCase);
-            }
-
-            if (template["settings"] is not JArray templateSettings)
-            {
-                templateSettings = [];
-                template["settings"] = templateSettings;
-            }
-
-            foreach (var (sectionKey, sectionJson) in sectionSchemasByKey)
-            {
-                if (sectionKey.StartsWith('_'))
-                {
-                    continue;
-                }
-                if (allowedKeys != null && !allowedKeys.Contains(sectionKey))
-                {
-                    continue;
-                }
-                AppendStaticSectionFields(sectionJson, templateSettings);
-            }
-
-            return template.ToString(Formatting.None);
-        }
-
-        private async Task<string> MergeStaticSectionsIntoTemplateAsync(string templateJson, string storeId, string themeName)
-        {
-            var sectionsFolder = $"{themeName}/config/schemas/{SchemaKindSections}";
-            var basePath = GetContentBasePath(storeId, Themes, themeName);
-            var storageProvider = blobContentStorageProviderFactory.CreateProvider(basePath);
-            var sectionFiles = (await storageProvider.SearchAsync(sectionsFolder, null)).Results
-                .Where(x => x.Type != "folder" && x.Name.EndsWith(JsonExtension, StringComparison.OrdinalIgnoreCase));
-
-            var schemas = new Dictionary<string, string>();
-            foreach (var file in sectionFiles)
-            {
-                try
-                {
-                    schemas[Path.GetFileNameWithoutExtension(file.Name)] = GetContent(file, storageProvider);
-                }
-                catch
-                {
-                    // Skip unreadable section files.
-                }
-            }
-
-            return MergeStaticSectionsIntoTemplate(templateJson, schemas);
-        }
-
-        private static void AppendStaticSectionFields(string sectionJson, JArray templateSettings)
-        {
-            try
-            {
-                var sectionSchema = JObject.Parse(sectionJson);
-                if (!IsStaticEntry(sectionSchema) || sectionSchema["settings"] is not JArray sectionSettings)
-                {
-                    return;
-                }
-                foreach (var field in sectionSettings)
-                {
-                    templateSettings.Add(field.DeepClone());
-                }
-            }
-            catch
-            {
-                // Skip unparseable section files.
-            }
-        }
+        private SiteBuilderSchemaQueryRequest SchemaQuery(string storeId, string theme, string kind) =>
+            new() { StoreId = storeId, Theme = theme, Kind = kind, BindingErrors = ModelState.GetBindingErrors() };
 
         [HttpGet]
         [Route("~/api/pagebuilder/search")]
@@ -715,16 +409,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<ActionResult<DesignerStorefront>> GetDesignerStorefront([FromQuery] string storeId)
         {
-            if (await CheckRequestAsync(storeId, Themes, theme: null) is { } refused)
-            {
-                return refused;
-            }
+            var request = new SiteBuilderOperationRequest { StoreId = storeId, BindingErrors = ModelState.GetBindingErrors() };
 
-            var storefront = AbstractTypeFactory<DesignerStorefront>.TryCreateInstance();
-            storefront.Url = await GetStorefrontUrlAsync(storeId);
-            storefront.PreviewPath = await GetPreviewPathAsync();
-
-            return Ok(storefront);
+            return (await previewQueryService.GetStorefrontAsync(request, User, HttpContext.RequestAborted)).ToActionResult();
         }
 
         [HttpPost]
@@ -1093,89 +780,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/publish-status")]
         public async Task<ActionResult<PagePublishStatus>> GitPublishStatus(string storeId, string path, string type)
         {
-            if (await CheckRequestAsync(PageRequest(storeId, type, PathsOf(path))) is { } refused)
-            {
-                return refused;
-            }
+            var request = new SiteBuilderFilePageQueryRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
 
-            var storeRepository = await gitContentPolicy.GetRepositoryInfoAsync(storeId, HttpContext.RequestAborted);
-            var gitFlow = storeRepository != null;
-
-            // A page that does not exist yet — the blade asking about a page it is about to create — has
-            // no status; what the caller is after in that case is the flow.
-            if (path.IsNullOrEmpty())
-            {
-                return Ok(PublishStatus(published: false, hasChanges: false, pending: false, gitFlow));
-            }
-
-            if (!gitFlow)
-            {
-                var status = await publishingService.PublishStatusAsync(type ?? PagesContentType, storeId, path);
-                return Ok(PublishStatus(status.Published, status.HasChanges, pending: false, gitFlow: false));
-            }
-
-            var baseBranch = await GetBaseBranchAsync();
-            var location = GitLocation(storeRepository.Name, type, path);
-
-            var published = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, HttpContext.RequestAborted);
-            var draft = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, HttpContext.RequestAborted);
-            var pending = await gitContentPublisher.GetOpenPullRequestAsync(location.Repository, location.Branch, HttpContext.RequestAborted);
-
-            return Ok(PublishStatus(
-                published: published != null,
-                // a draft that says the same thing as production is not a change, whatever its history
-                hasChanges: draft != null && !PageJson.AreSame(draft, published),
-                pending: pending != null,
-                gitFlow: true,
-                // the pull request is open but nothing will merge it: publishing again is what finishes it
-                awaitingMerge: pending is { AutoMerging: false },
-                production: await ProductionStatusAsync(location.Repository, location.RepoPath, published, type, path),
-                liveBehind: storeRepository.IsPlatformManaged &&
-                            await gitLivePageService.IsLivePageBehindAsync(storeId, type ?? PagesContentType, path, location, published, HttpContext.RequestAborted)));
-        }
-
-        /// <summary>
-        /// Where this page stands on the production branch, or <c>null</c> when the installation has none.
-        /// <para>
-        /// Reported separately from the fields above rather than folded into them: a page can be published
-        /// and production still be serving last week's version of it, and that in-between state is the one
-        /// that makes an editor say the site did not update. Nothing before this could express it.
-        /// </para>
-        /// </summary>
-        private async Task<PageProductionStatus> ProductionStatusAsync(string repository, string repoPath, string onBase, string type, string path)
-        {
-            var options = gitContentOptions.Value;
-            if (string.IsNullOrWhiteSpace(options.ReleaseBranch))
-            {
-                return null;
-            }
-
-            var onRelease = await gitContentRepository.ReadFileAsync(repository, repoPath, options.ReleaseBranch, HttpContext.RequestAborted);
-            var pending = await gitContentPublisher.GetOpenPullRequestAsync(repository, PromoteBranch(type, path), HttpContext.RequestAborted);
-
-            var production = AbstractTypeFactory<PageProductionStatus>.TryCreateInstance();
-            production.Published = onRelease != null;
-            // only a page on the base branch can be behind: a page never published has simply not started
-            production.Behind = onBase != null && !PageJson.AreSame(onBase, onRelease);
-            production.Pending = pending != null;
-            production.AwaitingMerge = pending is { AutoMerging: false };
-            return production;
-        }
-
-        private static PagePublishStatus PublishStatus(bool published, bool hasChanges, bool pending, bool gitFlow,
-            bool awaitingMerge = false, PageProductionStatus production = null, bool liveBehind = false)
-        {
-            var status = AbstractTypeFactory<PagePublishStatus>.TryCreateInstance();
-            status.Published = published;
-            status.HasChanges = hasChanges;
-            status.Pending = pending;
-            // Told apart from pending on purpose: both mean "a pull request is open", but only this one
-            // means the merge is not going to happen unless somebody asks for it again.
-            status.AwaitingMerge = awaitingMerge;
-            status.Flow = gitFlow ? GitFlow : BlobFlow;
-            status.Production = production;
-            status.LiveBehind = liveBehind;
-            return status;
+            return (await publishStatusQueryService.GetFilePageStatusAsync(request, User, HttpContext.RequestAborted)).ToActionResult();
         }
 
         /// <summary>
@@ -1316,47 +923,22 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/preview")]
         public async Task<ActionResult> GitPreview(string storeId, string path, string type, [FromQuery(Name = "ref")] string requestedRef = null)
         {
-            var request = PageRequest(storeId, type, path);
-            // The link goes straight to the storefront: a branch name in it would stop meaning what the link said.
-            request.Ref = requestedRef;
-            if (await CheckRequestAsync(request) is { } refused)
+            var request = new SiteBuilderFilePagePreviewRequest
             {
-                return refused;
-            }
-
-            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, HttpContext.RequestAborted);
-            if (repository == null)
-            {
-                return NotFound();
-            }
-
-            var location = GitLocation(repository, type, path);
-
-            var gitRef = requestedRef ?? await DraftOrPublishedHeadAsync(location.Repository, location.Branch);
-            if (gitRef == null)
+                StoreId = storeId,
+                ContentType = type,
+                Path = path,
+                Ref = requestedRef,
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
+            var result = await previewQueryService.GetFilePagePreviewAsync(request, User, HttpContext.RequestAborted);
+            if (result.Status == SiteBuilderOperationStatus.NotFound && result.Value != null)
             {
                 return NotFound(new { templatePath = path });
             }
 
-            var storeUrl = await GetStorefrontUrlAsync(storeId);
-            if (string.IsNullOrEmpty(storeUrl))
-            {
-                return BadRequest(new
-                {
-                    error = $"Nowhere to preview \"{path}\": store \"{storeId}\" has no storefront url. " +
-                            $"Fill in the store's Url (or Secure URL), or set {ModuleConstants.Settings.General.StoreUrl.Name} to override it."
-                });
-            }
-
-            var previewPath = await GetPreviewPathAsync();
-            var pageId = EncodePageId(storeId, type, path);
-
-            return Redirect($"{storeUrl.TrimEnd('/')}{previewPath}?pageId={Uri.EscapeDataString(pageId)}&ref={Uri.EscapeDataString(gitRef)}");
+            return result.Succeeded ? Redirect(result.Value.Url) : result.ToRefusal();
         }
-
-        private async Task<string> DraftOrPublishedHeadAsync(string repository, string workBranch) =>
-            await gitContentRepository.GetBranchHeadShaAsync(repository, workBranch, HttpContext.RequestAborted)
-            ?? await gitContentRepository.GetBranchHeadShaAsync(repository, await GetBaseBranchAsync(), HttpContext.RequestAborted);
 
         /// <summary>Refused when nothing is published, as the draft is then the only copy</summary>
         [HttpPost]
@@ -1945,64 +1527,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             await gitContentRepository.CreateBranchAsync(repository, branch, releaseBranch, HttpContext.RequestAborted);
         }
 
-        // Promotion is per page, not per editor: the branch carries no {user}, so two people promoting the
-        // same page reuse one branch and one pull request instead of racing with two.
-        private string PromoteBranch(string type, string path) =>
-            GitPageLocation.BranchFor(gitContentOptions.Value.PromoteBranchTemplate, userName: null,
-                GitPageLocation.ContentPath(type, path));
-
-        /// <summary>
-        /// Where this store's storefront lives, for a preview link.
-        /// <para>
-        /// The store itself is the source: it already records its storefront url, and it is the only answer
-        /// that can differ per store. <see cref="ModuleConstants.Settings.General.StoreUrl"/> is a single
-        /// value for the whole installation, so on a platform with more than one store it can only be right
-        /// about one of them — it stays supported as a deliberate override (a staging host, a tunnel) and is
-        /// consulted first for installations that already rely on it.
-        /// </para>
-        /// </summary>
-        private async Task<string> GetStorefrontUrlAsync(string storeId)
-        {
-            var configured = await GetSettingAsync(ModuleConstants.Settings.General.StoreUrl);
-            if (!string.IsNullOrWhiteSpace(configured))
-            {
-                return configured.Trim();
-            }
-
-            if (string.IsNullOrEmpty(storeId))
-            {
-                return null;
-            }
-
-            var store = await storeService.GetNoCloneAsync(storeId);
-            // https first: a preview link is opened in a browser next to the platform, which is served over
-            // https itself, and a mixed-content redirect is a dead end
-            var fromStore = FirstFilled(store?.SecureUrl, store?.Url);
-
-            return fromStore?.Trim();
-        }
-
-        private async Task<string> GetPreviewPathAsync() =>
-            FirstFilled(await GetSettingAsync(ModuleConstants.Settings.General.StorePreviewPath), DefaultPreviewPath);
-
-        private static string FirstFilled(params string[] values) =>
-            values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
-        private async Task<string> GetSettingAsync(SettingDescriptor descriptor)
-        {
-            var setting = await settingsManager.GetObjectSettingAsync(descriptor.Name);
-            return setting?.Value?.ToString();
-        }
-
-        // base64("<storeId>::<contentType>::<relativeUrl>") with '=' replaced by '-', matching what the
-        // builder puts in a preview link and what the storefront decodes (DesignerPreviewController).
-        // The url stays relative to its content root — for a blog article that is the blogs folder, which
-        // the storefront re-adds when it looks the file up.
-        private static string EncodePageId(string storeId, string contentType, string path)
-        {
-            var raw = $"{storeId}::{(contentType.IsNullOrEmpty() ? PagesContentType : contentType)}::{path.Replace('\\', '/').TrimStart('/')}";
-            return Convert.ToBase64String(PageJson.Encoding.GetBytes(raw)).Replace('=', '-');
-        }
+        private string PromoteBranch(string type, string path) => gitContentOptions.Value.GetPromoteBranch(type, path);
 
         private static JToken ParsePage(string json)
         {
@@ -2112,134 +1637,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             return new GenericChangedEntry<FileEntity>(file, state);
         }
 
-        private async Task<string> GetSettingsFilesFromFolder(string storeId, string theme, string folder)
-        {
-            var themeName = await GetCurrentThemeName(storeId, theme);
-            var templatesFolder = $"{themeName}/config/schemas/{folder}";
-            var basePath = GetContentBasePath(storeId, Themes, themeName);
-            var storageProvider = blobContentStorageProviderFactory.CreateProvider(basePath);
-            var allFiles = await storageProvider.SearchAsync(templatesFolder, null);
-            var files = allFiles.Results.Where(x => x.Name.EndsWith(JsonExtension, StringComparison.OrdinalIgnoreCase));
-            var response = string.Join(", ", files.Select(file => $"\"{GetKey(null, file)}\": {GetContent(file, storageProvider)}"));
-            var result = $"{{{response}}}";
-            return result;
-        }
-
-        private async Task<JArray> GetSchemasCatalogForFolder(string storeId, string theme, string folder, bool filterInternal)
-        {
-            var themeName = await GetCurrentThemeName(storeId, theme);
-            var schemasFolder = $"{themeName}/config/schemas/{folder}";
-            var basePath = GetContentBasePath(storeId, Themes, themeName);
-            var storageProvider = blobContentStorageProviderFactory.CreateProvider(basePath);
-            var allFiles = await storageProvider.SearchAsync(schemasFolder, null);
-            var files = allFiles.Results.Where(x =>
-                x.Type != "folder" &&
-                x.Name.EndsWith(JsonExtension, StringComparison.OrdinalIgnoreCase));
-
-            var result = new JArray();
-            foreach (var file in files)
-            {
-                var key = Path.GetFileNameWithoutExtension(file.Name);
-                if (filterInternal && key.StartsWith('_'))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var raw = GetContent(file, storageProvider);
-                    var json = JObject.Parse(raw);
-                    // Static section schemas describe page-level settings panels — they are not
-                    // selectable as content sections. Hide them from the catalog; their `settings[]`
-                    // is merged into the template response by `MergeStaticSectionsIntoTemplate`.
-                    if (folder == SchemaKindSections && IsStaticEntry(json))
-                    {
-                        continue;
-                    }
-
-                    var entry = new JObject { ["key"] = key };
-                    CopySchemaMetadata(json, entry, folder);
-                    result.Add(entry);
-                }
-                catch
-                {
-                    // Skip files that cannot be parsed.
-                }
-            }
-
-            return result;
-        }
-
-        // Upper bound for the catalog's derived `description` summary. Full descriptions average
-        // ~1150 chars across a real theme (141 sections ≈ 162 KB); the catalog only needs enough
-        // to PICK an entry, so it carries a short head summary instead — see DeriveCatalogSummary.
-        internal const int CatalogSummaryMaxLength = 200;
-
-        internal static void CopySchemaMetadata(JObject source, JObject target, string kind)
-        {
-            // Catalog metadata is intentionally narrow — only fields the LLM uses while picking.
-            // Designer-only hints (`displayField`, `icon`, `tab`, `sort`, `group*`) are stripped.
-            // `includeShared` is stripped — it matters during field-list resolution in Phase B
-            // and the agent reads it from the full schema response there.
-            // `static` is stripped — static sections are entirely hidden from the agent (their
-            // `settings[]` is merged into the template response instead).
-            // `description` is exposed only for kinds where the agent picks an entry by intent
-            // (regular sections, templates, blocks). For objects/shared descriptions add noise.
-            // It is shortened to a head summary here; the full description is served by
-            // GetSchemaByKey (Phase B) once the agent commits to an entry.
-            var includeDescription = kind is SchemaKindSections or SchemaKindTemplates or SchemaKindBlocks;
-            var properties = includeDescription
-                ? new[] { "name", "description" }
-                : new[] { "name" };
-
-            foreach (var property in properties)
-            {
-                var token = source[property];
-                if (token == null || token.Type == JTokenType.Null)
-                {
-                    continue;
-                }
-
-                target[property] = property == "description" && token.Type == JTokenType.String
-                    ? DeriveCatalogSummary(token.Value<string>())
-                    : token.DeepClone();
-            }
-        }
-
-        /// <summary>
-        /// Reduces a full schema description to a short head summary for the catalog listing.
-        /// Theme descriptions follow a "&lt;what it is&gt; Use when: … Skip when: … &lt;field notes&gt;"
-        /// structure; the head before "Use when:" is the selection signal. The verbose remainder
-        /// (guidance + per-field notes, which duplicate the schema's <c>settings[]</c>) is dropped
-        /// from the catalog and served in full by GetSchemaByKey when an entry is actually used.
-        /// </summary>
-        internal static string DeriveCatalogSummary(string description)
-        {
-            if (string.IsNullOrWhiteSpace(description))
-            {
-                return description;
-            }
-
-            var marker = description.IndexOf("Use when", StringComparison.OrdinalIgnoreCase);
-            var head = (marker > 0 ? description[..marker] : description).Trim();
-            if (head.Length == 0)
-            {
-                head = description.Trim();
-            }
-
-            if (head.Length <= CatalogSummaryMaxLength)
-            {
-                return head;
-            }
-
-            // Prefer cutting at the last sentence boundary within the cap; else hard-cut + ellipsis.
-            var slice = head[..CatalogSummaryMaxLength];
-            var lastStop = slice.LastIndexOfAny(['.', '!', '?']);
-            return lastStop >= CatalogSummaryMaxLength / 2
-                ? slice[..(lastStop + 1)]
-                : slice.TrimEnd() + "…";
-        }
-
         private void TryAddFileContent(BlobEntry file, string type, IBlobContentStorageProvider storageProvider, Dictionary<string, string> fileInfoes, JsonSerializerSettings jsonSettings)
         {
             try
@@ -2289,12 +1686,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             {
                 return null;
             }
-        }
-
-        private string GetContent(BlobEntry entry, IBlobContentStorageProvider provider)
-        {
-            using var reader = new StreamReader(provider.OpenRead(entry.RelativeUrl));
-            return reader.ReadToEnd();
         }
 
         private string GetContentBasePath(string storeId, string contentType, string theme)

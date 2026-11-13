@@ -210,7 +210,8 @@ public class SiteBuilderPermalinkTests
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
             pageContentService,
             NullLogger<SiteBuilderPageController>.Instance,
-            TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService));
+            TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService),
+            TestServices.PublishStatuses(authorization, service));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) },

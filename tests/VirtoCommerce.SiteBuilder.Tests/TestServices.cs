@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation;
@@ -14,7 +15,10 @@ using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
+using VirtoCommerce.Platform.Core.DistributedLock;
 using VirtoCommerce.Platform.Core.Events;
+using VirtoCommerce.Platform.Core.Settings;
+using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.StoreModule.Core.Services;
 using Fakes = VirtoCommerce.SiteBuilder.Tests.PublishedRenameContentPreservationTests;
 
@@ -86,6 +90,54 @@ internal static class TestServices
         new(authorizationService, groupedPageService, pageService, pageContentService,
             sharedComponentPlacementValidator ?? new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService),
             designerContentService ?? Designer(contentHistory ?? new NoContentHistory()), ContentGuard, contentHistory ?? new NoContentHistory());
+
+    public static ThemeOperationService ThemeOperations(IAuthorizationService authorizationService, IThemeSnapshotService themeSnapshots, IThemePublisher themePublisher,
+        IContentHistory contentHistory = null, string storeId = "s1") =>
+        new(authorizationService, RequestValidators.Stores(storeId), themeSnapshots, themePublisher, contentHistory ?? new NoContentHistory());
+
+    public static SiteBuilderPublishStatusQueryService PublishStatuses(IAuthorizationService authorizationService, IGroupedPageService groupedPageService) =>
+        new(authorizationService, null, groupedPageService, null, null, null, null, null, null, null);
+
+    /// <summary>The controller with its query services built from the same fakes, as the platform's container builds them.</summary>
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "One for each service of the controller.")]
+    public static SiteBuilderController CreateSiteBuilderController(
+        IStoreService storeService,
+        IContentPathResolver pathResolver,
+        IBlobContentStorageProviderFactory blobContentStorageProviderFactory,
+        IPublishingService publishingService,
+        IEventPublisher eventPublisher,
+        IOptions<GitContentOptions> gitContentOptions,
+        IGitHubConnectionService gitHubConnectionService,
+        IGitContentPolicy gitContentPolicy,
+        IGitContentRepository gitContentRepository,
+        IGitContentHistory gitContentHistory,
+        IGitContentPublisher gitContentPublisher,
+        IGitLivePageService gitLivePageService,
+        ISettingsManager settingsManager,
+        IAuthorizationService authorizationService,
+        IDistributedLock distributedLock,
+        IValidator<SiteBuilderContentRequest> requestValidator,
+        IContentHistory contentHistory,
+        IThemeDraftService themeDraftService,
+        IDesignerOperationService designerOperationService,
+        IContentPermissionService contentPermissionService,
+        IFilePageDraftService filePageDraftService,
+        IThemeStorageFactory themeStorageFactory,
+        ISiteBuilderContentGuard contentGuard,
+        IGroupedPageService groupedPageService = null)
+    {
+        var contentQueries = new SiteBuilderContentQueryService(authorizationService, requestValidator, pathResolver, blobContentStorageProviderFactory,
+            publishingService, themeStorageFactory, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions);
+        var previews = new SiteBuilderPreviewQueryService(authorizationService, requestValidator, storeService, settingsManager, groupedPageService,
+            contentQueries, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions);
+        var publishStatuses = new SiteBuilderPublishStatusQueryService(authorizationService, requestValidator, groupedPageService, publishingService,
+            gitContentPolicy, gitContentRepository, gitContentPublisher, gitLivePageService, gitHubConnectionService, gitContentOptions);
+
+        return new SiteBuilderController(pathResolver, blobContentStorageProviderFactory, publishingService, eventPublisher, gitContentOptions,
+            gitHubConnectionService, gitContentPolicy, gitContentRepository, gitContentHistory, gitContentPublisher, gitLivePageService, authorizationService,
+            distributedLock, requestValidator, contentHistory, themeDraftService, designerOperationService, contentPermissionService, filePageDraftService,
+            themeStorageFactory, contentGuard, contentQueries, previews, publishStatuses);
+    }
 
     private sealed class NoSchemaCatalogs : ISchemaCatalogService
     {

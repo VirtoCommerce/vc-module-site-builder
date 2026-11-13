@@ -29,4 +29,15 @@ public static class GitContentOptionsExtensions
             GitPageLocation.RepoPath(options.PagesRoot, contentPath),
             GitPageLocation.BranchFor(options.BranchTemplate, userName, contentPath));
     }
+
+    /// <summary>
+    /// Promotion is per page, not per editor: the branch carries no {user}, so two people promoting the same page reuse one branch and
+    /// one pull request instead of racing with two.
+    /// </summary>
+    public static string GetPromoteBranch(this GitContentOptions options, string contentType, string path)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return GitPageLocation.BranchFor(options.PromoteBranchTemplate, userName: null, GitPageLocation.ContentPath(contentType, path));
+    }
 }

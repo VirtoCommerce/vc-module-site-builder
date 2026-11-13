@@ -1,7 +1,7 @@
 using System;
 using System.Linq;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
-using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
+using VirtoCommerce.SiteBuilder.Data.GitContent;
 using VirtoCommerce.SiteBuilder.Web.Models;
 using Xunit;
 
@@ -122,7 +122,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         [Fact]
         public void GitBuilderDescriptors_OfferHistoryPreviewAndRestore()
         {
-            var descriptors = SiteBuilderController.GitBuilderDescriptors();
+            var descriptors = GitBuilderSettings.GetDescriptors();
 
             var history = descriptors["history"];
             Assert.NotNull(history);
@@ -139,7 +139,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // Taking a page down means deleting it from the production branch — still a merge, so it is
             // offered next to publish. The toolbar shows the button precisely because the descriptor is
             // there, so withholding it is how a store that cannot unpublish is expressed.
-            var unpublish = SiteBuilderController.GitBuilderDescriptors()["publish"]!["unpublish"];
+            var unpublish = GitBuilderSettings.GetDescriptors()["publish"]!["unpublish"];
 
             Assert.NotNull(unpublish);
             Assert.Contains("/api/site-builder/git/unpublish?", (string)unpublish["url"]);
@@ -151,7 +151,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             // pages and blogs are the same kind of file in two folders, so a url without the type is one
             // the server cannot answer
-            var publish = SiteBuilderController.GitBuilderDescriptors()["publish"];
+            var publish = GitBuilderSettings.GetDescriptors()["publish"];
 
             Assert.Contains("type={{type}}", (string)publish["status"]);
             Assert.Contains("type={{type}}", (string)publish["publish"]["url"]);

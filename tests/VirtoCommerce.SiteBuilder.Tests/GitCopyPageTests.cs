@@ -194,7 +194,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // Only the git dependencies take part; the rest stay null on purpose, so a change that starts
             // reaching for blob storage fails loudly here instead of quietly writing a draft blob again.
             var filePageDrafts = TestServices.FilePageDrafts(options, GitHubConnections.CreateService(options.Value), policy, repository, new FakeGitContentHistory(), new FakeGitContentProvisioner(), new FakeStoreService(new Store { Id = "vccom" }), null, null, null, null);
-            var controller = new SiteBuilderController(
+            var controller = TestServices.CreateSiteBuilderController(
                 storeService: new FakeStoreService(new Store { Id = "vccom" }),
                 pathResolver: null,
                 blobContentStorageProviderFactory: null,

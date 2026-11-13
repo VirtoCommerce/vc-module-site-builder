@@ -321,7 +321,8 @@ public class MultilanguagePageControllerTests
             null!,
             null!,
             NullLogger<SiteBuilderPageController>.Instance,
-            TestServices.GroupedPageOperations(authorization, fixture.Groups))
+            TestServices.GroupedPageOperations(authorization, fixture.Groups),
+            TestServices.PublishStatuses(authorization, fixture.Groups))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

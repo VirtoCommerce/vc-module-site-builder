@@ -403,7 +403,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // The store's own repository, not the shared one configured above, so a read from the wrong one finds nothing.
             var policy = new FakeGitContentPolicy(gitFlow, repositoryFormat: "acme/site-{0}");
             var filePageDrafts = TestServices.FilePageDrafts(options, GitHubConnections.CreateService(options.Value), policy, git ?? new FakeGitRepository(), null, new FakeGitContentProvisioner(), new FakeStoreService(new Store { Id = "vccom" }), new FakePathResolver(), new FakeStorageFactory(storage), null, null);
-            var controller = new SiteBuilderController(
+            var controller = TestServices.CreateSiteBuilderController(
                 storeService: new FakeStoreService(new Store { Id = "vccom" }),
                 pathResolver: new FakePathResolver(),
                 blobContentStorageProviderFactory: new FakeStorageFactory(storage),

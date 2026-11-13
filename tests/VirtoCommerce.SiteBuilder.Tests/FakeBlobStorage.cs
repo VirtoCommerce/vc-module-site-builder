@@ -106,7 +106,7 @@ internal sealed class FakeBlobStorage : IBlobContentStorageProviderFactory, ICon
         private string Key(string blobUrl) => prefix + blobUrl.TrimStart('/');
 
         public Task CreateFolderAsync(BlobFolder folder) => throw new NotSupportedException();
-        public Stream OpenRead(string blobUrl) => throw new NotSupportedException();
+        public Stream OpenRead(string blobUrl) => new MemoryStream(Encoding.UTF8.GetBytes(storage.Files[Key(blobUrl)]));
         public Stream OpenWrite(string blobUrl) => throw new NotSupportedException();
         public void Move(string srcUrl, string destUrl) => throw new NotSupportedException();
         public Task MoveAsyncPublic(string srcUrl, string destUrl) => throw new NotSupportedException();

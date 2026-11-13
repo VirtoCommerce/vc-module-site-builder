@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using Xunit;
@@ -210,8 +211,7 @@ public class ThemeControllerTests
         var http = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test")) };
         http.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
         return new ThemeController(
-            _services,
-            _services,
+            new ThemeOperationService(authorization, RequestValidators.Stores("s1"), _services, _services, new NoContentHistory()),
             _services,
             _services,
             authorization,
@@ -241,10 +241,20 @@ public class ThemeControllerTests
             return Task.FromResult<ThemeSnapshot>(null);
         }
 
-        public Task<int> PublishAsync(string storeId, string catalogHash, ClaimsPrincipal user, CancellationToken cancellationToken = default)
+        public Task<int> PublishAsync(string storeId, string catalogHash, ClaimsPrincipal user, CancellationToken cancellationToken = default) =>
+            PublishAsync(storeId, catalogHash, null, user, cancellationToken);
+
+        public Task<int> PublishAsync(string storeId, string catalogHash, IDictionary<string, string> expectedVersions, ClaimsPrincipal user,
+            CancellationToken cancellationToken = default)
         {
             Calls.Add($"publish {storeId}");
             return Task.FromResult(1);
+        }
+
+        public Task<IList<ThemeFileVersion>> PreviewPublishAsync(string storeId, string catalogHash, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"preview publish {storeId}");
+            return Task.FromResult<IList<ThemeFileVersion>>([]);
         }
 
         public Task<int> PublishFirstAsync(string storeId, CancellationToken cancellationToken = default)

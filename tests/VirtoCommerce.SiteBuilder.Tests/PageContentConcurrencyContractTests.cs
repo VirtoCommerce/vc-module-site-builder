@@ -251,7 +251,8 @@ public class PageContentConcurrencyContractTests
             authorization,
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(), contentService,
             NullLogger<SiteBuilderPageController>.Instance,
-            TestServices.GroupedPageOperations(authorization, service, contentService, pageService))
+            TestServices.GroupedPageOperations(authorization, service, contentService, pageService),
+            TestServices.PublishStatuses(authorization, service))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

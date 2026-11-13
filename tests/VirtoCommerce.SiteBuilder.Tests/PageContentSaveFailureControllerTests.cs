@@ -232,7 +232,8 @@ public class PageContentSaveFailureControllerTests
             pageContentService: contentService,
             logger: NullLogger<SiteBuilderPageController>.Instance,
             groupedPageOperationService: TestServices.GroupedPageOperations(authorization, _pages, contentService, new Fakes.FakeSiteBuilderPageService(_pages),
-                designerContentService: TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages), contentHistory: _history)));
+                designerContentService: TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages), contentHistory: _history),
+            publishStatusQueryService: TestServices.PublishStatuses(authorization, _pages)));
     }
 
     private HistoryController HistoryController()

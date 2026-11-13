@@ -7,6 +7,16 @@ public interface IThemePublisher
 {
     Task<int> PublishAsync(string storeId, string catalogHash, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
+    /// <param name="expectedVersions">The version of every draft, by its path with the theme folder; <c>null</c> publishes the drafts whatever they hold.</param>
+    /// <exception cref="ThemeValidationException">The theme is not valid, or its palette fails the contrast the storefront needs.</exception>
+    /// <exception cref="Models.SiteBuilderContentConflictException">The drafts are not those of <paramref name="expectedVersions"/>: nothing is published.</exception>
+    Task<int> PublishAsync(string storeId, string catalogHash, IDictionary<string, string> expectedVersions, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Checks the theme as <see cref="PublishAsync(string, string, IDictionary{string, string}, ClaimsPrincipal, CancellationToken)"/> does and answers the drafts it would publish, writing nothing.</summary>
+    /// <exception cref="ThemeValidationException">The theme is not valid, or its palette fails the contrast the storefront needs.</exception>
+    Task<IList<ThemeFileVersion>> PreviewPublishAsync(string storeId, string catalogHash, CancellationToken cancellationToken = default);
+
     /// <summary>Publishes the live theme files when the store has no publication yet; otherwise returns the current publication.</summary>
     Task<int> PublishFirstAsync(string storeId, CancellationToken cancellationToken = default);
 

@@ -59,6 +59,15 @@ public class DesignerContentService(
             throw new ThemeValidationException(errors);
         }
 
+        if (draft)
+        {
+            var mainSectionErrors = await GetMainSectionErrorsAsync(storeId, files, cancellationToken);
+            if (mainSectionErrors.Count > 0)
+            {
+                throw new ThemeValidationException([.. mainSectionErrors]);
+            }
+        }
+
         if (string.IsNullOrEmpty(catalogHash))
         {
             return;
@@ -69,6 +78,55 @@ public class DesignerContentService(
         {
             var contents = theme.ToDictionary(x => SiteBuilderContentPaths.GetPathInTheme(x.Key), x => x.Value, StringComparer.OrdinalIgnoreCase);
             await themePublisher.ValidateFilesAsync(storeId, catalogHash, contents, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// A template draft may not lose the main section the template shows: removed, or hidden where it was not hidden already.
+    /// A template without one, such as a theme's empty default, stays as it is: the storefront adds a missing main section itself.
+    /// </summary>
+    /// <param name="files">Contents by the path with the theme folder.</param>
+    protected virtual async Task<IList<string>> GetMainSectionErrorsAsync(string storeId, IDictionary<string, JToken> files, CancellationToken cancellationToken)
+    {
+        var errors = new List<string>();
+        foreach (var (path, content) in files)
+        {
+            var file = SiteBuilderContentPaths.GetPathInTheme(path);
+            var mainSection = ThemeTemplateMainSections.GetMainSection(ThemeTemplateMainSections.GetTemplateKey(file));
+            if (mainSection == null || ThemeTemplateMainSections.GetState(content, mainSection) is not { } state || state == ThemeTemplateMainSectionState.Shown)
+            {
+                continue;
+            }
+
+            var current = GetMainSectionState(await themeDraftService.ReadAsync(storeId, path, cancellationToken), mainSection);
+            if (state == ThemeTemplateMainSectionState.Missing && current is ThemeTemplateMainSectionState.Shown or ThemeTemplateMainSectionState.Hidden)
+            {
+                errors.Add($"{file}: the template's main section '{mainSection}' cannot be removed");
+            }
+            else if (state == ThemeTemplateMainSectionState.Hidden && current != ThemeTemplateMainSectionState.Hidden)
+            {
+                errors.Add($"{file}: the template's main section '{mainSection}' cannot be hidden");
+            }
+        }
+
+        return errors;
+    }
+
+    /// <summary><c>null</c> for no file, or one that is not a page document.</summary>
+    protected virtual ThemeTemplateMainSectionState? GetMainSectionState(ThemeFileContent file, string mainSection)
+    {
+        if (string.IsNullOrEmpty(file?.Content))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ThemeTemplateMainSections.GetState(ThemeJson.Parse(file.Content), mainSection);
+        }
+        catch (JsonReaderException)
+        {
+            return null;
         }
     }
 

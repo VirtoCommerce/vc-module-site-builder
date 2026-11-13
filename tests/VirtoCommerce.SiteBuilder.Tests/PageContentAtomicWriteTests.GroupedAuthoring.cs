@@ -527,7 +527,8 @@ public partial class PageContentAtomicWriteTests
             NullLogger<SiteBuilderPageContentService>.Instance);
         var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
         return new SiteBuilderPageController(service, null, authorization, null, content, NullLogger<SiteBuilderPageController>.Instance,
-            TestServices.GroupedPageOperations(authorization, service, content, pages))
+            TestServices.GroupedPageOperations(authorization, service, content, pages),
+            TestServices.PublishStatuses(authorization, service))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

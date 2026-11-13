@@ -142,7 +142,7 @@ public class ThemeWriteLockTests
     {
         var options = Options.Create(new GitContentOptions());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), GitHubConnections.CreatePolicy(options, new FakeSettingsManager(false), new FakeGitContentOwnership()), null, null, new FakeGitContentProvisioner());
-        return WithUser(new SiteBuilderController(
+        return WithUser(TestServices.CreateSiteBuilderController(
             storeService: _live.StoreService,
             pathResolver: _live,
             blobContentStorageProviderFactory: _live,

@@ -299,14 +299,14 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
 
     protected virtual ThemePalette GetPalette(JToken light, JToken dark)
     {
-        if (GetColorTokens(light) is not { } lightTokens)
+        if (ThemePaletteValues.ReadColors(light) is not { } lightTokens)
         {
             return null;
         }
 
         var palette = AbstractTypeFactory<ThemePalette>.TryCreateInstance();
         palette.Light = lightTokens;
-        palette.Dark = GetColorTokens(dark);
+        palette.Dark = ThemePaletteValues.ReadColors(dark);
 
         return palette;
     }
@@ -346,18 +346,6 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
                 menus.Add(name.Value<string>());
             }
         });
-    }
-
-    // a value that is not a color is left out, as the storefront would set it as a custom property as it is
-    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
-        Justification = "null means no color was set, so the snapshot has no palette; an empty one would replace the preset colors with nothing.")]
-    private static Dictionary<string, string> GetColorTokens(JToken token)
-    {
-        var colors = (token as JObject)?.Properties()
-            .Where(x => ThemePaletteValues.IsTokenName(x.Name) && x.Value is JValue { Type: JTokenType.String } value && ThemePaletteValues.IsColor((string)value))
-            .ToDictionary(x => x.Name, x => (string)x.Value);
-
-        return colors?.Count > 0 ? colors : null;
     }
 
     private static string GetUrl(JObject source, string name)

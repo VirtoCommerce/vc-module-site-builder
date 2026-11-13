@@ -35,6 +35,7 @@ public class SiteBuilderPageController : Controller
     private readonly SiteBuilderPageContentService pageContentService;
     private readonly ILogger<SiteBuilderPageController> logger;
     private readonly IGroupedPageOperationService groupedPageOperationService;
+    private readonly ISiteBuilderPublishStatusQueryService publishStatusQueryService;
 
     public SiteBuilderPageController(
         IGroupedPageService groupedPageService,
@@ -43,7 +44,8 @@ public class SiteBuilderPageController : Controller
         IPageDocumentSearchService pageDocumentSearchService,
         SiteBuilderPageContentService pageContentService,
         ILogger<SiteBuilderPageController> logger,
-        IGroupedPageOperationService groupedPageOperationService)
+        IGroupedPageOperationService groupedPageOperationService,
+        ISiteBuilderPublishStatusQueryService publishStatusQueryService)
     {
         this.groupedPageService = groupedPageService;
         this.groupedPageSearchService = groupedPageSearchService;
@@ -52,6 +54,7 @@ public class SiteBuilderPageController : Controller
         this.pageContentService = pageContentService;
         this.logger = logger;
         this.groupedPageOperationService = groupedPageOperationService;
+        this.publishStatusQueryService = publishStatusQueryService;
     }
 
     [HttpPost("search")]
@@ -294,25 +297,9 @@ public class SiteBuilderPageController : Controller
     [Route("grouped/publish-status/{groupId}")]
     public async Task<ActionResult<FilePublishStatus>> PublishStatus([FromRoute] string groupId)
     {
-        var groupedPage = await groupedPageService.GetNoCloneAsync(groupId);
-        if (groupedPage == null)
-        {
-            return NotFound();
-        }
+        var request = new GroupedPageQueryRequest { GroupId = groupId };
 
-        var authorizationResult = await authorizationService.AuthorizeAsync(User, groupedPage, new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        var result = new FilePublishStatus
-        {
-            Published = groupedPage.Status == Published,
-            HasChanges = groupedPage.HasChanges,
-        };
-
-        return Ok(result);
+        return (await publishStatusQueryService.GetGroupedPageStatusAsync(request, User, HttpContext.RequestAborted)).ToPageActionResult();
     }
 
     // Retain the published direct-call signature without exposing a second HTTP action.

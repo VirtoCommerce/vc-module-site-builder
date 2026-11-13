@@ -38,6 +38,9 @@ public class SiteBuilderOperationResult
 
     public static SiteBuilderOperationResult NotFound() => new() { Status = SiteBuilderOperationStatus.NotFound };
 
+    /// <summary>A not-found that tells what was looked for, in <see cref="SiteBuilderOperationResult{T}.Value"/>.</summary>
+    public static SiteBuilderOperationResult<T> NotFound<T>(T value) => new() { Status = SiteBuilderOperationStatus.NotFound, Value = value };
+
     public static SiteBuilderOperationResult Invalid(string error, IReadOnlyList<string> errors = null) =>
         new() { Status = SiteBuilderOperationStatus.Invalid, Error = error, Errors = errors };
 
@@ -53,6 +56,6 @@ public class SiteBuilderOperationResult
 
 public class SiteBuilderOperationResult<T> : SiteBuilderOperationResult
 {
-    /// <summary>What the operation answers; <c>null</c> for a refusal and for a dry run.</summary>
+    /// <summary>What the operation answers; <c>null</c> for a dry run and for a refusal, but a not-found that tells what was looked for.</summary>
     public T Value { get; init; }
 }

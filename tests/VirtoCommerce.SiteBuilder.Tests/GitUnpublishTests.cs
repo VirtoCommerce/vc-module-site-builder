@@ -297,7 +297,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // The store's own repository, not the shared one configured above, so a call to the wrong one shows.
             var policy = new FakeGitContentPolicy(source: source, repositoryFormat: "acme/site-{0}");
             var filePageDrafts = TestServices.FilePageDrafts(live, options, connection, policy, repository, gitHistory, new FakeGitContentProvisioner());
-            var controller = new SiteBuilderController(
+            var controller = TestServices.CreateSiteBuilderController(
                 storeService: live?.StoreService,
                 pathResolver: live,
                 blobContentStorageProviderFactory: live,

@@ -381,7 +381,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             // Nothing past the check is wired up, so an action that reaches storage first fails here.
             var filePageDrafts = TestServices.FilePageDrafts(null, null, new FakeGitContentPolicy(enabled: gitFlow), null, null, new FakeGitContentProvisioner(), new FakeStoreService(new Store { Id = Store }), null, null, null, null);
-            var controller = new SiteBuilderController(
+            var controller = TestServices.CreateSiteBuilderController(
                 storeService: new FakeStoreService(new Store { Id = Store }),
                 pathResolver: null,
                 blobContentStorageProviderFactory: null,

@@ -1,3 +1,5 @@
+using VirtoCommerce.SiteBuilder.Core.History;
+
 namespace VirtoCommerce.SiteBuilder.Core.Models;
 
 public class SiteBuilderObjectChange
@@ -13,6 +15,11 @@ public class SiteBuilderObjectChange
 
     /// <summary>The version of what the store holds now, where it keeps one: a write sent at another version is refused.</summary>
     public string ETag { get; set; }
+
+    /// <summary>Who last changed what the write takes, as the store's content history records it; <c>null</c> where it is not known.</summary>
+    public ContentVersionAuthor ChangedBy { get; set; }
+
+    public DateTime? ChangedDate { get; set; }
 
     public IList<SiteBuilderFieldChange> Fields { get; set; } = [];
 }

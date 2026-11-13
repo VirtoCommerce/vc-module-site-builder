@@ -394,7 +394,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             // Only the git dependencies take part in these paths; the rest are left null on purpose, so a
             // change that starts reaching for blob storage or the publisher fails loudly here.
             var filePageDrafts = TestServices.FilePageDrafts(options, GitHubConnections.CreateService(options.Value), policy, repository, history, new FakeGitContentProvisioner(), new FakeStoreService(store ?? new Store { Id = "vccom" }), null, null, null, null);
-            var controller = new SiteBuilderController(
+            var controller = TestServices.CreateSiteBuilderController(
                 storeService: new FakeStoreService(store ?? new Store { Id = "vccom" }),
                 pathResolver: null,
                 blobContentStorageProviderFactory: null,

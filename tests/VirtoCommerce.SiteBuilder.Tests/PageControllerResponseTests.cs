@@ -246,7 +246,7 @@ public class PageControllerResponseTests
 
     private SiteBuilderPageController PageController(string body = "")
     {
-        var controller = new SiteBuilderPageController(null, null, null, null, null, NullLogger<SiteBuilderPageController>.Instance, _operations);
+        var controller = new SiteBuilderPageController(null, null, null, null, null, NullLogger<SiteBuilderPageController>.Instance, _operations, TestServices.PublishStatuses(null, null));
         var httpContext = new DefaultHttpContext { User = User() };
         httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };

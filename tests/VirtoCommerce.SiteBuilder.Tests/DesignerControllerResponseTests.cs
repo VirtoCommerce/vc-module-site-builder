@@ -152,7 +152,7 @@ public class DesignerControllerResponseTests
 
     private SiteBuilderController Controller()
     {
-        var controller = new SiteBuilderController(
+        var controller = TestServices.CreateSiteBuilderController(
             storeService: null,
             pathResolver: null,
             blobContentStorageProviderFactory: null,

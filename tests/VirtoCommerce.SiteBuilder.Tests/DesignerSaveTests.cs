@@ -972,6 +972,105 @@ public class DesignerSaveTests
             }
             """, Ct);
 
+    [Theory]
+    [InlineData("product", "product-info", true)]
+    [InlineData("product.with-video", "product-info", true)]
+    [InlineData("category", "category-listing", true)]
+    [InlineData("page", "page-content", true)]
+    [InlineData("product", "product-info", false)]
+    [InlineData("category", "category-listing", false)]
+    [InlineData("page", "page-content", false)]
+    public async Task SaveDesignerChanges_TemplateLosingItsMainSection_ReturnsBadRequestNamingTheTemplateAndWritesNothing(string key, string main, bool removed)
+    {
+        await SaveMainSectionCatalogAsync();
+        var path = $"default/templates/{key}.json";
+        _live.Files[Theme(path)] = TemplateOf((main, false), ("text", false));
+        var edited = removed ? TemplateOf(("text", false)) : TemplateOf((main, true), ("text", false));
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (path, edited)), Catalog);
+
+        var error = $"templates/{key}.json: the template's main section '{main}' cannot be {(removed ? "removed" : "hidden")}";
+        Assert.Equal($$"""{"error":"The theme is not valid: {{error}}","errors":["{{error}}"]}""", PlatformJson.SerializeBody(Assert.IsType<BadRequestObjectResult>(result.Result)));
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_TemplateDraftLosingTheMainSectionItShows_ReturnsBadRequest()
+    {
+        await SaveMainSectionCatalogAsync();
+        _live.Files[Theme(Template)] = TemplateOf(("text", false));
+        _live.Files[Theme($"{Template}-draft")] = TemplateOf(("product-info", false), ("text", false));
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true), ("text", false)))), Catalog);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal(TemplateOf(("product-info", false), ("text", false)), _live.Files[Theme($"{Template}-draft")]);
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_TemplateKeepingItsMainSection_SavesIt()
+    {
+        await SaveMainSectionCatalogAsync();
+        _live.Files[Theme(Template)] = TemplateOf(("product-info", false), ("text", false));
+        // one of two main sections hidden still shows the page's product
+        var edited = TemplateOf(("text", true), ("product-info", true), ("product-info", false));
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, edited)), Catalog);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(edited, _live.Files[Theme($"{Template}-draft")]);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("""{ "settings": {}, "content": [] }""")]
+    public async Task SaveDesignerChanges_TemplateThatNeverHadItsMainSection_SavesItWithout(string live)
+    {
+        await SaveMainSectionCatalogAsync();
+        if (live != null)
+        {
+            _live.Files[Theme(Template)] = live;
+        }
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("text", false)))), Catalog);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_TemplateWithItsMainSectionHiddenAlready_SavesIt()
+    {
+        await SaveMainSectionCatalogAsync();
+        _live.Files[Theme(Template)] = TemplateOf(("product-info", true));
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true), ("text", false)))), Catalog);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_NewTemplateWithItsMainSectionHidden_ReturnsBadRequest()
+    {
+        await SaveMainSectionCatalogAsync();
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true)))), Catalog);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_PaletteThatFailsTheContrast_IsSavedAsADraft()
+    {
+        await SaveCatalogAsync();
+        const string palette = """{ "color_neutral_950": "#777777", "color_neutral_50": "#ffffff" }""";
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), Catalog);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(palette, _live.Files[Theme("default/config/palette.json-draft")]);
+    }
+
     private void AssertNothingWritten()
     {
         Assert.DoesNotContain(_live.Files.Keys, x => x.EndsWith("-draft"));
@@ -1037,6 +1136,19 @@ public class DesignerSaveTests
         new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "site-header": {}, "product-info": {}, "text": {} }, "blocks": {}, "shared": {} }""", Ct);
 
+    private Task<string> SaveMainSectionCatalogAsync() =>
+        new SchemaCatalogService(_themes).SaveAsync("s1",
+            $$"""{ "hash": "{{Catalog}}", "sections": { "product-info": {}, "category-listing": {}, "text": {} }, "blocks": {}, "shared": {} }""", Ct);
+
+    private static string TemplateOf(params (string Type, bool Hidden)[] sections) =>
+        new JObject
+        {
+            ["settings"] = new JObject(),
+            ["content"] = new JArray(sections.Select((x, i) => x.Hidden
+                ? new JObject { ["id"] = $"s{i}", ["type"] = x.Type, ["hidden"] = true }
+                : new JObject { ["id"] = $"s{i}", ["type"] = x.Type })),
+        }.ToString(Newtonsoft.Json.Formatting.None);
+
     private Task<string> SaveValueCatalogAsync() =>
         new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""
@@ -1060,14 +1172,14 @@ public class DesignerSaveTests
 
     private ThemePublisher ThemePublisher() =>
         new(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard());
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
 
     private SiteBuilderController Builder(IAuthorizationService authorization = null, IContentHistory history = null)
     {
         authorization ??= new FakeAuthorizationService(true);
         var options = Options.Create(new GitContentOptions());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), GitHubConnections.CreatePolicy(options, new FakeSettingsManager(false), new FakeGitContentOwnership()), null, null, new FakeGitContentProvisioner());
-        var controller = new SiteBuilderController(
+        var controller = TestServices.CreateSiteBuilderController(
             storeService: _live.StoreService,
             pathResolver: _live,
             blobContentStorageProviderFactory: _live,
