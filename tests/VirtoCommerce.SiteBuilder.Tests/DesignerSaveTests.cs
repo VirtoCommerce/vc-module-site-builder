@@ -1059,6 +1059,34 @@ public class DesignerSaveTests
         AssertNothingWritten();
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("default")]
+    public async Task SaveTemplates_DraftRemovingTheMainSectionOfTheTemplate_ReturnsBadRequestAndWritesNothing(string theme)
+    {
+        _live.Files[Theme(Template)] = TemplateOf(("product-info", false), ("text", false));
+
+        var result = await Builder().SaveTemplates("s1", theme, ThemeFiles((Template, TemplateOf(("text", false)))), draft: true);
+
+        const string error = "templates/product.json: the template's main section 'product-info' cannot be removed";
+        Assert.Equal($$"""{"error":"The theme is not valid: {{error}}","errors":["{{error}}"]}""", PlatformJson.SerializeBody(Assert.IsType<BadRequestObjectResult>(result)));
+        Assert.False(_live.Files.ContainsKey(Theme($"{Template}-draft")));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task SaveTemplates_DraftKeepingTheMainSectionTheDraftHidesAlready_SavesIt()
+    {
+        _live.Files[Theme(Template)] = TemplateOf(("product-info", false));
+        _live.Files[Theme($"{Template}-draft")] = TemplateOf(("product-info", true));
+        var edited = TemplateOf(("product-info", true), ("text", false));
+
+        var result = await Builder().SaveTemplates("s1", null, ThemeFiles((Template, edited)), draft: true);
+
+        Assert.IsType<OkResult>(result);
+        Assert.True(JToken.DeepEquals(JObject.Parse(edited), JObject.Parse(_live.Files[Theme($"{Template}-draft")])));
+    }
+
     [Fact]
     public async Task SaveDesignerChanges_PaletteThatFailsTheContrast_IsSavedAsADraft()
     {
@@ -1105,6 +1133,11 @@ public class DesignerSaveTests
         });
         _pages.SeedContent("p2", Edited);
     }
+
+    private static SiteBuilderController.SaveFilesModel ThemeFiles(params (string Path, string Content)[] files) => new()
+    {
+        Files = new JArray(files.Select(x => new JObject { ["type"] = "themes", ["path"] = x.Path, ["content"] = JObject.Parse(x.Content) })).ToString(),
+    };
 
     private static DesignerDiscardRequest Discard(DesignerSavePage page, params string[] themeFiles) => new()
     {
