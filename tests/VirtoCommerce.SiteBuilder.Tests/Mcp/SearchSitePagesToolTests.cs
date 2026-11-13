@@ -10,6 +10,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
+using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
@@ -35,6 +36,7 @@ public sealed class SearchSitePagesToolTests : IAsyncDisposable
                 _lastCriteria = criteria;
                 var matches = _groups
                     .Where(x => criteria.StoreId == null || x.StoreId == criteria.StoreId)
+                    .Where(x => criteria.StoreIds == null || criteria.StoreIds.Contains(x.StoreId))
                     .Where(x => criteria.ObjectIds is not { Count: > 0 } || criteria.ObjectIds.Contains(x.Id))
                     .ToList();
 
@@ -55,6 +57,7 @@ public sealed class SearchSitePagesToolTests : IAsyncDisposable
 
         Assert.Equal(7, page.TotalCount);
         Assert.Null(_lastCriteria.StoreId);
+        Assert.Null(_lastCriteria.StoreIds);
     }
 
     [Fact]
@@ -98,12 +101,63 @@ public sealed class SearchSitePagesToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task AStoreReader_IsRefusedEveryStore_AndToldToNameOne()
+    public async Task AStoreReader_WithoutAStore_FindsThePagesOfTheirStore()
     {
-        var result = await _context.CallAsync(StoreAReader(), Tool, new { });
+        var page = await SearchAsync(StoreAReader(), new { });
+
+        Assert.Equal(5, page.TotalCount);
+        Assert.All(page.Items, x => Assert.Equal(StoreA, x.StoreId));
+        Assert.Null(_lastCriteria.StoreId);
+        Assert.Equal([StoreA], _lastCriteria.StoreIds);
+    }
+
+    [Fact]
+    public async Task AReaderOfSomeStores_WithoutAStore_FindsThePagesOfEachOfThem()
+    {
+        _groups.Add(Group("c1", StoreC));
+        var user = McpTestUser.Create("two-stores").WithScopedPermission(Permissions.Read, StoreScope, StoreA, StoreC);
+
+        var page = await SearchAsync(user, new { take = 50 });
+
+        Assert.Equal([StoreA, StoreC], _lastCriteria.StoreIds.Order());
+        Assert.Equal(6, page.TotalCount);
+        Assert.DoesNotContain(page.Items, x => x.StoreId == StoreB);
+    }
+
+    [Fact]
+    public async Task AnAccountBoundToAStore_WithoutAStore_FindsThePagesOfThatStore()
+    {
+        var page = await SearchAsync(_context.StoreBoundReader(), new { });
+
+        Assert.Equal([StoreA], _lastCriteria.StoreIds);
+        Assert.Equal(5, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task AnAccountBoundToAStore_WithAScopeOfAnotherStore_FindsNothingThere()
+    {
+        _context.BindAccountsTo(StoreA);
+        var user = McpTestUser.Create("bound-b").WithScopedPermission(Permissions.Read, StoreScope, StoreB);
+
+        var result = await _context.CallAsync(user, Tool, new { });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
-        Assert.Contains("store_id", result.Error);
+        _context.PageList.Verify(x => x.SearchAsync(It.IsAny<SiteBuilderPageSearchCriteria>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AStoreReader_WithoutAStore_SearchesThePeriodInTheirStores()
+    {
+        SiteBuilderPageSearchCriteria versionCriteria = null;
+        _context.PageVersionSearch
+            .Setup(x => x.SearchAsync(It.IsAny<SiteBuilderPageSearchCriteria>(), It.IsAny<bool>()))
+            .Callback((SiteBuilderPageSearchCriteria criteria, bool _) => versionCriteria = criteria)
+            .ReturnsAsync(new SiteBuilderPageSearchResult { TotalCount = 0, Results = [] });
+
+        await SearchAsync(StoreAReader(), new { modified_since = "2026-11-10T00:00:00Z" });
+
+        Assert.Null(versionCriteria.StoreId);
+        Assert.Equal([StoreA], versionCriteria.StoreIds);
     }
 
     [Fact]

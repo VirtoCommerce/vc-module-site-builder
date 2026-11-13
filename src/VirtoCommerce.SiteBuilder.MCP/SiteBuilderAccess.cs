@@ -1,7 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using VirtoCommerce.MCP.Core;
+using VirtoCommerce.MCP.Core.Extensions;
+using VirtoCommerce.Platform.Core.Security;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
+using VirtoCommerce.StoreModule.Core.Security;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
@@ -32,5 +37,47 @@ public static class SiteBuilderAccess
         throw new McpForbiddenException(string.IsNullOrEmpty(storeId)
             ? $"Your {permission} permission does not cover every store. Pass store_id of a store you work in."
             : $"Your {permission} permission does not cover store '{storeId}'.");
+    }
+
+    // The stores the permission reaches when the agent names none: null for every store. A role limited to some
+    // stores reaches those, an account bound to a store reaches that store; each is checked with the requirement, so
+    // the answer is what the designer would let the user open one by one.
+    public static async Task<IList<string>> GetStoreIdsAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
+        Func<UserManager<ApplicationUser>> userManagerFactory, string permission = Read)
+    {
+        if (await authorizationService.IsAllowedAsync(user, new SiteBuilderPageSearchCriteria(), permission))
+        {
+            return null;
+        }
+
+        var grant = user.GetMcpPermissionGrant(permission);
+        if (grant == null)
+        {
+            return [];
+        }
+
+        // A permission granted in every store misses here only for an account bound to a store.
+        IList<string> candidates = grant.IsGlobal
+            ? [await GetBoundStoreIdAsync(user, userManagerFactory)]
+            : grant.GetScopeValues(nameof(StoreSelectedScope));
+
+        var storeIds = new List<string>();
+        foreach (var storeId in candidates.Where(x => !string.IsNullOrEmpty(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (await authorizationService.IsAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, permission))
+            {
+                storeIds.Add(storeId);
+            }
+        }
+
+        return storeIds;
+    }
+
+    private static async Task<string> GetBoundStoreIdAsync(ClaimsPrincipal user, Func<UserManager<ApplicationUser>> userManagerFactory)
+    {
+        using var userManager = userManagerFactory();
+        var account = await userManager.FindByIdAsync(user.GetUserId());
+
+        return account?.StoreId;
     }
 }

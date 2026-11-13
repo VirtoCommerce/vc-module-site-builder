@@ -28,6 +28,12 @@ public class SiteBuilderPageSearchService(
             query = query.Where(x => x.StoreId == criteria.StoreId);
         }
 
+        if (criteria.StoreIds != null)
+        {
+            var storeIds = criteria.StoreIds;
+            query = query.Where(x => storeIds.Contains(x.StoreId));
+        }
+
         if (!string.IsNullOrEmpty(criteria.Statuses))
         {
             var statuses = criteria.Statuses.Split(',', StringSplitOptions.RemoveEmptyEntries);

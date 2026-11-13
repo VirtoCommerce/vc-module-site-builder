@@ -34,6 +34,7 @@ internal sealed class McpTestContext : IAsyncDisposable
 {
     public const string StoreA = "store-a";
     public const string StoreB = "store-b";
+    public const string StoreC = "store-c";
     public const string StoreScope = nameof(StoreSelectedScope);
     public const string AssetRead = "platform:asset:read";
 
@@ -66,9 +67,11 @@ internal sealed class McpTestContext : IAsyncDisposable
     // An account bound to store A: global permissions still reach store A only.
     public McpTestUser StoreBoundReader(string name = "bound-reader")
     {
-        _boundStoreId = StoreA;
+        BindAccountsTo(StoreA);
         return Reader(name);
     }
+
+    public void BindAccountsTo(string storeId) => _boundStoreId = storeId;
 
     public ValueTask DisposeAsync() => _harness?.DisposeAsync() ?? ValueTask.CompletedTask;
 
@@ -102,10 +105,11 @@ internal sealed class McpTestContext : IAsyncDisposable
         pageSize.Setup(x => x.GetPageSizeAsync(It.IsAny<int?>())).ReturnsAsync((int? take) => Math.Clamp(take ?? 20, 1, 50));
 
         services.AddAuthorizationCore();
+        services.AddSingleton<Func<UserManager<ApplicationUser>>>(CreateUserManager);
         services.AddSingleton<IAuthorizationHandler>(new SiteBuilderAuthorizationHandler(CreateUserManager, Options.Create(CreateJsonOptions())));
         services.AddSingleton<IContentPermissionService>(provider => new ContentPermissionService(provider.GetRequiredService<IAuthorizationService>()));
         services.AddSingleton<IValidator<ContentHistoryRequest>>(new ContentHistoryRequestValidator(
-            new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = StoreA }, new Store { Id = StoreB }))));
+            new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = StoreA }, new Store { Id = StoreB }, new Store { Id = StoreC }))));
 
         services
             .AddSingleton(pageSize.Object)

@@ -201,6 +201,12 @@ public class SiteBuilderPageListService(
             roots = roots.Where(x => x.StoreId == criteria.StoreId);
         }
 
+        if (criteria.StoreIds != null)
+        {
+            var storeIds = criteria.StoreIds;
+            roots = roots.Where(x => storeIds.Contains(x.StoreId));
+        }
+
         if (FiltersLanguageVersions(versionCriteria))
         {
             if (!ListsRootsWithoutVersions(versionCriteria))

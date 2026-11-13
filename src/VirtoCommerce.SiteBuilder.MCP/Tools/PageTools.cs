@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -10,6 +11,7 @@ using VirtoCommerce.MCP.Core.Extensions;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -26,7 +28,8 @@ public class PageTools(
     ISiteBuilderPageListService pageListService,
     ISiteBuilderPageSearchService pageVersionSearchService,
     IGroupedPageService groupedPageService,
-    IGroupedPageContentService pageContentService)
+    IGroupedPageContentService pageContentService,
+    Func<UserManager<ApplicationUser>> userManagerFactory)
 {
     // The pages list has no date filter: the tool finds the pages by their versions changed in the period first. More
     // versions than this is a scan; the agent narrows the period instead.
@@ -45,7 +48,7 @@ public class PageTools(
     public async Task<object> SearchSitePages(
         RequestContext<CallToolRequestParams> context,
         IMcpPageSizeResolver pageSizeResolver,
-        [Description("Store id. Omit it to search every store, which needs builder:read in every store.")] string store_id = null,
+        [Description("Store id. Omit it to search every store you read pages of.")] string store_id = null,
         [Description("Id of one page (a Landing Page, or a language version of a Multilanguage Page) to read with its " +
             "content. The other filters are ignored.")] string page_id = null,
         [Description("Text in the page name or address.")] string keyword = null,
@@ -84,13 +87,17 @@ public class PageTools(
 
         if (string.IsNullOrEmpty(store_id))
         {
-            await authorizationService.EnsureAllowedAsync(context.User, criteria, store_id);
+            criteria.StoreIds = await authorizationService.GetStoreIdsAsync(context.User, userManagerFactory);
+            if (criteria.StoreIds?.Count == 0)
+            {
+                throw new McpForbiddenException("Your builder:read permission does not name a store you work in, so there are no pages to search.");
+            }
         }
 
         var paging = new McpPaging(criteria.Skip, criteria.Take);
         if (modified_since != null || modified_before != null)
         {
-            criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, ToUtc(modified_since), ToUtc(modified_before));
+            criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, criteria.StoreIds, ToUtc(modified_since), ToUtc(modified_before));
             if (criteria.ObjectIds.Count == 0)
             {
                 return McpPage<SitePageRow>.Create([], 0, paging);
@@ -102,11 +109,12 @@ public class PageTools(
         return result.ToMcpPage(paging, SitePageRow.From);
     }
 
-    private async Task<IList<string>> GetChangedPageIdsAsync(string storeId, DateTime? modifiedSince, DateTime? modifiedBefore)
+    private async Task<IList<string>> GetChangedPageIdsAsync(string storeId, IList<string> storeIds, DateTime? modifiedSince, DateTime? modifiedBefore)
     {
         var versions = await pageVersionSearchService.SearchAsync(new SiteBuilderPageSearchCriteria
         {
             StoreId = storeId,
+            StoreIds = storeIds,
             ModifiedSince = modifiedSince,
             ModifiedBefore = modifiedBefore,
             Take = MaxChangedVersions,
