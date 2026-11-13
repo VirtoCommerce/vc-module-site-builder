@@ -200,6 +200,52 @@ public class DesignerContentService(
         return preview;
     }
 
+    public virtual Task<SiteBuilderChangePreview> PreviewDiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        return PreviewDiscardInternalAsync(command, user, cancellationToken);
+    }
+
+    private async Task<SiteBuilderChangePreview> PreviewDiscardInternalAsync(DesignerDiscardCommand command, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        // the page as DiscardPageAsync takes it: the group, else the file page
+        var preview = command.Group != null
+            ? await PreviewDiscardPageInternalAsync(command.Group, cancellationToken)
+            : AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
+        if (command.Group == null && command.FilePage != null)
+        {
+            var (contentType, path) = (command.FilePage.ContentType, command.FilePage.Path);
+            var draft = await filePageDraftService.PreviewDiscardDraftAsync(command.StoreId, contentType, path, user, cancellationToken);
+            if (draft.Status == DraftDiscardStatus.OnlyCopy)
+            {
+                throw new InvalidDataException(NeverPublishedError);
+            }
+
+            if (draft.Status == DraftDiscardStatus.Discarded)
+            {
+                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.FilePage, path, eTag: null, draft.DraftContent, draft.PublishedContent));
+            }
+        }
+
+        foreach (var path in command.ThemeFiles)
+        {
+            var draft = await themeDraftService.PreviewDiscardAsync(command.StoreId, path, cancellationToken);
+            if (draft.Status == DraftDiscardStatus.Discarded)
+            {
+                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, path, eTag: null, draft.DraftContent, draft.PublishedContent));
+            }
+            else if (draft.Status == DraftDiscardStatus.OnlyCopy)
+            {
+                preview.Warnings.Add($"{path} has never been published: it keeps its draft.");
+            }
+        }
+
+        return preview;
+    }
+
     public virtual Task<SiteBuilderChangePreview> PreviewDiscardPageAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(group);

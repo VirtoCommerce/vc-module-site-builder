@@ -29,6 +29,8 @@ public class DesignerOperationServiceTests
     private const string Published = """{"settings":{},"content":[]}""";
     private const string Edited = """{"settings":{"name":"Home"},"content":[{"id":"a","type":"text"}]}""";
     private const string HeaderFile = """{ "content": [ { "id": "h", "type": "site-header" } ] }""";
+    private const string Rules = "default/config/template_rules.json";
+    private const string RulesFile = """{ "version": 2, "conditions": [] }""";
     private const string NotRead = "The request could not be read.";
 
     private readonly FakeBlobStorage _live = new();
@@ -248,6 +250,84 @@ public class DesignerOperationServiceTests
     }
 
     [Fact]
+    public async Task DiscardAsync_DryRun_ListsTheDraftsItWouldThrowAwayAndWritesNothing()
+    {
+        _pages.SeedGroup(new GroupedSiteBuilderPage
+        {
+            Id = "g1",
+            StoreId = "s1",
+            Pages =
+            [
+                new SiteBuilderPage { Id = "p1", StoreId = "s1", Status = ModuleConstants.PageStatuses.Published },
+                new SiteBuilderPage { Id = "p2", StoreId = "s1", Status = ModuleConstants.PageStatuses.Draft },
+            ],
+        });
+        _pages.SeedContent("p2", Edited);
+        _live.Files[Theme(Header)] = "live header";
+        _live.Files[Theme($"{Header}-draft")] = HeaderFile;
+        _live.Files[Theme($"{Rules}-draft")] = RulesFile;
+        var files = new Dictionary<string, string>(_live.Files);
+        var request = DiscardRequest(new DesignerSavePage { GroupId = "g1" }, Header, Rules);
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Value);
+        Assert.Collection(result.Preview.Objects,
+            page => Assert.Equal((ModuleConstants.ChangePreview.Page, "g1", Edited, Published), (page.ObjectType, page.ObjectId, page.Fields.Single().From, page.Fields.Single().To)),
+            header => Assert.Equal((ModuleConstants.ChangePreview.ThemeFile, Header, HeaderFile, "live header"),
+                (header.ObjectType, header.ObjectId, header.Fields.Single().From, header.Fields.Single().To)));
+        Assert.Equal([$"{Rules} has never been published: it keeps its draft."], result.Preview.Warnings);
+        Assert.Equal(files, _live.Files);
+        Assert.Equal(["p1", "p2"], (await _pages.GetByIdAsync("g1")).Pages.Select(x => x.Id));
+        Assert.Empty(_live.Events);
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_DryRunOfAFilePage_KeepsItsDraft()
+    {
+        _live.Files[Page("about.page")] = "live about";
+        _live.Files[Page("about.page-draft")] = "draft about";
+
+        var result = await Operations().DiscardAsync(DiscardRequest(new DesignerSavePage { Path = "about.page", Type = "pages" }), _user, Ct);
+
+        var change = Assert.Single(result.Preview.Objects);
+        Assert.Equal((ModuleConstants.ChangePreview.FilePage, "about.page", "draft about", "live about"),
+            (change.ObjectType, change.ObjectId, change.Fields.Single().From, change.Fields.Single().To));
+        Assert.Equal("draft about", _live.Files[Page("about.page-draft")]);
+        Assert.Empty(_live.Events);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DiscardAsync_FilePageNeverPublished_IsInvalidOnTheDryRunAsOnTheDiscard(bool dryRun)
+    {
+        _live.Files[Page("about.page-draft")] = "draft about";
+        var request = DiscardRequest(new DesignerSavePage { Path = "about.page", Type = "pages" });
+        request.DryRun = dryRun;
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("never been published", result.Error);
+        Assert.Equal("draft about", _live.Files[Page("about.page-draft")]);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_DryRunOfAPageNeverPublished_IsInvalidAsTheDiscardIs()
+    {
+        _pages.SeedGroup(new GroupedSiteBuilderPage { Id = "new", StoreId = "s1", Pages = [new SiteBuilderPage { Id = "d1", StoreId = "s1", Status = ModuleConstants.PageStatuses.Draft }] });
+
+        var result = await Operations().DiscardAsync(DiscardRequest(new DesignerSavePage { GroupId = "new" }), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("never been published", result.Error);
+        Assert.Single((await _pages.GetByIdAsync("new")).Pages);
+    }
+
+    [Fact]
     public async Task ReadThemeFileAsync_StoreUserDoesNotWorkIn_IsForbiddenBeforeThePathIsChecked()
     {
         var request = new DesignerThemeFileRequest { StoreId = "s1", Path = "default/../x.json" };
@@ -297,6 +377,9 @@ public class DesignerOperationServiceTests
             groupedPageService: _pages,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization));
     }
+
+    private static DesignerDiscardOperationRequest DiscardRequest(DesignerSavePage page, params string[] themeFiles) =>
+        new() { StoreId = "s1", SaveId = "save-0001", Changes = new DesignerDiscardRequest { Page = page, ThemeFiles = themeFiles }, DryRun = true };
 
     private static DesignerSaveOperationRequest SaveRequest(DesignerSaveRequest changes, string catalogHash = Catalog) =>
         new() { StoreId = "s1", Changes = changes, CatalogHash = catalogHash, SaveId = "save-0001" };

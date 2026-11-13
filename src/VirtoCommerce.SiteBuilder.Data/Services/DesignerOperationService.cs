@@ -137,7 +137,9 @@ public class DesignerOperationService(
         command.ThemeFiles = themePaths;
         try
         {
-            return SiteBuilderOperationResult.Success(await designerContentService.DiscardAsync(command, user, cancellationToken));
+            return request.DryRun
+                ? SiteBuilderOperationResult.DryRun<ContentSaveResult>(await designerContentService.PreviewDiscardAsync(command, user, cancellationToken))
+                : SiteBuilderOperationResult.Success(await designerContentService.DiscardAsync(command, user, cancellationToken));
         }
         catch (InvalidDataException ex)
         {

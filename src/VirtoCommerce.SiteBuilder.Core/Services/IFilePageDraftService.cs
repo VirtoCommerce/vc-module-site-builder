@@ -17,6 +17,10 @@ public interface IFilePageDraftService
     Task<DraftDiscardStatus> DiscardDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
+    /// <summary>What <see cref="DiscardDraftAsync"/> would do, with the user's draft and what is published; writes nothing.</summary>
+    Task<DraftDiscardPreview> PreviewDiscardDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default);
+
     Task DiscardGitDraftAsync(string repository, string contentType, string path, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
     /// <summary>Refused when nothing is published, as the draft is then the only copy.</summary>

@@ -18,6 +18,7 @@ public interface IDesignerOperationService
     Task<SiteBuilderOperationResult<DesignerSaveResult>> SaveAsync(DesignerSaveOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Throws the drafts of a page and of theme files away together, or previews the discard on a dry run.</summary>
     Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 

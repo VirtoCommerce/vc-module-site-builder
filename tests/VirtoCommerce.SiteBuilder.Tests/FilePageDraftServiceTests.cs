@@ -1,7 +1,9 @@
 using System.Linq;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
+using Moq;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
@@ -49,6 +51,24 @@ public class FilePageDraftServiceTests
         var status = await Service().DiscardBlobDraftAsync("s1", "pages", "about.page", theme: null, Ct);
 
         Assert.Equal(DraftDiscardStatus.NoDraft, status);
+        Assert.Empty(_live.Events);
+    }
+
+    [Theory]
+    [InlineData("draft", DraftDiscardStatus.Discarded, "live")]
+    [InlineData(null, DraftDiscardStatus.NoDraft, null)]
+    public async Task PreviewDiscardDraftAsync_StoreInGit_ReadsTheUserBranchAndTheBaseBranchOnly(string draft, DraftDiscardStatus status, string published)
+    {
+        var options = Options.Create(new GitContentOptions { BaseBranch = "master" });
+        var repository = new Mock<IGitContentRepository>(MockBehavior.Strict);
+        repository.Setup(x => x.ReadFileAsync("o/r", It.IsAny<string>(), It.Is<string>(b => b != "master"), It.IsAny<CancellationToken>())).ReturnsAsync(draft);
+        repository.Setup(x => x.ReadFileAsync("o/r", It.IsAny<string>(), "master", It.IsAny<CancellationToken>())).ReturnsAsync("live");
+        var service = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), new FakeGitContentPolicy(), repository.Object);
+
+        var preview = await service.PreviewDiscardDraftAsync("s1", "pages", "about.page",
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test")), Ct);
+
+        Assert.Equal((status, draft, published), (preview.Status, preview.DraftContent, preview.PublishedContent));
         Assert.Empty(_live.Events);
     }
 

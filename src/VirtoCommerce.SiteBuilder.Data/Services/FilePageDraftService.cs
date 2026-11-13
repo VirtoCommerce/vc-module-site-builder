@@ -126,6 +126,33 @@ public class FilePageDraftService(
         return DraftDiscardStatus.Discarded;
     }
 
+    public virtual async Task<DraftDiscardPreview> PreviewDiscardDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            return await PreviewDiscardBlobDraftAsync(storeId, contentType, path, theme: null, cancellationToken);
+        }
+
+        var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+        var location = gitContentOptions.Value.GetPageLocation(repository, contentType, path, user?.Identity?.Name);
+
+        // the user's draft is their branch, which the discard deletes whatever is published
+        var result = AbstractTypeFactory<DraftDiscardPreview>.TryCreateInstance();
+        result.DraftContent = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken);
+        if (result.DraftContent == null)
+        {
+            result.Status = DraftDiscardStatus.NoDraft;
+            return result;
+        }
+
+        result.Status = DraftDiscardStatus.Discarded;
+        result.PublishedContent = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath,
+            (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch, cancellationToken);
+
+        return result;
+    }
+
     public virtual async Task DiscardGitDraftAsync(string repository, string contentType, string path, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
