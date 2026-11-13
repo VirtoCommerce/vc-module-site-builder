@@ -9,12 +9,18 @@ public static class SiteBuilderSharedComponentUsageExtensions
     /// Sets how many pages use each component, and which pages only when <paramref name="includePages"/>: the caller decides whether the user
     /// may see them, as a usage service need not leave them out itself.
     /// </summary>
-    public static async Task ApplyUsageAsync(this ISiteBuilderSharedComponentUsageService usageService, IList<SiteBuilderSharedComponent> components,
+    public static Task ApplyUsageAsync(this ISiteBuilderSharedComponentUsageService usageService, IList<SiteBuilderSharedComponent> components,
         bool includePages, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(usageService);
         ArgumentNullException.ThrowIfNull(components);
 
+        return ApplyUsageInternalAsync(usageService, components, includePages, cancellationToken);
+    }
+
+    private static async Task ApplyUsageInternalAsync(ISiteBuilderSharedComponentUsageService usageService, IList<SiteBuilderSharedComponent> components,
+        bool includePages, CancellationToken cancellationToken)
+    {
         foreach (var storeGroup in components.GroupBy(x => x.StoreId, StringComparer.OrdinalIgnoreCase))
         {
             var usages = await usageService.GetUsageAsync(

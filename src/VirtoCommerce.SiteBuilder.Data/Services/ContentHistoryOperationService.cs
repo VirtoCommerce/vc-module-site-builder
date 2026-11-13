@@ -110,8 +110,7 @@ public class ContentHistoryOperationService(
     {
         var (storeId, versionId) = (request.StoreId, request.VersionId);
         var restoreRequest = new ContentHistoryRestoreRequest { StoreId = storeId, Items = request.Items ?? [], VersionId = versionId };
-        if ((await authorizationService.CheckStoreOperationAsync(user, restoreRequest)
-             ?? await restoreRequestValidator.CheckOperationRequestAsync(restoreRequest, request.BindingErrors, cancellationToken)) is { } refused)
+        if (await CheckRestoreRequestAsync(restoreRequest, request.BindingErrors, user, cancellationToken) is { } refused)
         {
             return refused.As<ContentSaveResult>();
         }
@@ -130,23 +129,44 @@ public class ContentHistoryOperationService(
             return refusedPage.As<ContentSaveResult>();
         }
 
+        var read = await ReadVersionContentsAsync(storeId, historyItems, versionId, cancellationToken);
+        if (!read.Succeeded)
+        {
+            return read.As<ContentSaveResult>();
+        }
+
+        var contents = read.Value;
+        if (await CheckRestoredPageAsync(storeId, pageItem, contents, user, cancellationToken) is { } refusedContent)
+        {
+            return refusedContent.As<ContentSaveResult>();
+        }
+
+        return await RestoreContentsAsync(request, group, contents, user, cancellationToken);
+    }
+
+    /// <summary>Not found when the version holds no content of one of the items.</summary>
+    private async Task<SiteBuilderOperationResult<IDictionary<HistoryItem, string>>> ReadVersionContentsAsync(string storeId, IList<HistoryItem> historyItems,
+        string versionId, CancellationToken cancellationToken)
+    {
         var contents = new Dictionary<HistoryItem, string>();
         foreach (var historyItem in historyItems)
         {
             var content = await contentHistory.ReadAsync(storeId, historyItem, versionId, cancellationToken);
             if (content == null)
             {
-                return SiteBuilderOperationResult.NotFound().As<ContentSaveResult>();
+                return SiteBuilderOperationResult.NotFound().As<IDictionary<HistoryItem, string>>();
             }
 
             contents[historyItem] = content;
         }
 
-        if (await CheckRestoredPageAsync(storeId, pageItem, contents, user, cancellationToken) is { } refusedContent)
-        {
-            return refusedContent.As<ContentSaveResult>();
-        }
+        return SiteBuilderOperationResult.Success<IDictionary<HistoryItem, string>>(contents);
+    }
 
+    private async Task<SiteBuilderOperationResult<ContentSaveResult>> RestoreContentsAsync(ContentHistoryRestoreOperationRequest request,
+        GroupedSiteBuilderPage group, IDictionary<HistoryItem, string> contents, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var (storeId, versionId) = (request.StoreId, request.VersionId);
         var command = AbstractTypeFactory<ContentRestoreCommand>.TryCreateInstance();
         command.StoreId = storeId;
         command.VersionId = versionId;
@@ -175,6 +195,14 @@ public class ContentHistoryOperationService(
         {
             return SiteBuilderOperationResult.Invalid(ex.Message).As<ContentSaveResult>();
         }
+    }
+
+    /// <summary>Store access first, so a user bound to another store cannot tell from a refused request which stores exist.</summary>
+    protected virtual async Task<SiteBuilderOperationResult> CheckRestoreRequestAsync(ContentHistoryRestoreRequest request, IList<string> bindingErrors,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        return await authorizationService.CheckStoreOperationAsync(user, request)
+               ?? await restoreRequestValidator.CheckOperationRequestAsync(request, bindingErrors, cancellationToken);
     }
 
     protected virtual async Task<SiteBuilderOperationResult> CheckRestoredPageAsync(string storeId, HistoryItem pageItem, IDictionary<HistoryItem, string> contents,
@@ -226,15 +254,18 @@ public class ContentHistoryOperationService(
         return await contentPermissionService.CanAccessPageAsync(user, group, storeId) ? null : SiteBuilderOperationResult.Forbidden();
     }
 
-    /// <summary>An item it cannot read names nothing the restore writes, and is left out.</summary>
+    /// <summary>
+    /// An item it cannot read names nothing the restore writes, and is left out. Without expected versions the result is empty, which
+    /// overwrites the drafts whatever they hold.
+    /// </summary>
     protected virtual IDictionary<HistoryItem, string> ParseExpectedVersions(IDictionary<string, string> expectedVersions)
     {
+        var result = new Dictionary<HistoryItem, string>();
         if (expectedVersions == null)
         {
-            return null;
+            return result;
         }
 
-        var result = new Dictionary<HistoryItem, string>();
         foreach (var (item, version) in expectedVersions)
         {
             if (HistoryItem.TryParse(item, out var historyItem))

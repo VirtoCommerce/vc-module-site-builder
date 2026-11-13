@@ -98,26 +98,9 @@ public class GroupedPageOperationService(
         ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         var model = request.Page;
-        if (model == null ||
-            string.IsNullOrWhiteSpace(model.StoreId) ||
-            string.IsNullOrWhiteSpace(model.Name) ||
-            string.IsNullOrWhiteSpace(model.Content))
-        {
-            return SiteBuilderOperationResult.Invalid(CreateFieldsRequiredError).As<GroupedSiteBuilderPage>();
-        }
-
-        if ((CheckPermalink(model.Permalink) ?? CheckName(model.Name) ?? CheckEnvelope(model.Content)) is { } invalid)
+        if (CheckCreateRequest(model) is { } invalid)
         {
             return invalid.As<GroupedSiteBuilderPage>();
-        }
-
-        try
-        {
-            model.Content = contentGuard.GuardPageContent(model.Content, PageName, catalog: null);
-        }
-        catch (InvalidDataException ex)
-        {
-            return SiteBuilderOperationResult.Invalid(ex.Message).As<GroupedSiteBuilderPage>();
         }
 
         if ((await authorizationService.CheckStoreOperationAsync(user, model)
@@ -126,6 +109,49 @@ public class GroupedPageOperationService(
             return refused.As<GroupedSiteBuilderPage>();
         }
 
+        var groupedPage = CreateGroup(model);
+        if (request.DryRun)
+        {
+            var preview = CreatePreview();
+            preview.AddPage(from: null, groupedPage).AddField(ModuleConstants.ChangePreview.Content, from: null, model.Content);
+            return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
+        }
+
+        return await SaveNewGroupAsync(groupedPage, model.Content);
+    }
+
+    /// <summary>The fields the page is created with, then its content, sanitized in place so that what is written is sanitized.</summary>
+    private SiteBuilderOperationResult CheckCreateRequest(CreateGroupedPageRequest model)
+    {
+        if (!HasCreateFields(model))
+        {
+            return SiteBuilderOperationResult.Invalid(CreateFieldsRequiredError);
+        }
+
+        if ((CheckPermalink(model.Permalink) ?? CheckName(model.Name) ?? CheckEnvelope(model.Content)) is { } invalid)
+        {
+            return invalid;
+        }
+
+        try
+        {
+            model.Content = contentGuard.GuardPageContent(model.Content, PageName, catalog: null);
+            return null;
+        }
+        catch (InvalidDataException ex)
+        {
+            return SiteBuilderOperationResult.Invalid(ex.Message);
+        }
+    }
+
+    private static bool HasCreateFields(CreateGroupedPageRequest model) =>
+        model != null &&
+        !string.IsNullOrWhiteSpace(model.StoreId) &&
+        !string.IsNullOrWhiteSpace(model.Name) &&
+        !string.IsNullOrWhiteSpace(model.Content);
+
+    private static GroupedSiteBuilderPage CreateGroup(CreateGroupedPageRequest model)
+    {
         var groupedPage = AbstractTypeFactory<GroupedSiteBuilderPage>.TryCreateInstance();
         groupedPage.StoreId = model.StoreId;
         groupedPage.Name = model.Name;
@@ -137,20 +163,18 @@ public class GroupedPageOperationService(
         groupedPage.StartDate = model.StartDate;
         groupedPage.EndDate = model.EndDate;
 
-        if (request.DryRun)
-        {
-            var preview = CreatePreview();
-            preview.AddPage(from: null, groupedPage).AddField(ModuleConstants.ChangePreview.Content, from: null, model.Content);
-            return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
-        }
+        return groupedPage;
+    }
 
+    private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> SaveNewGroupAsync(GroupedSiteBuilderPage groupedPage, string content)
+    {
         var draftPage = AbstractTypeFactory<SiteBuilderPage>.TryCreateInstance();
         draftPage.Status = Draft;
-        draftPage.StoreId = model.StoreId;
+        draftPage.StoreId = groupedPage.StoreId;
         // Assigning Content before SaveChangesAsync ensures the page row and its PageContent
         // are persisted in a single INSERT (EF table-splitting), and the synchronous Changed
         // event sees the content already committed.
-        draftPage.Content = model.Content;
+        draftPage.Content = content;
         groupedPage.Pages.Add(draftPage);
 
         try
@@ -195,13 +219,9 @@ public class GroupedPageOperationService(
         ApplyGroupChanges(groupedPage, model, storeChanged);
 
         var sourcePageId = GetPublishedContentSourceId(groupedPage);
-        if (sourcePageId != null)
+        if (await CheckSourceContentAsync(groupedPage, sourcePageId, user, cancellationToken) is { } refusedContent)
         {
-            var sourceContent = await groupedPageService.LoadContent(sourcePageId, cancellationToken);
-            if (await CheckSharedComponentsAsync(user, groupedPage.StoreId, sourceContent, cancellationToken) is { } refusedContent)
-            {
-                return refusedContent.As<GroupedSiteBuilderPage>();
-            }
+            return refusedContent.As<GroupedSiteBuilderPage>();
         }
 
         var preview = CreatePreview();
@@ -211,13 +231,32 @@ public class GroupedPageOperationService(
             return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
         }
 
+        return await SaveGroupUpdateAsync(groupedPage, sourcePageId, request.ReportImpact && preview.AffectsPublished, cancellationToken);
+    }
+
+    /// <summary>The shared components of the content the update copies into a new draft; <c>null</c> when it copies none.</summary>
+    private async Task<SiteBuilderOperationResult> CheckSourceContentAsync(GroupedSiteBuilderPage groupedPage, string sourcePageId, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        if (sourcePageId == null)
+        {
+            return null;
+        }
+
+        var sourceContent = await groupedPageService.LoadContent(sourcePageId, cancellationToken);
+        return await CheckSharedComponentsAsync(user, groupedPage.StoreId, sourceContent, cancellationToken);
+    }
+
+    private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> SaveGroupUpdateAsync(GroupedSiteBuilderPage groupedPage, string sourcePageId,
+        bool affectsPublished, CancellationToken cancellationToken)
+    {
         var writeResult = await pageContentService.SaveGroupUpdateAsync(groupedPage, sourcePageId, cancellationToken);
         if (writeResult.ErrorMessage != null)
         {
             return SiteBuilderOperationResult.Invalid(writeResult.ErrorMessage).As<GroupedSiteBuilderPage>();
         }
 
-        return SiteBuilderOperationResult.Success(groupedPage, request.ReportImpact && preview.AffectsPublished);
+        return SiteBuilderOperationResult.Success(groupedPage, affectsPublished);
     }
 
     public virtual Task<SiteBuilderOperationResult> PublishAsync(GroupedPagePublishOperationRequest request, ClaimsPrincipal user,
@@ -237,51 +276,29 @@ public class GroupedPageOperationService(
             return refused;
         }
 
-        List<string> pagesToDelete;
-        string publishedPageId = null;
+        return request.Publish
+            ? await PublishDraftAsync(groupedPage, request, user, cancellationToken)
+            : await UnpublishAsync(groupedPage, request);
+    }
 
-        if (request.Publish)
+    private async Task<SiteBuilderOperationResult> PublishDraftAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        if (request.DryRun)
         {
-            if (request.DryRun)
-            {
-                return GroupedPagePublishing.GetDraft(groupedPage) == null
-                    ? SiteBuilderOperationResult.Invalid(DraftNotFoundError)
-                    : PreviewPublishing(groupedPage, Draft, Published);
-            }
-
-            if (!GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds))
-            {
-                return SiteBuilderOperationResult.Invalid(DraftNotFoundError);
-            }
-
-            pagesToDelete = obsoletePageIds.ToList();
-            publishedPageId = groupedPage.Pages.Single(x => !obsoletePageIds.Contains(x.Id)).Id;
-        }
-        else
-        {
-            var pageToUnpublish = SiteBuilderPageSelection.Order(groupedPage.Pages).FirstOrDefault(x => x.Status == Published);
-            if (pageToUnpublish == null)
-            {
-                return SiteBuilderOperationResult.Invalid(PublishedNotFoundError);
-            }
-
-            var hasDraft = groupedPage.Pages.Any(x => x.Status == Draft);
-            if (hasDraft)
-            {
-                return SiteBuilderOperationResult.Invalid(UnpublishWithChangesError);
-            }
-
-            if (request.DryRun)
-            {
-                return PreviewPublishing(groupedPage, Published, Draft);
-            }
-
-            pageToUnpublish.Status = Draft;
-            pagesToDelete = groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
+            return GroupedPagePublishing.GetDraft(groupedPage) == null
+                ? SiteBuilderOperationResult.Invalid(DraftNotFoundError)
+                : PreviewPublishing(groupedPage, Draft, Published);
         }
 
-        await groupedPageService.SaveChangesAsync([groupedPage]);
-        await pageService.DeleteAsync(pagesToDelete);
+        if (!GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds))
+        {
+            return SiteBuilderOperationResult.Invalid(DraftNotFoundError);
+        }
+
+        var pagesToDelete = obsoletePageIds.ToList();
+        var publishedPageId = groupedPage.Pages.Single(x => !obsoletePageIds.Contains(x.Id)).Id;
+        await SavePublishingAsync(groupedPage, pagesToDelete);
 
         if (publishedPageId != null)
         {
@@ -291,6 +308,37 @@ public class GroupedPageOperationService(
         }
 
         return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
+    }
+
+    private async Task<SiteBuilderOperationResult> UnpublishAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request)
+    {
+        var pageToUnpublish = SiteBuilderPageSelection.Order(groupedPage.Pages).FirstOrDefault(x => x.Status == Published);
+        if (pageToUnpublish == null)
+        {
+            return SiteBuilderOperationResult.Invalid(PublishedNotFoundError);
+        }
+
+        var hasDraft = groupedPage.Pages.Any(x => x.Status == Draft);
+        if (hasDraft)
+        {
+            return SiteBuilderOperationResult.Invalid(UnpublishWithChangesError);
+        }
+
+        if (request.DryRun)
+        {
+            return PreviewPublishing(groupedPage, Published, Draft);
+        }
+
+        pageToUnpublish.Status = Draft;
+        await SavePublishingAsync(groupedPage, groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList());
+
+        return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
+    }
+
+    private async Task SavePublishingAsync(GroupedSiteBuilderPage groupedPage, List<string> pagesToDelete)
+    {
+        await groupedPageService.SaveChangesAsync([groupedPage]);
+        await pageService.DeleteAsync(pagesToDelete);
     }
 
     public virtual Task<SiteBuilderOperationResult> DiscardDraftAsync(GroupedPageDiscardOperationRequest request, ClaimsPrincipal user,

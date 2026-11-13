@@ -82,10 +82,7 @@ public class DesignerOperationService(
         }
 
         contentRequest.Files = files;
-        var refusedChanges = await requestValidator.CheckOperationRequestAsync(contentRequest, request.BindingErrors, cancellationToken)
-            ?? await CheckDesignerPageAsync(request.StoreId, group, page, user, cancellationToken)
-            ?? await CheckDesignerThemeFilesAsync(request.StoreId, themeFiles, files, request.CatalogHash, cancellationToken);
-        if (refusedChanges != null)
+        if (await CheckDesignerChangesAsync(contentRequest, request, group, page, themeFiles, user, cancellationToken) is { } refusedChanges)
         {
             return refusedChanges.As<DesignerSaveResult>();
         }
@@ -93,6 +90,15 @@ public class DesignerOperationService(
         var command = CreateDesignerSaveCommand(request, group, files, themeFiles);
 
         return await SaveDesignerChangesAsync(command, request.DryRun, user, cancellationToken);
+    }
+
+    /// <summary>The request with the files it saves, then the page, then the theme files.</summary>
+    private async Task<SiteBuilderOperationResult> CheckDesignerChangesAsync(SiteBuilderContentRequest contentRequest, DesignerSaveOperationRequest request,
+        GroupedSiteBuilderPage group, DesignerSavePage page, IList<DesignerSaveFile> themeFiles, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        return await requestValidator.CheckOperationRequestAsync(contentRequest, request.BindingErrors, cancellationToken)
+               ?? await CheckDesignerPageAsync(request.StoreId, group, page, user, cancellationToken)
+               ?? await CheckDesignerThemeFilesAsync(request.StoreId, themeFiles, contentRequest.Files, request.CatalogHash, cancellationToken);
     }
 
     public virtual Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,

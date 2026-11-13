@@ -15,6 +15,6 @@ public class ContentRestoreCommand
 
     public IDictionary<HistoryItem, string> Contents { get; set; } = new Dictionary<HistoryItem, string>();
 
-    /// <summary>The version each draft has to be at for the restore to overwrite it; <c>null</c> overwrites the drafts whatever they hold.</summary>
+    /// <summary>The version each draft has to be at for the restore to overwrite it; none, or <c>null</c>, overwrites the drafts whatever they hold.</summary>
     public IDictionary<HistoryItem, string> ETags { get; set; }
 }

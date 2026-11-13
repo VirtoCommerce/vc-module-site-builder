@@ -53,20 +53,9 @@ public static class SiteBuilderChangePreviewExtensions
         var change = AbstractTypeFactory<SiteBuilderObjectChange>.TryCreateInstance();
         change.ObjectType = Page;
         change.ObjectId = from?.Id;
-        change
-            .AddField(Status, from?.Status, from?.Status ?? Draft)
-            .AddField(Name, from?.Name, to.Name)
-            .AddField(StoreId, from?.StoreId, to.StoreId)
-            .AddField(CultureName, from?.CultureName, to.CultureName)
-            .AddField(Permalink, from?.Permalink, to.Permalink)
-            .AddField(Visibility, from?.Visibility, to.Visibility)
-            .AddField(UserGroups, from?.UserGroups, to.UserGroups)
-            .AddField(OrganizationId, from?.OrganizationId, to.OrganizationId)
-            .AddField(StartDate, from?.StartDate, to.StartDate)
-            .AddField(EndDate, from?.EndDate, to.EndDate)
-            .AddField(MultilanguagePageId, from?.MultilanguagePageId, to.MultilanguagePageId)
-            .AddField(OverriddenFields, from?.OverriddenFields, to.OverriddenFields ?? from?.OverriddenFields)
-            .AddField(SourceRevisionDate, from?.SourceRevisionDate, to.SourceRevisionDate);
+        AddPageNaming(change, from, to);
+        AddPageAudience(change, from, to);
+        AddPageLanguage(change, from, to);
         if (change.Fields.Count == 0)
         {
             return null;
@@ -95,17 +84,44 @@ public static class SiteBuilderChangePreviewExtensions
     {
         ArgumentNullException.ThrowIfNull(to);
 
-        return preview.AddObject(ModuleConstants.ChangePreview.MultilanguagePage, from?.Id)
+        var change = preview.AddObject(ModuleConstants.ChangePreview.MultilanguagePage, from?.Id)
             .AddField(Name, from?.Name, to.Name)
             .AddField(StoreId, from?.StoreId, to.StoreId)
             .AddField(DefaultCultureName, from?.DefaultCultureName, to.DefaultCultureName)
-            .AddField(Permalink, from?.Permalink, to.Permalink)
+            .AddField(Permalink, from?.Permalink, to.Permalink);
+
+        return AddMultilanguagePageAudience(change, from, to);
+    }
+
+    private static void AddPageNaming(SiteBuilderObjectChange change, GroupedSiteBuilderPage from, GroupedSiteBuilderPage to) =>
+        change
+            .AddField(Status, from?.Status, from?.Status ?? Draft)
+            .AddField(Name, from?.Name, to.Name)
+            .AddField(StoreId, from?.StoreId, to.StoreId)
+            .AddField(CultureName, from?.CultureName, to.CultureName)
+            .AddField(Permalink, from?.Permalink, to.Permalink);
+
+    private static void AddPageAudience(SiteBuilderObjectChange change, GroupedSiteBuilderPage from, GroupedSiteBuilderPage to) =>
+        change
             .AddField(Visibility, from?.Visibility, to.Visibility)
             .AddField(UserGroups, from?.UserGroups, to.UserGroups)
             .AddField(OrganizationId, from?.OrganizationId, to.OrganizationId)
             .AddField(StartDate, from?.StartDate, to.StartDate)
             .AddField(EndDate, from?.EndDate, to.EndDate);
-    }
+
+    private static void AddPageLanguage(SiteBuilderObjectChange change, GroupedSiteBuilderPage from, GroupedSiteBuilderPage to) =>
+        change
+            .AddField(MultilanguagePageId, from?.MultilanguagePageId, to.MultilanguagePageId)
+            .AddField(OverriddenFields, from?.OverriddenFields, to.OverriddenFields ?? from?.OverriddenFields)
+            .AddField(SourceRevisionDate, from?.SourceRevisionDate, to.SourceRevisionDate);
+
+    private static SiteBuilderObjectChange AddMultilanguagePageAudience(SiteBuilderObjectChange change, MultilanguagePage from, MultilanguagePage to) =>
+        change
+            .AddField(Visibility, from?.Visibility, to.Visibility)
+            .AddField(UserGroups, from?.UserGroups, to.UserGroups)
+            .AddField(OrganizationId, from?.OrganizationId, to.OrganizationId)
+            .AddField(StartDate, from?.StartDate, to.StartDate)
+            .AddField(EndDate, from?.EndDate, to.EndDate);
 
     private static string Format(object value) => value switch
     {

@@ -74,6 +74,12 @@ public class SiteBuilderPublishStatusQueryService(
             return SiteBuilderOperationResult.Success(CreateStatus(status.Published, status.HasChanges, pending: false, gitFlow: false));
         }
 
+        return SiteBuilderOperationResult.Success(await GetGitStatusAsync(storeRepository, storeId, type, path, user, cancellationToken));
+    }
+
+    private async Task<PagePublishStatus> GetGitStatusAsync(StoreRepository storeRepository, string storeId, string type, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
         var baseBranch = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch;
         var location = gitContentOptions.Value.GetPageLocation(storeRepository.Name, type, path, user?.Identity?.Name);
 
@@ -81,7 +87,7 @@ public class SiteBuilderPublishStatusQueryService(
         var draft = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken);
         var pending = await gitContentPublisher.GetOpenPullRequestAsync(location.Repository, location.Branch, cancellationToken);
 
-        return SiteBuilderOperationResult.Success(CreateStatus(
+        return CreateStatus(
             published: published != null,
             // a draft that says the same thing as production is not a change, whatever its history
             hasChanges: draft != null && !PageJson.AreSame(draft, published),
@@ -91,7 +97,7 @@ public class SiteBuilderPublishStatusQueryService(
             awaitingMerge: pending is { AutoMerging: false },
             production: await GetProductionStatusAsync(location.Repository, location.RepoPath, published, type, path, cancellationToken),
             liveBehind: storeRepository.IsPlatformManaged &&
-                        await gitLivePageService.IsLivePageBehindAsync(storeId, type ?? PagesContentType, path, location, published, cancellationToken)));
+                        await gitLivePageService.IsLivePageBehindAsync(storeId, type ?? PagesContentType, path, location, published, cancellationToken));
     }
 
     public virtual Task<SiteBuilderOperationResult<FilePublishStatus>> GetGroupedPageStatusAsync(GroupedPageQueryRequest request, ClaimsPrincipal user,

@@ -95,6 +95,9 @@ public static class SiteBuilderSchemas
     // to PICK an entry, so it carries a short head summary instead — see DeriveCatalogSummary.
     public const int CatalogSummaryMaxLength = 200;
 
+    // A sentence that ends before half the cap leaves too little of the description to cut there.
+    private const int CatalogSummaryMinSentenceLength = CatalogSummaryMaxLength / 2;
+
     public static void CopySchemaMetadata(JObject source, JObject target, string kind)
     {
         // Catalog metadata is intentionally narrow — only fields the LLM uses while picking.
@@ -155,7 +158,7 @@ public static class SiteBuilderSchemas
         // Prefer cutting at the last sentence boundary within the cap; else hard-cut + ellipsis.
         var slice = head[..CatalogSummaryMaxLength];
         var lastStop = slice.LastIndexOfAny(['.', '!', '?']);
-        return lastStop >= CatalogSummaryMaxLength / 2
+        return lastStop >= CatalogSummaryMinSentenceLength
             ? slice[..(lastStop + 1)]
             : slice.TrimEnd() + "…";
     }

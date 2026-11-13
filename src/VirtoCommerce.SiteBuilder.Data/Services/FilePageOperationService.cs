@@ -74,14 +74,7 @@ public class FilePageOperationService(
         var storeRepository = await gitContentPolicy.GetRepositoryInfoAsync(storeId, cancellationToken);
         if (storeRepository == null)
         {
-            if (request.DryRun)
-            {
-                return DryRunShipment(CreateBlobPublishingPreview(path, Draft, Published, "Publishes the draft in blob storage."));
-            }
-
-            // the switch is off for this store: publish means what it always meant
-            await publishingService.PublishingAsync(type ?? PagesContentType, storeId, path, publish: true);
-            return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false), request);
+            return await PublishInBlobStorageAsync(request);
         }
 
         var location = GetLocation(storeRepository.Name, type, path, user);
@@ -105,6 +98,25 @@ public class FilePageOperationService(
             return DryRunShipment(await CreatePublishPreviewAsync(location, draft, request, cancellationToken));
         }
 
+        return await MergeDraftAsync(storeRepository, location, draft, request, user, cancellationToken);
+    }
+
+    private async Task<SiteBuilderOperationResult<FilePageShipment>> PublishInBlobStorageAsync(FilePagePublishOperationRequest request)
+    {
+        if (request.DryRun)
+        {
+            return DryRunShipment(CreateBlobPublishingPreview(request.Path, Draft, Published, "Publishes the draft in blob storage."));
+        }
+
+        // the switch is off for this store: publish means what it always meant
+        await publishingService.PublishingAsync(request.ContentType ?? PagesContentType, request.StoreId, request.Path, publish: true);
+        return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false), request);
+    }
+
+    private async Task<SiteBuilderOperationResult<FilePageShipment>> MergeDraftAsync(StoreRepository storeRepository, GitPageFileLocation location,
+        string draft, FilePagePublishOperationRequest request, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var (storeId, type, path) = (request.StoreId, request.ContentType, request.Path);
         if (request.Rebase)
         {
             await RebaseDraftAsync(location, draft, path, storeId, user, cancellationToken);
@@ -788,6 +800,29 @@ public class FilePageOperationService(
             return refused.As<FileDraftDiscard>();
         }
 
+        if (await CheckDiscardAsync(storeId, contentType, path, user, cancellationToken) is { } refusedDiscard)
+        {
+            return refusedDiscard;
+        }
+
+        if (request.DryRun)
+        {
+            return await PreviewDiscardAsync(storeId, contentType, path, theme, cancellationToken);
+        }
+
+        if (contentType != Themes)
+        {
+            var status = await filePageDraftService.DiscardBlobDraftAsync(storeId, contentType, path, theme, cancellationToken);
+            return status == DraftDiscardStatus.OnlyCopy ? RefuseOnlyCopy() : Discarded(status);
+        }
+
+        return await DiscardThemeDraftAsync(storeId, path, request.SaveId, user, cancellationToken);
+    }
+
+    /// <summary>The permission to edit a theme file; a page kept in git has its draft discarded in git instead.</summary>
+    private async Task<SiteBuilderOperationResult<FileDraftDiscard>> CheckDiscardAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
         if (contentType == Themes && !await contentPermissionService.HasPermissionsAsync(user, [contentPermissionService.GetThemeFileEditPermission(path)]))
         {
             return SiteBuilderOperationResult.Forbidden().As<FileDraftDiscard>();
@@ -800,23 +835,22 @@ public class FilePageOperationService(
             return SiteBuilderOperationResult.Invalid(keptInGit, DraftsInGitError);
         }
 
-        if (request.DryRun)
+        return null;
+    }
+
+    private async Task<SiteBuilderOperationResult<FileDraftDiscard>> PreviewDiscardAsync(string storeId, string contentType, string path, string theme,
+        CancellationToken cancellationToken)
+    {
+        var isThemeFile = contentType == Themes;
+        var draft = isThemeFile
+            ? await themeDraftService.PreviewDiscardAsync(storeId, path, cancellationToken)
+            : await filePageDraftService.PreviewDiscardBlobDraftAsync(storeId, contentType, path, theme, cancellationToken);
+        if (draft.Status == DraftDiscardStatus.OnlyCopy)
         {
-            var draft = contentType == Themes
-                ? await themeDraftService.PreviewDiscardAsync(storeId, path, cancellationToken)
-                : await filePageDraftService.PreviewDiscardBlobDraftAsync(storeId, contentType, path, theme, cancellationToken);
-            return draft.Status == DraftDiscardStatus.OnlyCopy
-                ? RefuseOnlyCopy()
-                : SiteBuilderOperationResult.DryRun<FileDraftDiscard>(CreateDiscardPreview(contentType == Themes ? ThemeFile : FilePage, path, draft));
+            return RefuseOnlyCopy();
         }
 
-        if (contentType != Themes)
-        {
-            var status = await filePageDraftService.DiscardBlobDraftAsync(storeId, contentType, path, theme, cancellationToken);
-            return status == DraftDiscardStatus.OnlyCopy ? RefuseOnlyCopy() : Discarded(status);
-        }
-
-        return await DiscardThemeDraftAsync(storeId, path, request.SaveId, user, cancellationToken);
+        return SiteBuilderOperationResult.DryRun<FileDraftDiscard>(CreateDiscardPreview(isThemeFile ? ThemeFile : FilePage, path, draft));
     }
 
     protected virtual async Task<SiteBuilderOperationResult<FileDraftDiscard>> DiscardThemeDraftAsync(string storeId, string path, string saveId,
