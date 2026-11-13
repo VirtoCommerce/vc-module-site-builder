@@ -239,9 +239,8 @@ public class PageContentSaveFailureControllerTests
     private HistoryController HistoryController()
     {
         var authorization = new Fakes.AllowAllAuthorizationService();
-        return WithUser(new HistoryController(_history, _pages, TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages),
-            TestServices.Permissions(authorization), new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization),
-            authorization, RequestValidators.Stores("store"), RequestValidators.History("store"), RequestValidators.Restore("store")));
+        return WithUser(new HistoryController(TestServices.ContentHistoryOperations(authorization, _history, _pages,
+            TestServices.Designer(_history, themeDrafts: ThemeDrafts(), pages: _pages), "store")));
     }
 
     private static ThemeDraftService ThemeDrafts()

@@ -1,7 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,16 +7,15 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
-using VirtoCommerce.SiteBuilder.Data.Validation;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
+using VirtoCommerce.SiteBuilder.Web.Extensions;
 using VirtoCommerce.SiteBuilder.Web.Models;
 using VirtoCommerce.Platform.Core.Common;
-using VirtoCommerce.StoreModule.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 
@@ -28,16 +24,12 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 [method: ActivatorUtilitiesConstructor]
 public class SiteBuilderSharedComponentsController(
     ISiteBuilderSharedComponentService sharedComponentService,
-    ISiteBuilderSharedComponentSearchService sharedComponentSearchService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
     ISiteBuilderSharedComponentUsageService sharedComponentUsageService,
     IAuthorizationService authorizationService,
-    IStoreService storeService,
-    ISiteBuilderContentGuard contentGuard)
+    ISiteBuilderSharedComponentOperationService sharedComponentOperationService)
     : Controller
 {
-    private const string ComponentName = "shared component";
-
     // Preserve the published constructor for extensions; request services supply the new dependencies.
     public SiteBuilderSharedComponentsController(
         ISiteBuilderSharedComponentService sharedComponentService,
@@ -45,30 +37,19 @@ public class SiteBuilderSharedComponentsController(
         ISiteBuilderSharedComponentContentService sharedComponentContentService,
         ISiteBuilderSharedComponentUsageService sharedComponentUsageService,
         IAuthorizationService authorizationService)
-        : this(sharedComponentService, sharedComponentSearchService, sharedComponentContentService,
-            sharedComponentUsageService, authorizationService, null, null)
+        : this(sharedComponentService, sharedComponentContentService, sharedComponentUsageService, authorizationService, null)
     {
     }
+
+    private ISiteBuilderSharedComponentOperationService Operations =>
+        sharedComponentOperationService ?? HttpContext.RequestServices.GetRequiredService<ISiteBuilderSharedComponentOperationService>();
 
     [HttpPost("search")]
     public async Task<ActionResult<SiteBuilderSharedComponentSearchResult>> Search(
         [FromBody] SiteBuilderSharedComponentSearchCriteria criteria,
         CancellationToken cancellationToken = default)
     {
-        if (criteria == null || string.IsNullOrWhiteSpace(criteria.StoreId))
-        {
-            return BadRequest("StoreId is required.");
-        }
-
-        if (!await IsAuthorizedAsync(criteria))
-        {
-            return Forbidden;
-        }
-
-        var result = await sharedComponentSearchService.SearchAsync(criteria);
-        await EnrichUsageAsync(result.Results, includePages: false, cancellationToken);
-
-        return Ok(result);
+        return (await Operations.SearchAsync(criteria, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpGet("{id}")]
@@ -76,22 +57,9 @@ public class SiteBuilderSharedComponentsController(
         [FromRoute] string id,
         CancellationToken cancellationToken = default)
     {
-        var component = await sharedComponentService.GetByIdAsync(id);
-        if (component == null)
-        {
-            return NotFound();
-        }
+        var request = new SharedComponentOperationRequest { Id = id };
 
-        if (!await IsAuthorizedAsync(component))
-        {
-            return Forbidden;
-        }
-
-        await EnrichUsageAsync(
-            [component],
-            includePages: await CanReadPagesAsync(component),
-            cancellationToken);
-        return Ok(component);
+        return (await Operations.GetAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpPost]
@@ -101,47 +69,15 @@ public class SiteBuilderSharedComponentsController(
         [FromBody] SiteBuilderSharedComponentCreateModel request,
         CancellationToken cancellationToken = default)
     {
-        if (request == null ||
-            string.IsNullOrWhiteSpace(request.StoreId) ||
-            string.IsNullOrWhiteSpace(request.Name) ||
-            request.Content == null)
+        var operationRequest = new SharedComponentCreateOperationRequest
         {
-            return BadRequest("StoreId, Name, and Content are required.");
-        }
+            StoreId = request?.StoreId,
+            Name = request?.Name,
+            Content = request?.Content,
+        };
+        var result = await Operations.CreateAsync(operationRequest, User, cancellationToken);
 
-        if (request.Name.Trim().Length > ModuleConstants.SharedComponents.NameMaxLength)
-        {
-            return BadRequest($"Name cannot exceed {ModuleConstants.SharedComponents.NameMaxLength} characters.");
-        }
-
-        var component = AbstractTypeFactory<SiteBuilderSharedComponent>.TryCreateInstance();
-        component.StoreId = request.StoreId;
-        component.Name = request.Name;
-
-        if (!await IsAuthorizedAsync(component))
-        {
-            return Forbidden;
-        }
-
-        var stores = storeService ?? HttpContext.RequestServices.GetRequiredService<IStoreService>();
-        if (await stores.GetNoCloneAsync(request.StoreId) == null)
-        {
-            return BadRequest($"Store '{request.StoreId}' does not exist.");
-        }
-
-        try
-        {
-            await sharedComponentService.SaveWithContentAsync(
-                component,
-                GuardContent(request.Content),
-                cancellationToken);
-        }
-        catch (InvalidDataException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-
-        return CreatedAtAction(nameof(Get), new { id = component.Id }, component);
+        return result.Succeeded ? CreatedAtAction(nameof(Get), new { id = result.Value.Id }, result.Value) : result.ToPageRefusal();
     }
 
     [HttpPut("{id}")]
@@ -151,48 +87,9 @@ public class SiteBuilderSharedComponentsController(
         [FromBody] SiteBuilderSharedComponentUpdateModel request,
         CancellationToken cancellationToken = default)
     {
-        var component = await sharedComponentService.GetByIdAsync(id);
-        if (component == null)
-        {
-            return NotFound();
-        }
+        var operationRequest = new SharedComponentUpdateOperationRequest { Id = id, StoreId = request?.StoreId, Name = request?.Name };
 
-        if (!await IsAuthorizedAsync(component))
-        {
-            return Forbidden;
-        }
-
-        if (request == null || string.IsNullOrWhiteSpace(request.Name))
-        {
-            return BadRequest("Name is required.");
-        }
-
-        if (request.Name.Trim().Length > ModuleConstants.SharedComponents.NameMaxLength)
-        {
-            return BadRequest($"Name cannot exceed {ModuleConstants.SharedComponents.NameMaxLength} characters.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.StoreId) &&
-            !string.Equals(request.StoreId, component.StoreId, StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest("A Shared Component cannot be moved to another store.");
-        }
-
-        component.Name = request.Name;
-        component = await sharedComponentService.UpdateMetadataAsync(component, cancellationToken);
-        if (component == null)
-        {
-            // The component may have been deleted after the authorization read. The metadata service reloads
-            // it under the component row lock and never turns that race into an upsert.
-            return NotFound();
-        }
-
-        await EnrichUsageAsync(
-            [component],
-            includePages: await CanReadPagesAsync(component),
-            cancellationToken);
-
-        return Ok(component);
+        return (await Operations.UpdateAsync(operationRequest, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpDelete("{id}")]
@@ -274,74 +171,16 @@ public class SiteBuilderSharedComponentsController(
         [FromBody] JObject content,
         CancellationToken cancellationToken = default)
     {
-        var component = await sharedComponentService.GetByIdAsync(id);
-        if (component == null)
-        {
-            return NotFound();
-        }
+        var request = new SharedComponentContentSaveOperationRequest { Id = id, Content = content };
 
-        if (!await IsAuthorizedAsync(component))
-        {
-            return Forbidden;
-        }
-
-        if (content == null)
-        {
-            return BadRequest("Content is required.");
-        }
-
-        try
-        {
-            if (!await sharedComponentContentService.TrySaveContentAsync(
-                    component,
-                    GuardContent(content),
-                    cancellationToken))
-            {
-                return NotFound();
-            }
-        }
-        catch (InvalidDataException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-
-        return NoContent();
+        return (await Operations.SaveContentAsync(request, User, cancellationToken)).ToPageRefusal() ?? NoContent();
     }
 
-    /// <exception cref="InvalidDataException">Something in the content can run script.</exception>
-    private string GuardContent(JObject content)
-    {
-        var guard = contentGuard ?? HttpContext.RequestServices.GetRequiredService<ISiteBuilderContentGuard>();
-        var errors = guard.GuardPage(content, ComponentName, catalog: null).Errors;
-        SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
-
-        return content.ToString(Formatting.None);
-    }
-
-    private async Task EnrichUsageAsync(
+    private Task EnrichUsageAsync(
         IList<SiteBuilderSharedComponent> components,
         bool includePages,
-        CancellationToken cancellationToken)
-    {
-        foreach (var storeGroup in components.GroupBy(x => x.StoreId, StringComparer.OrdinalIgnoreCase))
-        {
-            var usages = await sharedComponentUsageService.GetUsageAsync(
-                storeGroup.Select(x => x.Id),
-                storeGroup.Key,
-                includePages,
-                cancellationToken);
-            var usagesById = usages.ToDictionary(x => x.SharedComponentId, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var component in storeGroup)
-            {
-                if (usagesById.TryGetValue(component.Id, out var usage))
-                {
-                    component.UsageCount = usage.UsageCount;
-                    component.UsagePages = includePages ? usage.Pages : [];
-                }
-            }
-        }
-    }
+        CancellationToken cancellationToken) =>
+        sharedComponentUsageService.ApplyUsageAsync(components, includePages, cancellationToken);
 
     private async Task<bool> IsAuthorizedAsync(object resource)
     {

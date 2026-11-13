@@ -13,6 +13,7 @@ using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
@@ -358,6 +359,46 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         // ── helpers ────────────────────────────────────────────────────────────────────────────────
+
+        [Fact]
+        public async Task Restore_UnknownCommit_NamesThePageAndTheCommit()
+        {
+            var result = await Controller(new RecordingRepository(), new RecordingHistory()).GitRestoreVersion("vccom", Page, "pages", Sha);
+
+            var body = JObject.FromObject(Assert.IsType<NotFoundObjectResult>(result).Value!);
+            Assert.Equal((Page, Sha), (body.Value<string>("templatePath"), body.Value<string>("gitRef")));
+        }
+
+        [Fact]
+        public async Task RestoreOperation_DryRun_AnswersTheVersionOverTheDraft_AndWritesNothing()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = """{ "settings": { "type": "settings", "name": "Published" }, "content": [] }""";
+            var history = new RecordingHistory();
+            var request = new FilePageRestoreVersionOperationRequest { StoreId = "vccom", ContentType = "pages", Path = Page, Sha = Sha, DryRun = true };
+
+            var result = await Operations(repository, history).RestoreVersionAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.False(result.AffectsPublished);
+            var content = Assert.Single(Assert.Single(result.Preview.Objects).Fields);
+            Assert.Equal("""{ "settings": { "type": "settings", "name": "Published" }, "content": [] }""", content.From);
+            Assert.Equal("About", JToken.Parse(content.To)["settings"]!.Value<string>("name"));
+            AssertNothingWritten(repository);
+            Assert.Empty(history.Invalidated);
+        }
+
+        private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test"));
+
+        private static FilePageOperationService Operations(RecordingRepository repository, RecordingHistory history)
+        {
+            var options = Options.Create(new GitContentOptions { Enabled = true, Repository = "o/r", Token = "t0ken", BaseBranch = "master" });
+            var requestValidator = new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = "vccom" })),
+                new SiteBuilderContentFileValidator());
+
+            return TestServices.FilePageOperations(new FakeAuthorizationService(true), requestValidator, options, GitHubConnections.CreateService(options.Value),
+                new FakeGitContentPolicy(repositoryFormat: "acme/site-{0}"), repository, history);
+        }
 
         private static RecordingRepository Repository(string contentAtSha)
         {

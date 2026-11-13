@@ -31,6 +31,11 @@ public interface IDesignerContentService
     /// <exception cref="InvalidDataException">The page has never been published.</exception>
     Task<SiteBuilderChangePreview> PreviewDiscardPageAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default);
 
+    /// <exception cref="SiteBuilderContentConflictException">A draft is not at the version the command expects it at: nothing is written.</exception>
     /// <exception cref="InvalidDataException">Something in the version can run script: nothing is written.</exception>
     Task<ContentSaveResult> RestoreAsync(ContentRestoreCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
+
+    /// <summary>Sanitizes the version as <see cref="RestoreAsync"/> does and answers the drafts it would overwrite, writing nothing.</summary>
+    /// <exception cref="InvalidDataException">Something in the version can run script.</exception>
+    Task<SiteBuilderChangePreview> PreviewRestoreAsync(ContentRestoreCommand command, CancellationToken cancellationToken = default);
 }

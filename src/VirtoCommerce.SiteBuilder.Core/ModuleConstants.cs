@@ -67,6 +67,7 @@ namespace VirtoCommerce.SiteBuilder.Core
             public const string FilePage = "file-page";
             public const string ThemeFile = "theme-file";
             public const string MultilanguagePage = "multilanguage-page";
+            public const string SharedComponent = "shared-component";
 
             public const string Content = "content";
             public const string Status = "status";

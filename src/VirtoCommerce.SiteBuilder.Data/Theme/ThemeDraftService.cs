@@ -83,6 +83,18 @@ public class ThemeDraftService(
         return result;
     }
 
+    public virtual async Task<DraftDiscardPreview> PreviewDiscardAsync(string storeId, string path, CancellationToken cancellationToken = default)
+    {
+        var draft = await ReadDraftAsync(storeId, path);
+
+        var result = AbstractTypeFactory<DraftDiscardPreview>.TryCreateInstance();
+        result.DraftContent = draft.Content;
+        result.PublishedContent = draft.Content == null ? null : await draft.Storage.ReadAsync(draft.Storage.GetLivePath(draft.File));
+        result.Status = GetDiscardStatus(draft, result.PublishedContent);
+
+        return result;
+    }
+
     protected virtual async Task<T> SaveUnderLockAsync<T>(string storeId, IDictionary<string, string> files, IDictionary<string, string> eTags,
         Func<CancellationToken, Task<T>> saveOthersAsync, CancellationToken cancellationToken, CancellationToken requestToken)
     {

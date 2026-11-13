@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.StoreModule.Core.Model;
@@ -199,6 +200,38 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         // ── helpers ────────────────────────────────────────────────────────────────────────────────
+
+        [Fact]
+        public async Task PromoteOperation_DryRun_DescribesThePromotion_AndWritesNothing()
+        {
+            var repository = Repository();
+            var publisher = Publisher();
+            var options = Options.Create(new GitContentOptions
+            {
+                Enabled = true,
+                Repository = "o/r",
+                Token = "t0ken",
+                BaseBranch = "master",
+                ReleaseBranch = "production",
+            });
+            var operations = TestServices.FilePageOperations(new FakeAuthorizationService(true), RequestValidators.Content("s1", "vccom"), options,
+                GitHubConnections.CreateService(options.Value), new FakeGitContentPolicy(repositoryFormat: "acme/site-{0}"), repository,
+                new FakeGitContentHistory(), publisher);
+            var request = new FilePageOperationRequest { StoreId = "vccom", ContentType = "pages", Path = Page, DryRun = true };
+
+            var result = await operations.PromoteAsync(request, new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test")),
+                CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.True(result.AffectsPublished);
+            var content = Assert.Single(Assert.Single(result.Preview.Objects).Fields);
+            Assert.Equal((OnProduction, OnDev), (content.From, content.To));
+            Assert.Contains(result.Preview.Warnings, x => x.Contains(PromoteBranch) && x.Contains("production"));
+            Assert.Empty(repository.Commits);
+            Assert.Empty(repository.CreatedBranches);
+            Assert.Empty(repository.DeletedBranches);
+            Assert.Empty(publisher.Merges);
+        }
 
         private static RecordingRepository Repository(string onDev = OnDev)
         {

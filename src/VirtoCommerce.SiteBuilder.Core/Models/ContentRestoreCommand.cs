@@ -14,4 +14,7 @@ public class ContentRestoreCommand
     public GroupedSiteBuilderPage Group { get; set; }
 
     public IDictionary<HistoryItem, string> Contents { get; set; } = new Dictionary<HistoryItem, string>();
+
+    /// <summary>The version each draft has to be at for the restore to overwrite it; <c>null</c> overwrites the drafts whatever they hold.</summary>
+    public IDictionary<HistoryItem, string> ETags { get; set; }
 }

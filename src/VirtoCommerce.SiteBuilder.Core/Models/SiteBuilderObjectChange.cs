@@ -8,7 +8,7 @@ public class SiteBuilderObjectChange
     public string ObjectType { get; set; }
 
     /// <summary>
-    /// The group id of a page, the id of a multilanguage page; the path of a file page, or of a theme file with its theme folder.
+    /// The group id of a page, the id of a multilanguage page or of a shared component; the path of a file page, or of a theme file with its theme folder.
     /// <c>null</c> for an object the write creates.
     /// </summary>
     public string ObjectId { get; set; }

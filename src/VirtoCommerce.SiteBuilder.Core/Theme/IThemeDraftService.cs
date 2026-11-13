@@ -14,4 +14,7 @@ public interface IThemeDraftService
     /// <summary>Under the store's theme lock, deletes the drafts of the published files and runs <paramref name="discardOthersAsync"/>; when it fails, puts the drafts back.</summary>
     Task<IList<DiscardedThemeDraft>> DiscardDraftsAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
         CancellationToken cancellationToken = default);
+
+    /// <summary>What <see cref="DiscardDraftsAsync"/> would do with the draft of the file, with the draft and what is live; writes nothing.</summary>
+    Task<Models.DraftDiscardPreview> PreviewDiscardAsync(string storeId, string path, CancellationToken cancellationToken = default);
 }

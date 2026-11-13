@@ -295,22 +295,141 @@ public class HistoryControllerTests
         Assert.IsType<BadRequestObjectResult>((await Controller().Restore(VersionId, "s1", ["page:g1", "page:g2"], Ct)).Result);
     }
 
+    [Fact]
+    public async Task RestoreOperation_NoEditPermission_IsForbiddenBeforeTheUnknownVersionIsLookedUp()
+    {
+        var request = RestoreRequest("HA_v-Hs8f7RVPw9gHHqUAxmPDJ9", $"theme:{Header}");
+
+        var refused = await Operations(new FakeAuthorizationService("s1", Permissions.Read)).RestoreAsync(request, User, Ct);
+        var notFound = await Operations().RestoreAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Forbidden, refused.Status);
+        Assert.Equal(SiteBuilderOperationStatus.NotFound, notFound.Status);
+    }
+
+    [Fact]
+    public async Task RestoreOperation_DryRun_AnswersWhatItWouldOverwrite_AndWritesNothing()
+    {
+        _live.Files[$"themes/s1/{Header}-draft"] = "current";
+        _history.Versions[(VersionId, "page:g1")] = OldPage;
+        _history.Versions[(VersionId, $"theme:{Header}")] = "{ \"content\": [] }";
+        var request = RestoreRequest(VersionId, "page:g1", $"theme:{Header}");
+        request.DryRun = true;
+
+        var result = await Operations().RestoreAsync(request, User, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Value);
+        Assert.False(result.AffectsPublished);
+        var page = Assert.Single(result.Preview.Objects, x => x.ObjectType == ModuleConstants.ChangePreview.Page);
+        Assert.Equal("g1", page.ObjectId);
+        Assert.NotNull(page.ETag);
+        Assert.Equal((Page, OldPage), (Assert.Single(page.Fields).From, page.Fields[0].To));
+        var theme = Assert.Single(result.Preview.Objects, x => x.ObjectType == ModuleConstants.ChangePreview.ThemeFile);
+        Assert.Equal(Header, theme.ObjectId);
+        Assert.Equal(("current", "{ \"content\": [] }"), (Assert.Single(theme.Fields).From, theme.Fields[0].To));
+        Assert.Equal("current", _live.Files[$"themes/s1/{Header}-draft"]);
+        Assert.Equal(Page, await DraftOfAsync("g1"));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task RestoreOperation_DraftChangedSinceTheExpectedVersion_IsAConflict_AndWritesNothing()
+    {
+        _live.Files[$"themes/s1/{Header}-draft"] = "current";
+        _history.Versions[(VersionId, "page:g1")] = OldPage;
+        _history.Versions[(VersionId, $"theme:{Header}")] = "{ \"content\": [] }";
+        var dryRun = RestoreRequest(VersionId, "page:g1", $"theme:{Header}");
+        dryRun.DryRun = true;
+        var versions = (await Operations().RestoreAsync(dryRun, User, Ct)).Preview.Objects
+            .ToDictionary(x => x.ObjectType == ModuleConstants.ChangePreview.Page ? $"page:{x.ObjectId}" : $"theme:{x.ObjectId}", x => x.ETag);
+        _live.Files[$"themes/s1/{Header}-draft"] = "changed meanwhile";
+
+        var request = RestoreRequest(VersionId, "page:g1", $"theme:{Header}");
+        request.ExpectedVersions = versions;
+        var result = await Operations().RestoreAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal("changed meanwhile", _live.Files[$"themes/s1/{Header}-draft"]);
+        Assert.Equal(Page, await DraftOfAsync("g1"));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task RestoreOperation_PageChangedSinceTheExpectedVersion_IsAConflict_AndPutsTheThemeDraftsBack()
+    {
+        _live.Files[$"themes/s1/{Header}-draft"] = "current";
+        _history.Versions[(VersionId, "page:g1")] = OldPage;
+        _history.Versions[(VersionId, $"theme:{Header}")] = "{ \"content\": [] }";
+        var request = RestoreRequest(VersionId, $"theme:{Header}", "page:g1");
+        request.ExpectedVersions = new Dictionary<string, string> { ["page:g1"] = "a version the page is not at" };
+
+        var result = await Operations().RestoreAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal("current", _live.Files[$"themes/s1/{Header}-draft"]);
+        Assert.Equal(Page, await DraftOfAsync("g1"));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task RestoreOperation_DraftsAtTheExpectedVersions_RestoresThem()
+    {
+        _live.Files[$"themes/s1/{Header}-draft"] = "current";
+        _history.Versions[(VersionId, "page:g1")] = OldPage;
+        _history.Versions[(VersionId, $"theme:{Header}")] = "{ \"content\": [] }";
+        var dryRun = RestoreRequest(VersionId, "page:g1", $"theme:{Header}");
+        dryRun.DryRun = true;
+        var versions = (await Operations().RestoreAsync(dryRun, User, Ct)).Preview.Objects
+            .ToDictionary(x => x.ObjectType == ModuleConstants.ChangePreview.Page ? $"page:{x.ObjectId}" : $"theme:{x.ObjectId}", x => x.ETag);
+
+        var request = RestoreRequest(VersionId, "page:g1", $"theme:{Header}");
+        request.ExpectedVersions = versions;
+        var result = await Operations().RestoreAsync(request, User, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("{ \"content\": [] }", _live.Files[$"themes/s1/{Header}-draft"]);
+        Assert.Equal(OldPage, await DraftOfAsync("g1"));
+        Assert.Single(_history.Records);
+    }
+
+    [Fact]
+    public async Task Restore_DraftConflict_Is412WithTheMessage()
+    {
+        _history.Versions[(VersionId, "page:g1")] = OldPage;
+        _pages.SaveContentException = new SiteBuilderContentConflictException();
+
+        var result = await Controller().Restore(VersionId, "s1", ["page:g1"], Ct);
+
+        var conflict = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status412PreconditionFailed, conflict.StatusCode);
+        Assert.Equal(new SiteBuilderContentConflictException().Message, conflict.Value);
+    }
+
+    private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
+
+    private static ContentHistoryRestoreOperationRequest RestoreRequest(string versionId, params string[] items) =>
+        new() { StoreId = "s1", VersionId = versionId, Items = items, SaveId = "restore-0001" };
+
     private async Task<string> DraftOfAsync(string groupId) =>
         (await _pages.LoadGroupContentAsync(await _pages.GetByIdAsync(groupId), cancellationToken: Ct)).Content;
 
     private HistoryController Controller(IAuthorizationService authorization = null, IContentHistory history = null)
     {
+        var controller = new HistoryController(Operations(authorization, history));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = User },
+        };
+        return controller;
+    }
+
+    private ContentHistoryOperationService Operations(IAuthorizationService authorization = null, IContentHistory history = null)
+    {
         authorization ??= new FakeAuthorizationService(true);
         history ??= _history;
         var drafts = new ThemeDraftService(new ThemeStorageFactory(_live.StoreService, _live, _live, _live), new InProcessDistributedLock(), _live,
             NullLogger<ThemeDraftService>.Instance);
-        var controller = new HistoryController(history, _pages, TestServices.Designer(history, themeDrafts: drafts, pages: _pages, events: _live),
-            TestServices.Permissions(authorization), new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization),
-            authorization, RequestValidators.Stores("s1"), RequestValidators.History("s1"), RequestValidators.Restore("s1"));
-        controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test")) },
-        };
-        return controller;
+        return TestServices.ContentHistoryOperations(authorization, history, _pages, TestServices.Designer(history, themeDrafts: drafts, pages: _pages, events: _live));
     }
 }

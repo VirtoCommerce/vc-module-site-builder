@@ -281,8 +281,10 @@ public class DesignerContentService(
 
         var themeFiles = command.Contents.Where(x => x.Key.Type == HistoryItemType.Theme).ToDictionary(x => x.Key.Key, x => x.Value);
         var pageContent = command.Contents.Where(x => x.Key.Type == HistoryItemType.Page).Select(x => x.Value).SingleOrDefault();
-        // a version restored replaces the drafts as they are now, as the page's restore does
-        await themeDraftService.SaveDraftsAsync(command.StoreId, themeFiles, eTags: null, token => RestorePageAsync(command.Group, pageContent, token), cancellationToken);
+        var pageETag = command.Group == null ? null : GetExpectedETag(command, new HistoryItem(HistoryItemType.Page, command.Group.Id));
+        // a version restored replaces the drafts as they are now, as the page's restore does, unless the caller names the versions it read
+        await themeDraftService.SaveDraftsAsync(command.StoreId, themeFiles, await GetThemeFileETagsAsync(command, themeFiles.Keys, cancellationToken),
+            token => RestorePageAsync(command.Group, pageContent, pageETag, token), cancellationToken);
 
         var record = CreateHistoryRecord(GetRestoredDescription(command.VersionId), command.SaveId, user);
         foreach (var (item, content) in command.Contents)
@@ -297,6 +299,57 @@ public class DesignerContentService(
 
         return result;
     }
+
+    public virtual Task<SiteBuilderChangePreview> PreviewRestoreAsync(ContentRestoreCommand command, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        return PreviewRestoreInternalAsync(command, cancellationToken);
+    }
+
+    private async Task<SiteBuilderChangePreview> PreviewRestoreInternalAsync(ContentRestoreCommand command, CancellationToken cancellationToken)
+    {
+        await GuardAsync(command, cancellationToken);
+
+        var preview = AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
+        foreach (var (item, content) in command.Contents)
+        {
+            if (item.Type == HistoryItemType.Page)
+            {
+                var current = await groupedPageContentService.LoadGroupContentAsync(command.Group, draft: true, cancellationToken);
+                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.Page, command.Group.Id, current.ETag, current.Content, content));
+            }
+            else
+            {
+                var current = await themeDraftService.ReadAsync(command.StoreId, item.Key, cancellationToken);
+                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, item.Key, current.ETag, current.Content, content));
+            }
+        }
+
+        return preview;
+    }
+
+    /// <summary><c>null</c> when the command names no versions. A file it does not name is taken at the version it has now.</summary>
+    protected virtual async Task<IDictionary<string, string>> GetThemeFileETagsAsync(ContentRestoreCommand command, IEnumerable<string> paths,
+        CancellationToken cancellationToken)
+    {
+        if (command.ETags == null || command.ETags.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, string>();
+        foreach (var path in paths)
+        {
+            result[path] = GetExpectedETag(command, new HistoryItem(HistoryItemType.Theme, path))
+                ?? (await themeDraftService.ReadAsync(command.StoreId, path, cancellationToken)).ETag;
+        }
+
+        return result;
+    }
+
+    protected virtual string GetExpectedETag(ContentRestoreCommand command, HistoryItem item) =>
+        command.ETags != null && command.ETags.TryGetValue(item, out var eTag) ? eTag : null;
 
     /// <summary>Sanitizes the content to save in the command, so that its versions and its history entry are of what is stored.</summary>
     /// <exception cref="InvalidDataException">Something in it can run script.</exception>
@@ -414,15 +467,16 @@ public class DesignerContentService(
         SiteBuilderPageSelection.Order(group.Pages).FirstOrDefault(x => x.Status == Published)
         ?? throw new InvalidDataException(NeverPublishedError);
 
-    protected virtual async Task<bool> RestorePageAsync(GroupedSiteBuilderPage group, string content, CancellationToken cancellationToken)
+    /// <param name="eTag">The version the draft has to be at; <c>null</c> takes the version it has now.</param>
+    protected virtual async Task<bool> RestorePageAsync(GroupedSiteBuilderPage group, string content, string eTag, CancellationToken cancellationToken)
     {
         if (group == null)
         {
             return false;
         }
 
-        var current = await groupedPageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken);
-        await groupedPageContentWriter.SaveContentAsync(group, content, current.ETag, cancellationToken);
+        eTag ??= (await groupedPageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken)).ETag;
+        await groupedPageContentWriter.SaveContentAsync(group, content, eTag, cancellationToken);
 
         return true;
     }

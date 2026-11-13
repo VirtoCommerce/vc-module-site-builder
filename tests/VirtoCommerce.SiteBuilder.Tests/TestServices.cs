@@ -95,10 +95,44 @@ internal static class TestServices
         IContentHistory contentHistory = null, string storeId = "s1") =>
         new(authorizationService, RequestValidators.Stores(storeId), themeSnapshots, themePublisher, contentHistory ?? new NoContentHistory());
 
+    public static ContentHistoryOperationService ContentHistoryOperations(IAuthorizationService authorizationService, IContentHistory contentHistory,
+        IGroupedPageService groupedPageService, IDesignerContentService designerContentService, string storeId = "s1") =>
+        new(authorizationService, contentHistory, groupedPageService, designerContentService, Permissions(authorizationService),
+            new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService),
+            RequestValidators.Stores(storeId), RequestValidators.History(storeId), RequestValidators.Restore(storeId));
+
+    public static SiteBuilderSharedComponentOperationService SharedComponentOperations(IAuthorizationService authorizationService,
+        ISiteBuilderSharedComponentService sharedComponentService, ISiteBuilderSharedComponentContentService sharedComponentContentService = null,
+        ISiteBuilderSharedComponentUsageService sharedComponentUsageService = null, IStoreService storeService = null,
+        ISiteBuilderSharedComponentSearchService sharedComponentSearchService = null) =>
+        new(sharedComponentService, sharedComponentSearchService, sharedComponentContentService, sharedComponentUsageService, authorizationService, storeService,
+            ContentGuard);
+
     public static SiteBuilderPublishStatusQueryService PublishStatuses(IAuthorizationService authorizationService, IGroupedPageService groupedPageService) =>
         new(authorizationService, null, groupedPageService, null, null, null, null, null, null, null);
 
-    /// <summary>The controller with its query services built from the same fakes, as the platform's container builds them.</summary>
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "One for each service of the operations.")]
+    public static FilePageOperationService FilePageOperations(
+        IAuthorizationService authorizationService,
+        IValidator<SiteBuilderContentRequest> requestValidator,
+        IOptions<GitContentOptions> gitContentOptions,
+        IGitHubConnectionService gitHubConnectionService,
+        IGitContentPolicy gitContentPolicy,
+        IGitContentRepository gitContentRepository,
+        IGitContentHistory gitContentHistory = null,
+        IGitContentPublisher gitContentPublisher = null,
+        IGitLivePageService gitLivePageService = null,
+        IFilePageDraftService filePageDraftService = null,
+        IPublishingService publishingService = null,
+        IThemeDraftService themeDraftService = null,
+        IContentHistory contentHistory = null,
+        IContentPermissionService contentPermissionService = null,
+        ISiteBuilderContentGuard contentGuard = null) =>
+        new(authorizationService, requestValidator, contentPermissionService ?? Permissions(authorizationService), publishingService, gitContentPolicy,
+            gitContentRepository, gitContentHistory, gitContentPublisher, gitLivePageService, gitHubConnectionService, gitContentOptions, filePageDraftService,
+            themeDraftService, contentHistory ?? new NoContentHistory(), contentGuard ?? ContentGuard);
+
+    /// <summary>The controller with its query and operation services built from the same fakes, as the platform's container builds them.</summary>
     [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "One for each service of the controller.")]
     public static SiteBuilderController CreateSiteBuilderController(
         IStoreService storeService,
@@ -133,10 +167,14 @@ internal static class TestServices
         var publishStatuses = new SiteBuilderPublishStatusQueryService(authorizationService, requestValidator, groupedPageService, publishingService,
             gitContentPolicy, gitContentRepository, gitContentPublisher, gitLivePageService, gitHubConnectionService, gitContentOptions);
 
+        var filePageOperations = FilePageOperations(authorizationService, requestValidator, gitContentOptions, gitHubConnectionService, gitContentPolicy,
+            gitContentRepository, gitContentHistory, gitContentPublisher, gitLivePageService, filePageDraftService, publishingService, themeDraftService,
+            contentHistory, contentPermissionService, contentGuard);
+
         return new SiteBuilderController(pathResolver, blobContentStorageProviderFactory, publishingService, eventPublisher, gitContentOptions,
-            gitHubConnectionService, gitContentPolicy, gitContentRepository, gitContentHistory, gitContentPublisher, gitLivePageService, authorizationService,
-            distributedLock, requestValidator, contentHistory, themeDraftService, designerOperationService, contentPermissionService, filePageDraftService,
-            themeStorageFactory, contentGuard, contentQueries, previews, publishStatuses);
+            gitHubConnectionService, gitContentPolicy, gitContentRepository, gitContentHistory, authorizationService, distributedLock, requestValidator,
+            contentHistory, designerOperationService, contentPermissionService, filePageDraftService, themeStorageFactory, contentGuard, contentQueries,
+            previews, publishStatuses, filePageOperations);
     }
 
     private sealed class NoSchemaCatalogs : ISchemaCatalogService

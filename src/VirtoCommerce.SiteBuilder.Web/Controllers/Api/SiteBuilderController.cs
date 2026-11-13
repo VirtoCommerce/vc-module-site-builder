@@ -17,7 +17,6 @@ using Newtonsoft.Json.Serialization;
 using VirtoCommerce.AssetsModule.Core.Assets;
 using VirtoCommerce.ContentModule.Core.Model;
 using VirtoCommerce.ContentModule.Core.Services;
-using VirtoCommerce.ContentModule.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
@@ -50,13 +49,10 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             IGitContentPolicy gitContentPolicy,
             IGitContentRepository gitContentRepository,
             IGitContentHistory gitContentHistory,
-            IGitContentPublisher gitContentPublisher,
-            IGitLivePageService gitLivePageService,
             IAuthorizationService authorizationService,
             IDistributedLock distributedLock,
             IValidator<SiteBuilderContentRequest> requestValidator,
             IContentHistory contentHistory,
-            IThemeDraftService themeDraftService,
             IDesignerOperationService designerOperationService,
             IContentPermissionService contentPermissionService,
             IFilePageDraftService filePageDraftService,
@@ -64,7 +60,8 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             ISiteBuilderContentGuard contentGuard,
             ISiteBuilderContentQueryService contentQueryService,
             ISiteBuilderPreviewQueryService previewQueryService,
-            ISiteBuilderPublishStatusQueryService publishStatusQueryService
+            ISiteBuilderPublishStatusQueryService publishStatusQueryService,
+            IFilePageOperationService filePageOperationService
             )
         : Controller
     {
@@ -84,10 +81,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         private const string LegacyDraftOnlyCopy = "only-copy";
         private const string LegacyDraftHasChanges = "has-changes";
         private const string LegacyDraftsOfPagesError = "Leftover drafts are listed for pages and blog articles: the content type must be pages or blogs.";
-        // How many "_N" names a duplicate will try before asking the caller to pick one. A page with
-        // this many copies is a naming problem, not a paging problem.
-        private const int MaxCopyIndex = 100;
-        private const string OnlyCopyError = "Nothing is published: the draft is the only copy.";
         private const string SaveAction = "save";
 
 
@@ -116,43 +109,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             return result.Succeeded ? FileContent(result.Value) : result.ToRefusal();
         }
 
-        /// <summary>The page at the ref, else the editor's draft when asked for, else what is published; <c>null</c> when git does not hold it.</summary>
-        private async Task<string> ReadPageFromGitAsync(string repository, string type, string path, bool draft, string gitRef)
-        {
-            var location = GitLocation(repository, type, path);
-
-            if (!string.IsNullOrEmpty(gitRef))
-            {
-                // an exact commit — what a preview link points at
-                return await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, gitRef, HttpContext.RequestAborted);
-            }
-
-            if (draft)
-            {
-                var onBranch = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, HttpContext.RequestAborted);
-                if (onBranch != null)
-                {
-                    return onBranch;
-                }
-            }
-
-            return await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, await GetBaseBranchAsync(), HttpContext.RequestAborted);
-        }
-
         private async Task<string> GetBaseBranchAsync() => (await gitHubConnectionService.GetConnectionAsync(HttpContext.RequestAborted)).BaseBranch;
-
-        /// <summary>
-        /// GitHub answers a repository that does not exist, or that the platform cannot see, the way it
-        /// answers a file that is not there, so a missing file means nothing about the page until the
-        /// repository itself answers.
-        /// </summary>
-        private async Task EnsureRepositoryReadableAsync(string repository, string baseBranch)
-        {
-            if (await gitContentRepository.GetBranchHeadShaAsync(repository, baseBranch, HttpContext.RequestAborted) == null)
-            {
-                throw GitContentException.RepositoryUnreachable(repository);
-            }
-        }
 
         private GitPageFileLocation GitLocation(string repository, string type, string path) =>
             gitContentOptions.Value.GetPageLocation(repository, type, path, User?.Identity?.Name);
@@ -464,226 +421,32 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/publish")]
         public async Task<ActionResult> GitPublish(string storeId, string path, string type, bool rebase = false)
         {
-            if (await CheckRequestAsync(PageRequest(storeId, type, path)) is { } refused)
+            var request = new FilePagePublishOperationRequest
             {
-                return refused;
-            }
+                StoreId = storeId,
+                ContentType = type,
+                Path = path,
+                Rebase = rebase,
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
+            var result = await filePageOperationService.PublishAsync(request, User, HttpContext.RequestAborted);
 
-            var storeRepository = await gitContentPolicy.GetRepositoryInfoAsync(storeId, HttpContext.RequestAborted);
-            if (storeRepository == null)
-            {
-                // the switch is off for this store: publish means what it always meant
-                await publishingService.PublishingAsync(type ?? PagesContentType, storeId, path, publish: true);
-                return Ok(new { state = nameof(GitPublishState.Merged) });
-            }
-
-            var location = GitLocation(storeRepository.Name, type, path);
-
-            var draft = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, HttpContext.RequestAborted);
-            if (draft == null)
-            {
-                return await RespondToNothingToPublishAsync(storeRepository, location, storeId, type, path);
-            }
-
-            // The CI gate runs the full, schema-aware validator; this one only refuses to open a pull
-            // request that could never pass it.
-            var errors = PageEnvelopeValidator.Validate(ParsePage(draft));
-            if (errors.Count > 0)
-            {
-                return BadRequest(new { errors });
-            }
-
-            if (rebase)
-            {
-                await RebaseDraftAsync(location, draft, path, storeId);
-            }
-
-            var result = await gitContentPublisher.MergeBranchAsync(location.Repository, location.Branch, $"publish {path} (store: {storeId})", HttpContext.RequestAborted);
-
-            var response = await RespondToPublishAsync(result, location, path, canRebase: true);
-            if (storeRepository.IsPlatformManaged && result.State is GitPublishState.Merged or GitPublishState.AlreadyPublished)
-            {
-                await SyncPublishedLivePageAsync(storeId, type, path, location);
-            }
-
-            return response;
-        }
-
-        private async Task<ActionResult> RespondToNothingToPublishAsync(StoreRepository storeRepository, GitPageFileLocation location, string storeId, string type, string path)
-        {
-            await EnsureRepositoryReadableAsync(location.Repository, await GetBaseBranchAsync());
-
-            // nothing to merge; re-sync the live page anyway (repairs a failed or late live write)
-            if (storeRepository.IsPlatformManaged)
-            {
-                await SyncPublishedLivePageAsync(storeId, type, path, location);
-            }
-
-            return Ok(new { state = nameof(GitPublishState.AlreadyPublished) });
-        }
-
-        private Task SyncPublishedLivePageAsync(string storeId, string type, string path, GitPageFileLocation location) =>
-            gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: false, HttpContext.RequestAborted);
-
-        /// <summary>
-        /// The way out of a <see cref="GitPublishState.Conflict"/>: the draft, as a state, on top of today's
-        /// base branch.
-        /// <para>
-        /// A page is one JSON document, so when the base branch has changed it since this branch was cut,
-        /// git can rarely lay one edit over the other — and the work branch keeps its old merge base, so
-        /// every retry reproduces the same conflict. Restoring a version does not help either: it commits
-        /// onto the same branch. Before this, the only way out was someone closing the pull request and
-        /// deleting the branch by hand.
-        /// </para>
-        /// <para>
-        /// So the branch is moved to the base branch and the draft's bytes become one commit on it — the
-        /// same idea promotion is built on: what is wanted is the file's state, not its history. The other
-        /// edits are replaced by this one; they stay in the base branch's history, and the old branch's
-        /// commits stay reachable by sha. The open pull request is kept and recomputed against the moved
-        /// branch rather than closed and opened again. Only on request — the editor was shown what they
-        /// are replacing — never as a default: silently taking either side would throw away someone's work.
-        /// </para>
-        /// <para>
-        /// Moved, not deleted and cut again. Delete-then-create leaves a moment with no branch at all, and
-        /// a failure in that moment leaves the draft as a commit nothing points at — while the next publish
-        /// reads no draft and reports the page as already published, which is the one answer this flow must
-        /// never give wrongly. It also cannot be done reliably: <see cref="IGitContentRepository.CreateBranchAsync"/>
-        /// treats an existing ref as success without moving it, and GitHub can still report the deleted ref
-        /// for a moment, so the branch would keep its old merge base and meet the same conflict again.
-        /// </para>
-        /// </summary>
-        private async Task RebaseDraftAsync(GitPageFileLocation location, string draft, string path, string storeId)
-        {
-            var baseBranch = await GetBaseBranchAsync();
-            var cancellationToken = HttpContext.RequestAborted;
-
-            var baseSha = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, baseBranch, cancellationToken)
-                ?? throw new InvalidOperationException($"Could not resolve \"{baseBranch}\" to a commit.");
-
-            // Where the draft is now, so it can be put back if what follows does not finish.
-            var draftHead = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken);
-
-            try
-            {
-                await gitContentRepository.SetBranchAsync(location.Repository, location.Branch, baseSha, location.RepoPath, cancellationToken);
-
-                var author = CurrentAuthor();
-                var message = CommitMessage($"designer: publish {path} on top of {baseBranch}, replacing what changed there since this draft began (store: {storeId}, by: {author.Name})");
-                await gitContentRepository.CommitFileAsync(location.Repository, location.RepoPath, draft, location.Branch, message, author, cancellationToken);
-            }
-            catch (Exception failure) when (draftHead != null)
-            {
-                try
-                {
-                    // Deliberately not the request's token. What is being undone here includes the request
-                    // being cancelled — the editor closing the tab while the commit was in flight — and
-                    // passing the token that has just been cancelled would mean the undo cannot run in
-                    // exactly the case it exists for, leaving the branch on the base commit with the draft
-                    // reachable only by a sha nobody is left to read. The call is bounded by the HTTP
-                    // client's own timeout.
-                    await gitContentRepository.SetBranchAsync(location.Repository, location.Branch, draftHead, location.RepoPath, CancellationToken.None);
-                }
-                catch (Exception restoreFailure)
-                {
-                    // Both the rebuild and the undo failed. The draft is still a commit in the repository
-                    // and nothing but its sha can find it now, so the sha goes in the message.
-                    throw new InvalidOperationException(
-                        $"Publishing \"{path}\" on top of {baseBranch} failed, and moving the draft branch back failed too. " +
-                        $"The draft is commit {draftHead}; it can be restored with: git branch {location.Branch} {draftHead}",
-                        new AggregateException(failure, restoreFailure));
-                }
-
-                throw;
-            }
-            finally
-            {
-                gitContentHistory.Invalidate(location.Repository, location.RepoPath);
-            }
+            return result.Succeeded ? ShipmentResponse(result.Value, emptyWithoutGit: false) : PageDocumentRefusal(result);
         }
 
         /// <summary>
         /// Promotes a page to production: the state of its file on <c>BaseBranch</c>, placed onto
-        /// <c>ReleaseBranch</c> as its own commit.
-        /// <para>
-        /// Per page, and never a merge of one shared branch into the other. Merging would ship everything
-        /// else the base branch happens to be holding, which is exactly what an editor promoting one page
-        /// does not mean to do. Moving the file's STATE rather than replaying commits also means a page
-        /// edited several times since the last promotion needs no history to line up: production ends up
-        /// with what dev has now, which is the only thing ever wanted here.
-        /// </para>
+        /// <c>ReleaseBranch</c> as its own commit, never a merge of one shared branch into the other.
         /// </summary>
         [HttpPost]
         [Authorize(ModuleConstants.Security.Permissions.Promote)]
         [Route("git/promote")]
         public async Task<ActionResult> GitPromote(string storeId, string path, string type)
         {
-            if (await CheckRequestAsync(PageRequest(storeId, type, path)) is { } refused)
-            {
-                return refused;
-            }
+            var request = new FilePageOperationRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
+            var result = await filePageOperationService.PromoteAsync(request, User, HttpContext.RequestAborted);
 
-            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, HttpContext.RequestAborted);
-            if (repository == null)
-            {
-                // without git there is no second branch to promote into
-                return NotFound();
-            }
-
-            var options = gitContentOptions.Value;
-            var baseBranch = await GetBaseBranchAsync();
-            if (string.IsNullOrWhiteSpace(options.ReleaseBranch))
-            {
-                // A configuration answer, not a missing page: this installation has no production contour,
-                // and saying so is more useful than a 404 that reads as "no such page".
-                return BadRequest(new
-                {
-                    error = $"{GitContentOptions.SectionName}:{nameof(GitContentOptions.ReleaseBranch)} is not set: " +
-                            "this installation has no production branch to promote into.",
-                });
-            }
-
-            var location = GitLocation(repository, type, path);
-
-            // a promotion decides on the branches as they are now, so an edit made on GitHub a moment ago counts
-            gitContentRepository.InvalidateRead(location.Repository, location.RepoPath, baseBranch);
-            gitContentRepository.InvalidateRead(location.Repository, location.RepoPath, options.ReleaseBranch);
-
-            var onBase = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, HttpContext.RequestAborted);
-            if (onBase == null)
-            {
-                return BadRequest(new
-                {
-                    error = $"\"{path}\" is not on {baseBranch}. Publish it there first — production " +
-                            "follows what has already been through the dev environment.",
-                });
-            }
-
-            var onRelease = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, options.ReleaseBranch, HttpContext.RequestAborted);
-            if (onRelease != null && PageJson.AreSame(onBase, onRelease))
-            {
-                // production already holds this exact page; opening a pull request would only produce an
-                // empty one, and the editor would be left waiting for a merge that means nothing
-                return Ok(new { state = nameof(GitPublishState.AlreadyPublished) });
-            }
-
-            var branch = PromoteBranch(type, path);
-            await PreparePromoteBranchAsync(location.Repository, branch, location.RepoPath, options.ReleaseBranch);
-
-            // The bytes come from the base branch, never from the request: promotion ships what the dev
-            // environment has been serving, not what a client happens to send along with the button press.
-            await gitContentRepository.CommitFileAsync(
-                location.Repository,
-                location.RepoPath,
-                onBase,
-                branch,
-                CommitMessage($"promote {path} to {options.ReleaseBranch} (store: {storeId})"),
-                CurrentAuthor(),
-                HttpContext.RequestAborted);
-
-            var result = await gitContentPublisher.MergeBranchIntoAsync(
-                location.Repository, branch, $"promote {path} (store: {storeId})", options.ReleaseBranch, HttpContext.RequestAborted);
-
-            return await RespondToShipAsync(result, location.Repository, location.RepoPath, branch, options.ReleaseBranch, path);
+            return result.Succeeded ? ShipmentResponse(result.Value, emptyWithoutGit: false) : result.ToRefusal();
         }
 
         /// <summary>
@@ -694,76 +457,51 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/unpublish")]
         public async Task<ActionResult> GitUnpublish(string storeId, string path, string type)
         {
-            if (await CheckRequestAsync(PageRequest(storeId, type, path)) is { } refused)
+            var request = new FilePageOperationRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
+            var result = await filePageOperationService.UnpublishAsync(request, User, HttpContext.RequestAborted);
+            if (result.Status == SiteBuilderOperationStatus.NotFound && result.Value != null)
             {
-                return refused;
+                return NotFound(new { templatePath = path });
             }
 
-            var storeRepository = await gitContentPolicy.GetRepositoryInfoAsync(storeId, HttpContext.RequestAborted);
-            if (storeRepository == null)
+            return result.Succeeded ? ShipmentResponse(result.Value, emptyWithoutGit: true) : result.ToRefusal();
+        }
+
+        /// <summary>
+        /// The answer to a publish, an unpublish or a promotion. A merge that conflicts is a 409 telling whether publishing the draft
+        /// again with <c>rebase=true</c> is a way out.
+        /// </summary>
+        private ActionResult ShipmentResponse(FilePageShipment shipment, bool emptyWithoutGit)
+        {
+            if (!shipment.GitFlow && emptyWithoutGit)
             {
-                await publishingService.PublishingAsync(type ?? PagesContentType, storeId, path, publish: false);
                 return Ok();
             }
 
-            var baseBranch = await GetBaseBranchAsync();
-            var location = GitLocation(storeRepository.Name, type, path);
-
-            if (await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, HttpContext.RequestAborted) == null)
+            if (shipment.Merge == null)
             {
-                return await RespondToNothingToUnpublishAsync(storeRepository, location, baseBranch, storeId, type, path);
+                return Ok(new { state = shipment.State.ToString() });
             }
 
-            await CommitUnpublishAsync(location, baseBranch, storeId, path);
-
-            var result = await gitContentPublisher.MergeBranchAsync(location.Repository, location.Branch, $"unpublish {path} (store: {storeId})", HttpContext.RequestAborted);
-
-            var response = await RespondToPublishAsync(result, location, path);
-            if (result.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
+            if (shipment.Merge.State == GitPublishState.Conflict)
             {
-                await SyncUnpublishedLivePageAsync(storeId, type, path, location);
+                return Conflict(new
+                {
+                    error = shipment.ConflictError,
+                    pullRequest = shipment.Merge.PullRequestNumber,
+                    url = shipment.Merge.Url,
+                    canRebase = shipment.CanRebase,
+                });
             }
 
-            return response;
+            return Ok(new { state = shipment.Merge.State.ToString(), pullRequest = shipment.Merge.PullRequestNumber, url = shipment.Merge.Url });
         }
 
-        private async Task<ActionResult> RespondToNothingToUnpublishAsync(StoreRepository storeRepository, GitPageFileLocation location, string baseBranch, string storeId,
-            string type, string path)
-        {
-            await EnsureRepositoryReadableAsync(location.Repository, baseBranch);
-
-            // retry of a merged unpublish whose live removal failed; a page the branch never had stays live
-            if (storeRepository.IsPlatformManaged && await gitLivePageService.IsRemovedFromBaseBranchAsync(location, HttpContext.RequestAborted))
-            {
-                await SyncUnpublishedLivePageAsync(storeId, type, path, location);
-                return Ok(new { state = nameof(GitPublishState.AlreadyPublished) });
-            }
-
-            return NotFound(new { templatePath = path });
-        }
-
-        private async Task CommitUnpublishAsync(GitPageFileLocation location, string baseBranch, string storeId, string path)
-        {
-            var hadBranch = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, HttpContext.RequestAborted) != null;
-            if (!hadBranch)
-            {
-                await gitContentRepository.CreateBranchAsync(location.Repository, location.Branch, baseBranch, HttpContext.RequestAborted);
-            }
-
-            // A branch cut from the production branch a moment ago still holds the page. One that was
-            // already there may not: an earlier unpublish whose merge is waiting to be asked for again
-            // has committed the deletion, and all that is left of this operation is the merge. Deleting
-            // a file that is already gone is an error rather than a no-op, so that retry would fail here
-            // instead of finishing the unpublish it is retrying.
-            if (!hadBranch || await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, HttpContext.RequestAborted) != null)
-            {
-                await gitContentRepository.DeleteFileAsync(location.Repository, location.RepoPath, location.Branch, CommitMessage($"unpublish {path} (store: {storeId})"), CurrentAuthor(), HttpContext.RequestAborted);
-                gitContentHistory.Invalidate(location.Repository, location.RepoPath);
-            }
-        }
-
-        private Task SyncUnpublishedLivePageAsync(string storeId, string type, string path, GitPageFileLocation location) =>
-            gitLivePageService.SyncLivePageAsync(storeId, type ?? PagesContentType, path, location, removeWhenGone: true, HttpContext.RequestAborted);
+        /// <summary>A page that is not a page document, or can run script, is refused with the problems alone.</summary>
+        private static ActionResult PageDocumentRefusal(SiteBuilderOperationResult result) =>
+            result.Status == SiteBuilderOperationStatus.Invalid && result.Errors != null
+                ? new BadRequestObjectResult(new { errors = result.Errors })
+                : result.ToRefusal();
 
         /// <summary>
         /// The shape the builder's toolbar expects, answered from git: <c>published</c> is "the page
@@ -841,77 +579,31 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
         /// <summary>
         /// Continues editing from an earlier version: the content of <paramref name="sha"/> becomes a new
-        /// commit on this editor's own work branch.
-        /// <para>
-        /// Forward only, and that is the whole design. Writing into the branch the version came from would
-        /// mean force-pushing over whatever came after it — destroying the audit trail the version list
-        /// exists to provide — or writing into a branch that belongs to another editor, which is the single
-        /// global draft slot this flow removed. Appending instead keeps history append-only, leaves branch
-        /// ownership at one editor per page, and gives a rollback that needs no git: restore, then publish.
-        /// </para>
+        /// commit on this editor's own work branch. Forward only: history stays append-only, and the branch
+        /// stays one editor's.
         /// </summary>
         [HttpPost]
         [Authorize(ModuleConstants.Security.Permissions.Update)]
         [Route("git/restore-version")]
         public async Task<ActionResult> GitRestoreVersion(string storeId, string path, string type, [BindRequired] string sha)
         {
-            var contentType = type.IsNullOrEmpty() ? PagesContentType : type;
-            var request = PageRequest(storeId, contentType, path);
-            // a version is a commit; a branch name would mean "whatever is there when this runs"
-            request.Ref = sha;
-            if (await CheckRequestAsync(request) is { } refused)
+            var request = new FilePageRestoreVersionOperationRequest
             {
-                return refused;
-            }
-
-            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, HttpContext.RequestAborted);
-            if (repository == null)
+                StoreId = storeId,
+                ContentType = type,
+                Path = path,
+                Sha = sha,
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
+            var result = await filePageOperationService.RestoreVersionAsync(request, User, HttpContext.RequestAborted);
+            if (result.Status == SiteBuilderOperationStatus.NotFound && result.Value != null)
             {
-                // without git there are no versions to continue from
-                return NotFound();
-            }
-
-            var baseBranch = await GetBaseBranchAsync();
-            var location = GitLocation(repository, contentType, path);
-
-            var content = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, sha, HttpContext.RequestAborted);
-            if (content == null)
-            {
-                // no such commit, or the page did not exist in it
                 return NotFound(new { templatePath = path, gitRef = sha });
             }
 
-            // The same gate a save passes: restoring a version that CI would refuse to deploy would leave
-            // the editor with a branch that cannot be published.
-            var page = ParsePage(content);
-            var errors = PageEnvelopeValidator.Validate(page);
-            if (errors.Count == 0)
-            {
-                // an old version may predate the checks: it is saved again sanitized, or not at all
-                errors = contentGuard.GuardPage(page, path, catalog: null).Errors;
-            }
-
-            if (errors.Count > 0)
-            {
-                return BadRequest(new { errors });
-            }
-
-            if (await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, HttpContext.RequestAborted) == null)
-            {
-                await gitContentRepository.CreateBranchAsync(location.Repository, location.Branch, baseBranch, HttpContext.RequestAborted);
-            }
-
-            var author = CurrentAuthor();
-            var shortSha = sha[..7];
-            var message = CommitMessage($"designer: restore {path} from {shortSha} (store: {storeId}, by: {author.Name})");
-
-            // Canonical bytes, not the ones read from the commit: an older version may have been written
-            // before the canonical form existed, and re-committing it verbatim would make publish-status
-            // report changes that are only line endings.
-            var commitSha = await gitContentRepository.CommitFileAsync(location.Repository, location.RepoPath, PageJson.Serialize(page), location.Branch, message, author, HttpContext.RequestAborted);
-            gitContentHistory.Invalidate(location.Repository, location.RepoPath);
-
-            return Ok(new { branch = location.Branch, commitSha, restoredFrom = sha });
+            return result.Succeeded
+                ? Ok(new { branch = result.Value.Branch, commitSha = result.Value.CommitSha, restoredFrom = result.Value.RestoredFrom })
+                : PageDocumentRefusal(result);
         }
 
         /// <summary>
@@ -946,48 +638,22 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Authorize(ModuleConstants.Security.Permissions.Update)]
         public async Task<ActionResult> DiscardDraft(string storeId, string path, string type, string theme = null)
         {
-            var contentType = string.IsNullOrEmpty(type) ? PagesContentType : type.ToLowerInvariant();
-            if (await CheckRequestAsync(storeId, contentType, theme, [path]) is { } refused)
+            var request = new FileDraftDiscardOperationRequest
             {
-                return refused;
+                StoreId = storeId,
+                ContentType = type,
+                Path = path,
+                Theme = theme,
+                SaveId = Request.GetOrCreateSaveId(),
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
+            var result = await filePageOperationService.DiscardDraftAsync(request, User, HttpContext.RequestAborted);
+            if (result.Status == SiteBuilderOperationStatus.Invalid && result.Value is { } refused)
+            {
+                return refused.KeptInGit ? BadRequest(result.Error) : Conflict(result.Error);
             }
 
-            if (contentType == Themes && !await HasPermissionsAsync([contentPermissionService.GetThemeFileEditPermission(path)]))
-            {
-                return Forbid();
-            }
-
-            if (GitPageLocation.IsPageContent(contentType) && await gitContentPolicy.IsEnabledForStoreAsync(storeId, HttpContext.RequestAborted))
-            {
-                return BadRequest("The store's pages are in git: their drafts are discarded with git/discard-draft.");
-            }
-
-            if (contentType != Themes)
-            {
-                return await filePageDraftService.DiscardBlobDraftAsync(storeId, contentType, path, theme, HttpContext.RequestAborted) == DraftDiscardStatus.OnlyCopy
-                    ? Conflict(OnlyCopyError)
-                    : NoContent();
-            }
-
-            return await DiscardThemeDraftAsync(storeId, path);
-        }
-
-        private async Task<ActionResult> DiscardThemeDraftAsync(string storeId, string path)
-        {
-            var draft = (await themeDraftService.DiscardDraftsAsync(storeId, [path], _ => Task.CompletedTask, HttpContext.RequestAborted)).Single();
-            if (draft.Status == DraftDiscardStatus.OnlyCopy)
-            {
-                return Conflict(OnlyCopyError);
-            }
-
-            if (draft.Status == DraftDiscardStatus.Discarded)
-            {
-                var record = ContentHistoryRecord.Create(ModuleConstants.GitHistory.DiscardedSummary, Request.GetOrCreateSaveId(), User);
-                record.AddEntry(HistoryItem.ForThemeFile(path), draft.PublishedContent);
-                await contentHistory.RecordAsync(storeId, record, HttpContext.RequestAborted);
-            }
-
-            return NoContent();
+            return result.ToRefusal() ?? NoContent();
         }
 
         /// <summary>
@@ -999,20 +665,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/discard-draft")]
         public async Task<ActionResult> GitDiscardDraft(string storeId, string path, string type)
         {
-            if (await CheckRequestAsync(PageRequest(storeId, type, path)) is { } refused)
-            {
-                return refused;
-            }
+            var request = new FilePageOperationRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
 
-            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, HttpContext.RequestAborted);
-            if (repository == null)
-            {
-                return NotFound();
-            }
-
-            await filePageDraftService.DiscardGitDraftAsync(repository, type, path, User, HttpContext.RequestAborted);
-
-            return Ok();
+            return (await filePageOperationService.DiscardGitDraftAsync(request, User, HttpContext.RequestAborted)).ToRefusal() ?? Ok();
         }
 
         /// <summary>
@@ -1191,93 +846,21 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/copy")]
         public async Task<ActionResult> GitCopyPage(string storeId, string type, string srcPath, string destPath)
         {
-            // A target the server picks needs no check of its own: it keeps the source's folder and extension.
-            var contentType = type ?? PagesContentType;
-            if (await CheckRequestAsync(PageRequest(storeId, contentType, [srcPath, .. PathsOf(destPath)])) is { } refused)
+            var request = new FilePageCopyOperationRequest
             {
-                return refused;
+                StoreId = storeId,
+                ContentType = type,
+                Path = srcPath,
+                TargetPath = destPath,
+                BindingErrors = ModelState.GetBindingErrors(),
+            };
+            var result = await filePageOperationService.CopyAsync(request, User, HttpContext.RequestAborted);
+            if (result.Status == SiteBuilderOperationStatus.Invalid && result.Value != null)
+            {
+                return BadRequest(new { error = result.Error, srcPath });
             }
 
-            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, HttpContext.RequestAborted);
-            if (repository == null)
-            {
-                return NotFound();
-            }
-
-            // What the editor sees, which is their own draft of the source when they have one. Copying
-            // the published version instead would silently duplicate something other than what is on
-            // screen.
-            var source = await ReadPageFromGitAsync(repository, contentType, srcPath, draft: true, gitRef: null);
-            if (source == null)
-            {
-                return BadRequest(new { error = $"\"{srcPath}\" is not in the content repository.", srcPath });
-            }
-
-            var target = destPath.IsNullOrEmpty() ? await NextFreeCopyPathAsync(repository, contentType, srcPath) : destPath;
-            if (target == null)
-            {
-                return BadRequest(new { error = $"\"{srcPath}\" already has {MaxCopyIndex} copies; name the next one yourself.", srcPath });
-            }
-
-            var page = ParsePage(source);
-            if (page.Type == JTokenType.Null)
-            {
-                return BadRequest(new { error = $"\"{srcPath}\" is not a page document.", srcPath });
-            }
-
-            var saved = await filePageDraftService.CommitDraftAsync(
-                storeId,
-                repository,
-                new SiteBuilderContentFile { Path = target, ContentType = contentType, Content = page },
-                $"copy {WithoutDraftSuffix(srcPath)} to",
-                User,
-                HttpContext.RequestAborted);
-
-            return Ok(saved);
-        }
-
-        /// <summary>
-        /// The name a duplicate gets: "foo.page" becomes "foo_1.page", at the first index the repository
-        /// does not already hold — or <c>null</c> when there is no free one within reach.
-        /// <para>
-        /// Deliberately the same shape the blob flow produces, so a store that switched flows goes on
-        /// getting the names its editors are used to. The language segment is kept where the file has
-        /// one ("foo.de.page" becomes "foo_1.de.page"), because it is part of which page this is.
-        /// </para>
-        /// </summary>
-        private async Task<string> NextFreeCopyPathAsync(string repository, string contentType, string srcPath)
-        {
-            var path = WithoutDraftSuffix(srcPath);
-            var extension = Path.GetExtension(path);
-            var fileName = Path.GetFileNameWithoutExtension(path);
-            var name = path.GetFileNameWithoutLanguage();
-            var language = path.GetLanguage();
-            var languageSuffix = language.IsNullOrEmpty() ? string.Empty : $".{language}";
-            var folder = path[..^(fileName.Length + extension.Length)];
-
-            for (var index = 1; index <= MaxCopyIndex; index++)
-            {
-                var candidate = $"{folder}{name}_{index}{languageSuffix}{extension}";
-                if (!await PageExistsInRepositoryAsync(repository, contentType, candidate))
-                {
-                    return candidate;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Whether the repository holds this page anywhere that matters for naming: on the base branch,
-        /// or on this editor's work branch. Leaving the branch out would hand the same name to two
-        /// duplicates in a row, because a copy that has not been published lives only there.
-        /// </summary>
-        private async Task<bool> PageExistsInRepositoryAsync(string repository, string contentType, string path)
-        {
-            var location = GitLocation(repository, contentType, path);
-
-            return await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, await GetBaseBranchAsync(), HttpContext.RequestAborted) != null
-                || await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, HttpContext.RequestAborted) != null;
+            return result.ToActionResult();
         }
 
         /// <summary>The page's own name, whichever of the two names the caller happens to hold.</summary>
@@ -1452,103 +1035,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         {
             return await requestValidator.ValidateRequestAsync(request, ModelState, HttpContext.RequestAborted);
         }
-
-        private async Task<ActionResult> RespondToPublishAsync(GitPublishResult result, GitPageFileLocation location, string path,
-            bool canRebase = false) =>
-            await RespondToShipAsync(result, location.Repository, location.RepoPath, location.Branch, await GetBaseBranchAsync(), path, canRebase);
-
-        /// <summary>
-        /// The tail every shipping operation shares — publish, unpublish and promote differ in which
-        /// branch they merged into, and in nothing else once the merge has happened.
-        /// <para>
-        /// <paramref name="canRebase"/> is whether a conflict has a way out from the builder: publishing
-        /// the draft again with <c>rebase=true</c> (see <see cref="RebaseDraftAsync"/>). Only a publish
-        /// offers it; an unpublish or a promotion that conflicts is a state for a person to look at.
-        /// </para>
-        /// </summary>
-        private async Task<ActionResult> RespondToShipAsync(GitPublishResult result, string repository, string repoPath, string branch,
-            string mergedInto, string path, bool canRebase = false)
-        {
-            if (result.State == GitPublishState.Merged)
-            {
-                await gitContentRepository.DeleteBranchAsync(repository, branch, repoPath, HttpContext.RequestAborted);
-
-                // the merge moved that branch, so what it said about this page a moment ago is the
-                // pre-merge content — status would report the page as still unshipped
-                gitContentRepository.InvalidateRead(repository, repoPath, mergedInto);
-                // and the draft version that just shipped is now a published one
-                gitContentHistory.Invalidate(repository, repoPath);
-            }
-
-            if (result.State == GitPublishState.Conflict)
-            {
-                var wayOut = canRebase
-                    ? " Re-read the page and apply the change again, or publish this draft as it is on top of the current page — that replaces what changed there."
-                    : " Re-read the page and apply the change again.";
-
-                return Conflict(new
-                {
-                    error = $"\"{path}\" changed in {mergedInto} while this draft was being written, and the two edits cannot be merged.{wayOut}",
-                    pullRequest = result.PullRequestNumber,
-                    url = result.Url,
-                    canRebase,
-                });
-            }
-
-            return Ok(new { state = result.State.ToString(), pullRequest = result.PullRequestNumber, url = result.Url });
-        }
-
-        /// <summary>
-        /// Makes the promote branch ready to commit this promotion to.
-        /// <para>
-        /// It is reused only while its pull request is still open — that is what makes two editors
-        /// promoting the same page land on one pull request rather than two. Once that pull request is
-        /// gone the branch has to be cut again, because it can outlive it: the merge is a squash, so the
-        /// branch's head is not on the production branch's history afterwards, and GitHub deletes a
-        /// merged head only where the repository is configured to. Committing onto the leftover would
-        /// make the promotion a three-way merge of two full rewrites of the same file — a conflict every
-        /// retry reproduces, since the stale merge base never moves.
-        /// </para>
-        /// </summary>
-        private async Task PreparePromoteBranchAsync(string repository, string branch, string repoPath, string releaseBranch)
-        {
-            var leftover = await gitContentRepository.GetBranchHeadShaAsync(repository, branch, HttpContext.RequestAborted);
-            if (leftover != null &&
-                await gitContentPublisher.GetOpenPullRequestAsync(repository, branch, HttpContext.RequestAborted) != null)
-            {
-                return;
-            }
-
-            if (leftover != null)
-            {
-                await gitContentRepository.DeleteBranchAsync(repository, branch, repoPath, HttpContext.RequestAborted);
-            }
-
-            await gitContentRepository.CreateBranchAsync(repository, branch, releaseBranch, HttpContext.RequestAborted);
-        }
-
-        private string PromoteBranch(string type, string path) => gitContentOptions.Value.GetPromoteBranch(type, path);
-
-        private static JToken ParsePage(string json)
-        {
-            try
-            {
-                return JToken.Parse(json);
-            }
-            catch (JsonReaderException)
-            {
-                return JValue.CreateNull();
-            }
-        }
-
-        /// <summary>
-        /// A commit message with the authenticated login recorded under it. Git authorship is signed with
-        /// a shared address, so this trailer is the only attribution that survives — and because the
-        /// server writes it from the identity on the request, it is one a client cannot dress up.
-        /// </summary>
-        private string CommitMessage(string summary) => GitCommitMessage.WithVcUser(summary, User?.Identity?.Name);
-
-        private GitCommitAuthor CurrentAuthor() => gitContentOptions.Value.GetCommitAuthor(User);
 
         private static JToken AsToken(object content)
         {

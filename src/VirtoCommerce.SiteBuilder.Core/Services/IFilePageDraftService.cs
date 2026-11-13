@@ -22,4 +22,8 @@ public interface IFilePageDraftService
     /// <summary>Refused when nothing is published, as the draft is then the only copy.</summary>
     Task<DraftDiscardStatus> DiscardBlobDraftAsync(string storeId, string contentType, string path, string theme,
         CancellationToken cancellationToken = default);
+
+    /// <summary>What <see cref="DiscardBlobDraftAsync"/> would do, with the draft and what is published; writes nothing.</summary>
+    Task<DraftDiscardPreview> PreviewDiscardBlobDraftAsync(string storeId, string contentType, string path, string theme,
+        CancellationToken cancellationToken = default);
 }

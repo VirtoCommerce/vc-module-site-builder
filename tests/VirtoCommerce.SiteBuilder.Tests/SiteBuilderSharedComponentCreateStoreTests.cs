@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
@@ -99,8 +100,8 @@ public class SiteBuilderSharedComponentCreateStoreTests
         var stores = new FakeStoreService(new Store { Id = "store" });
         var components = new RecordingComponentService();
         using var services = new ServiceCollection()
-            .AddSingleton<IStoreService>(stores)
-            .AddSingleton<ISiteBuilderContentGuard>(TestServices.ContentGuard)
+            .AddSingleton<ISiteBuilderSharedComponentOperationService>(
+                TestServices.SharedComponentOperations(new FakeAuthorizationService(true), components, storeService: stores))
             .BuildServiceProvider();
         var controller = new SiteBuilderSharedComponentsController(components, null, null, null,
             new FakeAuthorizationService(true))
@@ -142,6 +143,31 @@ public class SiteBuilderSharedComponentCreateStoreTests
         Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p>"}}]}""", components.SavedContent);
     }
 
+    [Fact]
+    public async Task CreateOperation_DryRun_AnswersTheSanitizedComponent_AndSavesNothing()
+    {
+        var components = new RecordingComponentService();
+        var operations = TestServices.SharedComponentOperations(new FakeAuthorizationService(true), components,
+            storeService: new FakeStoreService(new Store { Id = "store" }));
+        var request = new SharedComponentCreateOperationRequest
+        {
+            StoreId = "store",
+            Name = "Shared hero",
+            Content = JObject.Parse("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p><script>alert(1)</script>"}}]}"""),
+            DryRun = true,
+        };
+
+        var result = await operations.CreateAsync(request, new ClaimsPrincipal(new ClaimsIdentity()), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Value);
+        Assert.Null(components.SavedModel);
+        var change = Assert.Single(result.Preview.Objects);
+        Assert.Null(change.ObjectId);
+        Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p>"}}]}""",
+            Assert.Single(change.Fields, x => x.Name == ModuleConstants.ChangePreview.Content).To);
+    }
+
     private static SiteBuilderSharedComponentCreateModel Request(string storeId) => new()
     {
         StoreId = storeId,
@@ -151,7 +177,8 @@ public class SiteBuilderSharedComponentCreateStoreTests
 
     private static SiteBuilderSharedComponentsController CreateController(
         IStoreService stores, ISiteBuilderSharedComponentService components, bool authorized = true) =>
-        new(components, null, null, null, new FakeAuthorizationService(authorized), stores, TestServices.ContentGuard)
+        new(components, null, null, new FakeAuthorizationService(authorized),
+            TestServices.SharedComponentOperations(new FakeAuthorizationService(authorized), components, storeService: stores))
         {
             ControllerContext = new ControllerContext
             {

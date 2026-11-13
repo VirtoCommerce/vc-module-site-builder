@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.StoreModule.Core.Model;
@@ -165,6 +167,37 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
             Assert.IsType<BadRequestObjectResult>(result);
             Assert.Empty(repository.Commits);
+        }
+
+        [Fact]
+        public async Task Copy_SourceNotInTheRepository_NamesTheSource()
+        {
+            var result = await Controller(new RecordingRepository()).GitCopyPage("vccom", "pages", "/missing.page", null);
+
+            var body = JObject.FromObject(Assert.IsType<BadRequestObjectResult>(result).Value!);
+            Assert.Equal(["error", "srcPath"], body.Properties().Select(x => x.Name));
+            Assert.Equal(("\"/missing.page\" is not in the content repository.", "/missing.page"), (body.Value<string>("error"), body.Value<string>("srcPath")));
+        }
+
+        [Fact]
+        public async Task CopyOperation_DryRun_AnswersTheCopy_AndCommitsNothing()
+        {
+            var repository = Repository();
+            var options = Options.Create(new GitContentOptions { Enabled = true, Repository = "o/r", Token = "t0ken", BaseBranch = Base, PagesRoot = "pages" });
+            var operations = TestServices.FilePageOperations(new FakeAuthorizationService(true), RequestValidators.Content("s1", "vccom"), options,
+                GitHubConnections.CreateService(options.Value), new FakeGitContentPolicy(repositoryFormat: "acme/site-{0}"), repository, new FakeGitContentHistory());
+            var request = new FilePageCopyOperationRequest { StoreId = "vccom", ContentType = "pages", Path = "/about-us.page", DryRun = true };
+
+            var result = await operations.CopyAsync(request, new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test")),
+                CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.False(result.AffectsPublished);
+            var change = Assert.Single(result.Preview.Objects);
+            Assert.Equal("/about-us_1.page", change.ObjectId);
+            Assert.Null(Assert.Single(change.Fields).From);
+            Assert.Empty(repository.Commits);
+            Assert.Empty(repository.BranchHeads);
         }
 
         // ── helpers ────────────────────────────────────────────────────────────────────────────────

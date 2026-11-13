@@ -14,6 +14,7 @@ using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
@@ -344,6 +345,48 @@ public class SiteBuilderControllerThemeFilesTests
         Assert.IsType<ConflictObjectResult>(result);
         Assert.True(_live.Files.ContainsKey(Theme($"{Path}-draft")));
         Assert.Empty(history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardDraft_ThemeFileNeverPublished_AnswersWhyAsText()
+    {
+        _live.Files[Theme($"{Path}-draft")] = "{}";
+
+        var result = await Builder().DiscardDraft("s1", Path, "themes", "default");
+
+        Assert.Equal("Nothing is published: the draft is the only copy.", Assert.IsType<ConflictObjectResult>(result).Value);
+    }
+
+    [Fact]
+    public async Task DiscardDraft_PageOfAStoreInGit_IsRefusedAsText()
+    {
+        var result = await Builder().DiscardDraft("s1", "/about-us.page", "pages");
+
+        Assert.Equal("The store's pages are in git: their drafts are discarded with git/discard-draft.", Assert.IsType<BadRequestObjectResult>(result).Value);
+    }
+
+    [Fact]
+    public async Task DiscardDraftOperation_DryRun_ThemeFile_AnswersWhatIsPublished_AndKeepsTheDraft()
+    {
+        var history = new RecordingContentHistory();
+        _live.Files[Theme(Path)] = "published";
+        _live.Files[Theme($"{Path}-draft")] = "draft";
+        var authorization = new FakeAuthorizationService(true);
+        var operations = TestServices.FilePageOperations(authorization, RequestValidators.Content("s1"), Options.Create(new GitContentOptions()), null,
+            new FakeGitContentPolicy(enabled: false), null, themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, _live, NullLogger<ThemeDraftService>.Instance),
+            contentHistory: history);
+        var request = new FileDraftDiscardOperationRequest { StoreId = "s1", ContentType = "themes", Path = Path, Theme = "default", DryRun = true };
+
+        var result = await operations.DiscardDraftAsync(request, new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test")), Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.False(result.AffectsPublished);
+        var change = Assert.Single(result.Preview.Objects);
+        Assert.Equal((ModuleConstants.ChangePreview.ThemeFile, Path), (change.ObjectType, change.ObjectId));
+        Assert.Equal(("draft", "published"), (Assert.Single(change.Fields).From, change.Fields[0].To));
+        Assert.Equal("draft", _live.Files[Theme($"{Path}-draft")]);
+        Assert.Empty(history.Records);
+        Assert.Empty(_live.Events.OfType<SiteBuilderContentChangedEvent>());
     }
 
     [Fact]

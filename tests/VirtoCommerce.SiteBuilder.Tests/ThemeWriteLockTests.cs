@@ -176,8 +176,8 @@ public class ThemeWriteLockTests
     private HistoryController HistoryController(RecordingContentHistory history)
     {
         var authorization = new FakeAuthorizationService(true);
-        return WithUser(new HistoryController(history, null, TestServices.Designer(history, themeDrafts: ThemeDrafts()), TestServices.Permissions(authorization), null,
-            authorization, RequestValidators.Stores("s1"), RequestValidators.History("s1"), RequestValidators.Restore("s1")));
+        return WithUser(new HistoryController(TestServices.ContentHistoryOperations(authorization, history, null,
+            TestServices.Designer(history, themeDrafts: ThemeDrafts()))));
     }
 
     private ThemeDraftService ThemeDrafts() =>

@@ -157,6 +157,33 @@ public class FilePageDraftService(
         return DraftDiscardStatus.Discarded;
     }
 
+    public virtual async Task<DraftDiscardPreview> PreviewDiscardBlobDraftAsync(string storeId, string contentType, string path, string theme,
+        CancellationToken cancellationToken = default)
+    {
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType, theme);
+        var draftPath = publishingService.GetRelativeDraftUrl(path, true);
+        var publishedPath = publishingService.GetRelativeDraftUrl(path, false);
+
+        var result = AbstractTypeFactory<DraftDiscardPreview>.TryCreateInstance();
+        if (await storageProvider.GetBlobInfoAsync(draftPath) == null)
+        {
+            result.Status = DraftDiscardStatus.NoDraft;
+            return result;
+        }
+
+        result.DraftContent = await ReadBlobTextAsync(storageProvider, draftPath);
+        if (await storageProvider.GetBlobInfoAsync(publishedPath) == null)
+        {
+            result.Status = DraftDiscardStatus.OnlyCopy;
+            return result;
+        }
+
+        result.Status = DraftDiscardStatus.Discarded;
+        result.PublishedContent = await ReadBlobTextAsync(storageProvider, publishedPath);
+
+        return result;
+    }
+
     protected virtual async Task SaveBlobDraftAsync(string storeId, SiteBuilderContentFile page, CancellationToken cancellationToken)
     {
         var contentType = page.ContentType.ToLowerInvariant();
@@ -181,7 +208,12 @@ public class FilePageDraftService(
             return null;
         }
 
-        await using var stream = await storageProvider.OpenReadAsync(blobInfo.RelativeUrl);
+        return await ReadBlobTextAsync(storageProvider, blobInfo.RelativeUrl);
+    }
+
+    protected virtual async Task<string> ReadBlobTextAsync(IBlobContentStorageProvider storageProvider, string relativeUrl)
+    {
+        await using var stream = await storageProvider.OpenReadAsync(relativeUrl);
         using var reader = new StreamReader(stream);
 
         return await reader.ReadToEndAsync();

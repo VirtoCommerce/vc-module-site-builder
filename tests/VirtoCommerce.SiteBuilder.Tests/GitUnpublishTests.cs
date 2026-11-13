@@ -11,13 +11,17 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.ContentModule.Core.Events;
+using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.GitContent;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.Platform.Core.Common;
 using Xunit;
+using PageStatuses = VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
 
 namespace VirtoCommerce.SiteBuilder.Tests
 {
@@ -261,6 +265,56 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             Versions = [new GitPageVersion { Sha = BranchHead, Message = "publish /about-us.page", Published = true, Branches = ["master"] }],
         };
+
+        [Fact]
+        public async Task Unpublish_APageTheProductionBranchDoesNotHave_NamesThePage()
+        {
+            var repository = Repository();
+            repository.Files.Remove((RepoPath, "master"));
+
+            var result = await Controller(repository, Publisher()).GitUnpublish("vccom", Page, "pages");
+
+            Assert.Equal(Page, JObject.FromObject(Assert.IsType<NotFoundObjectResult>(result).Value!).Value<string>("templatePath"));
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_DryRun_DescribesTheRemoval_AndWritesNothing()
+        {
+            var repository = Repository(withBranch: false);
+            var publisher = Publisher(GitPublishState.Merged);
+            var live = new FakeBlobStorage();
+            live.Files[LivePage] = Published;
+            var request = new FilePageOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+
+            var result = await Operations(repository, publisher, live).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.True(result.AffectsPublished);
+            var change = Assert.Single(result.Preview.Objects);
+            Assert.Equal(
+                [(ModuleConstants.ChangePreview.Status, PageStatuses.Published, PageStatuses.Draft), (ModuleConstants.ChangePreview.Content, Published, null)],
+                change.Fields.Select(x => (x.Name, x.From, x.To)));
+            Assert.Empty(repository.CreatedBranches);
+            Assert.Empty(repository.DeletedFiles);
+            Assert.Empty(repository.DeletedBranches);
+            Assert.Empty(publisher.Merges);
+            Assert.Equal(Published, live.Files[LivePage]);
+            Assert.Empty(live.Events);
+        }
+
+        private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test"));
+
+        private static FilePageOperationService Operations(RecordingRepository repository, FakeGitContentPublisher publisher, FakeBlobStorage live)
+        {
+            var options = Options.Create(new GitContentOptions { Enabled = true, Repository = "o/r", Token = "t0ken", BaseBranch = "master" });
+            var connection = GitHubConnections.CreateService(options.Value);
+            var gitHistory = new FakeGitContentHistory();
+            var policy = new FakeGitContentPolicy(repositoryFormat: "acme/site-{0}");
+
+            return TestServices.FilePageOperations(new FakeAuthorizationService(true), RequestValidators.Content("s1", "vccom"), options, connection, policy,
+                repository, gitHistory, publisher, new GitLivePageService(repository, gitHistory, connection, live, live, live, live),
+                TestServices.FilePageDrafts(live, options, connection, policy, repository, gitHistory, new FakeGitContentProvisioner()), live);
+        }
 
         private static RecordingRepository Repository(bool withBranch = true)
         {

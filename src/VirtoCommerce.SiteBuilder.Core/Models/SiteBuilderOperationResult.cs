@@ -44,6 +44,10 @@ public class SiteBuilderOperationResult
     public static SiteBuilderOperationResult Invalid(string error, IReadOnlyList<string> errors = null) =>
         new() { Status = SiteBuilderOperationStatus.Invalid, Error = error, Errors = errors };
 
+    /// <summary>An invalid request that tells what was refused, in <see cref="SiteBuilderOperationResult{T}.Value"/>.</summary>
+    public static SiteBuilderOperationResult<T> Invalid<T>(T value, string error, IReadOnlyList<string> errors = null) =>
+        new() { Status = SiteBuilderOperationStatus.Invalid, Value = value, Error = error, Errors = errors };
+
     public static SiteBuilderOperationResult Conflict(string error) => new() { Status = SiteBuilderOperationStatus.Conflict, Error = error };
 
     public static SiteBuilderOperationResult VersionRequired(string error) => new() { Status = SiteBuilderOperationStatus.VersionRequired, Error = error };
@@ -56,6 +60,6 @@ public class SiteBuilderOperationResult
 
 public class SiteBuilderOperationResult<T> : SiteBuilderOperationResult
 {
-    /// <summary>What the operation answers; <c>null</c> for a dry run and for a refusal, but a not-found that tells what was looked for.</summary>
+    /// <summary>What the operation answers; <c>null</c> for a dry run and for a refusal, but a not-found or an invalid request that tells what it refused.</summary>
     public T Value { get; init; }
 }

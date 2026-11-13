@@ -65,8 +65,7 @@ public class RepositoryOwnershipConflictAttributeTests
         var history = SiteHistories.Create(new GitHubScript(), new ThemeStorageFactory(live.StoreService, live, live, live), pages,
             ownership: new FakeGitContentOwnership("another-store"));
         var authorization = new FakeAuthorizationService(true);
-        var controller = new HistoryController(history, pages, null, TestServices.Permissions(authorization), null, authorization, RequestValidators.Stores("s1"),
-            RequestValidators.History("s1"), RequestValidators.Restore("s1"))
+        var controller = new HistoryController(TestServices.ContentHistoryOperations(authorization, history, pages, null))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) } },
         };
