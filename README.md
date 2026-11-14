@@ -110,9 +110,9 @@ For each user: connect the agent to `https://<platform>/admin/mcp` with the clie
 | Content | `convert_page_to_multilanguage` | A landing page becomes a Multilanguage Page | `builder:create`, `builder:update` | Approval; none with `unpublished_only` for a page never published |
 | Content | `link_page_language`, `unlink_page_language` | A page becomes a language version, or a landing page again | `builder:update` | Approval; none with `unpublished_only` for a page never published |
 | Content | `reset_language_overrides` | Language versions take the values of the Multilanguage Page again | `builder:update` | Approval; none with `unpublished_only` when no version is published |
-| Content | `publish_page`, `unpublish_page` | Publish a draft, or take a page off the storefront | `builder:publish` | Approval |
+| Content | `publish_page`, `unpublish_page` | Publish a draft, or take a page off the storefront; in git the requester's draft branch is shipped | `builder:publish` | Approval bound to the reviewed versions and, in git, the draft owner |
 | Content | `restore_version` | A saved version of a page or of theme files becomes the draft | `builder:update` and the part's permission | Confirmation, expected versions |
-| Content | `discard_draft` | Drop the draft of a page or of a theme file | `builder:update` and the part's permission | Confirmation |
+| Content | `discard_draft` | Drop the draft of a page or of a theme file | `builder:update` and the part's permission | Confirmation, expected versions |
 | Bulk | `set_translations` | Translations of many pages, bound to the source version | `builder:update` | Background job, dry run |
 | Bulk | `update_sections_bulk` | One change of a section on every page of a filter; the pages are fixed when the job is queued | `builder:update` | Background job, dry run |
 | Design | `edit_template` | Create a template as a copy, edit its sections and layout; the main section stays | `builder:update`, `builder:templates` | Dry run, version token |

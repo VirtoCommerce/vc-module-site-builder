@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using VirtoCommerce.MCP.Testing;
@@ -39,10 +40,14 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
         Assert.False(_context.Harness.IsVisible(_context.Harness.GetTool(Tool), Reader()));
     }
 
+    private static Dictionary<string, object> Page(string pageId) => new() { ["kind"] = "page", ["page_id"] = pageId };
+
+    private static Dictionary<string, object> Palette() => new() { ["kind"] = "theme_file", ["store_id"] = StoreA, ["theme_file"] = "default/config/palette.json" };
+
     [Fact]
     public async Task AConfirmedDiscard_DropsTheDraft_AndShowsWhatItUndid()
     {
-        var result = await _context.CallAsync(Editor(), Tool, new { kind = "page", page_id = "edited" });
+        var result = await _context.CallAsync(Editor(), Tool, await _context.ReviewAsync(Editor(), Tool, Page("edited")));
 
         var change = result.EnsureSucceeded().Read<SiteBuilderChange>();
         Assert.True(result.AskedForConfirmation);
@@ -53,7 +58,8 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
     [Fact]
     public async Task ADeclinedDiscard_DiscardsNothing()
     {
-        var result = await _context.CallAsync(Editor(), Tool, new { kind = "page", page_id = "edited" }, new McpToolCallOptions { DeclineConfirmation = true });
+        var result = await _context.CallAsync(Editor(), Tool, await _context.ReviewAsync(Editor(), Tool, Page("edited")),
+            new McpToolCallOptions { DeclineConfirmation = true });
 
         Assert.Equal(McpToolCallOutcome.Declined, result.Outcome);
         Assert.Contains((await _pages.GetByIdAsync("edited")).Pages, x => x.Status == "Draft");
@@ -70,9 +76,32 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ADiscardWithoutTheReviewedVersion_IsRefused()
+    {
+        var result = await _context.CallAsync(Editor(), Tool, Page("edited"));
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("expected_versions", result.Error, StringComparison.Ordinal);
+        Assert.Contains((await _pages.GetByIdAsync("edited")).Pages, x => x.Status == "Draft");
+    }
+
+    [Fact]
+    public async Task ADiscardAfterAColleagueSavedTheDraft_IsRefused_AndKeepsTheirWork()
+    {
+        var call = await _context.ReviewAsync(Editor(), Tool, Page("edited"));
+        _pages.SeedContent("edited-draft", SampleContent.Replace("Spring", "Autumn", StringComparison.Ordinal));
+
+        var result = await _context.CallAsync(Editor(), Tool, call);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Contains((await _pages.GetByIdAsync("edited")).Pages, x => x.Status == "Draft");
+    }
+
+    [Fact]
     public async Task ADraftNeverPublished_IsNotDiscarded()
     {
-        var result = await _context.CallAsync(Editor(), Tool, new { kind = "page", page_id = "new" });
+        var result = await _context.CallAsync(Editor(), Tool, new { kind = "page", page_id = "new", expected_versions = new Dictionary<string, string>() });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("never published", result.Error);
@@ -82,7 +111,7 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
     [Fact]
     public async Task APageOfAnotherStore_IsForbidden()
     {
-        var result = await _context.CallAsync(StoreAEditor(), Tool, new { kind = "page", page_id = "b1" });
+        var result = await _context.CallAsync(StoreAEditor(), Tool, new { kind = "page", page_id = "b1", expected_versions = new Dictionary<string, string>() });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
         Assert.Contains((await _pages.GetByIdAsync("b1")).Pages, x => x.Status == "Draft");
@@ -111,7 +140,7 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
     {
         await SeedPaletteAsync();
 
-        var result = await _context.CallAsync(ThemeEditor(), Tool, new { kind = "theme_file", store_id = StoreA, theme_file = "default/config/palette.json" });
+        var result = await _context.CallAsync(ThemeEditor(), Tool, await _context.ReviewAsync(ThemeEditor(), Tool, Palette()));
 
         var change = result.EnsureSucceeded().Read<SiteBuilderChange>();
         Assert.True(result.AskedForConfirmation);
@@ -135,11 +164,27 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
     {
         await SeedPaletteAsync();
 
-        var result = await _context.CallAsync(ThemeEditor(), Tool, new { kind = "theme_file", store_id = StoreA, theme_file = "default/config/palette.json" },
+        var result = await _context.CallAsync(ThemeEditor(), Tool, await _context.ReviewAsync(ThemeEditor(), Tool, Palette()),
             new McpToolCallOptions { DeclineConfirmation = true });
 
         Assert.Equal(McpToolCallOutcome.Declined, result.Outcome);
         Assert.NotNull(_context.ReadThemeFile(StoreA, "config/palette.json", draft: true));
+    }
+
+    [Fact]
+    public async Task AThemeFileSavedAgainAfterTheReview_IsNotDiscarded()
+    {
+        await SeedPaletteAsync();
+        var call = await _context.ReviewAsync(ThemeEditor(), Tool, Palette());
+        _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#00ff00" }""", draft: true);
+
+        var result = await _context.CallAsync(ThemeEditor(), Tool, call);
+        var unpinned = await _context.CallAsync(ThemeEditor(), Tool, Palette());
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Equal(McpToolCallOutcome.Failed, unpinned.Outcome);
+        Assert.Contains("#00ff00", _context.ReadThemeFile(StoreA, "config/palette.json", draft: true), StringComparison.Ordinal);
     }
 
     [Fact]

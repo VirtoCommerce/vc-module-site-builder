@@ -133,8 +133,8 @@ public class PublishReadinessTools(
             StoreId = group.StoreId,
             Affected = PageAudience.Describe(group),
             NextStep = unpublish
-                ? "unpublish_page with dryRun, then without it; a second person approves it."
-                : "publish_page with dryRun, then without it; a second person approves it.",
+                ? "unpublish_page with dryRun, then without it and with the dry run's expected_versions; a second person approves it."
+                : "publish_page with dryRun, then without it and with the dry run's expected_versions; a second person approves it.",
         };
 
         if (await dryRuns.CheckPageAsync(user, group, unpublish, readiness, cancellationToken) && !unpublish)
@@ -156,7 +156,8 @@ public class PublishReadinessTools(
             ObjectId = root.Id,
             ObjectName = root.Name,
             StoreId = root.StoreId,
-            NextStep = "publish_page with multilanguage_page_id and all_languages (or languages), with dryRun first; a second person approves it.",
+            NextStep = "publish_page with multilanguage_page_id and all_languages (or languages), with dryRun first, then with its expected_versions; " +
+                "a second person approves it.",
         };
 
         var audiences = new List<string>();
@@ -187,7 +188,8 @@ public class PublishReadinessTools(
             ObjectName = page.PageId,
             StoreId = page.StoreId,
             Affected = $"Every customer of store '{page.StoreId}' who opens the page '{page.Path}': a page stored as a file has no audience settings.",
-            NextStep = $"{(unpublish ? "unpublish_page" : "publish_page")} with page_id '{page.PageId}', store_id and dryRun first; a second person approves it.",
+            NextStep = $"{(unpublish ? "unpublish_page" : "publish_page")} with page_id '{page.PageId}', store_id and dryRun first, then with its " +
+                "expected_versions and draft_owner; a second person approves it.",
         };
 
         await dryRuns.CheckFilePageAsync(user, page, unpublish, readiness, cancellationToken);
@@ -385,7 +387,7 @@ public class PublicationDryRuns(
     public async Task<IList<string>> CheckMultilanguagePageAsync(ClaimsPrincipal user, MultilanguagePage root, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
-        var check = await multilanguagePageOperationService.PublishAllAsync(new MultilanguagePageOperationRequest { MultilanguagePageId = root.Id, DryRun = true },
+        var check = await multilanguagePageOperationService.PublishAllAsync(new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = root.Id, DryRun = true },
             user, cancellationToken);
         EnsureAllowed(check, PageLookup.ForbiddenMultilanguagePage(root));
         SiteBuilderChanges.EnsureSucceeded(check, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root));
@@ -403,7 +405,7 @@ public class PublicationDryRuns(
     public async Task CheckFilePageAsync(ClaimsPrincipal user, FilePage page, bool unpublish, PublishReadiness readiness, CancellationToken cancellationToken)
     {
         var check = await FilePages.RunAsync(logger, () => unpublish
-            ? filePageOperationService.UnpublishAsync(new FilePageOperationRequest { StoreId = page.StoreId, ContentType = page.ContentType, Path = page.Path, DryRun = true },
+            ? filePageOperationService.UnpublishAsync(new FilePageShipOperationRequest { StoreId = page.StoreId, ContentType = page.ContentType, Path = page.Path, DryRun = true },
                 user, cancellationToken)
             : filePageOperationService.PublishAsync(new FilePagePublishOperationRequest { StoreId = page.StoreId, ContentType = page.ContentType, Path = page.Path, DryRun = true },
                 user, cancellationToken));

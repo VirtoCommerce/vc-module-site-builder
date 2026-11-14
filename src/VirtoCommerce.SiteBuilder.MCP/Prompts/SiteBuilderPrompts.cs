@@ -24,7 +24,8 @@ public static class SiteBuilderPrompts
     private const string ChangeRules = """
         Rules:
         - Call every changing tool with dryRun first and show me its preview; make the change only when I agree.
-        - Never publish without asking me: publish_page and publish_theme wait for a second person's approval.
+        - Never publish without asking me: publish_page and publish_theme wait for a second person's approval. Call them with dryRun
+          first, show me what they would publish, then call them with the expected_versions (and draft_owner) of that dry run unchanged.
         - Never delete pages: archive them in the designer if I ask.
         """;
 
@@ -70,7 +71,7 @@ public static class SiteBuilderPrompts
             5. Call get_preview for the new page and give me the link.
             6. Call get_publish_readiness for it and tell me what would block the publication.
 
-            Do not publish: when I ask, call publish_page, which waits for a second person's approval.
+            Do not publish: when I ask, call publish_page with dryRun, show me the preview, then call it with its expected_versions; it waits for a second person's approval.
 
             {ChangeRules}
             """;
@@ -93,7 +94,8 @@ public static class SiteBuilderPrompts
                bound to source_revision_date. Mark a translation up to date only when its source did not change since.
             5. Call find_content_gaps again and report what is left.
 
-            Do not publish the translations: when I ask, call publish_page, which waits for a second person's approval.
+            Do not publish the translations: when I ask, call publish_page with dryRun, show me the preview, then call it with its
+            expected_versions; it waits for a second person's approval.
 
             {ChangeRules}
             """;

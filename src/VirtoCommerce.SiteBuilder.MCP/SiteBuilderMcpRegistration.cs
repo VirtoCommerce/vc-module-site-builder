@@ -18,6 +18,7 @@ public static class SiteBuilderMcpRegistration
         services.AddTransient<SiteBuilderJobUsers>();
         services.AddTransient<SiteThemeStates>();
         services.AddTransient<PublicationDryRuns>();
+        services.AddTransient<FilePageShipping>();
         services.AddBackgroundJob<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(triggerable: false);
         services.AddBackgroundJob<SetTranslationsJob, SetTranslationsJobPayload>(triggerable: false);
 

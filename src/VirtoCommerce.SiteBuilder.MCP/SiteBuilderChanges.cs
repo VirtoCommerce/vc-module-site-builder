@@ -35,6 +35,16 @@ public sealed class SiteBuilderChange : McpChangePreview
     // A publish or unpublish of a page stored as a file: where it stands, a pull request in git.
     [JsonPropertyName("shipment")]
     public FilePageShipmentRow Shipment { get; set; }
+
+    // A publish, unpublish or discard: the versions of what it takes, by page or file. Sent back unchanged, the write
+    // takes exactly these and is refused once one moved.
+    [JsonPropertyName("expected_versions")]
+    public IDictionary<string, string> ExpectedVersions { get; set; }
+
+    // A publish or unpublish of a page stored as a file in git: whose draft branch it ships. Sent back unchanged, so that
+    // an approver ships the requester's draft and not their own.
+    [JsonPropertyName("draft_owner")]
+    public string DraftOwner { get; set; }
 }
 
 // Runs a write of an operation service the way every page tool does: the operation's own dry run first, as the user of
@@ -54,14 +64,16 @@ public static class SiteBuilderChanges
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments == null || !arguments.TryGetValue(UnpublishedOnlyArgument, out var value) || value.ValueKind != JsonValueKind.True;
 
-    // The dry run, and with dryRun false the write. A dry run that changes nothing writes nothing.
+    // The dry run, and with dryRun false the write. A dry run that changes nothing writes nothing. checkAsync runs on the
+    // dry run's result before anything is written: it pins the versions the write takes.
     public static async Task<(SiteBuilderChange Change, TResult Result)> RunAsync<TResult>(
         SiteBuilderChange change,
         Func<bool, Task<TResult>> run,
         Action<SiteBuilderOperationResult> ensureSucceeded,
         bool dryRun,
         bool unpublishedOnly = false,
-        bool includeWarnings = false)
+        bool includeWarnings = false,
+        Func<TResult, Task> checkAsync = null)
         where TResult : SiteBuilderOperationResult
     {
         var check = await run(true);
@@ -83,6 +95,11 @@ public static class SiteBuilderChanges
         {
             change.AddWarning("The call changes nothing, so nothing was written.");
             return (change, check);
+        }
+
+        if (checkAsync != null)
+        {
+            await checkAsync(check);
         }
 
         if (unpublishedOnly && check.AffectsPublished)

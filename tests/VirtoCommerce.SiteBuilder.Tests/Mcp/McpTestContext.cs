@@ -233,6 +233,22 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Task<McpToolCallResult> CallAsync(McpTestUser user, string tool, object arguments, McpToolCallOptions options = null) =>
         Harness.CallAsync(user, tool, arguments, options, Xunit.TestContext.Current.CancellationToken);
 
+    public static readonly McpToolCallOptions Approved = new() { AsApprovedChange = true };
+
+    // The call a user makes after reviewing its dry run: the arguments with the expected_versions and draft_owner the
+    // dry run answered, as the change stored for approval holds them.
+    public async Task<Dictionary<string, object>> ReviewAsync(McpTestUser user, string tool, Dictionary<string, object> arguments)
+    {
+        var review = (await CallAsync(user, tool, new Dictionary<string, object>(arguments) { ["dryRun"] = true })).EnsureSucceeded().Read<SiteBuilderChange>();
+        var call = new Dictionary<string, object>(arguments) { ["expected_versions"] = review.ExpectedVersions };
+        if (review.DraftOwner != null)
+        {
+            call["draft_owner"] = review.DraftOwner;
+        }
+
+        return call;
+    }
+
     // The groups and the language versions the multilanguage page service finds.
     public void AddMultilanguagePages(params MultilanguagePage[] roots)
     {
@@ -361,7 +377,8 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddTransient<UpdateSectionsBulkJob>()
             .AddTransient<SetTranslationsJob>()
             .AddTransient<SiteThemeStates>()
-            .AddTransient<PublicationDryRuns>();
+            .AddTransient<PublicationDryRuns>()
+            .AddTransient<FilePageShipping>();
 
         // The stores, settings and members the overview and the resources read.
         services
