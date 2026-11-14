@@ -31,6 +31,7 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 public class MultilanguagePageServiceTests
 {
     private const string StoreId = "store";
+    private const string OtherStoreId = "other-store";
 
     [Fact]
     public async Task SaveChangesAsync_NewRoot_TakesDefaultCultureFromStore()
@@ -775,6 +776,36 @@ public class MultilanguagePageServiceTests
     }
 
     [Fact]
+    public async Task List_StoreIds_ListsThePagesOfThoseStoresOnly()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var landing = await fixture.CreateLanguageAsync(null, "en-US", permalink: "/a", name: "A landing", draftContent: Content("a"));
+        await fixture.Roots.SaveChangesAsync([new MultilanguagePage { StoreId = OtherStoreId, Name = "Other root", Permalink = "/other", Visibility = true }]);
+        await fixture.Groups.SaveChangesAsync([new GroupedSiteBuilderPage { StoreId = OtherStoreId, Name = "Other landing", Permalink = "/b", CultureName = "en-US" }]);
+
+        var mine = await fixture.List.SearchAsync(
+            new SiteBuilderPageSearchCriteria { StoreIds = [StoreId, "third"], Take = 10 }, TestContext.Current.CancellationToken);
+        var narrowed = await fixture.List.SearchAsync(
+            new SiteBuilderPageSearchCriteria { StoreId = OtherStoreId, StoreIds = [StoreId], Take = 10 }, TestContext.Current.CancellationToken);
+        var none = await fixture.List.SearchAsync(
+            new SiteBuilderPageSearchCriteria { StoreIds = [], Take = 10 }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { root.Id, landing.Id }.Order(), mine.Results.Select(x => x.Id).Order());
+        // the list narrows the store named, never widens it
+        Assert.Empty(narrowed.Results);
+        Assert.Empty(none.Results);
+    }
+
+    [Fact]
+    public void SearchCriteria_StoreIds_AreAPartOfTheCacheKey()
+    {
+        Assert.NotEqual(
+            new SiteBuilderPageSearchCriteria { StoreIds = ["a"] }.GetCacheKey(),
+            new SiteBuilderPageSearchCriteria { StoreIds = ["b"] }.GetCacheKey());
+    }
+
+    [Fact]
     public async Task Import_RestoresMultilanguagePagesAndLinks_RegardlessOfSectionOrder()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -1082,7 +1113,9 @@ public class MultilanguagePageServiceTests
                 failPublishingCultureName);
             var groupSearch = new GroupedPageSearchService(repositoryFactory, _cache, Groups, Options.Create(new CrudOptions()));
             GroupSearch = groupSearch;
-            var storeService = StoreService = new FakeStoreService(new Store { Id = StoreId, DefaultLanguage = "en-US", Languages = ["en-US", "nl-NL", "de-DE"] });
+            var storeService = StoreService = new FakeStoreService(
+                new Store { Id = StoreId, DefaultLanguage = "en-US", Languages = ["en-US", "nl-NL", "de-DE"] },
+                new Store { Id = OtherStoreId, DefaultLanguage = "en-US", Languages = ["en-US"] });
             Roots = new MultilanguagePageService(
                 repositoryFactory,
                 _cache,

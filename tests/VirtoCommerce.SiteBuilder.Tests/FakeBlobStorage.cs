@@ -81,7 +81,8 @@ internal sealed class FakeBlobStorage : IBlobContentStorageProviderFactory, ICon
 
         public Task<BlobEntrySearchResult> SearchAsync(string folderUrl, string keyword)
         {
-            var folder = folderUrl.Trim('/') + "/";
+            // the content folder itself when no folder is named, as the storage providers read it
+            var folder = folderUrl == null ? string.Empty : folderUrl.Trim('/') + "/";
             var results = new List<BlobEntry>();
             var folders = new HashSet<string>(StringComparer.Ordinal);
 

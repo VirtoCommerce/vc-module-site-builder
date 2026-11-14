@@ -44,6 +44,122 @@ A role can hold `builder:read` and `builder:shared-components:read` for selected
 
 The Vue designer lists a theme's alternate templates through the Content module's theme search (`GET api/content/themes/{storeId}/search`), so switching to one needs `content:read` as well; without it the template switcher offers only the default templates and says why.
 
+## AI agents (MCP)
+
+The module adds a Site Builder toolset to the back-office MCP endpoint of the [MCP module](https://github.com/VirtoCommerce/vc-module-mcp), `/admin/mcp`. It is for two kinds of work:
+
+* **The content author**, a marketer or content manager: landing pages, content pages, translations, SEO, and who sees a page.
+* **The site designer**, who owns how the site looks: product, category and page templates, the rules that choose a template, header, footer, brand and palette.
+
+They ask an AI agent (Claude, ChatGPT, VS Code or any MCP client) in plain words, and the agent works through the same checks as the designer: the store access of the user, page and theme validation, drafts and version history. Customers see nothing an agent publishes until a second person approves it.
+
+### Features
+
+- **Orientation.** One call tells what a store's site holds: pages by status and language, what waits for publication, recent changes with who made them, translation coverage, the theme's drafts, and whether history and the schema catalog are available.
+- **Pages from a request.** Create a landing page with its sections, or as a copy of another page; edit sections, blocks, texts, SEO and layout of a draft; place and detach Shared Components.
+- **Languages.** Turn a landing page into a Multilanguage Page, link and unlink language versions, create the missing ones and fill them with translations bound to the version of the source they were made from.
+- **Content gaps.** Missing and outdated translations and pages without an SEO title or description, as findings with evidence and a fix.
+- **Bulk changes.** One change of a section on every page that matches a filter, and translations of many pages, run as background jobs.
+- **Templates and theme.** Create and edit templates, reorder, enable and disable template rules, edit the header, footer and brand, and generate the light and dark palette from brand colors with a contrast check.
+- **Before publishing.** What a publication would put live, who changed each part, what would refuse it, and who would see it, from the dry run of the publication itself.
+- **Safe changes.** Every change has a dry run. Publishing a page or the theme, and changing what a published page shows or who sees it, wait for a second person's approval. Restoring a version and discarding a draft ask the user to confirm.
+
+### Quick setup
+
+For the administrator, once:
+
+1. **Install the modules.** Site Builder and the [MCP module](https://github.com/VirtoCommerce/vc-module-mcp), on platform `3.1096.0` or later. The MCP dependency is optional: without the MCP module, Site Builder works as before and the toolset is not served.
+2. **Install Background Jobs** (`VirtoCommerce.BackgroundJobs`) for the bulk tools, `update_sections_bulk` and `set_translations`. Without it they answer that jobs are not available and change nothing; every other tool works.
+3. **Open the endpoint for agents.** Add `https://<platform>/admin/mcp` to `Authorization:Resources` and register the agent in **Security → OAuth applications**, as the MCP module's [Set up the platform for agents](https://github.com/VirtoCommerce/vc-module-mcp#set-up-the-platform-for-agents) describes. Skip this step if agents already connect to `/admin/mcp`.
+4. **Grant the permissions.** Give the content author and the site designer roles with the permissions their work needs. Every tool needs `builder:read` in the store it works in. `builder:read` and `builder:shared-components:read` may be limited to some stores (**Only for selected stores**); the agent then reads and changes those stores only, as in the designer.
+
+   | Permission | Gives |
+   | --- | --- |
+   | `builder:read` | Every read tool, the prompts, and the schema and rule-condition resources, in the stores it covers |
+   | `builder:update` | Editing page drafts, page settings, language links, translations, bulk changes, restoring versions and discarding drafts |
+   | `builder:create` | `create_page`; with `builder:update`, `convert_page_to_multilanguage` |
+   | `builder:publish` | `publish_page`, `unpublish_page` and `publish_theme`, as requests for approval |
+   | `builder:templates` | With `builder:update`: `edit_template` and `edit_template_rules` |
+   | `builder:theme` | With `builder:update`: `edit_theme_draft` |
+   | `builder:shared-components:read`, `:create`, `:update` | `search_shared_components`; with it, `create_shared_component` and `revise_shared_component` |
+   | `platform:asset:read` | `search_assets` |
+   | `platform:setting:read` | The store settings and user groups resources |
+   | `customer:read` | The organizations resource, granted for every organization |
+   | `mcp:approve` | Approving publications and changes of published pages in **Agent approvals** |
+
+5. **Keep approvers apart.** Give `mcp:approve` to another role than the people who ask for changes. For a pilot with one person, the MCP module's setting `MCP.Approval.AllowSelfApproval` lets the requester approve their own changes; switch it off afterwards.
+
+For each user: connect the agent to `https://<platform>/admin/mcp` with the client id from the administrator, as the MCP module's [Connect an AI agent](https://github.com/VirtoCommerce/vc-module-mcp#connect-an-ai-agent) describes, and sign in with your back-office account. The agent works as you and sees only the tools your role allows.
+
+### Tools
+
+| Layer | Tool | What it does | Permission | Safeguard |
+| --- | --- | --- | --- | --- |
+| Orientation | `get_site_overview` | Start here: pages, drafts, recent changes, language coverage, theme state, history, schema catalog and publication flow of a store or of every store you read | `builder:read` | — |
+| Search | `search_site_pages` | Pages from the database and, per store and folder, pages stored as files: the list, one page with its sections and version token, or the pages that use a section type | `builder:read` | — |
+| Search | `search_templates` | Templates, their drafts, the rules that give them pages, and every rule in order | `builder:read` | — |
+| Search | `search_assets` | Images and files of a folder, and where they are used | `platform:asset:read` | — |
+| Search | `search_shared_components` | Shared Components, their content and the pages they are placed on | `builder:shared-components:read` | — |
+| Search | `list_versions` | Saved versions of a page or of theme files, from the store's GitHub history; the commits of a page stored as a file in git | `builder:read` | — |
+| Analysis | `get_preview` | A storefront link to a draft or a version, and which template and rule a page, product or category gets | `builder:read` | — |
+| Analysis | `find_content_gaps` | Missing and outdated translations, pages without SEO title or description | `builder:read` | — |
+| Analysis | `get_publish_readiness` | What a page or theme publication would put live, who changed it, what blocks it, who sees it | `builder:read` | — |
+| Content | `create_page` | A landing page with sections or as a copy, a missing language version, a copy of a Multilanguage Page | `builder:create` | Dry run |
+| Content | `edit_page_draft` | Sections, blocks, texts, SEO, layout and Shared Components of a draft | `builder:update` | Dry run, version token |
+| Content | `change_page_settings` | Name, language, address, audience and dates | `builder:update` | Approval; none with `unpublished_only` for a page never published |
+| Content | `convert_page_to_multilanguage` | A landing page becomes a Multilanguage Page | `builder:create`, `builder:update` | Approval; none with `unpublished_only` for a page never published |
+| Content | `link_page_language`, `unlink_page_language` | A page becomes a language version, or a landing page again | `builder:update` | Approval; none with `unpublished_only` for a page never published |
+| Content | `reset_language_overrides` | Language versions take the values of the Multilanguage Page again | `builder:update` | Approval; none with `unpublished_only` when no version is published |
+| Content | `publish_page`, `unpublish_page` | Publish a draft, or take a page off the storefront; in git the requester's draft branch is shipped | `builder:publish` | Approval bound to the reviewed versions and, in git, the draft owner |
+| Content | `restore_version` | A saved version of a page or of theme files becomes the draft | `builder:update` and the part's permission | Confirmation, expected versions |
+| Content | `discard_draft` | Drop the draft of a page or of a theme file | `builder:update` and the part's permission | Confirmation, expected versions |
+| Bulk | `set_translations` | Translations of many pages, bound to the source version | `builder:update` | Background job, dry run |
+| Bulk | `update_sections_bulk` | One change of a section on every page of a filter; the pages are fixed when the job is queued | `builder:update` | Background job, dry run |
+| Design | `edit_template` | Create a template as a copy, edit its sections and layout; the main section stays | `builder:update`, `builder:templates` | Dry run, version token |
+| Design | `edit_template_rules` | Add, change, reorder, enable or disable rules; a rule points to an existing template only | `builder:update`, `builder:templates` | Dry run, version token |
+| Design | `edit_theme_draft` | Header, footer, brand, and a palette generated from brand colors with a contrast check | `builder:update`, `builder:theme` | Dry run, version token |
+| Design | `publish_theme` | Publish every theme draft; refused below WCAG 2.2 AA contrast | `builder:publish` | Approval bound to the reviewed drafts |
+| Shared Components | `create_shared_component` | A new component, not placed anywhere yet | `builder:shared-components:create` | Dry run |
+| Shared Components | `revise_shared_component` | New content or name; the content changes everywhere the component is placed | `builder:shared-components:update` | Approval when the content changes |
+
+Bulk jobs are followed with the MCP module's `get_job_status`. Tool calls are audited by the MCP module, and **Agent tools** switches any of them off.
+
+### Prompts and resources
+
+MCP clients show the prompts as slash commands, for example `/mcp__virto__weekly_content_review` in Claude Code. Review prompts change nothing and ask before any action.
+
+| Prompt | For | What it does |
+| --- | --- | --- |
+| `weekly_content_review` | Content author | What waits for publication, what changed this week, what is missing, with a short action list |
+| `launch_landing_page` | Content author | From a brief to a landing page draft, its preview and its publication check |
+| `translate_site` | Content author | Missing and outdated translations of a language, created and translated once you agree |
+| `review_template_rules` | Site designer | Which template each kind of page gets, rules that never fire or point nowhere |
+| `rebrand_site` | Site designer | Palette from a brand color, logos, header and footer, up to the theme's publication check |
+| `review_theme_release` | Site designer | Every draft the theme's publication would take, who changed it, and what blocks it |
+| `review_site_change` | Approver | What a requested change would do, who made it, and what to check before approving |
+
+| Resource | What it holds | Permission |
+| --- | --- | --- |
+| `site-builder://stores/{store_id}/schemas` | Section, block, object and template types the storefront sent; not available until the storefront has sent its catalog | `builder:read` |
+| `site-builder://stores/{store_id}/schemas/{kind}/{key}` | One schema with its settings | `builder:read` |
+| `site-builder://template-rule-conditions` | The conditions a template rule can use, and the shape of their values | `builder:read` |
+| `site-builder://stores/{store_id}/settings` | Languages, time zone and publication flow (git or blob) of a store | `builder:read`, `platform:setting:read` |
+| `site-builder://user-groups` | User groups a page's audience can name, paged | `builder:read`, `platform:setting:read` |
+| `site-builder://organizations` | Organizations a page's audience can name, by keyword, paged | `builder:read`, `customer:read` |
+
+### What agents cannot do
+
+These stay in the designer or with an administrator, on purpose:
+
+- Delete or archive pages, or delete an empty Multilanguage Page: it cannot be undone.
+- Delete Shared Components: it takes effect at once on every page.
+- Promote content to the production branch of a store's repository (`builder:promote`).
+- Upload, overwrite or delete assets and asset folders.
+- Connect a store to GitHub, install the GitHub App, or clean up old drafts.
+- Preview the storefront as another user: it needs `loginOnBehalf`.
+- Check links to deleted products and categories, or section settings against the schemas: `find_content_gaps` says these are not checked, and why.
+- Publish anything, or change what customers see, without a second person's approval.
+
 ## Shared Component creation
 
 `POST /api/site-builder-shared-components` requires an existing store. An authorized request with an unknown `storeId` returns `400` naming that store, before any component, content, or asset references are written. Store-scoped authorization runs first; requests outside the user's store return `403`.

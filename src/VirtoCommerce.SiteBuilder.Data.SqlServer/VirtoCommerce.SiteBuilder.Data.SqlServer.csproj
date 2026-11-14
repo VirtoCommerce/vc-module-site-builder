@@ -14,7 +14,7 @@
       <IncludeAssets>runtime; build; native; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     
-    <PackageReference Include="VirtoCommerce.Platform.Data.SqlServer" Version="3.1095.0" />
+    <PackageReference Include="VirtoCommerce.Platform.Data.SqlServer" Version="3.1096.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data\VirtoCommerce.SiteBuilder.Data.csproj" />

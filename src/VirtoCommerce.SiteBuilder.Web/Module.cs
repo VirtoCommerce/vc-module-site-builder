@@ -36,6 +36,7 @@ using VirtoCommerce.SiteBuilder.Data.Search;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
+using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.Xapi;
 using VirtoCommerce.SiteBuilder.Xapi.Extensions;
 using VirtoCommerce.Pages.Core.ContentProviders;
@@ -52,13 +53,18 @@ using VirtoCommerce.Xapi.Core.Infrastructure;
 
 namespace VirtoCommerce.SiteBuilder.Web
 {
-    public class Module : IModule, IExportSupport, IImportSupport, IHasConfiguration
+    public class Module : IModule, IExportSupport, IImportSupport, IHasConfiguration, IHasModuleService
     {
+        // The MCP module is an optional dependency: when it is installed, it initializes before this module. Its contracts
+        // (VirtoCommerce.MCP.Core and the MCP SDK) are packaged with this module (module.keep), so they load without it.
+        private const string McpModuleId = "VirtoCommerce.MCP";
+
         private IApplicationBuilder _appBuilder;
         private List<RenamedConfigurationKey> _pageBuilderConfigurationKeys = [];
 
         public ManifestModuleInfo ModuleInfo { get; set; }
         public IConfiguration Configuration { get; set; }
+        public IModuleService ModuleService { get; set; }
 
         public void Initialize(IServiceCollection serviceCollection)
         {
@@ -168,6 +174,7 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IContentHistoryOperationService, ContentHistoryOperationService>();
             serviceCollection.AddTransient<ISiteBuilderSharedComponentOperationService, SiteBuilderSharedComponentOperationService>();
             serviceCollection.AddTransient<IContentPermissionService, ContentPermissionService>();
+            serviceCollection.AddTransient<ISiteBuilderSectionScanner, SiteBuilderSectionScanner>();
             serviceCollection.AddTransient<IThemeSnapshotService, ThemeSnapshotService>();
             serviceCollection.AddTransient<IThemePaletteService, ThemePaletteService>();
             serviceCollection.AddTransient<IValidator<SiteBuilderStoreRequest>, SiteBuilderStoreRequestValidator>();
@@ -194,6 +201,12 @@ namespace VirtoCommerce.SiteBuilder.Web
 
             serviceCollection.AddSingleton<ScopedSchemaFactory<XapiAssemblyMarker>>();
             serviceCollection.AddSiteBuilderPreview();
+
+            if (ModuleService.IsInstalled(McpModuleId))
+            {
+                // The Site Builder toolset, in the MCP module's admin scope, and the jobs of its bulk tools.
+                serviceCollection.AddSiteBuilderMcp();
+            }
         }
 
         internal static List<RenamedConfigurationKey> AddSiteBuilderOptions(IServiceCollection serviceCollection, IConfiguration configuration)
