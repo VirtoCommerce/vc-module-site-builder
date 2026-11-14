@@ -9,6 +9,7 @@ using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using VirtoCommerce.StoreModule.Core.Model;
 using VirtoCommerce.StoreModule.Core.Model.Search;
@@ -101,6 +102,20 @@ public sealed class GetSiteOverviewToolTests : IAsyncDisposable
 
         Assert.False(overview.SchemaCatalog.Available);
         Assert.StartsWith("Not available:", overview.SchemaCatalog.Note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ARepositoryThatFails_IsDescribedByTheKindOfFailure_NotByItsMessage()
+    {
+        _context.PublishStatuses
+            .Setup(x => x.GetFilePageStatusAsync(It.IsAny<SiteBuilderFilePageQueryRequest>(), It.IsAny<System.Security.Claims.ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new GitContentException("\"acme/secret-site\" is not a repository this platform may use. List it in SiteBuilder:GitContent:AllowedRepositories.",
+                GitContentFailureKind.NotConfigured));
+
+        var overview = Assert.Single((await OverviewAsync(Reader(), new { store_id = StoreA })).Items);
+
+        Assert.False(overview.Publishing.Available);
+        Assert.Equal($"Not available. {GitContentFailures.NotConfigured}", overview.Publishing.Note);
     }
 
     [Fact]

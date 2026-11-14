@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -26,7 +27,8 @@ public class PagePublishingTools(
     IMultilanguagePageService multilanguagePageService,
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
-    IFilePageOperationService filePageOperationService)
+    IFilePageOperationService filePageOperationService,
+    ILogger<PagePublishingTools> logger)
 {
     [McpServerTool(Name = "publish_page", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
@@ -133,7 +135,7 @@ public class PagePublishingTools(
         };
 
         var (_, result) = await SiteBuilderChanges.RunAsync(change,
-            isDryRun => FilePages.RunAsync(() => publish
+            isDryRun => FilePages.RunAsync(logger, () => publish
                 ? filePageOperationService.PublishAsync(new FilePagePublishOperationRequest
                 {
                     StoreId = page.StoreId,

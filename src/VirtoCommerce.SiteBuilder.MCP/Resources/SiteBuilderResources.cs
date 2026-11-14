@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -17,6 +18,7 @@ using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Settings;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
@@ -40,7 +42,8 @@ public class SiteBuilderResources(
     ISettingsManager settingsManager,
     IMemberSearchService memberSearchService,
     ISiteBuilderPublishStatusQueryService publishStatusQueryService,
-    IMcpPageSizeResolver pageSizeResolver)
+    IMcpPageSizeResolver pageSizeResolver,
+    ILogger<SiteBuilderResources> logger)
 {
     public const string SchemasUri = "site-builder://stores/{store_id}/schemas";
 
@@ -144,7 +147,16 @@ public class SiteBuilderResources(
     // git or blob, or why it is not known.
     private async Task<(string Flow, string Note)> ReadFlowAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
     {
-        var result = await publishStatusQueryService.GetFilePageStatusAsync(new SiteBuilderFilePageQueryRequest { StoreId = storeId }, user, cancellationToken);
+        SiteBuilderOperationResult<PagePublishStatus> result;
+        try
+        {
+            result = await publishStatusQueryService.GetFilePageStatusAsync(new SiteBuilderFilePageQueryRequest { StoreId = storeId }, user, cancellationToken);
+        }
+        catch (GitContentException ex)
+        {
+            return (null, $"Not available. {GitContentFailures.Describe(logger, ex)}");
+        }
+
         if (result?.Succeeded == true && result.Value?.Flow != null)
         {
             return (result.Value.Flow, null);

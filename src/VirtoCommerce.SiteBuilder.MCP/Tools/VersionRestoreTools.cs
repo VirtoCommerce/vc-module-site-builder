@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -28,7 +29,8 @@ public class VersionRestoreTools(
     IAuthorizationService authorizationService,
     IGroupedPageService groupedPageService,
     IContentHistoryOperationService contentHistoryOperationService,
-    IFilePageOperationService filePageOperationService)
+    IFilePageOperationService filePageOperationService,
+    ILogger<VersionRestoreTools> logger)
 {
     // A commit is named by at least its short form, as the history of a page stored as a file shows it.
     private const int MinCommitLength = 7;
@@ -157,7 +159,7 @@ public class VersionRestoreTools(
             ReportImpact = true,
         };
 
-        var check = await FilePages.RunAsync(() => filePageOperationService.RestoreVersionAsync(Request(true), user, cancellationToken));
+        var check = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(true), user, cancellationToken));
         EnsureFilePageRestored(check, page, versionId);
 
         var answer = NewAnswer(page.StoreId, versionId, [page.VersionKey]);
@@ -179,7 +181,7 @@ public class VersionRestoreTools(
             return answer;
         }
 
-        var result = await FilePages.RunAsync(() => filePageOperationService.RestoreVersionAsync(Request(false), user, cancellationToken));
+        var result = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(false), user, cancellationToken));
         EnsureFilePageRestored(result, page, versionId);
         answer.DryRun = false;
         answer.Commit = result.Value?.CommitSha;

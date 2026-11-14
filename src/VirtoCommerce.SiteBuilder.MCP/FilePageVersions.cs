@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
@@ -18,11 +19,11 @@ public static class FilePageVersions
     private const string CursorPrefix = "file:";
     private const char CursorSeparator = ':';
 
-    public static async Task<ContentVersionsAnswer> ListAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user, FilePage page,
-        string cursor, int take, CancellationToken cancellationToken)
+    public static async Task<ContentVersionsAnswer> ListAsync(ISiteBuilderContentQueryService contentQueryService, ILogger logger, ClaimsPrincipal user,
+        FilePage page, string cursor, int take, CancellationToken cancellationToken)
     {
         var (offset, after) = ParseCursor(cursor);
-        var result = await FilePages.RunAsync(() => contentQueryService.GetFilePageHistoryAsync(new SiteBuilderFilePageHistoryRequest
+        var result = await FilePages.RunAsync(logger, () => contentQueryService.GetFilePageHistoryAsync(new SiteBuilderFilePageHistoryRequest
         {
             StoreId = page.StoreId,
             ContentType = page.ContentType,

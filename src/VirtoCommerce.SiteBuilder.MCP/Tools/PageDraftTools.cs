@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -31,7 +32,8 @@ public class PageDraftTools(
     IDesignerOperationService designerOperationService,
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
-    ISiteBuilderContentQueryService contentQueryService)
+    ISiteBuilderContentQueryService contentQueryService,
+    ILogger<PageDraftTools> logger)
 {
     private const int MaxOperations = 100;
     private const string TemplateSetting = "template";
@@ -151,7 +153,7 @@ public class PageDraftTools(
         var page = await FilePages.LoadAsync(authorizationService, context.User, storeId, pageId);
         EnsureOperations(operations);
 
-        var current = await FilePages.RequireAsync(contentQueryService, context.User, page, cancellationToken);
+        var current = await FilePages.RequireAsync(contentQueryService, logger, context.User, page, cancellationToken);
         var version = FilePages.VersionOf(current);
         if (string.IsNullOrWhiteSpace(versionToken) || versionToken.Trim() != version)
         {
@@ -182,7 +184,7 @@ public class PageDraftTools(
             return preview;
         }
 
-        Task<SiteBuilderOperationResult<DesignerSaveResult>> SaveAsync(bool isDryRun) => FilePages.RunAsync(() => designerOperationService.SaveAsync(
+        Task<SiteBuilderOperationResult<DesignerSaveResult>> SaveAsync(bool isDryRun) => FilePages.RunAsync(logger, () => designerOperationService.SaveAsync(
             new DesignerSaveOperationRequest
             {
                 StoreId = page.StoreId,
@@ -221,7 +223,7 @@ public class PageDraftTools(
         }
 
         EnsureFilePageSaved(await SaveAsync(false), page);
-        preview.VersionToken = FilePages.VersionOf(await FilePages.ReadAsync(contentQueryService, context.User, page, draft: true, cancellationToken));
+        preview.VersionToken = FilePages.VersionOf(await FilePages.ReadAsync(contentQueryService, logger, context.User, page, draft: true, cancellationToken));
 
         return preview;
     }

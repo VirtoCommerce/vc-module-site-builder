@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -300,7 +301,8 @@ public class PublicationDryRuns(
     IFilePageOperationService filePageOperationService,
     IThemeOperationService themeOperationService,
     ISiteBuilderContentQueryService contentQueryService,
-    ISchemaCatalogService schemaCatalogService)
+    ISchemaCatalogService schemaCatalogService,
+    ILogger<PublicationDryRuns> logger)
 {
     private const string ContrastMarker = "contrast";
 
@@ -400,7 +402,7 @@ public class PublicationDryRuns(
 
     public async Task CheckFilePageAsync(ClaimsPrincipal user, FilePage page, bool unpublish, PublishReadiness readiness, CancellationToken cancellationToken)
     {
-        var check = await FilePages.RunAsync(() => unpublish
+        var check = await FilePages.RunAsync(logger, () => unpublish
             ? filePageOperationService.UnpublishAsync(new FilePageOperationRequest { StoreId = page.StoreId, ContentType = page.ContentType, Path = page.Path, DryRun = true },
                 user, cancellationToken)
             : filePageOperationService.PublishAsync(new FilePagePublishOperationRequest { StoreId = page.StoreId, ContentType = page.ContentType, Path = page.Path, DryRun = true },
@@ -418,8 +420,8 @@ public class PublicationDryRuns(
             var part = PublishPart.FromPreview(item);
             if (!unpublish)
             {
-                part.Changes = PublishPart.Compare(await FilePages.ReadAsync(contentQueryService, user, page, draft: false, cancellationToken),
-                    await FilePages.ReadAsync(contentQueryService, user, page, draft: true, cancellationToken));
+                part.Changes = PublishPart.Compare(await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: false, cancellationToken),
+                    await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken));
             }
 
             readiness.Parts.Add(part);

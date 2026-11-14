@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -35,7 +36,8 @@ public class PageTools(
     ISiteBuilderSectionScanner sectionScanner,
     Func<UserManager<ApplicationUser>> userManagerFactory,
     ISiteBuilderContentQueryService contentQueryService,
-    ISiteBuilderPublishStatusQueryService publishStatusQueryService)
+    ISiteBuilderPublishStatusQueryService publishStatusQueryService,
+    ILogger<PageTools> logger)
 {
     // The pages list has no date filter: the tool finds the pages by their versions changed in the period first. More
     // versions than this is a scan; the agent narrows the period instead.
@@ -238,13 +240,13 @@ public class PageTools(
         CancellationToken cancellationToken)
     {
         var page = await FilePages.LoadAsync(authorizationService, context.User, storeId, pageId);
-        var content = await FilePages.ReadAsync(contentQueryService, context.User, page, draft: !published, cancellationToken);
-        if (content == null && (!published || await FilePages.ReadAsync(contentQueryService, context.User, page, draft: true, cancellationToken) == null))
+        var content = await FilePages.ReadAsync(contentQueryService, logger, context.User, page, draft: !published, cancellationToken);
+        if (content == null && (!published || await FilePages.ReadAsync(contentQueryService, logger, context.User, page, draft: true, cancellationToken) == null))
         {
             throw new McpException($"Page '{page.PageId}' was not found in store '{page.StoreId}'. Check the folder and path the designer shows for it.");
         }
 
-        var status = await FilePages.RunAsync(() => publishStatusQueryService.GetFilePageStatusAsync(new SiteBuilderFilePageQueryRequest
+        var status = await FilePages.RunAsync(logger, () => publishStatusQueryService.GetFilePageStatusAsync(new SiteBuilderFilePageQueryRequest
         {
             StoreId = page.StoreId,
             ContentType = page.ContentType,

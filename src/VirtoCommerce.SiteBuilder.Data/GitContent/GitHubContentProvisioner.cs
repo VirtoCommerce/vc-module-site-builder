@@ -97,7 +97,7 @@ public class GitHubContentProvisioner(
 
         var connection = await gitHubConnectionService.GetConnectionAsync(cancellationToken);
         var storeRepository = await gitContentPolicy.GetConfiguredRepositoryAsync(storeId, cancellationToken)
-                              ?? throw new GitContentException("Git content is not configured on this platform.");
+                              ?? throw new GitContentException("Git content is not configured on this platform.", GitContentFailureKind.NotConfigured);
         var repository = storeRepository.Name;
         // only the module's own repository is created or changed
         var isModuleRepository = storeRepository.Source == GitRepositorySource.Site;
@@ -273,7 +273,8 @@ public class GitHubContentProvisioner(
     {
         if (!await gitHubApiClient.HasOrganizationAsync(organization, cancellationToken))
         {
-            throw new GitContentException($"The GitHub organization \"{organization}\" was not found, or the platform has no access to it.");
+            throw new GitContentException($"The GitHub organization \"{organization}\" was not found, or the platform has no access to it.",
+                GitContentFailureKind.NoAccess);
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
@@ -59,10 +60,10 @@ public static class FilePages
 
     // The page as the designer edits it (the user's draft, else what is published), or what is published; null when
     // there is no such page.
-    public static async Task<string> ReadAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user, FilePage page, bool draft,
-        CancellationToken cancellationToken)
+    public static async Task<string> ReadAsync(ISiteBuilderContentQueryService contentQueryService, ILogger logger, ClaimsPrincipal user, FilePage page,
+        bool draft, CancellationToken cancellationToken)
     {
-        var result = await RunAsync(() => contentQueryService.ReadFileAsync(new SiteBuilderFileReadRequest
+        var result = await RunAsync(logger, () => contentQueryService.ReadFileAsync(new SiteBuilderFileReadRequest
         {
             StoreId = page.StoreId,
             ContentType = page.ContentType,
@@ -83,9 +84,9 @@ public static class FilePages
         }
     }
 
-    public static async Task<string> RequireAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user, FilePage page,
+    public static async Task<string> RequireAsync(ISiteBuilderContentQueryService contentQueryService, ILogger logger, ClaimsPrincipal user, FilePage page,
         CancellationToken cancellationToken) =>
-        await ReadAsync(contentQueryService, user, page, draft: true, cancellationToken)
+        await ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken)
         ?? throw new McpException($"Page '{page.PageId}' was not found in store '{page.StoreId}'. Check the folder and path the designer shows for it.");
 
     // A file page keeps no version of its own: its token is the hash of the content as read, so an edit or a restore made
@@ -96,8 +97,8 @@ public static class FilePages
     public static string Forbidden(FilePage page, string verb) =>
         $"You may not {verb} page '{page.PageId}': it needs builder:read in store '{page.StoreId}'.";
 
-    // Git failing is not an outcome of the operations but an exception; its message is the one the designer shows.
-    public static async Task<T> RunAsync<T>(Func<Task<T>> operation)
+    // Git failing is not an outcome of the operations but an exception, whose message is for an administrator.
+    public static async Task<T> RunAsync<T>(ILogger logger, Func<Task<T>> operation)
     {
         try
         {
@@ -105,7 +106,7 @@ public static class FilePages
         }
         catch (GitContentException ex)
         {
-            throw new McpException($"The store's content repository did not answer: {ex.Message} Nothing more was done; try again later.");
+            throw new McpException($"{GitContentFailures.Describe(logger, ex)} Nothing more was done.");
         }
     }
 

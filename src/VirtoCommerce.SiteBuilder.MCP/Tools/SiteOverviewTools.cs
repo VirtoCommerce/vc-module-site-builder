@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -41,7 +42,8 @@ public class SiteOverviewTools(
     SiteThemeStates themeStates,
     IContentHistory contentHistory,
     ISchemaCatalogService schemaCatalogService,
-    ISiteBuilderPublishStatusQueryService publishStatusQueryService)
+    ISiteBuilderPublishStatusQueryService publishStatusQueryService,
+    ILogger<SiteOverviewTools> logger)
 {
     // A store's overview reads a few dozen counts and files; more stores than this in one call are paged.
     private const int MaxStores = 10;
@@ -264,7 +266,7 @@ public class SiteOverviewTools(
         }
         catch (GitContentException ex)
         {
-            return new FeatureState { Available = false, State = "unknown", Note = $"Not available: the store's content repository did not answer ({ex.Message})." };
+            return new FeatureState { Available = false, State = "unknown", Note = $"Not available. {GitContentFailures.Describe(logger, ex)}" };
         }
 
         if (result?.Succeeded != true || result.Value == null)

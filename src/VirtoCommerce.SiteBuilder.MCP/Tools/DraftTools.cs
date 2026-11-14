@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -26,7 +27,8 @@ public class DraftTools(
     IThemeOperationService themeOperationService,
     ISiteBuilderContentQueryService contentQueryService,
     IContentPermissionService contentPermissionService,
-    IFilePageOperationService filePageOperationService)
+    IFilePageOperationService filePageOperationService,
+    ILogger<DraftTools> logger)
 {
     public const string PageKind = "page";
     public const string ThemeFileKind = "theme_file";
@@ -186,11 +188,11 @@ public class DraftTools(
             ReportImpact = true,
         };
 
-        var blob = await FilePages.RunAsync(() => filePageOperationService.DiscardDraftAsync(BlobRequest(true), context.User, cancellationToken));
+        var blob = await FilePages.RunAsync(logger, () => filePageOperationService.DiscardDraftAsync(BlobRequest(true), context.User, cancellationToken));
         if (blob.Status == SiteBuilderOperationStatus.Invalid && blob.Value?.KeptInGit == true)
         {
             await SiteBuilderChanges.RunAsync(change,
-                isDryRun => FilePages.RunAsync(() => filePageOperationService.DiscardGitDraftAsync(new FilePageOperationRequest
+                isDryRun => FilePages.RunAsync(logger, () => filePageOperationService.DiscardGitDraftAsync(new FilePageOperationRequest
                 {
                     StoreId = page.StoreId,
                     ContentType = page.ContentType,
@@ -206,7 +208,7 @@ public class DraftTools(
         }
 
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => FilePages.RunAsync(() => filePageOperationService.DiscardDraftAsync(BlobRequest(isDryRun), context.User, cancellationToken)),
+            isDryRun => FilePages.RunAsync(logger, () => filePageOperationService.DiscardDraftAsync(BlobRequest(isDryRun), context.User, cancellationToken)),
             x => EnsureFileDiscarded(x, page, onlyCopy: x is SiteBuilderOperationResult<FileDraftDiscard> { Status: SiteBuilderOperationStatus.Invalid, Value.Status: DraftDiscardStatus.OnlyCopy }),
             dryRun);
 

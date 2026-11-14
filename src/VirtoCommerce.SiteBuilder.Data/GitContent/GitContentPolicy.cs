@@ -99,12 +99,13 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
                 var name = repository[(repository.IndexOf('/') + 1)..];
                 if (!RepositoryPattern.IsMatch(repository) || name is "." or "..")
                 {
-                    throw new GitContentException($"\"{repositorySetting}\" is not a GitHub repository in \"owner/name\" form.");
+                    throw new GitContentException($"\"{repositorySetting}\" is not a GitHub repository in \"owner/name\" form.", GitContentFailureKind.NotConfigured);
                 }
 
                 if (!IsAllowedRepository(connection, repository))
                 {
-                    throw new GitContentException($"\"{repository}\" is not a repository this platform may use. List it in {GitContentOptions.SectionName}:{nameof(GitContentOptions.AllowedRepositories)}.");
+                    throw new GitContentException($"\"{repository}\" is not a repository this platform may use. List it in {GitContentOptions.SectionName}:{nameof(GitContentOptions.AllowedRepositories)}.",
+                        GitContentFailureKind.NotConfigured);
                 }
 
                 return new StoreRepository(repository, GitRepositorySource.StoreSetting);
@@ -149,7 +150,7 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
             // the blob flow would publish an opted-in store's pages straight to production
             if (connection.IsEnabled && !string.IsNullOrEmpty(connection.Error) && (await ReadStoreSettingsAsync(storeId)).IsEnabled)
             {
-                throw new GitContentException(connection.Error);
+                throw new GitContentException(connection.Error, GitContentFailureKind.NotConfigured);
             }
 
             return null;

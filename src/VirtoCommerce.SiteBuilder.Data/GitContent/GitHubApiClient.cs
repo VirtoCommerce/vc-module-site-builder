@@ -276,11 +276,11 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
         }
         catch (HttpRequestException ex)
         {
-            throw new GitContentException($"GitHub request to {operation} failed: {ex.Message}", ex);
+            throw new GitContentException($"GitHub request to {operation} failed: {ex.Message}", GitContentFailureKind.Unreachable, ex);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new GitContentException($"GitHub request to {operation} failed: {ex.Message}", ex);
+            throw new GitContentException($"GitHub request to {operation} failed: {ex.Message}", GitContentFailureKind.Unreachable, ex);
         }
     }
 
@@ -333,8 +333,18 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
             details = details[..MaxErrorDetailsLength];
         }
 
-        return new GitContentException($"GitHub request to {operation} failed: {(int)response.StatusCode} {response.ReasonPhrase}. {details}");
+        return new GitContentException($"GitHub request to {operation} failed: {(int)response.StatusCode} {response.ReasonPhrase}. {details}",
+            GetFailureKind(response.StatusCode));
     }
+
+    // 404 is how GitHub answers a repository the App cannot see, as well as one that does not exist.
+    public static GitContentFailureKind GetFailureKind(HttpStatusCode statusCode) => statusCode switch
+    {
+        HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound => GitContentFailureKind.NoAccess,
+        HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests => GitContentFailureKind.Unreachable,
+        >= HttpStatusCode.InternalServerError => GitContentFailureKind.Unreachable,
+        _ => GitContentFailureKind.Unknown,
+    };
 
     public static StringContent CreateJsonContent(JObject body)
     {

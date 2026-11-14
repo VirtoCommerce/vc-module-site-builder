@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Security.Claims;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -28,7 +29,8 @@ public class HistoryTools(
     IValidator<ContentHistoryRequest> requestValidator,
     IGroupedPageService groupedPageService,
     IContentPermissionService contentPermissionService,
-    ISiteBuilderContentQueryService contentQueryService)
+    ISiteBuilderContentQueryService contentQueryService,
+    ILogger<HistoryTools> logger)
 {
     [McpServerTool(Name = "list_versions", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
@@ -116,7 +118,7 @@ public class HistoryTools(
             throw new McpException("A page stored as a file has a history of its own, apart from the theme: call list_versions once for each.");
         }
 
-        return await FilePageVersions.ListAsync(contentQueryService, user, page, cursor, take, cancellationToken);
+        return await FilePageVersions.ListAsync(contentQueryService, logger, user, page, cursor, take, cancellationToken);
     }
 
     private static List<string> GetItems(string pageId, string[] themeFiles)

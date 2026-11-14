@@ -10,6 +10,7 @@ using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
+using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -142,6 +143,24 @@ public sealed class FilePageListAndHistoryToolTests : IAsyncDisposable
         Assert.Equal(["c4"], third.Versions.Select(x => x.VersionId));
         Assert.Equal("Y3Vyc29y", _lastHistoryQuery.After);
         Assert.Null(third.NextCursor);
+    }
+
+    // The message names the repository and carries GitHub's own text; a reader gets a sentence by the kind of failure.
+    [Theory]
+    [InlineData(GitContentFailureKind.NotConfigured, GitContentFailures.NotConfigured)]
+    [InlineData(GitContentFailureKind.Unreachable, GitContentFailures.Unreachable)]
+    [InlineData(GitContentFailureKind.NoAccess, GitContentFailures.NoAccess)]
+    [InlineData(GitContentFailureKind.Unknown, GitContentFailures.Unknown)]
+    public async Task OnGit_AFailingRepository_IsDescribedByTheKindOfFailure_NotByItsMessage(GitContentFailureKind kind, string sentence)
+    {
+        UseGitHistory(_ => throw new GitContentException("GitHub request to read acme/secret-site failed: 403 Bad credentials", kind));
+
+        var result = await _context.CallAsync(Reader("editor"), VersionsTool, new { store_id = StoreA, page_id = PageId });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.StartsWith(sentence, result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-site", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bad credentials", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]

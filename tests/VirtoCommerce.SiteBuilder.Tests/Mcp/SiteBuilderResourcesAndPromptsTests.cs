@@ -19,6 +19,9 @@ using VirtoCommerce.MCP.Core.Extensions;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.Platform.Core;
 using VirtoCommerce.Platform.Core.Settings;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.MCP;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
 using CustomerPermissions = VirtoCommerce.CustomerModule.Core.ModuleConstants.Security.Permissions;
@@ -122,6 +125,18 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
 
         Assert.Equal("en-US", settings.GetProperty("default_language").GetString());
         Assert.StartsWith("Not available:", settings.GetProperty("publication_flow_note").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheStoreSettings_SayTheKindOfARepositoryFailure_NotItsMessage()
+    {
+        _context.PublishStatuses
+            .Setup(x => x.GetFilePageStatusAsync(It.IsAny<SiteBuilderFilePageQueryRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ThrowsAsync(new GitContentException("The GitHub App 42 is not installed on \"acme\".", GitContentFailureKind.NoAccess));
+
+        var settings = await ReadAsync(McpTestUser.Create("settings").WithPermissions(Permissions.Read, SettingQuery), "site-builder://stores/store-a/settings");
+
+        Assert.Equal($"Not available. {GitContentFailures.NoAccess}", settings.GetProperty("publication_flow_note").GetString());
     }
 
     [Fact]
