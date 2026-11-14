@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -8,6 +9,8 @@ using Newtonsoft.Json.Linq;
 using VirtoCommerce.ContentModule.Core.Model;
 using VirtoCommerce.ContentModule.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
@@ -100,6 +103,110 @@ public class BlobPublishTests
         Assert.IsType<BadRequestObjectResult>(await Controller(publishing).GitPublish("vccom", path, "pages"));
 
         Assert.Empty(publishing.Calls);
+    }
+
+    [Fact]
+    public async Task PublishOperation_DryRun_TellsTheVersionOfTheDraft()
+    {
+        var live = Live(draft: "{\"v\":2}");
+        var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+
+        var result = await Operations(new RecordingPublishingService(), live).PublishAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderContentVersion.CreateForFileContent("{\"v\":2}"), Assert.Single(result.Preview.Objects).ETag);
+    }
+
+    [Fact]
+    public async Task PublishOperation_TheReviewedDraft_IsPublished()
+    {
+        var publishing = new RecordingPublishingService();
+        var request = new FilePagePublishOperationRequest
+        {
+            StoreId = "s1", ContentType = "pages", Path = Page, ExpectedContentVersion = SiteBuilderContentVersion.CreateForFileContent("{\"v\":2}"),
+        };
+
+        var result = await Operations(publishing, Live(draft: "{\"v\":2}")).PublishAsync(request, User, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(("pages", "s1", Page, true), Assert.Single(publishing.Calls));
+    }
+
+    [Fact]
+    public async Task PublishOperation_DraftSavedSinceTheReview_IsAConflictAndPublishesNothing()
+    {
+        var publishing = new RecordingPublishingService();
+        var live = Live(draft: "{\"v\":2}");
+        var operations = Operations(publishing, live);
+        var reviewed = (await operations.PublishAsync(new FilePagePublishOperationRequest
+        {
+            StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true,
+        }, User, Ct)).Preview.Objects[0].ETag;
+        live.Files[$"pages/s1/{Page}-draft"] = "{\"v\":3}";
+        var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedContentVersion = reviewed };
+
+        var result = await operations.PublishAsync(request, User, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
+        Assert.Empty(publishing.Calls);
+    }
+
+    [Fact]
+    public async Task UnpublishOperation_PublishedPageChangedSinceTheReview_IsAConflictAndUnpublishesNothing()
+    {
+        var publishing = new RecordingPublishingService();
+        var live = Live(draft: null);
+        var reviewed = SiteBuilderContentVersion.CreateForFileContent(live.Files[$"pages/s1/{Page}"]);
+        live.Files[$"pages/s1/{Page}"] = "{\"v\":9}";
+        var request = new FilePageShipOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedContentVersion = reviewed };
+
+        var result = await Operations(publishing, live).UnpublishAsync(request, User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Empty(publishing.Calls);
+    }
+
+    [Fact]
+    public async Task UnpublishOperation_ThePublishedPageReviewed_IsUnpublished_WhateverTheDraftHolds()
+    {
+        var publishing = new RecordingPublishingService();
+        var live = Live(draft: "{\"v\":2}");
+        var request = new FilePageShipOperationRequest
+        {
+            StoreId = "s1", ContentType = "pages", Path = Page, ExpectedContentVersion = SiteBuilderContentVersion.CreateForFileContent(live.Files[$"pages/s1/{Page}"]),
+        };
+
+        var result = await Operations(publishing, live).UnpublishAsync(request, User, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(("pages", "s1", Page, false), Assert.Single(publishing.Calls));
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, "john")], "test"));
+
+    private static FakeBlobStorage Live(string draft)
+    {
+        var live = new FakeBlobStorage();
+        live.Files[$"pages/s1/{Page}"] = "{\"v\":1}";
+        if (draft != null)
+        {
+            live.Files[$"pages/s1/{Page}-draft"] = draft;
+        }
+
+        return live;
+    }
+
+    private static FilePageOperationService Operations(RecordingPublishingService publishing, FakeBlobStorage live)
+    {
+        var options = Options.Create(new GitContentOptions());
+        var connection = GitHubConnections.CreateService(options.Value);
+        var policy = new FakeGitContentPolicy(enabled: false);
+        var drafts = TestServices.FilePageDrafts(options, connection, policy, null, null, new FakeGitContentProvisioner(), live.StoreService, live, live, publishing, live);
+        var validator = new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(live.StoreService), new SiteBuilderContentFileValidator());
+
+        return TestServices.FilePageOperations(new FakeAuthorizationService(true), validator, options, connection, policy, gitContentRepository: null,
+            filePageDraftService: drafts, publishingService: publishing);
     }
 
     private static SiteBuilderController Controller(RecordingPublishingService publishing, bool allowed = true)

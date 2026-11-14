@@ -163,7 +163,7 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<MultilanguagePage>> Convert([FromRoute] string groupId, CancellationToken cancellationToken = default)
     {
-        var request = new GroupedPageOperationRequest { GroupId = groupId };
+        var request = new MultilanguagePageVersionOperationRequest { GroupId = groupId };
 
         return (await multilanguagePageOperationService.ConvertAsync(request, User, cancellationToken)).ToPageActionResult();
     }
@@ -175,7 +175,7 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> MarkUpToDate([FromRoute] string groupId, CancellationToken cancellationToken = default)
     {
-        var request = new GroupedPageOperationRequest { GroupId = groupId };
+        var request = new MultilanguagePageMarkUpToDateOperationRequest { GroupId = groupId };
 
         return (await multilanguagePageOperationService.MarkUpToDateAsync(request, User, cancellationToken)).ToPageActionResult();
     }
@@ -187,7 +187,7 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> Unlink([FromRoute] string groupId, CancellationToken cancellationToken = default)
     {
-        var request = new GroupedPageOperationRequest { GroupId = groupId };
+        var request = new MultilanguagePageVersionOperationRequest { GroupId = groupId };
 
         return (await multilanguagePageOperationService.UnlinkAsync(request, User, cancellationToken)).ToPageActionResult();
     }

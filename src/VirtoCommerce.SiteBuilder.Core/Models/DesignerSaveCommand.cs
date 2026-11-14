@@ -15,6 +15,9 @@ public class DesignerSaveCommand
 
     public SiteBuilderContentFile FilePage { get; set; }
 
+    /// <summary>The version the draft of <see cref="FilePage"/> has to be at; <c>null</c> saves over whatever it holds.</summary>
+    public string FilePageVersion { get; set; }
+
     public IList<DesignerSaveFile> ThemeFiles { get; set; } = [];
 
     /// <summary>The section schema catalog the designer previewed; without it the content is checked without a schema.</summary>

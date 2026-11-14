@@ -388,6 +388,82 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Empty(history.Invalidated);
         }
 
+        [Fact]
+        public async Task RestoreOperation_AtTheReviewedVersionOfTheDraft_Commits()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            var reviewed = await ReviewAsync(repository);
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderContentVersion.CreateForFileContent(Published), reviewed);
+            Assert.True(result.Succeeded);
+            Assert.Equal(MyBranch, Assert.Single(repository.Commits).Branch);
+        }
+
+        [Fact]
+        public async Task RestoreOperation_DraftSavedSinceTheReview_IsAConflictAndCommitsNothing()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            var reviewed = await ReviewAsync(repository);
+            repository.BranchHeads[MyBranch] = "7333333333333333333333333333333333333333";
+            repository.Files[(RepoPath, MyBranch)] = Saved;
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftChangedMessage), (result.Status, result.Error));
+            Assert.Empty(repository.Commits);
+        }
+
+        [Fact]
+        public async Task RestoreOperation_PublishedPageChangedSinceTheReview_IsAConflictAndCutsNoBranch()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            var reviewed = await ReviewAsync(repository);
+            repository.Files[(RepoPath, "master")] = Saved;
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+            AssertNothingWritten(repository);
+        }
+
+        /// <summary>Where the plain commit refreshes a stale file and writes over it, a restore of a reviewed draft is refused instead.</summary>
+        [Fact]
+        public async Task RestoreOperation_ASaveBetweenTheComparisonAndTheCommit_IsAConflictWithoutARetry()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            repository.BranchHeads[MyBranch] = "7222222222222222222222222222222222222222";
+            repository.Files[(RepoPath, MyBranch)] = Published;
+            var reviewed = await ReviewAsync(repository);
+            repository.BeforeConditionalWrite = () => repository.Files[(RepoPath, MyBranch)] = Saved;
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+            Assert.Empty(repository.Commits);
+            Assert.Equal(Saved, repository.Files[(RepoPath, MyBranch)]);
+        }
+
+        private const string Published = """{ "settings": { "type": "settings", "name": "Published" }, "content": [] }""";
+
+        private const string Saved = """{ "settings": { "type": "settings", "name": "Saved meanwhile" }, "content": [] }""";
+
+        private static async Task<string> ReviewAsync(RecordingRepository repository)
+        {
+            var dryRun = Restore(expectedVersion: null);
+            dryRun.DryRun = true;
+
+            return Assert.Single((await Operations(repository, new RecordingHistory()).RestoreVersionAsync(dryRun, User, CancellationToken.None)).Preview.Objects).ETag;
+        }
+
+        private static FilePageRestoreVersionOperationRequest Restore(string expectedVersion) =>
+            new() { StoreId = "vccom", ContentType = "pages", Path = Page, Sha = Sha, ExpectedContentVersion = expectedVersion };
+
         private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test"));
 
         private static FilePageOperationService Operations(RecordingRepository repository, RecordingHistory history)
@@ -546,6 +622,28 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 Repositories.Add(repository);
                 DeletedFiles.Add((path, branch));
                 return Task.FromResult(NewCommitSha);
+            }
+
+            /// <summary>A commit of someone else that lands between the comparison and the write.</summary>
+            public Action BeforeConditionalWrite { get; set; }
+
+            // GitHub refuses a write that names a file the branch no longer holds.
+            public async Task<string> CommitFileIfUnchangedAsync(string repository, string path, string content, string branch, string message,
+                GitCommitAuthor author, Func<string, Task<bool>> isExpected, CancellationToken cancellationToken = default)
+            {
+                var compared = Files.GetValueOrDefault((path, branch));
+                if (!await isExpected(compared))
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+                }
+
+                BeforeConditionalWrite?.Invoke();
+                if (Files.GetValueOrDefault((path, branch)) != compared)
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+                }
+
+                return await CommitFileAsync(repository, path, content, branch, message, author, cancellationToken);
             }
         }
         /// <summary>

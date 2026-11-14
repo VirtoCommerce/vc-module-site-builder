@@ -435,6 +435,97 @@ public class GroupedPageOperationServiceTests
         Assert.Equal(DraftContent, await _pages.LoadContent("draft-only-draft", Ct));
     }
 
+    [Fact]
+    public async Task UpdateAsync_DryRun_TellsTheVersionOfTheSettings()
+    {
+        var stored = await GetAsync("live");
+        var model = await GetAsync("live");
+        model.Permalink = "/start";
+
+        var result = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, DryRun = true }, _user, Ct);
+
+        Assert.Equal(SiteBuilderContentVersion.CreateForGroupSettings(stored), Assert.Single(result.Preview.Objects).ETag);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AtTheReviewedSettingsVersion_Saves()
+    {
+        var model = await GetAsync("live");
+        model.Permalink = "/start";
+        var request = new GroupedPageSaveOperationRequest { Page = model, ExpectedSettingsVersion = SiteBuilderContentVersion.CreateForGroupSettings(await GetAsync("live")) };
+
+        var result = await Operations().UpdateAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("/start", (await GetAsync("live")).Permalink);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_SettingsChangedByAColleagueUnderTheLock_IsAConflictAndKeepsTheirChange()
+    {
+        var model = await GetAsync("live");
+        model.Permalink = "/start";
+        var request = new GroupedPageSaveOperationRequest { Page = model, ExpectedSettingsVersion = SiteBuilderContentVersion.CreateForGroupSettings(await GetAsync("live")) };
+        _pages.UnderLock = () => _pages.ChangeGroup("live", x => x.UserGroups = "staff");
+
+        var result = await Operations().UpdateAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        var stored = await GetAsync("live");
+        Assert.Equal(("/home", "staff"), (stored.Permalink, stored.UserGroups));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RequireUnpublished_OfAPublishedPage_IsAConflictAndWritesNothing()
+    {
+        var model = await GetAsync("live");
+        model.Permalink = "/start";
+
+        var result = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, RequireUnpublished = true }, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PublishedPageMessage), (result.Status, result.Error));
+        Assert.Equal("/home", (await GetAsync("live")).Permalink);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RequireUnpublished_PagePublishedUnderTheLock_IsAConflictAndWritesNothing()
+    {
+        var model = await GetAsync("draft-only");
+        model.Permalink = "/sales";
+        _pages.UnderLock = () => _pages.ChangeGroup("draft-only", x => x.Pages[0].Status = Published);
+
+        var result = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, RequireUnpublished = true }, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal("/sale", (await GetAsync("draft-only")).Permalink);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RequireUnpublished_OfAPageNeverPublished_Saves()
+    {
+        var model = await GetAsync("draft-only");
+        model.Permalink = "/sales";
+
+        var result = await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, RequireUnpublished = true }, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("/sales", (await GetAsync("draft-only")).Permalink);
+    }
+
+    [Fact]
+    public async Task DiscardDraftAsync_DraftSavedUnderTheLock_IsAConflictAndKeepsTheSave()
+    {
+        var request = new GroupedPageDiscardOperationRequest { GroupId = "edited", ExpectedDraftVersion = await ETagAsync("edited") };
+        _pages.UnderLock = () => _pages.SeedContent("edited-draft", EditedContent);
+
+        var result = await Operations().DiscardDraftAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal(EditedContent, await _pages.LoadContent("edited-draft", Ct));
+        Assert.Equal(2, (await GetAsync("edited")).Pages.Count);
+        Assert.Empty(_history.Records);
+    }
+
     private GroupedPageOperationService Operations(IAuthorizationService authorization = null)
     {
         authorization ??= new FakeAuthorizationService("s1");

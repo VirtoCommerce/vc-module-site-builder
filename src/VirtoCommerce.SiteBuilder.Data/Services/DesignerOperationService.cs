@@ -300,6 +300,7 @@ public class DesignerOperationService(
         command.PageContent = page?.Content;
         command.PageETag = page?.ETag?.Trim();
         command.FilePage = files.FirstOrDefault(x => !IsThemeFile(x));
+        command.FilePageVersion = request.ExpectedFilePageVersion;
         command.ThemeFiles = themeFiles;
         command.CatalogHash = request.CatalogHash;
 

@@ -123,7 +123,7 @@ public class MultilanguagePageOperationServiceTests
         var landing = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/over-ons", draftContent: Content);
         await fixture.PublishNewDraftAsync(landing.Id, content: null);
 
-        var result = await Operations(fixture).ConvertAsync(new GroupedPageOperationRequest { GroupId = landing.Id, DryRun = true }, _user, Ct);
+        var result = await Operations(fixture).ConvertAsync(new MultilanguagePageVersionOperationRequest { GroupId = landing.Id, DryRun = true }, _user, Ct);
 
         Assert.True(result.AffectsPublished);
         Assert.Equal([ModuleConstants.ChangePreview.MultilanguagePage, ModuleConstants.ChangePreview.Page], result.Preview.Objects.Select(x => x.ObjectType));
@@ -137,7 +137,7 @@ public class MultilanguagePageOperationServiceTests
         await using var fixture = await Fixture.CreateAsync();
         var landing = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/over-ons", draftContent: Content);
 
-        var result = await Operations(fixture).ConvertAsync(new GroupedPageOperationRequest { GroupId = landing.Id }, _user, Ct);
+        var result = await Operations(fixture).ConvertAsync(new MultilanguagePageVersionOperationRequest { GroupId = landing.Id }, _user, Ct);
 
         Assert.Equal((true, false), (result.Succeeded, result.AffectsPublished));
         Assert.Equal(result.Value.Id, (await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
@@ -290,7 +290,7 @@ public class MultilanguagePageOperationServiceTests
         var version = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
         await fixture.PublishNewDraftAsync(version.Id, content: null);
 
-        var result = await Operations(fixture).UnlinkAsync(new GroupedPageOperationRequest { GroupId = version.Id, DryRun = true }, _user, Ct);
+        var result = await Operations(fixture).UnlinkAsync(new MultilanguagePageVersionOperationRequest { GroupId = version.Id, DryRun = true }, _user, Ct);
 
         Assert.True(result.AffectsPublished);
         Assert.Equal(root.Id, (await fixture.LoadGroupAsync(version.Id)).MultilanguagePageId);
@@ -312,7 +312,7 @@ public class MultilanguagePageOperationServiceTests
             .Returns((string groupId, CancellationToken cancellationToken) => fixture.Roots.UnlinkAsync(groupId, cancellationToken));
         var operations = new MultilanguagePageOperationService(new FakeAuthorizationService(StoreId), roots.Object, fixture.Groups, fixture.StoreService);
 
-        var result = await operations.UnlinkAsync(new GroupedPageOperationRequest { GroupId = version.Id, ReportImpact = reportImpact }, _user, Ct);
+        var result = await operations.UnlinkAsync(new MultilanguagePageVersionOperationRequest { GroupId = version.Id, ReportImpact = reportImpact }, _user, Ct);
 
         Assert.Equal((true, reportImpact), (result.Succeeded, result.AffectsPublished));
         roots.Verify(x => x.PreviewUnlinkAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), reportImpact ? Times.Once() : Times.Never());

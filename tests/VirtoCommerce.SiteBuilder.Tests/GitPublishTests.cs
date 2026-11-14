@@ -56,6 +56,10 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
         private static string MarysBranch => GitPageLocation.BranchFor("designer/{user}/{slug}", "mary", "about-us.page");
 
+        private static string MyPublishBranch => GitPageLocation.BranchFor("publish/{user}/{slug}", Login, "about-us.page");
+
+        private static string MarysPublishBranch => GitPageLocation.BranchFor("publish/{user}/{slug}", "mary", "about-us.page");
+
         [Fact]
         public async Task Publish_MergesTheEditorsBranchIntoTheBaseBranch()
         {
@@ -558,9 +562,10 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Equal((MarysBranch, MarysHead), (change.DraftBranch, change.DraftHead));
             Assert.Equal(LastWeek, change.Fields.Single(x => x.Name == ModuleConstants.ChangePreview.Content).To);
             Assert.True(result.Succeeded);
-            Assert.Equal((MarysBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal((MarysPublishBranch, MarysHead), Assert.Single(repository.MovedBranches));
+            Assert.Equal((MarysPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal([MarysPublishBranch, MarysBranch], repository.DeletedBranches);
             Assert.Equal(Draft, repository.Files[(RepoPath, MyBranch)]);
-            Assert.DoesNotContain(MyBranch, repository.DeletedBranches);
         }
 
         [Theory]
@@ -589,15 +594,61 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         [Fact]
-        public async Task PublishOperation_AtTheReviewedHead_Merges()
+        public async Task PublishOperation_AtTheReviewedHead_ShipsThatCommitFromThePublishBranch_AndCleansBothUp()
         {
+            var repository = Repository();
             var publisher = Publisher(GitPublishState.Merged);
             var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = DraftHead };
 
-            var result = await Operations(Repository(), publisher).PublishAsync(request, User, CancellationToken.None);
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
 
             Assert.True(result.Succeeded);
-            Assert.Equal((MyBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal((MyPublishBranch, DraftHead), Assert.Single(repository.MovedBranches));
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal([MyPublishBranch, MyBranch], repository.DeletedBranches);
+        }
+
+        /// <summary>
+        /// GitHub merges a branch wherever it is when the checks pass: an edit committed to the draft branch after the approval must not
+        /// ride along. The pull request is from the publish branch, which stays at the commit approved, and the draft branch keeps the edit.
+        /// </summary>
+        [Theory]
+        [InlineData(GitPublishState.Pending)]
+        [InlineData(GitPublishState.Merged)]
+        public async Task PublishOperation_AtTheReviewedHead_ACommitMadeWhileTheMergeWaits_IsNotShippedAndIsKept(GitPublishState state)
+        {
+            var repository = Repository();
+            var publisher = Publisher(state);
+            publisher.OnMerge = () =>
+            {
+                repository.BranchHeads[MyBranch] = MovedHead;
+                repository.Files[(RepoPath, MyBranch)] = LastWeek;
+            };
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = DraftHead };
+
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal((MyPublishBranch, DraftHead), Assert.Single(repository.MovedBranches));
+            Assert.Equal(state == GitPublishState.Merged, repository.DeletedBranches.Contains(MyPublishBranch));
+            Assert.DoesNotContain(MyBranch, repository.DeletedBranches);
+            Assert.Equal((MovedHead, LastWeek), (repository.BranchHeads[MyBranch], repository.Files[(RepoPath, MyBranch)]));
+        }
+
+        [Fact]
+        public async Task PublishOperation_AtTheReviewedHead_WithRebase_ShipsTheCommitTheRebaseMade()
+        {
+            var repository = Repository();
+            var publisher = Publisher(GitPublishState.Pending);
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, Rebase = true, ExpectedDraftHead = DraftHead };
+
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal([(MyBranch, BaseHead), (MyPublishBranch, RecordingRepository.NewCommitSha)], repository.MovedBranches);
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Empty(repository.DeletedBranches);
         }
 
         [Fact]

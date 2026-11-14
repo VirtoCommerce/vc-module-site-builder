@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.Pages.Core.Models;
@@ -227,6 +228,62 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 await SaveChangesAsync([group]);
             }
 
+            public async Task SaveGroupSettingsAsync(GroupedSiteBuilderPage group, GroupedPageSaveCondition condition,
+                CancellationToken cancellationToken = default)
+            {
+                CheckCondition(group, condition);
+                await SaveGroupSettingsAsync(group, cancellationToken);
+            }
+
+            public Task SaveGroupAsync(GroupedSiteBuilderPage group, GroupedPageSaveCondition condition, CancellationToken cancellationToken = default)
+            {
+                CheckCondition(group, condition);
+                return SaveChangesAsync([group]);
+            }
+
+            public async Task<IList<string>> DeleteDraftsAtVersionAsync(GroupedSiteBuilderPage group, string expectedETag,
+                CancellationToken cancellationToken = default)
+            {
+                UnderLock?.Invoke();
+                var current = _groups.GetValueOrDefault(group.Id ?? "");
+                var drafts = current?.Pages.Where(x => x.Status == Draft).Select(x => x.Id).ToList() ?? [];
+                var snapshot = drafts.Count == 0 ? null : await LoadGroupContentAsync(current, cancellationToken: cancellationToken);
+                if (snapshot?.ETag != expectedETag)
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
+                }
+                await DeleteAsync(drafts);
+                return drafts;
+            }
+
+            /// <summary>Runs where the real service holds the lock of the save and reads what it compares: a change made here is a concurrent one.</summary>
+            internal Action UnderLock { get; set; }
+
+            // As GroupedPageService checks it under the lock of the save.
+            private void CheckCondition(GroupedSiteBuilderPage group, GroupedPageSaveCondition condition)
+            {
+                UnderLock?.Invoke();
+                var stored = _groups.TryGetValue(group.Id ?? "", out var existing) ? DeepClone(existing) : null;
+                if (condition.ExpectedSettingsVersion != null &&
+                    (stored == null || SiteBuilderContentVersion.CreateForGroupSettings(stored) != condition.ExpectedSettingsVersion.Trim()))
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
+                }
+
+                var preview = new SiteBuilderChangePreview();
+                preview.AddPage(stored, group);
+                if (condition.RequireUnpublished && preview.AffectsPublished)
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PublishedPageMessage);
+                }
+
+                if (condition.SourceGroupId != null &&
+                    _groups.GetValueOrDefault(condition.SourceGroupId)?.SourceRevisionDate != condition.ExpectedSourceRevisionDate)
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
+                }
+            }
+
             private readonly Dictionary<string, GroupedSiteBuilderPage> _groups = new();
             private readonly Dictionary<string, string> _content = new();
             private int _idSeq;
@@ -238,6 +295,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
             public void SeedGroup(GroupedSiteBuilderPage group) => _groups[group.Id] = DeepClone(group);
             public void SeedContent(string pageId, string content) => _content[pageId] = content;
+
+            /// <summary>A change of the stored group behind the back of whoever read it.</summary>
+            public void ChangeGroup(string groupId, Action<GroupedSiteBuilderPage> change) => change(_groups[groupId]);
 
             public Task<IList<GroupedSiteBuilderPage>> GetAsync(IList<string> ids, string responseGroup = null, bool clone = true)
             {

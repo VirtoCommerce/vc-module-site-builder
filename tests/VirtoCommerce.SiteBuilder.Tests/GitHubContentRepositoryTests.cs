@@ -9,6 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.GitContent;
 using Xunit;
 
@@ -395,6 +396,67 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Equal(Sha, commit);
             // read back without another request: none is scripted
             Assert.Equal("{}", await repository.ReadFileAsync("o/r", "pages/foo.page", "work", TestContext.Current.CancellationToken));
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task CommitFileIfUnchangedAsync_TheExpectedFile_PutsWithItsSha()
+        {
+            string compared = null;
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("file-sha", "{ \"a\": 1 }"))),
+                ("PUT", "repos/o/r/contents/pages/foo.page", body =>
+                {
+                    Assert.Equal("file-sha", JObject.Parse(body)["sha"]?.Value<string>());
+                    return RespondJson(CommitPayload());
+                }));
+
+            await Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author,
+                current => Task.FromResult((compared = current) == "{ \"a\": 1 }"), TestContext.Current.CancellationToken);
+
+            Assert.Equal("{ \"a\": 1 }", compared);
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task CommitFileIfUnchangedAsync_AnotherFile_IsAConflictAndPutsNothing()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("file-sha", "{ \"a\": 2 }"))));
+
+            await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() => Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}",
+                "work", "msg", Author, current => Task.FromResult(current == "{ \"a\": 1 }"), TestContext.Current.CancellationToken));
+            handler.AssertDone(); // no PUT in the script
+        }
+
+        /// <summary>A commit between the read and the write is refused by GitHub, and the stale file is never read again and written over.</summary>
+        [Theory]
+        [InlineData(HttpStatusCode.Conflict)]
+        [InlineData(HttpStatusCode.UnprocessableEntity)]
+        public async Task CommitFileIfUnchangedAsync_FileChangedBeforeThePut_IsAConflictWithoutARetry(HttpStatusCode refusal)
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("stale", "{ \"a\": 1 }"))),
+                ("PUT", "repos/o/r/contents/pages/foo.page", _ => Respond(refusal)));
+
+            await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() => Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}",
+                "work", "msg", Author, _ => Task.FromResult(true), TestContext.Current.CancellationToken));
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task CommitFileIfUnchangedAsync_NoFileExpectedAndNone_CreatesItWithoutASha()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => Respond(HttpStatusCode.NotFound)),
+                ("PUT", "repos/o/r/contents/pages/foo.page", body =>
+                {
+                    Assert.Null(JObject.Parse(body)["sha"]);
+                    return RespondJson(CommitPayload());
+                }));
+
+            await Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author,
+                current => Task.FromResult(current == null), TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -74,6 +75,19 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// </summary>
         /// <returns>The sha of the resulting commit.</returns>
         Task<string> CommitFileAsync(string repository, string path, string content, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Creates or updates the file on an existing branch only over the file as the caller knows it: <paramref name="isExpected"/> is asked
+        /// about what the branch holds (<c>null</c> for no such file), and the commit names that file, so a write made in between fails it
+        /// instead of being written over. Unlike <see cref="CommitFileAsync"/> a stale file is never read again and retried.
+        /// </summary>
+        /// <returns>The sha of the resulting commit, or of the branch head when it already holds exactly <paramref name="content"/>.</returns>
+        /// <exception cref="Models.SiteBuilderContentConflictException">The file is not the one expected, or changed before the commit.</exception>
+        [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+            Justification = "The parameters of CommitFileAsync and the comparison: a parameter object would set this commit apart from every other one here.")]
+        Task<string> CommitFileIfUnchangedAsync(string repository, string path, string content, string branch, string message, GitCommitAuthor author,
+            Func<string, Task<bool>> isExpected, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException($"{GetType().Name} does not commit a file conditionally.");
 
         /// <summary>
         /// Removes the file on the branch. Unpublishing a page is deleting it from the production

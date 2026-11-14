@@ -74,7 +74,7 @@ public class FilePageOperationService(
         var storeRepository = await gitContentPolicy.GetRepositoryInfoAsync(storeId, cancellationToken);
         if (storeRepository == null)
         {
-            return await PublishInBlobStorageAsync(request);
+            return await PublishInBlobStorageAsync(request, cancellationToken);
         }
 
         var location = GetDraftLocation(storeRepository.Name, request, user);
@@ -101,11 +101,19 @@ public class FilePageOperationService(
         return await MergeDraftAsync(storeRepository, location, draft, request, user, cancellationToken);
     }
 
-    private async Task<SiteBuilderOperationResult<FilePageShipment>> PublishInBlobStorageAsync(FilePagePublishOperationRequest request)
+    private async Task<SiteBuilderOperationResult<FilePageShipment>> PublishInBlobStorageAsync(FilePagePublishOperationRequest request,
+        CancellationToken cancellationToken)
     {
         if (request.DryRun)
         {
-            return DryRunShipment(CreateBlobPublishingPreview(request.Path, Draft, Published, "Publishes the draft in blob storage."));
+            var preview = CreateBlobPublishingPreview(request.Path, Draft, Published, "Publishes the draft in blob storage.");
+            preview.Objects[0].ETag = await GetBlobContentVersionAsync(request, draft: true, cancellationToken);
+            return DryRunShipment(preview);
+        }
+
+        if (await CheckBlobContentVersionAsync(request, draft: true, cancellationToken) is { } changed)
+        {
+            return changed.As<FilePageShipment>();
         }
 
         // the switch is off for this store: publish means what it always meant
@@ -123,15 +131,17 @@ public class FilePageOperationService(
             return moved.As<FilePageShipment>();
         }
 
+        // the commit approved, or the one the rebase makes of the draft approved
+        var pinnedHead = request.ExpectedDraftHead?.Trim();
         if (request.Rebase)
         {
-            await RebaseDraftAsync(location, draft, path, storeId, user, cancellationToken);
+            var rebased = await RebaseDraftAsync(location, draft, path, storeId, user, cancellationToken);
+            pinnedHead = pinnedHead == null ? null : rebased;
         }
 
-        var result = await gitContentPublisher.MergeBranchAsync(location.Repository, location.Branch, $"publish {path} (store: {storeId})", cancellationToken);
-
-        var shipment = await RespondToPublishAsync(result, location, path, canRebase: true, cancellationToken);
-        if (storeRepository.IsPlatformManaged && result.State is GitPublishState.Merged or GitPublishState.AlreadyPublished)
+        var shipment = await ShipDraftAsync(location, GetPublishBranch(request, user), pinnedHead, $"publish {path} (store: {storeId})", path,
+            canRebase: true, cancellationToken);
+        if (storeRepository.IsPlatformManaged && shipment.State is GitPublishState.Merged or GitPublishState.AlreadyPublished)
         {
             await SyncPublishedLivePageAsync(storeId, type, path, location, cancellationToken);
         }
@@ -221,7 +231,8 @@ public class FilePageOperationService(
     /// for a moment, so the branch would keep its old merge base and meet the same conflict again.
     /// </para>
     /// </summary>
-    protected virtual async Task RebaseDraftAsync(GitPageFileLocation location, string draft, string path, string storeId, ClaimsPrincipal user,
+    /// <returns>The commit of the draft on top of the base branch, which the branch is at now.</returns>
+    protected virtual async Task<string> RebaseDraftAsync(GitPageFileLocation location, string draft, string path, string storeId, ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
         var baseBranch = await GetBaseBranchAsync(cancellationToken);
@@ -238,7 +249,7 @@ public class FilePageOperationService(
 
             var author = GetCurrentAuthor(user);
             var message = GetCommitMessage($"designer: publish {path} on top of {baseBranch}, replacing what changed there since this draft began (store: {storeId}, by: {author.Name})", user);
-            await gitContentRepository.CommitFileAsync(location.Repository, location.RepoPath, draft, location.Branch, message, author, cancellationToken);
+            return await gitContentRepository.CommitFileAsync(location.Repository, location.RepoPath, draft, location.Branch, message, author, cancellationToken);
         }
         catch (Exception failure) when (draftHead != null)
         {
@@ -291,7 +302,7 @@ public class FilePageOperationService(
         var storeRepository = await gitContentPolicy.GetRepositoryInfoAsync(storeId, cancellationToken);
         if (storeRepository == null)
         {
-            return await UnpublishInBlobStorageAsync(request);
+            return await UnpublishInBlobStorageAsync(request, cancellationToken);
         }
 
         var baseBranch = await GetBaseBranchAsync(cancellationToken);
@@ -314,12 +325,13 @@ public class FilePageOperationService(
             return moved.As<FilePageShipment>();
         }
 
-        await CommitUnpublishAsync(location, baseBranch, storeId, path, user, cancellationToken);
+        var committed = await CommitUnpublishAsync(location, baseBranch, storeId, path, user, cancellationToken);
 
-        var result = await gitContentPublisher.MergeBranchAsync(location.Repository, location.Branch, $"unpublish {path} (store: {storeId})", cancellationToken);
-
-        var shipment = await RespondToPublishAsync(result, location, path, canRebase: false, cancellationToken);
-        if (result.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
+        // the deletion committed on top of the commit approved, not whatever the branch holds once the checks pass
+        var pinnedHead = request.ExpectedDraftHead == null ? null : committed;
+        var shipment = await ShipDraftAsync(location, GetPublishBranch(request, user), pinnedHead, $"unpublish {path} (store: {storeId})", path,
+            canRebase: false, cancellationToken);
+        if (shipment.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
         {
             await SyncUnpublishedLivePageAsync(storeId, type, path, location, cancellationToken);
         }
@@ -327,16 +339,47 @@ public class FilePageOperationService(
         return Shipped(shipment, request);
     }
 
-    private async Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishInBlobStorageAsync(FilePageOperationRequest request)
+    private async Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishInBlobStorageAsync(FilePageShipOperationRequest request,
+        CancellationToken cancellationToken)
     {
         if (request.DryRun)
         {
-            return DryRunShipment(CreateBlobPublishingPreview(request.Path, Published, Draft, "Unpublishes the page in blob storage."));
+            var preview = CreateBlobPublishingPreview(request.Path, Published, Draft, "Unpublishes the page in blob storage.");
+            preview.Objects[0].ETag = await GetBlobContentVersionAsync(request, draft: false, cancellationToken);
+            return DryRunShipment(preview);
+        }
+
+        if (await CheckBlobContentVersionAsync(request, draft: false, cancellationToken) is { } changed)
+        {
+            return changed.As<FilePageShipment>();
         }
 
         await publishingService.PublishingAsync(request.ContentType ?? PagesContentType, request.StoreId, request.Path, publish: false);
         return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false), request);
     }
+
+    /// <summary>
+    /// The page has to hold the content the caller reviewed. Blob storage holds no lock over a page, so it is read right before the write,
+    /// which is as close to it as the storage allows.
+    /// </summary>
+    /// <param name="draft">The draft, else what is published, which a publish takes; otherwise what is published, which an unpublish takes.</param>
+    /// <returns>The conflict when the content is another; <c>null</c> when it is the one reviewed, or none was named.</returns>
+    protected virtual async Task<SiteBuilderOperationResult> CheckBlobContentVersionAsync(FilePageShipOperationRequest request, bool draft,
+        CancellationToken cancellationToken)
+    {
+        if (request.ExpectedContentVersion == null)
+        {
+            return null;
+        }
+
+        return string.Equals(await GetBlobContentVersionAsync(request, draft, cancellationToken), request.ExpectedContentVersion.Trim(), StringComparison.Ordinal)
+            ? null
+            : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage);
+    }
+
+    protected virtual async Task<string> GetBlobContentVersionAsync(FilePageOperationRequest request, bool draft, CancellationToken cancellationToken) =>
+        SiteBuilderContentVersion.CreateForFileContent(
+            await filePageDraftService.ReadBlobPageAsync(request.StoreId, request.ContentType ?? PagesContentType, request.Path, draft, cancellationToken));
 
     protected virtual async Task<SiteBuilderChangePreview> CreateUnpublishPreviewAsync(GitPageFileLocation location, string baseBranch, string path,
         string published, CancellationToken cancellationToken)
@@ -372,10 +415,12 @@ public class FilePageOperationService(
         return SiteBuilderOperationResult.NotFound(AbstractTypeFactory<FilePageShipment>.TryCreateInstance());
     }
 
-    protected virtual async Task CommitUnpublishAsync(GitPageFileLocation location, string baseBranch, string storeId, string path, ClaimsPrincipal user,
-        CancellationToken cancellationToken)
+    /// <returns>The commit the draft branch is at once the page is deleted on it.</returns>
+    protected virtual async Task<string> CommitUnpublishAsync(GitPageFileLocation location, string baseBranch, string storeId, string path,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
     {
-        var hadBranch = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken) != null;
+        var head = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken);
+        var hadBranch = head != null;
         if (!hadBranch)
         {
             await gitContentRepository.CreateBranchAsync(location.Repository, location.Branch, baseBranch, cancellationToken);
@@ -388,10 +433,12 @@ public class FilePageOperationService(
         // instead of finishing the unpublish it is retrying.
         if (!hadBranch || await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken) != null)
         {
-            await gitContentRepository.DeleteFileAsync(location.Repository, location.RepoPath, location.Branch,
+            head = await gitContentRepository.DeleteFileAsync(location.Repository, location.RepoPath, location.Branch,
                 GetCommitMessage($"unpublish {path} (store: {storeId})", user), GetCurrentAuthor(user), cancellationToken);
             gitContentHistory.Invalidate(location.Repository, location.RepoPath);
         }
+
+        return head;
     }
 
     protected virtual Task SyncUnpublishedLivePageAsync(string storeId, string type, string path, GitPageFileLocation location, CancellationToken cancellationToken) =>
@@ -605,26 +652,20 @@ public class FilePageOperationService(
             var current = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken)
                 ?? await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, cancellationToken);
             var preview = CreatePreview();
-            preview.AddObject(FilePage, path).AddField(Content, current, PageJson.Serialize(page));
+            preview.AddObject(FilePage, path, SiteBuilderContentVersion.CreateForFileContent(current)).AddField(Content, current, PageJson.Serialize(page));
             preview.Warnings.Add($"Commits the version {sha} to the draft branch {location.Branch}.");
             return SiteBuilderOperationResult.DryRun<FilePageVersionRestore>(preview);
         }
 
-        if (await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken) == null)
+        string commitSha;
+        try
         {
-            await gitContentRepository.CreateBranchAsync(location.Repository, location.Branch, baseBranch, cancellationToken);
+            commitSha = await CommitRestoredVersionAsync(location, baseBranch, page, request, user, cancellationToken);
         }
-
-        var author = GetCurrentAuthor(user);
-        var shortSha = sha[..7];
-        var message = GetCommitMessage($"designer: restore {path} from {shortSha} (store: {storeId}, by: {author.Name})", user);
-
-        // Canonical bytes, not the ones read from the commit: an older version may have been written
-        // before the canonical form existed, and re-committing it verbatim would make publish-status
-        // report changes that are only line endings.
-        var commitSha = await gitContentRepository.CommitFileAsync(location.Repository, location.RepoPath, PageJson.Serialize(page), location.Branch, message,
-            author, cancellationToken);
-        gitContentHistory.Invalidate(location.Repository, location.RepoPath);
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<FilePageVersionRestore>();
+        }
 
         var result = AbstractTypeFactory<FilePageVersionRestore>.TryCreateInstance();
         result.Branch = location.Branch;
@@ -632,6 +673,44 @@ public class FilePageOperationService(
         result.RestoredFrom = sha;
 
         return SiteBuilderOperationResult.Success(result);
+    }
+
+    /// <summary>
+    /// Canonical bytes, not the ones read from the commit: an older version may have been written before the canonical form existed, and
+    /// re-committing it verbatim would make publish-status report changes that are only line endings.
+    /// </summary>
+    /// <exception cref="SiteBuilderContentConflictException">The draft is not at the version the request names: nothing is committed.</exception>
+    protected virtual async Task<string> CommitRestoredVersionAsync(GitPageFileLocation location, string baseBranch, JToken page,
+        FilePageRestoreVersionOperationRequest request, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var author = GetCurrentAuthor(user);
+        var shortSha = request.Sha[..7];
+        var message = GetCommitMessage($"designer: restore {request.Path} from {shortSha} (store: {request.StoreId}, by: {author.Name})", user);
+        var content = PageJson.Serialize(page);
+        var expected = request.ExpectedContentVersion?.Trim();
+        // the draft as the dry run reads it: the branch's file, else what is published; the commit names the file it was compared with
+        Func<string, Task<bool>> isExpected = async current => string.Equals(SiteBuilderContentVersion.CreateForFileContent(
+            current ?? await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, cancellationToken)), expected,
+            StringComparison.Ordinal);
+
+        if (await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken) == null)
+        {
+            // compared before the branch is cut too, so that a refused restore leaves none behind
+            if (expected != null && !await isExpected(null))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+            }
+
+            await gitContentRepository.CreateBranchAsync(location.Repository, location.Branch, baseBranch, cancellationToken);
+        }
+
+        var commitSha = expected == null
+            ? await gitContentRepository.CommitFileAsync(location.Repository, location.RepoPath, content, location.Branch, message, author, cancellationToken)
+            : await gitContentRepository.CommitFileIfUnchangedAsync(location.Repository, location.RepoPath, content, location.Branch, message, author,
+                isExpected, cancellationToken);
+        gitContentHistory.Invalidate(location.Repository, location.RepoPath);
+
+        return commitSha;
     }
 
     public virtual Task<SiteBuilderOperationResult<GitPageCommit>> CopyAsync(FilePageCopyOperationRequest request, ClaimsPrincipal user,
@@ -1001,6 +1080,40 @@ public class FilePageOperationService(
             cancellationToken);
 
     /// <summary>
+    /// Merges the draft branch into the base branch; with <paramref name="pinnedHead"/>, merges that commit instead, from
+    /// <paramref name="publishBranch"/> pointed at it.
+    /// <para>
+    /// GitHub merges a branch wherever it is when the merge runs, and a merge armed to wait for the checks runs later: from the draft branch,
+    /// a commit the editor makes meanwhile would be merged under the approval of the commit before it. Nothing but a pinned publish writes to
+    /// the publish branch, so what it ships is a commit that was approved. Once merged, it is deleted like a draft branch, and so is the draft
+    /// branch while it still holds nothing more than what shipped.
+    /// </para>
+    /// </summary>
+    protected virtual async Task<FilePageShipment> ShipDraftAsync(GitPageFileLocation location, string publishBranch, string pinnedHead, string title,
+        string path, bool canRebase, CancellationToken cancellationToken)
+    {
+        if (pinnedHead == null)
+        {
+            var result = await gitContentPublisher.MergeBranchAsync(location.Repository, location.Branch, title, cancellationToken);
+            return await RespondToPublishAsync(result, location, path, canRebase, cancellationToken);
+        }
+
+        var baseBranch = await GetBaseBranchAsync(cancellationToken);
+        await gitContentRepository.SetBranchAsync(location.Repository, publishBranch, pinnedHead, location.RepoPath, cancellationToken);
+        var pinned = await gitContentPublisher.MergeBranchIntoAsync(location.Repository, publishBranch, title, baseBranch, cancellationToken);
+        var shipment = await RespondToShipAsync(pinned, location.Repository, location.RepoPath, publishBranch, baseBranch, path, canRebase, cancellationToken);
+
+        if (pinned.State == GitPublishState.Merged &&
+            string.Equals(await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken), pinnedHead,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            await gitContentRepository.DeleteBranchAsync(location.Repository, location.Branch, location.RepoPath, cancellationToken);
+        }
+
+        return shipment;
+    }
+
+    /// <summary>
     /// The tail every shipping operation shares — publish, unpublish and promote differ in which
     /// branch they merged into, and in nothing else once the merge has happened.
     /// <para>
@@ -1081,6 +1194,11 @@ public class FilePageOperationService(
 
     protected virtual GitPageFileLocation GetLocation(string repository, string type, string path, ClaimsPrincipal user) =>
         gitContentOptions.Value.GetPageLocation(repository, type, path, user?.Identity?.Name);
+
+    /// <summary>The branch a publish or an unpublish pinned to a commit of the draft branch of the request's draft owner, else of the caller's own, ships from.</summary>
+    protected virtual string GetPublishBranch(FilePageShipOperationRequest request, ClaimsPrincipal user) =>
+        gitContentOptions.Value.GetPublishBranch(request.ContentType, request.Path,
+            string.IsNullOrWhiteSpace(request.DraftOwner) ? user?.Identity?.Name : request.DraftOwner.Trim());
 
     /// <summary>The draft branch of the request's draft owner, else the caller's own.</summary>
     protected virtual GitPageFileLocation GetDraftLocation(string repository, FilePageShipOperationRequest request, ClaimsPrincipal user) =>

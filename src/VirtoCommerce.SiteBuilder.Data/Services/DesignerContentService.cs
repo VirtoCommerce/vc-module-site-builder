@@ -187,8 +187,8 @@ public class DesignerContentService(
         else if (command.FilePage != null)
         {
             var current = await filePageDraftService.ReadDraftAsync(command.StoreId, command.FilePage.ContentType, command.FilePage.Path, user, cancellationToken);
-            preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.FilePage, command.FilePage.Path, eTag: null, current,
-                PageJson.Serialize(command.FilePage.Content)));
+            preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.FilePage, command.FilePage.Path,
+                SiteBuilderContentVersion.CreateForFileContent(current), current, PageJson.Serialize(command.FilePage.Content)));
         }
 
         foreach (var file in command.ThemeFiles)
@@ -469,9 +469,18 @@ public class DesignerContentService(
             return written.ETag;
         }
 
-        if (command.FilePage != null)
+        if (command.FilePage == null)
+        {
+            return null;
+        }
+
+        if (command.FilePageVersion == null)
         {
             await filePageDraftService.SaveDraftAsync(command.StoreId, command.FilePage, user, cancellationToken);
+        }
+        else
+        {
+            await filePageDraftService.SaveDraftAsync(command.StoreId, command.FilePage, command.FilePageVersion, user, cancellationToken);
         }
 
         return null;
@@ -531,17 +540,15 @@ public class DesignerContentService(
 
         // read first: the history entry needs it, and nothing may fail once the drafts are gone
         var publishedContent = await groupedPageService.LoadContent(publishedPage.Id, cancellationToken);
-        if (eTag != null)
+        if (eTag == null)
         {
-            // the drafts are deleted row by row, under no lock of the group: the version is read right before
-            var current = await groupedPageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken);
-            if (draftIds.Count == 0 || !string.Equals(current.ETag, eTag.Trim(), StringComparison.Ordinal))
-            {
-                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
-            }
+            await pageService.DeleteAsync(draftIds);
         }
-
-        await pageService.DeleteAsync(draftIds);
+        else
+        {
+            // the version is compared, and the drafts deleted, under the lock a save of the page takes
+            await groupedPageContentService.DeleteDraftsAtVersionAsync(group, eTag.Trim(), cancellationToken);
+        }
 
         return publishedContent;
     }
