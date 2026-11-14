@@ -20,7 +20,7 @@ public class UpdateSectionsBulkJobPayload
     public IList<UpdateSectionsBulkJobPage> Pages { get; set; } = [];
 }
 
-public class UpdateSectionsBulkJobPage
+public class UpdateSectionsBulkJobPage : ISiteBuilderJobPage
 {
     public string PageId { get; set; }
 
@@ -31,8 +31,8 @@ public class UpdateSectionsBulkJobPage
     public IList<string> SectionIds { get; set; } = [];
 }
 
-// Applies the change of update_sections_bulk page by page as the user who asked for it: their access is checked again
-// for every page, and a page saved by someone since the call is skipped, not overwritten.
+// Applies the change of update_sections_bulk page by page as the user who asked for it: their account and access are
+// read again for every page, and a page saved by someone since the call is skipped, not overwritten.
 public class UpdateSectionsBulkJob(
     SiteBuilderJobUsers jobUsers,
     PageDraftJobRunner runner,
@@ -41,39 +41,27 @@ public class UpdateSectionsBulkJob(
 {
     public async Task Execute(UpdateSectionsBulkJobPayload payload, IJobExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var user = await jobUsers.CreateAsync(payload.UserId);
-        var refusal = SiteBuilderJobUsers.GetRefusal(user);
-        if (refusal == null)
-        {
-            jobUsers.SetCurrentUser(user);
-        }
-
         var settings = SectionBulkChanges.ReadSettings(payload.SettingsJson);
         var tally = new PageJobTally();
         var total = payload.Pages.Count;
 
-        for (var i = 0; i < total; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var page = payload.Pages[i];
-            var operations = SectionBulkChanges.CreateOperations(payload.Change, settings, payload.SettingsLanguage, page.SectionIds);
-            tally.Add(page.PageId, refusal != null
-                ? new PageJobResult(PageJobOutcome.Refused, refusal)
-                : await RunAsync(user, page, operations, cancellationToken));
-
-            await context.Progress.Report(new JobProgressInfo
+        var stopReason = await jobUsers.RunPagesAsync(payload.UserId, payload.Pages, tally,
+            (user, page) => RunAsync(user, page, SectionBulkChanges.CreateOperations(payload.Change, settings, payload.SettingsLanguage, page.SectionIds),
+                cancellationToken),
+            processed => context.Progress.Report(new JobProgressInfo
             {
-                Message = $"{i + 1} of {total} pages: {tally.Describe()}",
-                ProcessedCount = i + 1,
+                Message = $"{processed} of {total} pages: {tally.Describe()}",
+                ProcessedCount = processed,
                 TotalCount = total,
-            }, cancellationToken);
-        }
+            }, cancellationToken),
+            cancellationToken);
 
         await context.Progress.Report(new JobProgressInfo
         {
-            Message = $"Done: {payload.Change} on {payload.SectionType} sections. {tally.Describe()}",
-            ProcessedCount = total,
+            Message = stopReason == null
+                ? $"Done: {payload.Change} on {payload.SectionType} sections. {tally.Describe()}"
+                : SiteBuilderJobUsers.DescribeStop(stopReason, total, tally, tally.Describe()),
+            ProcessedCount = tally.Total,
             TotalCount = total,
         }, cancellationToken);
     }

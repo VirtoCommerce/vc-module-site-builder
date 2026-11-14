@@ -17,7 +17,7 @@ public class SetTranslationsJobPayload
     public IList<SetTranslationsJobPage> Pages { get; set; } = [];
 }
 
-public class SetTranslationsJobPage
+public class SetTranslationsJobPage : ISiteBuilderJobPage
 {
     public string PageId { get; set; }
 
@@ -53,26 +53,14 @@ public class SetTranslationsJob(
 {
     public async Task Execute(SetTranslationsJobPayload payload, IJobExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var user = await jobUsers.CreateAsync(payload.UserId);
-        var refusal = SiteBuilderJobUsers.GetRefusal(user);
-        if (refusal == null)
-        {
-            jobUsers.SetCurrentUser(user);
-        }
-
         var tally = new PageJobTally();
         var marked = 0;
         var notMarked = new List<string>();
         var total = payload.Pages.Count;
 
-        for (var i = 0; i < total; i++)
+        async Task<PageJobResult> SaveAndMarkAsync(ClaimsPrincipal user, SetTranslationsJobPage page)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var page = payload.Pages[i];
-            var result = refusal != null ? new PageJobResult(PageJobOutcome.Refused, refusal) : await RunAsync(user, page, cancellationToken);
-            tally.Add(page.PageId, result);
-
+            var result = await RunAsync(user, page, cancellationToken);
             if (payload.MarkUpToDate && result.Outcome is PageJobOutcome.Changed or PageJobOutcome.Unchanged)
             {
                 var problem = await MarkAsync(page, cancellationToken);
@@ -86,18 +74,24 @@ public class SetTranslationsJob(
                 }
             }
 
-            await context.Progress.Report(new JobProgressInfo
-            {
-                Message = $"{i + 1} of {total} pages: {Describe(tally, payload.MarkUpToDate, marked, notMarked)}",
-                ProcessedCount = i + 1,
-                TotalCount = total,
-            }, cancellationToken);
+            return result;
         }
+
+        var stopReason = await jobUsers.RunPagesAsync(payload.UserId, payload.Pages, tally, SaveAndMarkAsync,
+            processed => context.Progress.Report(new JobProgressInfo
+            {
+                Message = $"{processed} of {total} pages: {Describe(tally, payload.MarkUpToDate, marked, notMarked)}",
+                ProcessedCount = processed,
+                TotalCount = total,
+            }, cancellationToken),
+            cancellationToken);
 
         await context.Progress.Report(new JobProgressInfo
         {
-            Message = $"Done. {Describe(tally, payload.MarkUpToDate, marked, notMarked)}",
-            ProcessedCount = total,
+            Message = stopReason == null
+                ? $"Done. {Describe(tally, payload.MarkUpToDate, marked, notMarked)}"
+                : SiteBuilderJobUsers.DescribeStop(stopReason, total, tally, Describe(tally, payload.MarkUpToDate, marked, notMarked)),
+            ProcessedCount = tally.Total,
             TotalCount = total,
         }, cancellationToken);
     }

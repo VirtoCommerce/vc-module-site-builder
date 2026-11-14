@@ -201,6 +201,21 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         Assert.Contains("1 refused: fr (no builder:read in store 'store-a')", run.FinalMessage);
     }
 
+    [Fact]
+    public async Task ALockedOutAccount_StopsTheJob_AndMarksNothing()
+    {
+        _context.JobUsers["editor"] = Editor().ToPrincipal();
+        var payload = await QueueAsync(await FrenchAsync());
+        _context.LockedOutUsers.Add("editor");
+
+        var run = await _context.RunJobAsync<SetTranslationsJob, SetTranslationsJobPayload>(payload);
+
+        Assert.Empty(_context.SavedVersions.Records);
+        Assert.Empty(_marked);
+        Assert.StartsWith($"Stopped after 1 of 1 pages: {SiteBuilderJobUsers.AccountGone}", run.FinalMessage, StringComparison.Ordinal);
+        Assert.Contains($"1 refused: fr ({SiteBuilderJobUsers.AccountGone})", run.FinalMessage);
+    }
+
     private async Task<SetTranslationsJobPayload> QueueAsync(object[] items)
     {
         await CallAsync<McpJobHandle>(Editor(), new { translations = items, mark_up_to_date = true });

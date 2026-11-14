@@ -123,6 +123,8 @@ public sealed class PageJobTally
 
     private readonly List<(string PageId, PageJobResult Result)> _results = [];
 
+    public int Total => _results.Count;
+
     public int Count(PageJobOutcome outcome) => _results.Count(x => x.Result.Outcome == outcome);
 
     public void Add(string pageId, PageJobResult result) => _results.Add((pageId, result));

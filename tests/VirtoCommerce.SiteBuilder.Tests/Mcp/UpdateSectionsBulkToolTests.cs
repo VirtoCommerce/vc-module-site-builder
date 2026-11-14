@@ -240,6 +240,53 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
         Assert.Contains("no longer exists or is locked", run.FinalMessage);
     }
 
+    [Fact]
+    public async Task BuilderUpdateTakenAwayDuringTheJob_RefusesTheNextPage()
+    {
+        _context.JobUsers["editor"] = Editor().ToPrincipal();
+        await CallAsync<McpJobHandle>(Editor(), Rename());
+        var payload = (UpdateSectionsBulkJobPayload)_context.Jobs.Enqueued.Single().Payload;
+
+        var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload,
+            _ => _context.JobUsers["editor"] = Reader("editor").ToPrincipal());
+
+        Assert.Equal("Cyber Monday", Title(await ContentAsync("a1")));
+        Assert.Equal("Black Friday", Title(await ContentAsync("b1")));
+        Assert.StartsWith("Done", run.FinalMessage, StringComparison.Ordinal);
+        Assert.Contains("1 pages changed", run.FinalMessage);
+        Assert.Contains("1 refused: b1 (the account no longer has builder:update)", run.FinalMessage);
+    }
+
+    [Fact]
+    public async Task AnAccountDeletedDuringTheJob_StopsIt_AtTheNextPage()
+    {
+        _context.JobUsers["editor"] = Editor().ToPrincipal();
+        await CallAsync<McpJobHandle>(Editor(), Rename());
+        var payload = (UpdateSectionsBulkJobPayload)_context.Jobs.Enqueued.Single().Payload;
+
+        var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload, _ => _context.DeletedUsers.Add("editor"));
+
+        Assert.Equal("Cyber Monday", Title(await ContentAsync("a1")));
+        Assert.Equal("Black Friday", Title(await ContentAsync("b1")));
+        Assert.StartsWith($"Stopped after 2 of 2 pages: {SiteBuilderJobUsers.AccountGone}; 0 pages were not reached.", run.FinalMessage, StringComparison.Ordinal);
+        Assert.Contains($"1 refused: b1 ({SiteBuilderJobUsers.AccountGone})", run.FinalMessage);
+    }
+
+    [Fact]
+    public async Task ALockedOutAccount_StopsTheJob_BeforeItChangesAPage()
+    {
+        _context.JobUsers["editor"] = Editor().ToPrincipal();
+        await CallAsync<McpJobHandle>(Editor(), Rename());
+        var payload = (UpdateSectionsBulkJobPayload)_context.Jobs.Enqueued.Single().Payload;
+        _context.LockedOutUsers.Add("editor");
+
+        var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload);
+
+        Assert.Empty(_context.SavedVersions.Records);
+        Assert.Equal([1L, 1L], run.Reports.Select(x => x.ProcessedCount ?? 0));
+        Assert.StartsWith($"Stopped after 1 of 2 pages: {SiteBuilderJobUsers.AccountGone}; 1 pages were not reached.", run.FinalMessage, StringComparison.Ordinal);
+    }
+
     private async Task<T> CallAsync<T>(McpTestUser user, object arguments)
     {
         var result = await _context.CallAsync(user, Tool, arguments);

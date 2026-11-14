@@ -86,6 +86,10 @@ internal sealed class McpTestContext : IAsyncDisposable
     // The accounts a job runs as, by user id, as a sign-in would give them when the job runs; a missing one no longer exists.
     public Dictionary<string, ClaimsPrincipal> JobUsers { get; } = new(StringComparer.Ordinal);
 
+    // Accounts the user store no longer finds, and accounts locked out until a time ahead.
+    public HashSet<string> DeletedUsers { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> LockedOutUsers { get; } = new(StringComparer.Ordinal);
+
     // Pages with their content, saved through the designer's own save; null unless a test calls UsePageStore.
     public Fakes.FakeGroupedPageService PageStore { get; private set; }
 
@@ -214,11 +218,12 @@ internal sealed class McpTestContext : IAsyncDisposable
     };
 
     // Runs a job of a bulk tool as the job engine would, with the services the module registers.
-    public async Task<RecordingJobContext> RunJobAsync<THandler, TPayload>(TPayload payload)
+    // onReport runs after each report of progress, as between two pages.
+    public async Task<RecordingJobContext> RunJobAsync<THandler, TPayload>(TPayload payload, Action<int> onReport = null)
         where THandler : class, VirtoCommerce.Platform.Core.Jobs.IBackgroundJobHandler<TPayload>
         where TPayload : class
     {
-        var context = new RecordingJobContext();
+        var context = new RecordingJobContext { OnReport = onReport };
         await Harness.Services.GetRequiredService<THandler>().Execute(payload, context, Xunit.TestContext.Current.CancellationToken);
         return context;
     }
@@ -488,7 +493,14 @@ internal sealed class McpTestContext : IAsyncDisposable
         var store = new Mock<IUserStore<ApplicationUser>>();
         store
             .Setup(x => x.FindByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string id, CancellationToken _) => new ApplicationUser { Id = id, StoreId = _boundStoreId });
+            .ReturnsAsync((string id, CancellationToken _) => DeletedUsers.Contains(id) ? null : new ApplicationUser { Id = id, StoreId = _boundStoreId });
+        var lockouts = store.As<IUserLockoutStore<ApplicationUser>>();
+        lockouts
+            .Setup(x => x.GetLockoutEnabledAsync(It.IsAny<ApplicationUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        lockouts
+            .Setup(x => x.GetLockoutEndDateAsync(It.IsAny<ApplicationUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ApplicationUser account, CancellationToken _) => LockedOutUsers.Contains(account.Id) ? DateTimeOffset.UtcNow.AddHours(1) : null);
 
         return new UserManager<ApplicationUser>(store.Object, null, null, null, null, null, null, null, null);
     }
@@ -541,9 +553,12 @@ internal sealed class RecordingJobContext : VirtoCommerce.Platform.Core.Jobs.IJo
 
     public string FinalMessage => Reports.Count == 0 ? null : Reports[^1].Message;
 
+    public Action<int> OnReport { get; init; }
+
     public Task Report(VirtoCommerce.Platform.Core.Jobs.JobProgressInfo progress, CancellationToken cancellationToken = default)
     {
         Reports.Add(progress);
+        OnReport?.Invoke(Reports.Count);
         return Task.CompletedTask;
     }
 }
