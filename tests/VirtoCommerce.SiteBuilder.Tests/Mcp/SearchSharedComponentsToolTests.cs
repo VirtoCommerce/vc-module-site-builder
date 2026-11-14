@@ -26,6 +26,7 @@ public sealed class SearchSharedComponentsToolTests : IAsyncDisposable
     ];
 
     private bool? _lastIncludePages;
+    private int _usagePages = 1;
 
     public SearchSharedComponentsToolTests()
     {
@@ -52,7 +53,7 @@ public sealed class SearchSharedComponentsToolTests : IAsyncDisposable
                 {
                     SharedComponentId = id,
                     UsageCount = 3,
-                    Pages = includePages ? [new SiteBuilderSharedComponentUsagePage { Id = "page-1", Name = "Home" }] : [],
+                    Pages = includePages ? UsagePages(_usagePages) : [],
                 }).ToList();
             });
         _context.SharedComponentContents
@@ -110,6 +111,33 @@ public sealed class SearchSharedComponentsToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AComponentOnManyPages_ListsTheFirstOnes_WithTheirTotalAndTheNextSkip()
+    {
+        _usagePages = SharedComponentTools.MaxUsagePages + 7;
+
+        var component = await ReadAsync(new { store_id = StoreA, shared_component_id = "a2" });
+
+        Assert.Equal(SharedComponentTools.MaxUsagePages, component.UsagePages.Count);
+        Assert.Equal(SharedComponentTools.MaxUsagePages + 7, component.UsagePageCount);
+        Assert.Equal(SharedComponentTools.MaxUsagePages, component.UsagePagesNextSkip);
+        Assert.Contains($"skip {SharedComponentTools.MaxUsagePages}", component.UsagePagesNote);
+    }
+
+    [Fact]
+    public async Task TheNextSkip_ListsTheOtherPages_EachPageOnce()
+    {
+        _usagePages = SharedComponentTools.MaxUsagePages + 7;
+
+        var first = await ReadAsync(new { store_id = StoreA, shared_component_id = "a2", take = 1000 });
+        var second = await ReadAsync(new { store_id = StoreA, shared_component_id = "a2", skip = first.UsagePagesNextSkip });
+
+        Assert.Equal(7, second.UsagePages.Count);
+        Assert.Null(second.UsagePagesNextSkip);
+        Assert.Null(second.UsagePagesNote);
+        Assert.Equal(UsagePages(_usagePages).Select(x => x.Id), first.UsagePages.Concat(second.UsagePages).Select(x => x.Id));
+    }
+
+    [Fact]
     public async Task WithoutBuilderReadInTheStore_ThePagesAreNotNamed()
     {
         // builder:read in store B only: the tool is visible, the pages of store A are not.
@@ -122,6 +150,7 @@ public sealed class SearchSharedComponentsToolTests : IAsyncDisposable
 
         Assert.Equal(3, component.UsageCount);
         Assert.Null(component.UsagePages);
+        Assert.Null(component.UsagePageCount);
         Assert.Contains(Permissions.Read, component.UsagePagesNote);
         Assert.False(_lastIncludePages);
     }
@@ -136,6 +165,15 @@ public sealed class SearchSharedComponentsToolTests : IAsyncDisposable
         Assert.False(second.HasMore);
         Assert.Equal(["a1", "a2", "a3", "a4", "a5"], first.Items.Concat(second.Items).Select(x => x.Id).Order());
     }
+
+    private async Task<SharedComponentDetails> ReadAsync(object arguments)
+    {
+        var result = await _context.CallAsync(StoreAComponentReader(), Tool, arguments);
+        return result.EnsureSucceeded().Read<SharedComponentDetails>();
+    }
+
+    private static List<SiteBuilderSharedComponentUsagePage> UsagePages(int count) =>
+        [.. Enumerable.Range(1, count).Select(x => new SiteBuilderSharedComponentUsagePage { Id = $"page-{x}", Name = x == 1 ? "Home" : $"Page {x}" })];
 
     private static McpTestUser StoreAComponentReader() => McpTestUser.Create("store-a-components")
         .WithScopedPermission(Permissions.Read, StoreScope, StoreA)
