@@ -17,11 +17,11 @@ namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 // Publishing and unpublishing change what customers see, so they wait for a second person. The approver sees the dry
 // run of the requester; the change then runs as the approver, with the requester's arguments, through the endpoint's
 // own operation. So the call names what was reviewed: the dry run answers expected_versions (the version of each draft
-// or published page it takes; in git the commit of the draft branch) and, in git, draft_owner (whose branch it ships),
-// and the call without dryRun sends them back. The write takes exactly those or is refused; a call without them is
-// refused and never waits for approval. A page stored as a file in git is published by a pull request that may
-// conflict; the way out that replaces the other edit (rebase) is an argument of its own, so it is a call of its own with
-// its own approval, and never a retry.
+// or published page it takes; in git the commit of the draft branch, which the write ships from a publish branch of its
+// own) and, in git, draft_owner (whose branch it ships), and the call without dryRun sends them back. The write takes
+// exactly those or is refused; a call without them is refused and never waits for approval. A page stored as a file in
+// git is published by a pull request that may conflict; the way out that replaces the other edit (rebase) is an
+// argument of its own, so it is a call of its own with its own approval, and never a retry.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PagePublishingTools(
@@ -48,7 +48,8 @@ public class PagePublishingTools(
         "Page or one language version, or multilanguage_page_id with languages (or all_languages) for language versions " +
         "of a Multilanguage Page. The page is shown to its audience between its start and end dates, which " +
         "change_page_settings sets. A page stored as a file is named by its path with store_id; in a store that keeps " +
-        "its pages in git the draft is merged by a pull request, and the answer's shipment tells whether it merged, waits " +
+        "its pages in git the reviewed commit of the draft is merged by a pull request (later commits to the draft are not), " +
+        "and the answer's shipment tells whether it merged, waits " +
         "for checks, or conflicts. A conflict publishes nothing: re-read the page and apply the change again, or, if the " +
         "user agrees to replace what changed on the published page, call again with rebase: true (a new dry run and approval). " +
         "Returns what is (or would be) published.")]

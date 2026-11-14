@@ -16,8 +16,11 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // The settings a page group keeps outside its content: name, address, language, audience and dates. Customers see a
-// change of a published page as soon as it is saved, so such a change waits for a second person (see
-// SiteBuilderChanges.NeedsApproval); a page that was never published changes at once with unpublished_only.
+// change of a published page as soon as it is saved, so such a change waits for a second person (see NeedsApproval); a
+// page that was never published changes at once with unpublished_only, which the operation checks again under the lock
+// of its save. The dry run answers the version of the settings (expected_versions): the write takes them only at that
+// version, so an approved change is refused once someone changed the page after the review. The write applies only the
+// settings the call names, to the page as it is read right before it, never the model of an earlier read.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageSettingsTools(
@@ -31,9 +34,15 @@ public class PageSettingsTools(
     private const string OrganizationField = "organization_id";
     private const string StartDateField = "start_date";
     private const string EndDateField = "end_date";
+    private const string ExpectedVersionsDescription = "The expected_versions of the dry run, unchanged: the version of the settings the change " +
+        "was reviewed at. Required without dryRun unless unpublished_only is set.";
+
     private static readonly string[] ClearableFields = [UserGroupsField, OrganizationField, StartDateField, EndDateField];
 
-    public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) => SiteBuilderChanges.NeedsApproval(arguments);
+    // A call that touches published pages waits for a second person once it names the versions it reviewed; without
+    // them it is a dry run or is refused by the tool, so nothing published changes without approval either way.
+    public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
+        SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
     [McpServerTool(Name = "change_page_settings", ReadOnly = false, Destructive = true, Idempotent = true)]
     [McpPermission(Read)]
@@ -42,11 +51,13 @@ public class PageSettingsTools(
     [Description("Change the settings of a database page: name, address (permalink), language, who sees it (visible, " +
         "user groups, organization) and the dates it is shown between. Pass page_id for a Landing Page or one language " +
         "version, or multilanguage_page_id for the values of a Multilanguage Page that its language versions inherit " +
-        "(language is then its source language). Only the settings you pass change; clear removes a value. Customers " +
-        "see a change of a published page at once, so it waits for approval; with unpublished_only a change of a page " +
-        "that was never published is made at once. A start date makes a published page visible from that date; it does " +
-        "not publish a draft. Not for the page's content, SEO or layout: use edit_page_draft. Call it with dryRun first " +
-        "to show the change.")]
+        "(language is then its source language). Only the settings you pass change; clear removes a value. First call it " +
+        "with dryRun: it shows the change and answers expected_versions. Customers see a change of a published page at " +
+        "once, so call it then without dryRun and with those expected_versions: the change waits for approval and is " +
+        "refused if someone changed the page in between. With unpublished_only a change of a page that was never " +
+        "published is made at once (expected_versions optional) and refused if the page is published meanwhile. A start " +
+        "date makes a published page visible from that date; it does not publish a draft. Not for the page's content, SEO " +
+        "or layout: use edit_page_draft.")]
     public async Task<SiteBuilderChange> ChangePageSettings(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of a Landing Page or of a language version (search_site_pages). Pass it or multilanguage_page_id.")] string page_id = null,
@@ -61,6 +72,7 @@ public class PageSettingsTools(
         [Description("The page is shown until this time (UTC).")] DateTime? end_date = null,
         [Description("Settings to remove: user_groups, organization_id, start_date, end_date.")] string[] clear = null,
         [Description(SiteBuilderChanges.UnpublishedOnlyDescription)] bool unpublished_only = false,
+        [Description(ExpectedVersionsDescription)] Dictionary<string, string> expected_versions = null,
         [Description("true to check the change and return it, without saving it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
@@ -73,25 +85,15 @@ public class PageSettingsTools(
             throw new McpException("Pass either page_id or multilanguage_page_id.");
         }
 
+        var call = new SettingsCall(context.User, settings, unpublished_only, expected_versions, dryRun);
         return string.IsNullOrEmpty(page_id)
-            ? await ChangeMultilanguagePageAsync(context.User, multilanguage_page_id, settings, unpublished_only, dryRun, cancellationToken)
-            : await ChangePageAsync(context.User, page_id, settings, unpublished_only, dryRun, cancellationToken);
+            ? await ChangeMultilanguagePageAsync(call, multilanguage_page_id, cancellationToken)
+            : await ChangePageAsync(call, page_id, cancellationToken);
     }
 
-    private async Task<SiteBuilderChange> ChangePageAsync(ClaimsPrincipal user, string pageId, Settings settings, bool unpublishedOnly, bool dryRun,
-        CancellationToken cancellationToken)
+    private async Task<SiteBuilderChange> ChangePageAsync(SettingsCall call, string pageId, CancellationToken cancellationToken)
     {
-        var group = await groupedPageService.LoadPageAsync(authorizationService, user, pageId);
-
-        var model = group.CloneTyped();
-        model.Name = settings.Name ?? model.Name;
-        model.Permalink = settings.Permalink ?? model.Permalink;
-        model.CultureName = settings.Language ?? model.CultureName;
-        model.Visibility = settings.Visible ?? model.Visibility;
-        model.UserGroups = settings.GetUserGroups(model.UserGroups);
-        model.OrganizationId = settings.Get(OrganizationField, settings.OrganizationId, model.OrganizationId);
-        model.StartDate = settings.Get(StartDateField, settings.StartDate, model.StartDate);
-        model.EndDate = settings.Get(EndDateField, settings.EndDate, model.EndDate);
+        var group = await groupedPageService.LoadPageAsync(authorizationService, call.User, pageId);
 
         var change = new SiteBuilderChange
         {
@@ -102,10 +104,24 @@ public class PageSettingsTools(
             PageId = group.Id,
             MultilanguagePageId = group.MultilanguagePageId,
         };
-        await SiteBuilderChanges.RunAsync(change,
-            isDryRun => groupedPageOperationService.UpdateAsync(new GroupedPageSaveOperationRequest { Page = model, DryRun = isDryRun, ReportImpact = true }, user, cancellationToken),
-            x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
-            dryRun, unpublishedOnly);
+
+        async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> RunAsync(bool isDryRun)
+        {
+            var current = isDryRun ? group : await groupedPageService.GetByIdAsync(group.Id) ?? throw Deleted(change);
+            return await groupedPageOperationService.UpdateAsync(new GroupedPageSaveOperationRequest
+            {
+                Page = call.Settings.ApplyTo(current),
+                DryRun = isDryRun,
+                ReportImpact = true,
+                RequireUnpublished = call.UnpublishedOnly,
+                ExpectedSettingsVersion = isDryRun ? null : ReviewedVersions.Of(change, group.Id),
+            }, call.User, cancellationToken);
+        }
+
+        await SiteBuilderChanges.RunAsync(change, RunAsync,
+            x => EnsureSucceeded(x, change, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
+            call.DryRun, call.UnpublishedOnly,
+            checkAsync: x => Pin(call, change, x));
 
         if (!string.IsNullOrEmpty(group.MultilanguagePageId))
         {
@@ -115,20 +131,9 @@ public class PageSettingsTools(
         return change;
     }
 
-    private async Task<SiteBuilderChange> ChangeMultilanguagePageAsync(ClaimsPrincipal user, string multilanguagePageId, Settings settings, bool unpublishedOnly,
-        bool dryRun, CancellationToken cancellationToken)
+    private async Task<SiteBuilderChange> ChangeMultilanguagePageAsync(SettingsCall call, string multilanguagePageId, CancellationToken cancellationToken)
     {
-        var root = await multilanguagePageService.LoadMultilanguagePageAsync(authorizationService, user, multilanguagePageId);
-
-        var model = root.CloneTyped();
-        model.Name = settings.Name ?? model.Name;
-        model.Permalink = settings.Permalink ?? model.Permalink;
-        model.DefaultCultureName = settings.Language ?? model.DefaultCultureName;
-        model.Visibility = settings.Visible ?? model.Visibility;
-        model.UserGroups = settings.GetUserGroups(model.UserGroups);
-        model.OrganizationId = settings.Get(OrganizationField, settings.OrganizationId, model.OrganizationId);
-        model.StartDate = settings.Get(StartDateField, settings.StartDate, model.StartDate);
-        model.EndDate = settings.Get(EndDateField, settings.EndDate, model.EndDate);
+        var root = await multilanguagePageService.LoadMultilanguagePageAsync(authorizationService, call.User, multilanguagePageId);
 
         var change = new SiteBuilderChange
         {
@@ -138,14 +143,53 @@ public class PageSettingsTools(
             ObjectName = root.Name,
             MultilanguagePageId = root.Id,
         };
-        await SiteBuilderChanges.RunAsync(change,
-            isDryRun => multilanguagePageOperationService.UpdateAsync(new MultilanguagePageSaveOperationRequest { Page = model, DryRun = isDryRun, ReportImpact = true }, user,
-                cancellationToken),
-            x => SiteBuilderChanges.EnsureSucceeded(x, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
-            dryRun, unpublishedOnly);
+
+        async Task<SiteBuilderOperationResult<MultilanguagePage>> RunAsync(bool isDryRun)
+        {
+            var current = isDryRun ? root : await multilanguagePageService.GetByIdAsync(root.Id) ?? throw Deleted(change);
+            return await multilanguagePageOperationService.UpdateAsync(new MultilanguagePageSaveOperationRequest
+            {
+                Page = call.Settings.ApplyTo(current),
+                DryRun = isDryRun,
+                ReportImpact = true,
+                RequireUnpublished = call.UnpublishedOnly,
+                ExpectedSettingsVersion = isDryRun ? null : ReviewedVersions.Of(change, root.Id),
+            }, call.User, cancellationToken);
+        }
+
+        await SiteBuilderChanges.RunAsync(change, RunAsync,
+            x => EnsureSucceeded(x, change, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
+            call.DryRun, call.UnpublishedOnly,
+            checkAsync: x => Pin(call, change, x));
 
         return change;
     }
+
+    // The version of the settings the dry run read: the write takes them only at it. A change waiting for approval
+    // names it; an unpublished_only one may take its own dry run's.
+    private static Task Pin(SettingsCall call, SiteBuilderChange change, SiteBuilderOperationResult check)
+    {
+        var version = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == change.ObjectType && x.ObjectId == change.ObjectId)?.ETag;
+        ReviewedVersions.Pin(change, [new KeyValuePair<string, string>(change.ObjectId, version)], call.ExpectedVersions, call.DryRun,
+            optional: call.UnpublishedOnly);
+
+        return Task.CompletedTask;
+    }
+
+    private static void EnsureSucceeded(SiteBuilderOperationResult result, SiteBuilderChange change, string subject, string forbiddenMessage)
+    {
+        if (result.Status == SiteBuilderOperationStatus.Conflict && result.Error == SiteBuilderContentConflictException.SettingsChangedMessage)
+        {
+            throw ReviewedVersions.Changed(change);
+        }
+
+        SiteBuilderChanges.EnsureSucceeded(result, subject, forbiddenMessage);
+    }
+
+    private static McpException Deleted(SiteBuilderChange change) =>
+        new($"{change.ObjectName} ('{change.ObjectId}') was deleted meanwhile, so nothing was changed. Call search_site_pages to find it.");
+
+    private sealed record SettingsCall(ClaimsPrincipal User, Settings Settings, bool UnpublishedOnly, IDictionary<string, string> ExpectedVersions, bool DryRun);
 
     private sealed record Settings(string Name, string Permalink, string Language, bool? Visible, string[] UserGroups, string OrganizationId,
         DateTime? StartDate, DateTime? EndDate, string[] Clear)
@@ -175,11 +219,42 @@ public class PageSettingsTools(
             }
         }
 
+        // A copy of the page with the settings the call names, and every other value as the page holds it.
+        public GroupedSiteBuilderPage ApplyTo(GroupedSiteBuilderPage page)
+        {
+            var model = page.CloneTyped();
+            model.Name = Name ?? model.Name;
+            model.Permalink = Permalink ?? model.Permalink;
+            model.CultureName = Language ?? model.CultureName;
+            model.Visibility = Visible ?? model.Visibility;
+            model.UserGroups = GetUserGroups(model.UserGroups);
+            model.OrganizationId = Get(OrganizationField, OrganizationId, model.OrganizationId);
+            model.StartDate = Get(StartDateField, StartDate, model.StartDate);
+            model.EndDate = Get(EndDateField, EndDate, model.EndDate);
+
+            return model;
+        }
+
+        public MultilanguagePage ApplyTo(MultilanguagePage page)
+        {
+            var model = page.CloneTyped();
+            model.Name = Name ?? model.Name;
+            model.Permalink = Permalink ?? model.Permalink;
+            model.DefaultCultureName = Language ?? model.DefaultCultureName;
+            model.Visibility = Visible ?? model.Visibility;
+            model.UserGroups = GetUserGroups(model.UserGroups);
+            model.OrganizationId = Get(OrganizationField, OrganizationId, model.OrganizationId);
+            model.StartDate = Get(StartDateField, StartDate, model.StartDate);
+            model.EndDate = Get(EndDateField, EndDate, model.EndDate);
+
+            return model;
+        }
+
         // Stored as one comma-separated text, as the page editor writes it.
-        public string GetUserGroups(string current) =>
+        private string GetUserGroups(string current) =>
             Clear.Contains(UserGroupsField) ? null : UserGroups == null ? current : string.Join(",", UserGroups.Select(x => x.Trim()).Where(x => x.Length > 0));
 
-        public T Get<T>(string field, T value, T current) => Clear.Contains(field) ? default : value ?? current;
+        private T Get<T>(string field, T value, T current) => Clear.Contains(field) ? default : value ?? current;
 
         private void AddIfBoth(List<string> fields, string field, object value)
         {

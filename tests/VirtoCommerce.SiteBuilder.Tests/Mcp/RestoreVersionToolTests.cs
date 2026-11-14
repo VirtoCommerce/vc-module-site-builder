@@ -169,13 +169,17 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
     public async Task AFilePage_IsRestoredFromItsCommit_WhenItsContentIsTheOneRead()
     {
         const string current = """{ "settings": {}, "content": [ { "id": "hero", "type": "hero-banner", "title": "Summer" } ] }""";
+        var atTheCommit = current;
         _context.FilePageOperations
             .Setup(x => x.RestoreVersionAsync(It.IsAny<FilePageRestoreVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FilePageRestoreVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) =>
             {
                 if (!request.DryRun)
                 {
-                    return SiteBuilderOperationResult.Success(new FilePageVersionRestore { CommitSha = "new-commit", RestoredFrom = request.Sha });
+                    // the commit is made only over the file the version was compared with
+                    return request.ExpectedContentVersion == FilePages.VersionOf(atTheCommit)
+                        ? SiteBuilderOperationResult.Success(new FilePageVersionRestore { CommitSha = "new-commit", RestoredFrom = request.Sha })
+                        : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage).As<FilePageVersionRestore>();
                 }
 
                 var preview = new SiteBuilderChangePreview();
@@ -191,16 +195,21 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
         Verify(Times.Never());
         var restored = (await _context.CallAsync(Editor(), Tool,
             new { arguments.store_id, arguments.version_id, arguments.page_id, expected_versions = dryRun.ExpectedVersions })).EnsureSucceeded().Read<VersionRestore>();
+        atTheCommit = current.Replace("Summer", "Autumn", StringComparison.Ordinal);
+        var savedAtTheCommit = await _context.CallAsync(Editor(), Tool,
+            new { arguments.store_id, arguments.version_id, arguments.page_id, expected_versions = dryRun.ExpectedVersions });
 
         Assert.Equal(FilePages.VersionOf(current), dryRun.ExpectedVersions[$"page:{FilePageId}"]);
         Assert.Contains(dryRun.Changes, x => x.Field == "section hero-banner 'hero': title" && x.To?.ToString() == "Spring");
         Assert.Equal(McpToolCallOutcome.Failed, stale.Outcome);
         Assert.Equal("new-commit", restored.Commit);
-        Verify(Times.Once());
+        Assert.Equal(McpToolCallOutcome.Failed, savedAtTheCommit.Outcome);
+        Assert.Contains("changed since its version was read", savedAtTheCommit.Error, StringComparison.Ordinal);
+        Verify(Times.Exactly(2));
 
         void Verify(Times times) => _context.FilePageOperations.Verify(x => x.RestoreVersionAsync(
-            It.Is<FilePageRestoreVersionOperationRequest>(r => !r.DryRun && r.Path == FilePagePath && r.Sha == Commit), It.IsAny<ClaimsPrincipal>(),
-            It.IsAny<CancellationToken>()), times);
+            It.Is<FilePageRestoreVersionOperationRequest>(r => !r.DryRun && r.Path == FilePagePath && r.Sha == Commit &&
+                r.ExpectedContentVersion == FilePages.VersionOf(current)), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), times);
     }
 
     [Fact]

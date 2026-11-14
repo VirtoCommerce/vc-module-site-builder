@@ -120,6 +120,20 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ADraftSavedRightBeforeTheWrite_IsNotOverwritten()
+    {
+        const string colleague = "colleague's draft";
+        _context.BeforeDesignerWrite = () => _context.SeedFilePage(StoreA, Path, Published.Replace("Spring", colleague, StringComparison.Ordinal), draft: true);
+
+        var result = await _context.CallAsync(Editor(), "edit_page_draft",
+            new { page_id = PageId, store_id = StoreA, version_token = FilePages.VersionOf(Published), operations = new[] { SetTitle("Summer") } });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since you read it", result.Error, StringComparison.Ordinal);
+        Assert.Contains(colleague, _context.ReadFilePage(StoreA, Path, draft: true), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AFilePage_HoldsNoSharedComponent()
     {
         var result = await _context.CallAsync(Editor(), "edit_page_draft", new
@@ -176,6 +190,35 @@ public sealed class FilePageToolsTests : IAsyncDisposable
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
         VerifyPublished(Times.Never());
+    }
+
+    [Fact]
+    public async Task ABlobPublish_SendsTheReviewedVersion_AndADraftSavedAtTheWriteIsNotPublished()
+    {
+        var draft = Published.Replace("Spring", "Summer", StringComparison.Ordinal);
+        _context.SeedFilePage(StoreA, Path, draft, draft: true);
+        _context.FilePageOperations
+            .Setup(x => x.PublishAsync(It.IsAny<FilePagePublishOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FilePagePublishOperationRequest request, ClaimsPrincipal _, CancellationToken _) =>
+            {
+                if (request.DryRun)
+                {
+                    return SiteBuilderOperationResult.DryRun<FilePageShipment>(Preview("status", "Draft", "Published"));
+                }
+
+                // a colleague's save lands after the tool read the draft, before the operation reads it again
+                _context.SeedFilePage(StoreA, Path, draft.Replace("Summer", "Autumn", StringComparison.Ordinal), draft: true);
+                return request.ExpectedContentVersion == FilePages.VersionOf(_context.ReadFilePage(StoreA, Path, draft: true))
+                    ? SiteBuilderOperationResult.Success(new FilePageShipment { State = GitPublishState.Merged }, affectsPublished: true)
+                    : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage).As<FilePageShipment>();
+            });
+
+        var result = await _context.CallAsync(Approver(), "publish_page", await _context.ReviewAsync(Publisher(), "publish_page", FilePage()), Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since it was reviewed", result.Error, StringComparison.Ordinal);
+        _context.FilePageOperations.Verify(x => x.PublishAsync(It.Is<FilePagePublishOperationRequest>(r => !r.DryRun && r.ExpectedContentVersion == FilePages.VersionOf(draft) &&
+            r.ExpectedDraftHead == null), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once());
     }
 
     [Fact]
@@ -249,8 +292,8 @@ public sealed class FilePageToolsTests : IAsyncDisposable
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, held.Outcome);
         Assert.Equal("blob", change.Shipment.Flow);
-        _context.FilePageOperations.Verify(x => x.UnpublishAsync(It.Is<FilePageShipOperationRequest>(r => !r.DryRun && r.DraftOwner == null), It.IsAny<ClaimsPrincipal>(),
-            It.IsAny<CancellationToken>()), Times.Once());
+        _context.FilePageOperations.Verify(x => x.UnpublishAsync(It.Is<FilePageShipOperationRequest>(r => !r.DryRun && r.DraftOwner == null &&
+            r.ExpectedContentVersion == FilePages.VersionOf(Published)), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once());
     }
 
     [Fact]
@@ -279,7 +322,7 @@ public sealed class FilePageToolsTests : IAsyncDisposable
         Assert.Equal("merged", result.EnsureSucceeded().Read<SiteBuilderChange>().Shipment.State);
         Assert.Equal(["designer/publisher/spring"], _shipped);
         _context.FilePageOperations.Verify(x => x.PublishAsync(It.Is<FilePagePublishOperationRequest>(r => !r.DryRun && r.DraftOwner == "publisher" &&
-            r.ExpectedDraftHead == "head-1"), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once());
+            r.ExpectedDraftHead == "head-1" && r.ExpectedContentVersion == null), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once());
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Moq;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
@@ -23,12 +24,15 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     private readonly List<SiteBuilderSharedComponent> _components = [Component("sc-a", StoreA), Component("sc-b", StoreB)];
     private readonly Dictionary<string, string> _contents = new() { ["sc-a"] = Content, ["sc-b"] = Content };
     private readonly List<string> _renamed = [];
+    private readonly PublishedRenameContentPreservationTests.FakeGroupedPageService _pages;
     private SiteBuilderSharedComponent _created;
+    private Action _onUsage;
 
     public SharedComponentWriteToolsTests()
     {
-        var pages = _context.UsePageStore();
+        _pages = _context.UsePageStore();
         _context.SeedPage("home", StoreA, published: true, draft: false);
+        _context.SeedPage("promo", StoreA, published: false, draft: true);
 
         _context.SharedComponents
             .Setup(x => x.GetAsync(It.IsAny<IList<string>>(), It.IsAny<string>(), It.IsAny<bool>()))
@@ -61,6 +65,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
             });
         _context.SharedComponentUsages
             .Setup(x => x.GetUsageAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Callback(() => _onUsage?.Invoke())
             .ReturnsAsync((IEnumerable<string> ids, string _, bool _, CancellationToken _) => ids.Select(id => new SiteBuilderSharedComponentUsage
             {
                 SharedComponentId = id,
@@ -71,7 +76,6 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
                     new SiteBuilderSharedComponentUsagePage { Id = "sale", Name = "Sale", Status = "Draft" },
                 ],
             }).ToList());
-        _ = pages;
     }
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
@@ -143,7 +147,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task AContentChange_WaitsForApproval_AndListsThePagesItReaches()
     {
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", new { shared_component_id = "sc-a", operations = new[] { SetText("Free returns") } });
+        var result = await _context.CallAsync(Reviser(), "revise_shared_component", await ReviewAsync(Revise(SetText("Free returns"))));
 
         var change = result.Read<SharedComponentChange>();
         Assert.Equal(McpToolCallOutcome.PendingApproval, result.Outcome);
@@ -154,13 +158,72 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AContentChangeWithoutTheReviewedVersions_IsRefused_AndNeverWaitsForApproval()
+    {
+        var result = await _context.CallAsync(Reviser(), "revise_shared_component", Revise(SetText("Free returns")));
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("expected_versions", result.Error, StringComparison.Ordinal);
+        Assert.Equal(Content, _contents["sc-a"]);
+    }
+
+    [Fact]
     public async Task AnApprovedContentChange_SavesTheContent()
     {
-        var change = (await _context.CallAsync(Reviser(), "revise_shared_component",
-            new { shared_component_id = "sc-a", operations = new[] { SetText("Free returns") } }, Approved)).EnsureSucceeded().Read<SharedComponentChange>();
+        var change = (await _context.CallAsync(Reviser(), "revise_shared_component", await ReviewAsync(Revise(SetText("Free returns"))), Approved))
+            .EnsureSucceeded().Read<SharedComponentChange>();
 
         Assert.False(change.DryRun);
         Assert.Contains("Free returns", _contents["sc-a"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ADryRunWithCopiedSections_PinsTheComponentAndEveryPageCopiedFrom()
+    {
+        var call = await ReviewAsync(Revise(CopyFrom("promo")));
+
+        var versions = (IDictionary<string, string>)call["expected_versions"];
+        Assert.Equal(["page:promo", "shared_component:sc-a"], versions.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(await DraftVersionAsync("promo"), versions["page:promo"]);
+    }
+
+    [Fact]
+    public async Task AnApprovedCopy_OfAPageChangedSinceTheReview_IsRefused_AndSavesNothing()
+    {
+        var call = await ReviewAsync(Revise(CopyFrom("promo")));
+        _pages.SeedContent("promo-draft", SampleContent.Replace("Spring", "Autumn", StringComparison.Ordinal));
+
+        var result = await _context.CallAsync(Reviser(), "revise_shared_component", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Equal(Content, _contents["sc-a"]);
+    }
+
+    [Fact]
+    public async Task AnApprovedChange_OfAComponentChangedSinceTheReview_IsRefused()
+    {
+        var call = await ReviewAsync(Revise(CopyFrom("promo")));
+        _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
+
+        var result = await _context.CallAsync(Reviser(), "revise_shared_component", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Contains("Gift wrap", _contents["sc-a"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AComponentSavedRightBeforeTheWrite_IsNotOverwritten()
+    {
+        var call = await ReviewAsync(Revise(CopyFrom("promo")));
+        // a colleague's save lands after the call checked the component, while the operation reads the pages it reaches
+        _onUsage = () => _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
+
+        var result = await _context.CallAsync(Reviser(), "revise_shared_component", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("Gift wrap", _contents["sc-a"], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -178,8 +241,9 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task ARenameWithAContentChange_WaitsForApproval_AndRenamesNothing()
     {
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component",
-            new { shared_component_id = "sc-a", name = "Top bar", operations = new[] { SetText("Free returns") } });
+        var arguments = Revise(SetText("Free returns"));
+        arguments["name"] = "Top bar";
+        var result = await _context.CallAsync(Reviser(), "revise_shared_component", await ReviewAsync(arguments));
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, result.Outcome);
         Assert.Empty(_renamed);
@@ -212,6 +276,17 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
 
         Assert.Contains("revise_shared_component", tool.ProtocolTool.Description, StringComparison.Ordinal);
     }
+
+    private static Dictionary<string, object> Revise(params object[] operations) =>
+        new() { ["shared_component_id"] = "sc-a", ["operations"] = operations };
+
+    private Task<Dictionary<string, object>> ReviewAsync(Dictionary<string, object> arguments) =>
+        _context.ReviewAsync(Reviser(), "revise_shared_component", arguments);
+
+    private async Task<string> DraftVersionAsync(string pageId) =>
+        (await _pages.LoadGroupContentAsync(await _pages.GetByIdAsync(pageId), cancellationToken: CancellationToken.None)).ETag;
+
+    private static object CopyFrom(string pageId) => new { op = "copy_sections_from", source_page_id = pageId };
 
     private static object SetText(string text) => new { op = "set_section_settings", section_id = "bar", settings = new { text } };
 

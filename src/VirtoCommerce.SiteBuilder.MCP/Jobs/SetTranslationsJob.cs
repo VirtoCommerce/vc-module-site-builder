@@ -118,21 +118,7 @@ public class SetTranslationsJob(
             return "the page was deleted";
         }
 
-        var problem = await translationSources.GetProblemAsync(group, page.SourceRevisionDate, cancellationToken);
-        if (problem != null)
-        {
-            return problem;
-        }
-
-        try
-        {
-            await translationSources.MarkUpToDateAsync(group, cancellationToken);
-            return null;
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException)
-        {
-            return ex.Message;
-        }
+        return await translationSources.MarkUpToDateAsync(group, page.SourceRevisionDate, cancellationToken);
     }
 
     private static string Describe(PageJobTally tally, bool markUpToDate, int marked, List<string> notMarked)

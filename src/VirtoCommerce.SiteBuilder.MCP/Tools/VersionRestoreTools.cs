@@ -22,7 +22,8 @@ namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 // chat, and a client that cannot ask does not restore. Customers see nothing of it until the drafts are published. The
 // call names the versions of the drafts the agent read (expected_versions), so a draft saved by someone meanwhile is not
 // overwritten: the restore of database pages and theme files checks them under its lock; a page stored as a file in git
-// keeps no version of its own, and its hash is checked against the restore's own dry run just before the commit.
+// keeps no version of its own, so its version is the hash of its content, and the commit is made only over the file
+// that hash was compared with.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class VersionRestoreTools(
@@ -149,7 +150,7 @@ public class VersionRestoreTools(
             throw new McpException($"'{versionId}' is not a commit: name the version of a page stored as a file by its commit, at least {MinCommitLength} characters.");
         }
 
-        FilePageRestoreVersionOperationRequest Request(bool isDryRun) => new()
+        FilePageRestoreVersionOperationRequest Request(bool isDryRun, string expectedVersion) => new()
         {
             StoreId = page.StoreId,
             ContentType = page.ContentType,
@@ -157,16 +158,17 @@ public class VersionRestoreTools(
             Sha = versionId,
             DryRun = isDryRun,
             ReportImpact = true,
+            ExpectedContentVersion = expectedVersion,
         };
 
-        var check = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(true), user, cancellationToken));
+        var check = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(true, null), user, cancellationToken));
         EnsureFilePageRestored(check, page, versionId);
 
         var answer = NewAnswer(page.StoreId, versionId, [page.VersionKey]);
         answer.PageId = page.PageId;
         foreach (var item in check.Preview?.Objects ?? [])
         {
-            answer.ExpectedVersions[page.VersionKey] = FilePages.VersionOf(item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content)?.From);
+            answer.ExpectedVersions[page.VersionKey] = item.ETag ?? FilePages.VersionOf(item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content)?.From);
             AddContentChanges(answer, prefix: null, item);
         }
 
@@ -175,13 +177,15 @@ public class VersionRestoreTools(
             answer.AddWarning(warning);
         }
 
-        EnsureExpected(Normalize(expectedVersions), answer.ExpectedVersions, dryRun);
+        var expected = Normalize(expectedVersions);
+        EnsureExpected(expected, answer.ExpectedVersions, dryRun);
         if (dryRun)
         {
             return answer;
         }
 
-        var result = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(false), user, cancellationToken));
+        var expectedVersion = expected.GetValueOrDefault(page.VersionKey);
+        var result = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(false, expectedVersion), user, cancellationToken));
         EnsureFilePageRestored(result, page, versionId);
         answer.DryRun = false;
         answer.Commit = result.Value?.CommitSha;
@@ -299,6 +303,12 @@ public class VersionRestoreTools(
         {
             throw new McpException($"Page '{page.PageId}' has no version '{versionId}' in store '{page.StoreId}': the store keeps versions of pages " +
                 "stored as files only in git, and the commit must hold the page.");
+        }
+
+        if (result.Status == SiteBuilderOperationStatus.Conflict)
+        {
+            throw new McpException($"The draft of page '{page.PageId}' changed since its version was read, so nothing was restored. Call " +
+                "restore_version with dryRun again, show the user what it would overwrite now, and send the new expected_versions.");
         }
 
         FilePages.EnsureSucceeded(result, page, "restore a version of");

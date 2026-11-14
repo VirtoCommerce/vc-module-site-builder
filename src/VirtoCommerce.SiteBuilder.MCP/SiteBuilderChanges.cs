@@ -10,16 +10,11 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 namespace VirtoCommerce.SiteBuilder.MCP;
 
 // What a page write did or would do: the fields of each page it touches, "from → to", and whether customers see it.
-public sealed class SiteBuilderChange : McpChangePreview
+public sealed class SiteBuilderChange : McpChangePreview, IReviewedChange
 {
     // The write reaches what the storefront serves: a publish or unpublish, or a change of a page that has a published version.
     [JsonPropertyName("affects_published")]
     public bool AffectsPublished { get; set; }
-
-    // A call with unpublished_only found nothing published when it checked, but a page was published before the write
-    // ran: customers see this change, and no second person approved it.
-    [JsonPropertyName("changed_published_without_approval")]
-    public bool ChangedPublishedWithoutApproval { get; set; }
 
     // The page the write created or changed: a Landing Page or a language version.
     [JsonPropertyName("page_id")]
@@ -36,8 +31,8 @@ public sealed class SiteBuilderChange : McpChangePreview
     [JsonPropertyName("shipment")]
     public FilePageShipmentRow Shipment { get; set; }
 
-    // A publish, unpublish or discard: the versions of what it takes, by page or file. Sent back unchanged, the write
-    // takes exactly these and is refused once one moved.
+    // A publish, unpublish, discard or settings change: the versions of what it takes, by page or file. Sent back
+    // unchanged, the write takes exactly these and is refused once one moved.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; }
 
@@ -48,8 +43,10 @@ public sealed class SiteBuilderChange : McpChangePreview
 }
 
 // Runs a write of an operation service the way every page tool does: the operation's own dry run first, as the user of
-// the call, then the write. The dry run gives the preview for the agent and the approver, and it is the check of
-// unpublished_only. A change held for approval runs the same way when it is approved, as the approver.
+// the call, then the write. The dry run gives the preview for the agent and the approver, and refuses an unpublished_only
+// call that touches a published page before anything is written; the write checks unpublished_only again under its own
+// lock (RequireUnpublished), so a page published in between is refused there. A change held for approval runs the same
+// way when it is approved, as the approver.
 public static class SiteBuilderChanges
 {
     public const string UnpublishedOnlyArgument = "unpublished_only";
@@ -122,20 +119,34 @@ public static class SiteBuilderChanges
         }
 
         var result = await run(false);
+        if (unpublishedOnly)
+        {
+            EnsureStillUnpublished(change, result);
+        }
+
         ensureSucceeded(result);
         change.DryRun = false;
         change.AffectsPublished = result.AffectsPublished;
 
-        if (unpublishedOnly && result.AffectsPublished)
+        return (change, result);
+    }
+
+    // The operation refused the write under its lock: a page it touches was published after the dry run.
+    private static void EnsureStillUnpublished(SiteBuilderChange change, SiteBuilderOperationResult result)
+    {
+        if (result.Status != SiteBuilderOperationStatus.Conflict || result.Error != SiteBuilderContentConflictException.PublishedPageMessage)
         {
-            // Published between the check and the write: the write stays, as undoing it would be a second unapproved change.
-            change.ChangedPublishedWithoutApproval = true;
-            change.AddWarning("A page this change touches was published between the check and the write, so customers see the change " +
-                "and no second person approved it. It was not undone. Tell the user, and have the change reviewed, or change the " +
-                "settings back with this tool (that change needs approval).");
+            return;
         }
 
-        return (change, result);
+        // A Multilanguage Page saves its language versions one by one, each under its own lock: those before the refused one keep the change.
+        var saved = change.ObjectType == ChangePreview.MultilanguagePage
+            ? " What was saved before the published version (the Multilanguage Page's own values, other versions) may keep the change: read " +
+              "the Multilanguage Page again with search_site_pages."
+            : " Nothing was changed.";
+        throw new McpException($"A page the change of {change.ObjectType} '{change.ObjectId}' touches was published after the check, so with " +
+            $"{UnpublishedOnlyArgument} the write was refused.{saved} Call the tool again without {UnpublishedOnlyArgument}: the change then " +
+            "waits for a second person's approval.");
     }
 
     // The operation's preview as field changes: those of the tool's own object under their names, those of other

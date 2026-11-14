@@ -21,6 +21,12 @@ public sealed class PageEditSources(
     ClaimsPrincipal user,
     string storeId) : IPageEditSources
 {
+    private readonly Dictionary<string, string> _pageVersions = new(StringComparer.OrdinalIgnoreCase);
+
+    // The pages sections were copied from, with the version of the content copied: a write that has to take exactly
+    // what was reviewed pins them.
+    public IReadOnlyDictionary<string, string> PageVersions => _pageVersions;
+
     public async Task<JsonArray> GetPageSectionsAsync(string pageId, CancellationToken cancellationToken)
     {
         var group = await groupedPageService.GetByIdAsync(pageId)
@@ -29,6 +35,7 @@ public sealed class PageEditSources(
         await authorizationService.EnsureAllowedAsync(user, group, group.StoreId);
 
         var snapshot = await LoadDraftAsync(pageContentService, group, cancellationToken);
+        _pageVersions[group.Id] = snapshot.ETag;
         return SiteBuilderPageDocument.Read(snapshot.Content)?.Sections ?? [];
     }
 

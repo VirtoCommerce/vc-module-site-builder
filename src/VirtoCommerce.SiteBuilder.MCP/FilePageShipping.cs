@@ -15,8 +15,9 @@ public sealed record FilePageShipCall(string StoreId, string PageId, bool Publis
 
 // The operation's dry run, then its write, bound to what the dry run showed. In git the draft is a branch of its
 // editor, named after the user, and an approved change runs as the approver: the dry run answers whose branch it ships
-// (draft_owner) and the commit it is at, and the write ships that branch at that commit. In blob storage there is one
-// draft for every editor and no lock over it: its version is the hash of the content, read right before the write.
+// (draft_owner) and the commit it is at, and the write ships that commit from a publish branch of its own, so a commit
+// made to the draft branch afterwards is not merged with it. In blob storage there is one draft for every editor and no
+// lock over it: its version is the hash of the content, which the operation reads again right before its write.
 public class FilePageShipping(
     IAuthorizationService authorizationService,
     IFilePageOperationService filePageOperationService,
@@ -55,13 +56,16 @@ public class FilePageShipping(
         return change;
     }
 
-    // The write ships the branch and the commit the dry run pinned; a dry run reads the branch of the draft owner.
+    // The write ships the commit the dry run pinned in git, or the content version it pinned in blob storage; a dry run
+    // reads the branch of the draft owner.
     private Task<SiteBuilderOperationResult<FilePageShipment>> RunAsync(ClaimsPrincipal user, FilePage page, FilePageShipCall call, SiteBuilderChange pinned,
         string owner, CancellationToken cancellationToken)
     {
         var inGit = pinned?.DraftOwner != null;
         var draftOwner = pinned == null ? owner : pinned.DraftOwner;
-        var draftHead = inGit ? ReviewedVersions.Of(pinned, page.PageId) : null;
+        var version = pinned == null ? null : ReviewedVersions.Of(pinned, page.PageId);
+        var draftHead = inGit ? version : null;
+        var contentVersion = inGit ? null : version;
 
         return call.Publish
             ? filePageOperationService.PublishAsync(new FilePagePublishOperationRequest
@@ -72,6 +76,7 @@ public class FilePageShipping(
                 Rebase = call.Rebase,
                 DraftOwner = draftOwner,
                 ExpectedDraftHead = draftHead,
+                ExpectedContentVersion = contentVersion,
                 DryRun = pinned == null,
                 ReportImpact = true,
             }, user, cancellationToken)
@@ -82,13 +87,15 @@ public class FilePageShipping(
                 Path = page.Path,
                 DraftOwner = draftOwner,
                 ExpectedDraftHead = draftHead,
+                ExpectedContentVersion = contentVersion,
                 DryRun = pinned == null,
                 ReportImpact = true,
             }, user, cancellationToken);
     }
 
     // In git the version is the commit the draft branch is at, and the call has to name whose branch it is, as the
-    // approver's own branch is another one; in blob storage it is the hash of the content the write takes.
+    // approver's own branch is another one; in blob storage it is the hash of the content the write takes: the draft (else
+    // what is published) for a publish, what is published for an unpublish, as the operation reads it.
     private async Task PinAsync(ClaimsPrincipal user, FilePage page, FilePageShipCall call, SiteBuilderChange change, string owner,
         SiteBuilderOperationResult check, CancellationToken cancellationToken)
     {
@@ -104,6 +111,8 @@ public class FilePageShipping(
 
             change.DraftOwner = owner;
             version = item.DraftHead;
+            change.AddWarning($"The write ships commit {version} of the draft branch {item.DraftBranch} from a publish branch of its own: " +
+                "commits made to the draft branch after this review are not published with it.");
         }
         else
         {

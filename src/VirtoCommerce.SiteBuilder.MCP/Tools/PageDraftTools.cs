@@ -21,8 +21,8 @@ namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // The content author's edits of a page's draft: what customers see changes only when the draft is published, so the
 // edit needs no second person. It saves through the designer's own save, with its checks, sanitizing and history. A page
-// stored as a file has no version of its own; its version token is the hash of its content, checked again against what
-// the save's own dry run reads just before the save.
+// stored as a file has no version of its own; its version token is the hash of its content, which the save compares
+// with the draft it replaces.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageDraftTools(
@@ -144,9 +144,10 @@ public class PageDraftTools(
         return preview;
     }
 
-    // The save of a file page takes no version, so the token is checked twice: against the content read for the edit, and
-    // against what the save's own dry run reads as the current draft. A save by someone else between that dry run and the
-    // write is not seen; the designer's own saves of file pages have the same window.
+    // The token is checked against the content read for the edit and against what the save's own dry run reads as the
+    // current draft, and the save takes it as the version of the draft it replaces: in git the commit names the file it
+    // was compared with, in blob storage the draft is read again right before the write, so a save by someone else in
+    // between is refused rather than overwritten (in blob storage, but for the moment between that read and the write).
     private async Task<PageDraftEdit> EditFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId, string versionToken,
         PageEditOperation[] operations, bool dryRun, CancellationToken cancellationToken)
     {
@@ -194,12 +195,14 @@ public class PageDraftTools(
                 },
                 SaveId = Guid.NewGuid().ToString("N"),
                 DryRun = isDryRun,
+                ExpectedFilePageVersion = isDryRun ? null : version,
             }, context.User, cancellationToken));
 
         var check = await SaveAsync(true);
         EnsureFilePageSaved(check, page);
-        var saving = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.FilePage)?.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
-        if (FilePages.VersionOf(saving?.From) != version)
+        var item = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.FilePage);
+        var saving = item?.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
+        if ((item?.ETag ?? FilePages.VersionOf(saving?.From)) != version)
         {
             throw StaleVersion(page.PageId, page.StoreId);
         }

@@ -126,6 +126,9 @@ internal sealed class McpTestContext : IAsyncDisposable
     // The page writes the tools run; without one, the module's operation service over the page store.
     public IGroupedPageOperationService GroupedPageOperations { get; set; }
 
+    // Runs right before a designer save that writes, after the dry runs of the call: a change made here is a concurrent one.
+    public Action BeforeDesignerWrite { get; set; }
+
     public McpToolHarness Harness => _harness ??= McpToolHarness.Create<McpAssemblyMarker>(Register);
 
     public static McpTestUser Reader(string name = "reader") =>
@@ -330,7 +333,8 @@ internal sealed class McpTestContext : IAsyncDisposable
                 .AddSingleton<IGroupedPageContentService>(PageStore);
         }
 
-        services.AddSingleton<IDesignerOperationService>(provider => CreateDesignerOperations(provider.GetRequiredService<IAuthorizationService>()));
+        services.AddSingleton<IDesignerOperationService>(provider =>
+            new HookedDesignerOperations(CreateDesignerOperations(provider.GetRequiredService<IAuthorizationService>()), this));
         services.AddSingleton<IContentHistoryOperationService>(provider => CreateHistoryOperations(provider.GetRequiredService<IAuthorizationService>()));
         services.AddSingleton<ISiteBuilderSharedComponentOperationService>(provider => TestServices.SharedComponentOperations(
             provider.GetRequiredService<IAuthorizationService>(), SharedComponents.Object, SharedComponentContents.Object, SharedComponentUsages.Object, Stores,
@@ -495,6 +499,29 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public static string ThemeFileKey(string storeId, string pathInTheme, bool draft = false) =>
         $"themes/{storeId}/default/{pathInTheme}{(draft ? "-draft" : string.Empty)}";
+
+    private sealed class HookedDesignerOperations(IDesignerOperationService inner, McpTestContext context) : IDesignerOperationService
+    {
+        public Task<SiteBuilderOperationResult<ThemeFileContent>> ReadThemeFileAsync(DesignerThemeFileRequest request, ClaimsPrincipal user,
+            CancellationToken cancellationToken = default) => inner.ReadThemeFileAsync(request, user, cancellationToken);
+
+        public Task<SiteBuilderOperationResult<DesignerSaveResult>> SaveAsync(DesignerSaveOperationRequest request, ClaimsPrincipal user,
+            CancellationToken cancellationToken = default)
+        {
+            if (!request.DryRun)
+            {
+                context.BeforeDesignerWrite?.Invoke();
+            }
+
+            return inner.SaveAsync(request, user, cancellationToken);
+        }
+
+        public Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,
+            CancellationToken cancellationToken = default) => inner.DiscardAsync(request, user, cancellationToken);
+
+        public Task<SiteBuilderOperationResult> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft, string catalogHash,
+            CancellationToken cancellationToken = default) => inner.ValidateThemeFilesAsync(storeId, files, draft, catalogHash, cancellationToken);
+    }
 
     // Every store of the test uses the new Site Builder, which publishes its theme from drafts.
     private sealed class NewSiteBuilderStores : IThemeSnapshotService

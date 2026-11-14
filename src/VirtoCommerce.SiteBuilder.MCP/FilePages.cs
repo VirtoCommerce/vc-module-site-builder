@@ -1,6 +1,4 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
@@ -89,10 +87,9 @@ public static class FilePages
         await ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken)
         ?? throw new McpException($"Page '{page.PageId}' was not found in store '{page.StoreId}'. Check the folder and path the designer shows for it.");
 
-    // A file page keeps no version of its own: its token is the hash of the content as read, so an edit or a restore made
-    // on content that changed since is refused.
-    public static string VersionOf(string content) =>
-        content == null ? null : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)))[..32];
+    // A file page keeps no version of its own: its token is the hash of the content as read, the one the operations
+    // compare at their write, so an edit, a restore or a publish of content that changed since is refused.
+    public static string VersionOf(string content) => SiteBuilderContentVersion.CreateForFileContent(content);
 
     public static string Forbidden(FilePage page, string verb) =>
         $"You may not {verb} page '{page.PageId}': it needs builder:read in store '{page.StoreId}'.";

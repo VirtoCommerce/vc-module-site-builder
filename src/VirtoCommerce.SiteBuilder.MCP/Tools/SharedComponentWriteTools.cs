@@ -21,7 +21,10 @@ namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // A new Shared Component stands on no page, so creating it changes nothing anyone sees and needs no second person. Its
 // content, once it is placed, shows on every page at once, the published ones too: a change of the content waits for a
-// second person, who sees the pages it stands on; a new name shows nowhere on the storefront and runs at once.
+// second person, who sees the pages it stands on; a new name shows nowhere on the storefront and runs at once. The
+// approved change runs the operations again, so it names what they ran on (expected_versions): the component's content
+// and the content of every page sections are copied from. The save of a component's content takes no version, so the
+// tool reads them again right before it; a save landing between that read and the write is not seen.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentWriteTools(
@@ -34,6 +37,8 @@ public class SharedComponentWriteTools(
 {
     public const string OperationsArgument = "operations";
     private const int MaxOperations = 100;
+    private const string ComponentKeyPrefix = "shared_component:";
+    private const string PageKeyPrefix = "page:";
 
     [McpServerTool(Name = "create_shared_component", ReadOnly = false, Destructive = false, Idempotent = false)]
     [McpPermission(Read, SharedComponentsRead)]
@@ -126,8 +131,11 @@ public class SharedComponentWriteTools(
         "sections), or its name. The content shows at once on every page the component stands on, published ones too, so a " +
         "call with operations waits for a second person's approval, who sees the change and the pages it reaches. A new name " +
         "shows nowhere on the storefront, so a call with name only runs at once. Read the component first with " +
-        "search_shared_components (shared_component_id) for its section ids. Call it with dryRun first to show the user the " +
-        "change and the pages. To change one page only, detach the component there with edit_page_draft instead.")]
+        "search_shared_components (shared_component_id) for its section ids. Call it with dryRun first: it shows the user the " +
+        "change and the pages, and answers expected_versions (the version of the component's content and of every page " +
+        "copy_sections_from copies from). Then call it with operations and those expected_versions unchanged: it waits for " +
+        "approval, and is refused if the component or a copied page changed since. To change one page only, detach the " +
+        "component there with edit_page_draft instead.")]
     public async Task<SharedComponentChange> ReviseSharedComponent(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the component (search_shared_components).")] string shared_component_id,
@@ -135,6 +143,8 @@ public class SharedComponentWriteTools(
         [Description("Changes of the content, applied in order: add_section, duplicate_section, move_section, hide_section, " +
             "show_section, remove_section, set_section_settings, add_block, duplicate_block, move_block, hide_block, show_block, " +
             "remove_block, set_page_settings and copy_sections_from, as in edit_page_draft. Passing them makes the call wait for approval.")] PageEditOperation[] operations = null,
+        [Description("With operations: the expected_versions of the dry run, unchanged. Required without dryRun, so that the approved " +
+            "change runs on exactly the content that was reviewed.")] Dictionary<string, string> expected_versions = null,
         [Description("true to return what would change and the pages the component stands on, without changing it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
@@ -165,24 +175,9 @@ public class SharedComponentWriteTools(
         var subject = $"Shared Component '{component.Id}'";
 
         // Every check first, the content's and the name's, so that a refused part writes nothing of the other.
-        JObject content = null;
-        if (operations != null)
-        {
-            content = await EditContentAsync(context.User, component, operations, change, cancellationToken);
-        }
-
-        if (content != null)
-        {
-            var check = await sharedComponentOperationService.SaveContentAsync(ContentRequest(component, content, isDryRun: true), context.User, cancellationToken);
-            EnsureSucceeded(check, subject, component.StoreId, SharedComponentsUpdate);
-            change.AddChanges(check.Preview);
-            change.AffectsPublished = check.AffectsPublished;
-            change.PlacedOnPages = check.Preview?.Objects.Where(x => x.ObjectType == ChangePreview.Page).Select(x => x.ObjectId).ToList() ?? [];
-            foreach (var warning in check.Preview?.Warnings ?? [])
-            {
-                change.AddWarning(warning);
-            }
-        }
+        var content = operations == null
+            ? null
+            : await CheckContentAsync(context.User, component, operations, new ReviewedCall(expected_versions, dryRun), change, cancellationToken);
 
         var newName = name?.Trim();
         var rename = newName != null && !string.Equals(newName, component.Name, StringComparison.Ordinal);
@@ -210,6 +205,7 @@ public class SharedComponentWriteTools(
 
         if (content != null)
         {
+            ReviewedVersions.EnsureUnchanged(change, await ReadVersionsAsync(component, change.ExpectedVersions.Keys, cancellationToken));
             var result = await sharedComponentOperationService.SaveContentAsync(ContentRequest(component, content, isDryRun: false), context.User, cancellationToken);
             EnsureSucceeded(result, subject, component.StoreId, SharedComponentsUpdate);
             change.AffectsPublished = result.AffectsPublished;
@@ -226,15 +222,67 @@ public class SharedComponentWriteTools(
         return change;
     }
 
-    // A call that changes the content waits for a second person; a rename runs at once.
+    // A call that changes the content waits for a second person once it names the versions it reviewed; without them it
+    // is a dry run or is refused by the tool, so no content changes without approval either way. A rename runs at once.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments != null &&
         arguments.TryGetValue(OperationsArgument, out var value) &&
-        value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined);
+        value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
+        ReviewedVersions.AreGiven(arguments);
 
-    // The component's content with the operations applied; null when they change nothing.
-    private async Task<JObject> EditContentAsync(ClaimsPrincipal user, SiteBuilderSharedComponent component, PageEditOperation[] operations,
+    // The content with the operations applied, null when they change nothing, checked by the operation's dry run of its
+    // save (the change and the pages it reaches) and pinned to the versions it was edited from.
+    private async Task<JObject> CheckContentAsync(ClaimsPrincipal user, SiteBuilderSharedComponent component, PageEditOperation[] operations, ReviewedCall call,
         SharedComponentChange change, CancellationToken cancellationToken)
+    {
+        var (content, versions) = await EditContentAsync(user, component, operations, change, cancellationToken);
+        if (content == null)
+        {
+            return null;
+        }
+
+        var check = await sharedComponentOperationService.SaveContentAsync(ContentRequest(component, content, isDryRun: true), user, cancellationToken);
+        EnsureSucceeded(check, $"Shared Component '{component.Id}'", component.StoreId, SharedComponentsUpdate);
+        change.AddChanges(check.Preview);
+        change.AffectsPublished = check.AffectsPublished;
+        change.PlacedOnPages = check.Preview?.Objects.Where(x => x.ObjectType == ChangePreview.Page).Select(x => x.ObjectId).ToList() ?? [];
+        foreach (var warning in check.Preview?.Warnings ?? [])
+        {
+            change.AddWarning(warning);
+        }
+
+        ReviewedVersions.Pin(change, versions, call.ExpectedVersions, call.DryRun);
+        return content;
+    }
+
+    private sealed record ReviewedCall(IDictionary<string, string> ExpectedVersions, bool DryRun);
+
+    // The versions of what the content was edited from, read again: the component's content and the pages copied from.
+    private async Task<IList<KeyValuePair<string, string>>> ReadVersionsAsync(SiteBuilderSharedComponent component, IEnumerable<string> keys,
+        CancellationToken cancellationToken)
+    {
+        var versions = new List<KeyValuePair<string, string>>
+        {
+            new(ComponentKeyPrefix + component.Id, VersionOf(await sharedComponentContentService.TryLoadContentAsync(component, cancellationToken))),
+        };
+
+        foreach (var pageId in keys.Where(x => x.StartsWith(PageKeyPrefix, StringComparison.OrdinalIgnoreCase)).Select(x => x[PageKeyPrefix.Length..]))
+        {
+            var group = await groupedPageService.GetByIdAsync(pageId);
+            var version = group == null ? null : (await PageEditSources.LoadDraftAsync(pageContentService, group, cancellationToken)).ETag;
+            versions.Add(new(PageKeyPrefix + pageId, version));
+        }
+
+        return versions;
+    }
+
+    // The content of a component keeps no version of its own: its version is the hash of the content, as of a page stored as a file.
+    private static string VersionOf(string content) => SiteBuilderContentVersion.CreateForFileContent(content);
+
+    // The component's content with the operations applied, null when they change nothing, and the versions of what it
+    // was edited from.
+    private async Task<(JObject Content, IList<KeyValuePair<string, string>> Versions)> EditContentAsync(ClaimsPrincipal user,
+        SiteBuilderSharedComponent component, PageEditOperation[] operations, SharedComponentChange change, CancellationToken cancellationToken)
     {
         if (operations.Length == 0)
         {
@@ -251,15 +299,19 @@ public class SharedComponentWriteTools(
             ?? throw new McpException($"The content of Shared Component '{component.Id}' is not a page document, so it cannot be edited here. Open it in the designer.");
         var before = PageDocumentEditor.Read(current, PageDocumentKind.SharedComponent);
 
-        await editor.ApplyAsync(operations, CreateSources(user, component.StoreId), cancellationToken);
+        var sources = CreateSources(user, component.StoreId);
+        await editor.ApplyAsync(operations, sources, cancellationToken);
         change.Sections = SectionRow.From(editor.Sections);
         if (PageDocumentChanges.Compare(before, editor).Count == 0)
         {
             change.AddWarning("The operations change nothing in the content.");
-            return null;
+            return (null, []);
         }
 
-        return JObject.Parse(editor.Write());
+        var versions = new List<KeyValuePair<string, string>> { new(ComponentKeyPrefix + component.Id, VersionOf(current)) };
+        versions.AddRange(sources.PageVersions.Select(x => new KeyValuePair<string, string>(PageKeyPrefix + x.Key, x.Value)));
+
+        return (JObject.Parse(editor.Write()), versions);
     }
 
     private PageEditSources CreateSources(ClaimsPrincipal user, string storeId) =>
@@ -306,7 +358,7 @@ public sealed class NewSection
     public PageEditOperation ToOperation() => new() { Op = "add_section", Type = Type, Settings = Settings, Language = Language };
 }
 
-public sealed class SharedComponentChange : McpChangePreview
+public sealed class SharedComponentChange : McpChangePreview, IReviewedChange
 {
     [JsonPropertyName("shared_component_id")]
     public string SharedComponentId { get; set; }
@@ -326,4 +378,9 @@ public sealed class SharedComponentChange : McpChangePreview
     // The component's sections after the change, in order.
     [JsonPropertyName("sections")]
     public IList<SectionRow> Sections { get; set; }
+
+    // A change of the content: the version of the component's content ('shared_component:<id>') and of each page its
+    // sections are copied from ('page:<id>'). Sent back unchanged, the write takes exactly these and is refused once one moved.
+    [JsonPropertyName("expected_versions")]
+    public IDictionary<string, string> ExpectedVersions { get; set; }
 }

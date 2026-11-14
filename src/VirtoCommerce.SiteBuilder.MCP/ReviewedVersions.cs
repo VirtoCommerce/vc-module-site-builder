@@ -1,8 +1,15 @@
 using System.Text.Json;
 using ModelContextProtocol;
+using VirtoCommerce.MCP.Core.Models;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
+
+// A change whose write takes the versions its dry run answered.
+public interface IReviewedChange
+{
+    IDictionary<string, string> ExpectedVersions { get; set; }
+}
 
 // A publish, unpublish or discard takes exactly what its dry run showed. An approved change runs again as the approver,
 // and a confirmed one may run after a colleague saved: the dry run answers the versions of what the write takes
@@ -23,14 +30,17 @@ public static class ReviewedVersions
         value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined);
 
     // The versions of what the write takes now go into the answer; those the call names must be them. A dry run without
-    // them only answers them; a write without them is refused before anything is written.
-    public static void Pin(SiteBuilderChange change, IEnumerable<KeyValuePair<string, string>> current, IDictionary<string, string> expected, bool dryRun)
+    // them only answers them; a write without them is refused before anything is written, unless they are optional: a
+    // write that needs no approval may take the versions of its own dry run.
+    public static void Pin<T>(T change, IEnumerable<KeyValuePair<string, string>> current, IDictionary<string, string> expected, bool dryRun,
+        bool optional = false)
+        where T : McpChangePreview, IReviewedChange
     {
         change.ExpectedVersions = new Dictionary<string, string>(current, StringComparer.OrdinalIgnoreCase);
 
         if (expected == null)
         {
-            if (dryRun)
+            if (dryRun || optional)
             {
                 return;
             }
@@ -46,10 +56,20 @@ public static class ReviewedVersions
     }
 
     // The version the call named for one item, which the operation compares again.
-    public static string Of(SiteBuilderChange change, string key) =>
+    public static string Of(IReviewedChange change, string key) =>
         change.ExpectedVersions != null && change.ExpectedVersions.TryGetValue(key, out var version) ? version : null;
 
-    public static McpException Changed(SiteBuilderChange change) =>
+    // The versions the write is about to take, read again as close to it as the storage allows, must still be those it pinned.
+    public static void EnsureUnchanged<T>(T change, IEnumerable<KeyValuePair<string, string>> current)
+        where T : McpChangePreview, IReviewedChange
+    {
+        if (!Same(change.ExpectedVersions ?? new Dictionary<string, string>(), new Dictionary<string, string>(current, StringComparer.OrdinalIgnoreCase)))
+        {
+            throw Changed(change);
+        }
+    }
+
+    public static McpException Changed(McpChangePreview change) =>
         new($"{Subject(change)} changed since the dry run that gave {Argument}, so nothing was changed. Call {change.Action} with dryRun " +
             $"again, show the user what it would do now, and send the new {Argument}.");
 
@@ -65,10 +85,11 @@ public static class ReviewedVersions
             current.All(x => normalized.TryGetValue(x.Key, out var version) && string.Equals(version, x.Value, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string Subject(SiteBuilderChange change) => change.ObjectType switch
+    private static string Subject(McpChangePreview change) => change.ObjectType switch
     {
         ChangePreview.ThemeFile => $"'{change.ObjectId}'",
         ChangePreview.MultilanguagePage => $"Multilanguage Page '{change.ObjectId}'",
+        ChangePreview.SharedComponent => $"Shared Component '{change.ObjectId}' or a page its sections are copied from",
         _ => $"Page '{change.ObjectId}'",
     };
 }

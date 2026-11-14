@@ -73,7 +73,61 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         var result = await _context.CallAsync(Editor(), "link_page_language", new { page_id = "landing", multilanguage_page_id = "ml-a", unpublished_only = true });
 
         Assert.Equal(McpToolCallOutcome.Succeeded, result.Outcome);
-        Operations.Verify(x => x.LinkAsync(It.Is<MultilanguagePageLinkOperationRequest>(r => !r.DryRun && r.GroupId == "landing" && r.MultilanguagePageId == "ml-a"),
+        Operations.Verify(x => x.LinkAsync(It.Is<MultilanguagePageLinkOperationRequest>(r => !r.DryRun && r.GroupId == "landing" && r.MultilanguagePageId == "ml-a" &&
+            r.RequireUnpublished), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Link_UnpublishedOnly_OfAPagePublishedAfterTheCheck_IsRefused_NotReported()
+    {
+        SetUpLink(affectsPublished: false, publishedAtTheWrite: true);
+
+        var result = await _context.CallAsync(Editor(), "link_page_language", new { page_id = "landing", multilanguage_page_id = "ml-a", unpublished_only = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("was published after the check", result.Error);
+        Assert.Contains("Nothing was changed", result.Error);
+    }
+
+    [Theory]
+    [InlineData("convert_page_to_multilanguage", "landing")]
+    [InlineData("unlink_page_language", "version")]
+    public async Task ConvertAndUnlink_PassUnpublishedOnly_ToTheWrite(string tool, string pageId)
+    {
+        Operations
+            .Setup(x => x.ConvertAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun<MultilanguagePage>(Preview("name", null, "Page landing", "multilanguage-page"))
+                : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PublishedPageMessage).As<MultilanguagePage>());
+        Operations
+            .Setup(x => x.UnlinkAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("multilanguagePageId", "ml-a", null, objectId: "version"))
+                : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PublishedPageMessage).As<GroupedSiteBuilderPage>());
+        var creator = McpTestUser.Create("creator").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Create);
+
+        var result = await _context.CallAsync(creator, tool, new { page_id = pageId, unpublished_only = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("was published after the check", result.Error);
+        Assert.All(Operations.Invocations.Where(x => x.Arguments[0] is MultilanguagePageVersionOperationRequest { DryRun: false }),
+            x => Assert.True(((MultilanguagePageVersionOperationRequest)x.Arguments[0]).RequireUnpublished));
+    }
+
+    [Fact]
+    public async Task Reset_UnpublishedOnly_OfAVersionPublishedAfterTheCheck_SaysWhatMayHaveBeenSaved()
+    {
+        Operations
+            .Setup(x => x.ResetOverridesAsync(It.IsAny<MultilanguagePageResetOverridesOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageResetOverridesOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun<IList<string>>(Preview("permalink", "/fr", "/ml-a", objectId: "fr"))
+                : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PublishedPageMessage).As<IList<string>>());
+
+        var result = await _context.CallAsync(Editor(), "reset_language_overrides", new { multilanguage_page_id = "ml-a", fields = new[] { "permalink" }, unpublished_only = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("may keep the change", result.Error);
+        Operations.Verify(x => x.ResetOverridesAsync(It.Is<MultilanguagePageResetOverridesOperationRequest>(r => !r.DryRun && r.RequireUnpublished),
             It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -123,6 +177,8 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, held.Outcome);
         Assert.True(approved.EnsureSucceeded().Read<SiteBuilderChange>().AffectsPublished);
+        Operations.Verify(x => x.UnlinkAsync(It.Is<MultilanguagePageVersionOperationRequest>(r => !r.DryRun && !r.RequireUnpublished), It.IsAny<ClaimsPrincipal>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -157,13 +213,16 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         Assert.Contains(held.Read<SiteBuilderChange>().Changes, x => x.Field == "page 'fr': permalink");
     }
 
-    private void SetUpLink(bool affectsPublished)
+    // As the operation links: with RequireUnpublished, a page published by the time of the write is refused under its lock.
+    private void SetUpLink(bool affectsPublished, bool publishedAtTheWrite = false)
     {
         Operations
             .Setup(x => x.LinkAsync(It.IsAny<MultilanguagePageLinkOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageLinkOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
                 ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("multilanguagePageId", null, "ml-a", objectId: "landing", affectsPublished: affectsPublished))
-                : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "landing" }, affectsPublished));
+                : request.RequireUnpublished && publishedAtTheWrite
+                    ? SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PublishedPageMessage).As<GroupedSiteBuilderPage>()
+                    : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "landing" }, affectsPublished));
     }
 
     private void VerifyNoWrite() =>

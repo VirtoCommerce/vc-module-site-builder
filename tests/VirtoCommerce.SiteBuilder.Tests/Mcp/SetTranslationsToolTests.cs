@@ -31,6 +31,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
     private readonly PublishedRenameContentPreservationTests.FakeGroupedPageService _pages;
     private readonly List<string> _marked = [];
     private DateTime _sourceRevision = _published;
+    private DateTime? _sourceRevisionAtTheSave;
 
     public SetTranslationsToolTests()
     {
@@ -47,10 +48,19 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
                 new MultilanguagePageLanguage { CultureName = "en-US", IsDefault = true, Page = new GroupedSiteBuilderPage { Id = "en", SourceRevisionDate = _sourceRevision } },
                 new MultilanguagePageLanguage { CultureName = "fr-FR", Page = new GroupedSiteBuilderPage { Id = "fr" } },
             ]);
+        // As the service compares the source revision under the lock of the save, which may be after the job read it.
         _context.MultilanguagePages
-            .Setup(x => x.MarkUpToDateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback((string id, CancellationToken _) => _marked.Add(id))
-            .ReturnsAsync((string id, CancellationToken _) => new GroupedSiteBuilderPage { Id = id });
+            .Setup(x => x.MarkUpToDateAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string id, DateTime? expected, CancellationToken _) =>
+            {
+                if (expected != (_sourceRevisionAtTheSave ?? _sourceRevision))
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
+                }
+
+                _marked.Add(id);
+                return new GroupedSiteBuilderPage { Id = id };
+            });
     }
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
@@ -173,6 +183,22 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         Assert.Single(_context.SavedVersions.Records);
         Assert.Empty(_marked);
         Assert.Contains("not marked: fr (the source language version was published again after you read it)", run.FinalMessage);
+    }
+
+    [Fact]
+    public async Task ASourcePublishedAgainBeforeTheMarkIsSaved_LeavesItOutdated()
+    {
+        _context.JobUsers["editor"] = Editor().ToPrincipal();
+        var payload = await QueueAsync(await FrenchAsync());
+        _sourceRevisionAtTheSave = _published.AddHours(2);
+
+        var run = await _context.RunJobAsync<SetTranslationsJob, SetTranslationsJobPayload>(payload);
+
+        Assert.Single(_context.SavedVersions.Records);
+        Assert.Empty(_marked);
+        Assert.Contains("not marked: fr (the source language version was published again after you read it)", run.FinalMessage);
+        _context.MultilanguagePages.Verify(x => x.MarkUpToDateAsync("fr", _published, It.IsAny<CancellationToken>()), Times.Once);
+        _context.MultilanguagePages.Verify(x => x.MarkUpToDateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
