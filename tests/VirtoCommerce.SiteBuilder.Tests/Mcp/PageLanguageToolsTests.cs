@@ -113,8 +113,8 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
     public async Task Unlink_OfAPublishedVersion_RunsWhenApproved()
     {
         Operations
-            .Setup(x => x.UnlinkAsync(It.IsAny<GroupedPageOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((GroupedPageOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+            .Setup(x => x.UnlinkAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
                 ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("multilanguagePageId", "ml-a", null, objectId: "version", affectsPublished: true))
                 : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "version" }, affectsPublished: true));
 
@@ -129,14 +129,14 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
     public async Task Convert_DryRun_WritesNothing()
     {
         Operations
-            .Setup(x => x.ConvertAsync(It.IsAny<GroupedPageOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.ConvertAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(SiteBuilderOperationResult.DryRun<MultilanguagePage>(Preview("name", null, "Page landing", "multilanguage-page")));
         var creator = McpTestUser.Create("creator").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Create);
 
         var result = await _context.CallAsync(creator, "convert_page_to_multilanguage", new { page_id = "landing", unpublished_only = true, dryRun = true });
 
         Assert.True(result.EnsureSucceeded().Read<SiteBuilderChange>().DryRun);
-        Operations.Verify(x => x.ConvertAsync(It.Is<GroupedPageOperationRequest>(r => !r.DryRun), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Never);
+        Operations.Verify(x => x.ConvertAsync(It.Is<MultilanguagePageVersionOperationRequest>(r => !r.DryRun), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
