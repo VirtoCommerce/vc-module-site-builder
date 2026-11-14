@@ -226,7 +226,8 @@ public class DesignerContentService(
 
             if (draft.Status == DraftDiscardStatus.Discarded)
             {
-                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.FilePage, path, eTag: null, draft.DraftContent, draft.PublishedContent));
+                var eTag = SiteBuilderContentVersion.CreateForFilePage(command.StoreId, contentType, path, draft.DraftContent);
+                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.FilePage, path, eTag, draft.DraftContent, draft.PublishedContent));
             }
         }
 
@@ -235,7 +236,8 @@ public class DesignerContentService(
             var draft = await themeDraftService.PreviewDiscardAsync(command.StoreId, path, cancellationToken);
             if (draft.Status == DraftDiscardStatus.Discarded)
             {
-                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, path, eTag: null, draft.DraftContent, draft.PublishedContent));
+                var eTag = SiteBuilderContentVersion.CreateForThemeFile(command.StoreId, path, draft.DraftContent);
+                preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, path, eTag, draft.DraftContent, draft.PublishedContent));
             }
             else if (draft.Status == DraftDiscardStatus.OnlyCopy)
             {
@@ -308,6 +310,7 @@ public class DesignerContentService(
         var themeDrafts = await themeDraftService.DiscardDraftsAsync(
             command.StoreId,
             command.ThemeFiles,
+            command.ThemeFileETags,
             async token => publishedPageContent = await DiscardPageAsync(command, user, token),
             cancellationToken);
 
@@ -479,11 +482,21 @@ public class DesignerContentService(
     {
         if (command.Group != null)
         {
-            return await DiscardPageDraftsAsync(command.Group, cancellationToken);
+            return await DiscardPageDraftsAsync(command.Group, command.PageETag, cancellationToken);
         }
 
-        if (command.FilePage != null &&
-            await filePageDraftService.DiscardDraftAsync(command.StoreId, command.FilePage.ContentType, command.FilePage.Path, user, cancellationToken) == DraftDiscardStatus.OnlyCopy)
+        if (command.FilePage == null)
+        {
+            return null;
+        }
+
+        var (contentType, path) = (command.FilePage.ContentType, command.FilePage.Path);
+        if (command.PageETag != null)
+        {
+            await CheckFilePageDraftVersionAsync(command.StoreId, contentType, path, command.PageETag, user, cancellationToken);
+        }
+
+        if (await filePageDraftService.DiscardDraftAsync(command.StoreId, contentType, path, user, cancellationToken) == DraftDiscardStatus.OnlyCopy)
         {
             throw new InvalidDataException(NeverPublishedError);
         }
@@ -491,18 +504,43 @@ public class DesignerContentService(
         return null;
     }
 
-    protected virtual async Task<string> DiscardPageDraftsAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    /// <summary>The draft has to be there, at the version the caller reviewed. Neither blob storage nor git holds a lock over it: it is read right before the discard.</summary>
+    /// <exception cref="SiteBuilderContentConflictException">It is not.</exception>
+    protected virtual async Task CheckFilePageDraftVersionAsync(string storeId, string contentType, string path, string eTag, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var draft = await filePageDraftService.PreviewDiscardDraftAsync(storeId, contentType, path, user, cancellationToken);
+        var current = draft.Status == DraftDiscardStatus.Discarded ? SiteBuilderContentVersion.CreateForFilePage(storeId, contentType, path, draft.DraftContent) : null;
+        if (!string.Equals(current, eTag.Trim(), StringComparison.Ordinal))
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+        }
+    }
+
+    /// <param name="eTag">The version the draft has to be at; <c>null</c> discards it whatever it holds.</param>
+    /// <exception cref="SiteBuilderContentConflictException">The draft is at another version: nothing is discarded.</exception>
+    protected virtual async Task<string> DiscardPageDraftsAsync(GroupedSiteBuilderPage group, string eTag, CancellationToken cancellationToken)
     {
         var publishedPage = GetPublishedPage(group);
 
         var draftIds = group.Pages.Where(x => x.Status == Draft).Select(x => x.Id).ToList();
-        if (draftIds.Count == 0)
+        if (eTag == null && draftIds.Count == 0)
         {
             return null;
         }
 
         // read first: the history entry needs it, and nothing may fail once the drafts are gone
         var publishedContent = await groupedPageService.LoadContent(publishedPage.Id, cancellationToken);
+        if (eTag != null)
+        {
+            // the drafts are deleted row by row, under no lock of the group: the version is read right before
+            var current = await groupedPageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken);
+            if (draftIds.Count == 0 || !string.Equals(current.ETag, eTag.Trim(), StringComparison.Ordinal))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
+            }
+        }
+
         await pageService.DeleteAsync(draftIds);
 
         return publishedContent;

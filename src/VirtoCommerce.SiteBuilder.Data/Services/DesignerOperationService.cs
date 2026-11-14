@@ -141,6 +141,8 @@ public class DesignerOperationService(
         command.Group = group;
         command.FilePage = filePage;
         command.ThemeFiles = themePaths;
+        command.PageETag = request.ExpectedPageVersion;
+        command.ThemeFileETags = request.ExpectedThemeFileVersions;
         try
         {
             return request.DryRun
@@ -150,6 +152,10 @@ public class DesignerOperationService(
         catch (InvalidDataException ex)
         {
             return SiteBuilderOperationResult.Invalid(ex.Message).As<ContentSaveResult>();
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<ContentSaveResult>();
         }
     }
 

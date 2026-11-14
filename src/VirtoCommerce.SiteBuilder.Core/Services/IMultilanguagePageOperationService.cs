@@ -46,6 +46,6 @@ public interface IMultilanguagePageOperationService
         CancellationToken cancellationToken = default);
 
     /// <summary>Publishes the draft of every language version that has one.</summary>
-    Task<SiteBuilderOperationResult<MultilanguagePageBatchResult>> PublishAllAsync(MultilanguagePageOperationRequest request, ClaimsPrincipal user,
+    Task<SiteBuilderOperationResult<MultilanguagePageBatchResult>> PublishAllAsync(MultilanguagePagePublishAllOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 }

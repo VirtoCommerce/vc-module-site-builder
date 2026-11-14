@@ -12,8 +12,14 @@ public interface IThemeDraftService
         Func<CancellationToken, Task<T>> saveOthersAsync, CancellationToken cancellationToken = default);
 
     /// <summary>Under the store's theme lock, deletes the drafts of the published files and runs <paramref name="discardOthersAsync"/>; when it fails, puts the drafts back.</summary>
-    Task<IList<DiscardedThemeDraft>> DiscardDraftsAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
-        CancellationToken cancellationToken = default);
+    /// <param name="eTags">
+    /// The version each draft to delete was reviewed at, by its path, as <see cref="ReadAsync"/> answers it; null deletes the drafts whatever they hold.
+    /// </param>
+    /// <exception cref="Models.SiteBuilderContentConflictException">
+    /// The drafts to delete are not those reviewed: one changed, or one is named that is not to delete or one to delete is not named. Nothing is deleted.
+    /// </exception>
+    Task<IList<DiscardedThemeDraft>> DiscardDraftsAsync(string storeId, IList<string> paths, IDictionary<string, string> eTags,
+        Func<CancellationToken, Task> discardOthersAsync, CancellationToken cancellationToken = default);
 
     /// <summary>What <see cref="DiscardDraftsAsync"/> would do with the draft of the file, with the draft and what is live; writes nothing.</summary>
     Task<Models.DraftDiscardPreview> PreviewDiscardAsync(string storeId, string path, CancellationToken cancellationToken = default);

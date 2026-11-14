@@ -39,6 +39,18 @@ public static class SiteBuilderContentVersion
         });
     }
 
+    /// <summary>The version of a draft of a page or a blog article kept as a file, as the discard of the draft compares it.</summary>
+    public static string CreateForFilePage(string storeId, string contentType, string path, string content)
+    {
+        return Hash(new
+        {
+            StoreId = storeId,
+            ContentType = contentType,
+            FilePage = path,
+            ContentHash = content == null ? null : HashContent(Encoding.UTF8.GetBytes(content)),
+        });
+    }
+
     private static string CreateFromContentHash(GroupedSiteBuilderPage group, string contentHash)
     {
         return Hash(new

@@ -458,7 +458,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/unpublish")]
         public async Task<ActionResult> GitUnpublish(string storeId, string path, string type)
         {
-            var request = new FilePageOperationRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
+            var request = new FilePageShipOperationRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
             var result = await filePageOperationService.UnpublishAsync(request, User, HttpContext.RequestAborted);
             if (result.Status == SiteBuilderOperationStatus.NotFound && result.Value != null)
             {
@@ -643,7 +643,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         [Route("git/discard-draft")]
         public async Task<ActionResult> GitDiscardDraft(string storeId, string path, string type)
         {
-            var request = new FilePageOperationRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
+            var request = new FilePageDraftOperationRequest { StoreId = storeId, ContentType = type, Path = path, BindingErrors = ModelState.GetBindingErrors() };
 
             return (await filePageOperationService.DiscardGitDraftAsync(request, User, HttpContext.RequestAborted)).ToRefusal() ?? Ok();
         }

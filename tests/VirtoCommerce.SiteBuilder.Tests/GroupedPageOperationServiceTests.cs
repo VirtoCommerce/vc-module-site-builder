@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using Xunit;
 using Fakes = VirtoCommerce.SiteBuilder.Tests.PublishedRenameContentPreservationTests;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
@@ -277,6 +278,122 @@ public class GroupedPageOperationServiceTests
     }
 
     [Fact]
+    public async Task PublishAsync_DryRun_TellsTheVersionOfTheDraft()
+    {
+        var request = new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, DryRun = true };
+
+        var result = await Operations().PublishAsync(request, _user, Ct);
+
+        Assert.Equal(await ETagAsync("edited"), Assert.Single(result.Preview.Objects).ETag);
+    }
+
+    [Fact]
+    public async Task PublishAsync_TheReviewedDraft_IsPublished()
+    {
+        var dryRun = await Operations().PublishAsync(new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, DryRun = true }, _user, Ct);
+        var request = new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, ExpectedDraftVersion = dryRun.Preview.Objects[0].ETag };
+
+        var result = await Operations().PublishAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(Published, Assert.Single((await GetAsync("edited")).Pages).Status);
+        Assert.Single(_history.Records);
+    }
+
+    [Fact]
+    public async Task PublishAsync_DraftChangedSinceItWasReviewed_IsAConflictAndPublishesNothing()
+    {
+        var reviewed = await ETagAsync("edited");
+        _pages.SeedContent("edited-draft", EditedContent);
+        var request = new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, ExpectedDraftVersion = reviewed };
+
+        var result = await Operations().PublishAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
+        Assert.Equal([Draft, Published], (await GetAsync("edited")).Pages.Select(x => x.Status).Order());
+        Assert.Equal(EditedContent, await _pages.LoadContent("edited-draft", Ct));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task PublishAsync_UnpublishDryRun_TellsTheVersionOfThePublishedPage()
+    {
+        var request = new GroupedPagePublishOperationRequest { GroupId = "live", Publish = false, DryRun = true };
+
+        var result = await Operations().PublishAsync(request, _user, Ct);
+
+        Assert.Equal(await ETagAsync("live", draft: false), Assert.Single(result.Preview.Objects).ETag);
+    }
+
+    [Fact]
+    public async Task PublishAsync_UnpublishOfTheReviewedPage_TurnsItIntoADraft()
+    {
+        var request = new GroupedPagePublishOperationRequest { GroupId = "live", Publish = false, ExpectedPublishedVersion = await ETagAsync("live", draft: false) };
+
+        var result = await Operations().PublishAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(Draft, (await GetAsync("live")).Status);
+    }
+
+    [Fact]
+    public async Task PublishAsync_UnpublishOfAPageChangedSinceItWasReviewed_IsAConflictAndKeepsItPublished()
+    {
+        var reviewed = await ETagAsync("live", draft: false);
+        _pages.SeedContent("live-published", EditedContent);
+        var request = new GroupedPagePublishOperationRequest { GroupId = "live", Publish = false, ExpectedPublishedVersion = reviewed };
+
+        var result = await Operations().PublishAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal(Published, (await GetAsync("live")).Status);
+    }
+
+    [Fact]
+    public async Task DiscardDraftAsync_DryRun_TellsTheVersionOfTheDraft()
+    {
+        var result = await Operations().DiscardDraftAsync(new GroupedPageDiscardOperationRequest { GroupId = "edited", DryRun = true }, _user, Ct);
+
+        Assert.Equal(await ETagAsync("edited"), Assert.Single(result.Preview.Objects).ETag);
+    }
+
+    [Fact]
+    public async Task DiscardDraftAsync_TheReviewedDraft_IsDiscarded()
+    {
+        var request = new GroupedPageDiscardOperationRequest { GroupId = "edited", ExpectedDraftVersion = await ETagAsync("edited") };
+
+        var result = await Operations().DiscardDraftAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(Published, Assert.Single((await GetAsync("edited")).Pages).Status);
+    }
+
+    [Fact]
+    public async Task DiscardDraftAsync_DraftChangedSinceItWasReviewed_IsAConflictAndKeepsTheDraft()
+    {
+        var reviewed = await ETagAsync("edited");
+        _pages.SeedContent("edited-draft", EditedContent);
+        var request = new GroupedPageDiscardOperationRequest { GroupId = "edited", ExpectedDraftVersion = reviewed };
+
+        var result = await Operations().DiscardDraftAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
+        Assert.Equal(EditedContent, await _pages.LoadContent("edited-draft", Ct));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardDraftAsync_WithoutAVersion_DiscardsTheDraftWhateverItHolds()
+    {
+        _pages.SeedContent("edited-draft", EditedContent);
+
+        var result = await Operations().DiscardDraftAsync(new GroupedPageDiscardOperationRequest { GroupId = "edited" }, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(Published, Assert.Single((await GetAsync("edited")).Pages).Status);
+    }
+
+    [Fact]
     public async Task DiscardDraftAsync_DryRun_PreviewsThePublishedContentAndKeepsTheDraft()
     {
         var result = await Operations().DiscardDraftAsync(new GroupedPageDiscardOperationRequest { GroupId = "edited", DryRun = true }, _user, Ct);
@@ -325,11 +442,16 @@ public class GroupedPageOperationServiceTests
         var contentService = new SiteBuilderPageContentService(pageService, _pages, new Fakes.NoopEventPublisher(),
             NullLogger<SiteBuilderPageContentService>.Instance);
 
+        var live = new FakeBlobStorage();
+        var themeDrafts = new ThemeDraftService(new ThemeStorageFactory(live.StoreService, live, live, live), new InProcessDistributedLock(), live,
+            NullLogger<ThemeDraftService>.Instance);
+
         return TestServices.GroupedPageOperations(authorization, _pages, contentService, pageService,
-            designerContentService: TestServices.Designer(_history, pages: _pages), contentHistory: _history);
+            designerContentService: TestServices.Designer(_history, themeDrafts: themeDrafts, pages: _pages), contentHistory: _history);
     }
 
     private async Task<GroupedSiteBuilderPage> GetAsync(string groupId) => (await _pages.GetAsync([groupId])).Single();
 
-    private async Task<string> ETagAsync(string groupId) => (await _pages.LoadGroupContentAsync(await GetAsync(groupId), cancellationToken: Ct)).ETag;
+    private async Task<string> ETagAsync(string groupId, bool draft = true) =>
+        (await _pages.LoadGroupContentAsync(await GetAsync(groupId), draft, Ct)).ETag;
 }

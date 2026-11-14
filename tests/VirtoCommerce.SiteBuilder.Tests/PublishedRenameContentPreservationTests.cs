@@ -197,6 +197,17 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 return new(draft.Id, SiteBuilderContentVersion.Create(current, content)) { GroupedEventsPublished = groupedEventsPublished };
             }
 
+            public async Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag,
+                CancellationToken cancellationToken = default)
+            {
+                var current = _groups.ContainsKey(group.Id ?? "") ? await LoadGroupContentAsync(group, draft, cancellationToken) : null;
+                if (current?.ETag != expectedETag)
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
+                }
+                await SaveChangesAsync([group]);
+            }
+
             public async Task SaveGroupSettingsAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default)
             {
                 var snapshot = _groups.ContainsKey(group.Id ?? "")

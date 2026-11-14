@@ -328,6 +328,136 @@ public class DesignerOperationServiceTests
     }
 
     [Fact]
+    public async Task DiscardAsync_DryRun_TellsTheVersionOfEachDraft()
+    {
+        SeedDrafts();
+
+        var result = await Operations().DiscardAsync(DiscardRequest(new DesignerSavePage { GroupId = "g1" }, Header), _user, Ct);
+
+        var pageETag = (await _pages.LoadGroupContentAsync(await _pages.GetByIdAsync("g1"), cancellationToken: Ct)).ETag;
+        Assert.Equal([pageETag, ETagOf(Header)], result.Preview.Objects.Select(x => x.ETag));
+    }
+
+    [Fact]
+    public async Task DiscardAsync_TheReviewedDrafts_AreDiscarded()
+    {
+        SeedDrafts();
+        var request = await ReviewedAsync(DiscardRequest(new DesignerSavePage { GroupId = "g1" }, Header));
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.False(_live.Files.ContainsKey(Theme($"{Header}-draft")));
+        Assert.Equal(["p1"], (await _pages.GetByIdAsync("g1")).Pages.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task DiscardAsync_ThemeFileChangedSinceTheReview_IsAConflictAndDiscardsNothing()
+    {
+        SeedDrafts();
+        var request = await ReviewedAsync(DiscardRequest(new DesignerSavePage { GroupId = "g1" }, Header));
+        _live.Files[Theme($"{Header}-draft")] = RulesFile;
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftChangedMessage), (result.Status, result.Error));
+        Assert.Equal(RulesFile, _live.Files[Theme($"{Header}-draft")]);
+        Assert.Equal(["p1", "p2"], (await _pages.GetByIdAsync("g1")).Pages.Select(x => x.Id));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_ThemeFileDraftedSinceTheReview_IsAConflict()
+    {
+        SeedDrafts();
+        var request = await ReviewedAsync(DiscardRequest(new DesignerSavePage { GroupId = "g1" }, Header, Rules));
+        _live.Files[Theme(Rules)] = "live rules";
+        _live.Files[Theme($"{Rules}-draft")] = RulesFile;
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal(HeaderFile, _live.Files[Theme($"{Header}-draft")]);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_PageChangedSinceTheReview_IsAConflictAndPutsTheThemeDraftsBack()
+    {
+        SeedDrafts();
+        var request = await ReviewedAsync(DiscardRequest(new DesignerSavePage { GroupId = "g1" }, Header));
+        _pages.SeedContent("p2", Published);
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
+        Assert.Equal(HeaderFile, _live.Files[Theme($"{Header}-draft")]);
+        Assert.Equal(["p1", "p2"], (await _pages.GetByIdAsync("g1")).Pages.Select(x => x.Id));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_FilePage_DiscardsTheReviewedDraftAndRefusesAChangedOne()
+    {
+        _live.Files[Page("about.page")] = "live about";
+        _live.Files[Page("about.page-draft")] = "draft about";
+        var request = await ReviewedAsync(DiscardRequest(new DesignerSavePage { Path = "about.page", Type = "pages" }));
+        _live.Files[Page("about.page-draft")] = "draft about, edited";
+
+        var changed = await Operations().DiscardAsync(request, _user, Ct);
+        var reviewed = await Operations().DiscardAsync(await ReviewedAsync(DiscardRequest(new DesignerSavePage { Path = "about.page", Type = "pages" })), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, changed.Status);
+        Assert.True(reviewed.Succeeded);
+        Assert.False(_live.Files.ContainsKey(Page("about.page-draft")));
+    }
+
+    [Fact]
+    public async Task DiscardAsync_WithoutVersions_DiscardsTheDraftsWhateverTheyHold()
+    {
+        SeedDrafts();
+        var request = DiscardRequest(new DesignerSavePage { GroupId = "g1" }, Header);
+        request.DryRun = false;
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.False(_live.Files.ContainsKey(Theme($"{Header}-draft")));
+        Assert.Equal(["p1"], (await _pages.GetByIdAsync("g1")).Pages.Select(x => x.Id));
+    }
+
+    /// <summary>The discard of what a dry run of <paramref name="request"/> lists, at the versions it tells.</summary>
+    private async Task<DesignerDiscardOperationRequest> ReviewedAsync(DesignerDiscardOperationRequest request)
+    {
+        var dryRun = await Operations().DiscardAsync(request, _user, Ct);
+        var page = dryRun.Preview.Objects.SingleOrDefault(x => x.ObjectType != ModuleConstants.ChangePreview.ThemeFile);
+
+        request.DryRun = false;
+        request.ExpectedPageVersion = page?.ETag;
+        request.ExpectedThemeFileVersions = dryRun.Preview.Objects
+            .Where(x => x.ObjectType == ModuleConstants.ChangePreview.ThemeFile)
+            .ToDictionary(x => x.ObjectId, x => x.ETag);
+
+        return request;
+    }
+
+    private void SeedDrafts()
+    {
+        _pages.SeedGroup(new GroupedSiteBuilderPage
+        {
+            Id = "g1",
+            StoreId = "s1",
+            Pages =
+            [
+                new SiteBuilderPage { Id = "p1", StoreId = "s1", Status = ModuleConstants.PageStatuses.Published },
+                new SiteBuilderPage { Id = "p2", StoreId = "s1", Status = ModuleConstants.PageStatuses.Draft },
+            ],
+        });
+        _pages.SeedContent("p2", Edited);
+        _live.Files[Theme(Header)] = "live header";
+        _live.Files[Theme($"{Header}-draft")] = HeaderFile;
+    }
+
+    [Fact]
     public async Task ReadThemeFileAsync_StoreUserDoesNotWorkIn_IsForbiddenBeforeThePathIsChecked()
     {
         var request = new DesignerThemeFileRequest { StoreId = "s1", Path = "default/../x.json" };

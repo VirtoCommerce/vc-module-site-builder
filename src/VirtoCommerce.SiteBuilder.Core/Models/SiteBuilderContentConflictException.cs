@@ -6,6 +6,12 @@ public sealed class SiteBuilderContentConflictException(string message) : Except
 
     public const string ThemeDraftsMessage = "The theme's drafts changed since they were reviewed: review them again before publishing.";
 
+    public const string PageChangedMessage = "The page changed since it was reviewed: review it again.";
+
+    public const string DraftChangedMessage = "The draft changed since it was reviewed: review it again.";
+
+    public const string DraftBranchMovedMessage = "The draft branch moved since it was reviewed: review it again.";
+
     public SiteBuilderContentConflictException() : this("The page content version does not match the current version.")
     {
     }

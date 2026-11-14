@@ -16,6 +16,15 @@ public class SiteBuilderObjectChange
     /// <summary>The version of what the store holds now, where it keeps one: a write sent at another version is refused.</summary>
     public string ETag { get; set; }
 
+    /// <summary>The git branch holding the draft the write takes; <c>null</c> outside git.</summary>
+    public string DraftBranch { get; set; }
+
+    /// <summary>
+    /// The commit <see cref="DraftBranch"/> is at; <c>null</c> when there is no such branch. Sent back as the expected draft head, the write is
+    /// refused once the branch has moved.
+    /// </summary>
+    public string DraftHead { get; set; }
+
     /// <summary>Who last changed what the write takes, as the store's content history records it; <c>null</c> where it is not known.</summary>
     public ContentVersionAuthor ChangedBy { get; set; }
 

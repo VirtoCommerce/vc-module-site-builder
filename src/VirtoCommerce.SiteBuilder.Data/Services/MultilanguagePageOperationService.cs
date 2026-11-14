@@ -248,14 +248,16 @@ public class MultilanguagePageOperationService(
             () => multilanguagePageService.CloneAsync(request.MultilanguagePageId, cancellationToken));
     }
 
-    public virtual Task<SiteBuilderOperationResult<MultilanguagePageBatchResult>> PublishAllAsync(MultilanguagePageOperationRequest request,
+    public virtual Task<SiteBuilderOperationResult<MultilanguagePageBatchResult>> PublishAllAsync(MultilanguagePagePublishAllOperationRequest request,
         ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         return RunForRootAsync(request, user,
             () => multilanguagePageService.PreviewPublishAllAsync(request.MultilanguagePageId, cancellationToken),
-            () => multilanguagePageService.PublishAllAsync(request.MultilanguagePageId, cancellationToken));
+            () => request.ExpectedDraftVersions == null
+                ? multilanguagePageService.PublishAllAsync(request.MultilanguagePageId, cancellationToken)
+                : multilanguagePageService.PublishAllAsync(request.MultilanguagePageId, request.ExpectedDraftVersions, cancellationToken));
     }
 
     /// <summary>The root must exist and be in a store of the user; the write's expected failures become refusals.</summary>
@@ -280,6 +282,10 @@ public class MultilanguagePageOperationService(
         catch (KeyNotFoundException)
         {
             return SiteBuilderOperationResult.NotFound().As<T>();
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<T>();
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or InvalidDataException)
         {

@@ -1,6 +1,6 @@
 namespace VirtoCommerce.SiteBuilder.Core.Models;
 
-public class FilePagePublishOperationRequest : FilePageOperationRequest
+public class FilePagePublishOperationRequest : FilePageShipOperationRequest
 {
     /// <summary>
     /// Puts the draft on top of what is published before the merge, replacing what changed there since the draft began: the way out of a

@@ -186,7 +186,7 @@ public class MultilanguagePageOperationServiceTests
         var english = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
         await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons");
 
-        var request = new MultilanguagePageOperationRequest { MultilanguagePageId = root.Id, DryRun = true };
+        var request = new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = root.Id, DryRun = true };
         var result = await Operations(fixture).PublishAllAsync(request, _user, Ct);
 
         Assert.True(result.AffectsPublished);
@@ -196,13 +196,87 @@ public class MultilanguagePageOperationServiceTests
     }
 
     [Fact]
+    public async Task PublishAllAsync_DryRun_TellsTheVersionOfEachDraft()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var english = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+
+        var result = await Operations(fixture).PublishAllAsync(new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = root.Id, DryRun = true }, _user, Ct);
+
+        var current = await fixture.Groups.LoadGroupContentAsync(await fixture.Groups.GetByIdAsync(english.Id), draft: true, Ct);
+        Assert.Equal(current.ETag, Assert.Single(result.Preview.Objects).ETag);
+    }
+
+    [Fact]
+    public async Task PublishAllAsync_TheReviewedDrafts_ArePublished()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var english = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+        var dutch = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+
+        var result = await Operations(fixture).PublishAllAsync(await ReviewedAsync(fixture, root), _user, Ct);
+
+        Assert.Equal(["en-US", "nl-NL"], result.Value.ProcessedCultureNames.Order());
+        Assert.Equal(ModuleConstants.PageStatuses.Published, (await fixture.Groups.GetByIdAsync(english.Id)).Status);
+        Assert.Equal(ModuleConstants.PageStatuses.Published, (await fixture.Groups.GetByIdAsync(dutch.Id)).Status);
+    }
+
+    [Fact]
+    public async Task PublishAllAsync_DraftChangedSinceTheDryRun_IsAConflictAndPublishesNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var english = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+        var dutch = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var request = await ReviewedAsync(fixture, root);
+        var group = await fixture.Groups.GetByIdAsync(dutch.Id);
+        var current = await fixture.Groups.LoadGroupContentAsync(group, draft: true, Ct);
+        await fixture.Groups.SaveGroupContentAsync(group, MultilanguagePageServiceTests.Content("changed"), current.ETag, Ct);
+
+        var result = await Operations(fixture).PublishAllAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
+        Assert.Equal(ModuleConstants.PageStatuses.Draft, (await fixture.Groups.GetByIdAsync(english.Id)).Status);
+        Assert.Equal(ModuleConstants.PageStatuses.Draft, (await fixture.Groups.GetByIdAsync(dutch.Id)).Status);
+    }
+
+    [Fact]
+    public async Task PublishAllAsync_DraftAddedSinceTheDryRun_IsAConflictAndPublishesNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var english = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+        var request = await ReviewedAsync(fixture, root);
+        await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+
+        var result = await Operations(fixture).PublishAllAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal(ModuleConstants.PageStatuses.Draft, (await fixture.Groups.GetByIdAsync(english.Id)).Status);
+    }
+
+    /// <summary>The publish of every draft a dry run lists, at the version it tells.</summary>
+    private async Task<MultilanguagePagePublishAllOperationRequest> ReviewedAsync(Fixture fixture, MultilanguagePage root)
+    {
+        var dryRun = await Operations(fixture).PublishAllAsync(new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = root.Id, DryRun = true }, _user, Ct);
+
+        return new MultilanguagePagePublishAllOperationRequest
+        {
+            MultilanguagePageId = root.Id,
+            ExpectedDraftVersions = dryRun.Preview.Objects.ToDictionary(x => x.ObjectId, x => x.ETag),
+        };
+    }
+
+    [Fact]
     public async Task PublishAllAsync_NoDrafts_DoesNotAffectPublished()
     {
         await using var fixture = await Fixture.CreateAsync();
         var root = await fixture.CreateRootAsync();
         await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons");
 
-        var result = await Operations(fixture).PublishAllAsync(new MultilanguagePageOperationRequest { MultilanguagePageId = root.Id }, _user, Ct);
+        var result = await Operations(fixture).PublishAllAsync(new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = root.Id }, _user, Ct);
 
         Assert.Equal((true, false), (result.Succeeded, result.AffectsPublished));
         Assert.Empty(result.Value.ProcessedCultureNames);

@@ -278,7 +278,7 @@ public class GroupedPageOperationService(
 
         return request.Publish
             ? await PublishDraftAsync(groupedPage, request, user, cancellationToken)
-            : await UnpublishAsync(groupedPage, request);
+            : await UnpublishAsync(groupedPage, request, cancellationToken);
     }
 
     private async Task<SiteBuilderOperationResult> PublishDraftAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
@@ -288,7 +288,7 @@ public class GroupedPageOperationService(
         {
             return GroupedPagePublishing.GetDraft(groupedPage) == null
                 ? SiteBuilderOperationResult.Invalid(DraftNotFoundError)
-                : PreviewPublishing(groupedPage, Draft, Published);
+                : await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
         }
 
         if (!GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds))
@@ -298,7 +298,10 @@ public class GroupedPageOperationService(
 
         var pagesToDelete = obsoletePageIds.ToList();
         var publishedPageId = groupedPage.Pages.Single(x => !obsoletePageIds.Contains(x.Id)).Id;
-        await SavePublishingAsync(groupedPage, pagesToDelete);
+        if (await SavePublishingAsync(groupedPage, pagesToDelete, draft: true, request.ExpectedDraftVersion, cancellationToken) is { } conflict)
+        {
+            return conflict;
+        }
 
         if (publishedPageId != null)
         {
@@ -310,7 +313,8 @@ public class GroupedPageOperationService(
         return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
 
-    private async Task<SiteBuilderOperationResult> UnpublishAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request)
+    private async Task<SiteBuilderOperationResult> UnpublishAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
+        CancellationToken cancellationToken)
     {
         var pageToUnpublish = SiteBuilderPageSelection.Order(groupedPage.Pages).FirstOrDefault(x => x.Status == Published);
         if (pageToUnpublish == null)
@@ -326,19 +330,41 @@ public class GroupedPageOperationService(
 
         if (request.DryRun)
         {
-            return PreviewPublishing(groupedPage, Published, Draft);
+            return await PreviewPublishingAsync(groupedPage, Published, Draft, cancellationToken);
         }
 
         pageToUnpublish.Status = Draft;
-        await SavePublishingAsync(groupedPage, groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList());
+        var pagesToDelete = groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
 
-        return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
+        return await SavePublishingAsync(groupedPage, pagesToDelete, draft: false, request.ExpectedPublishedVersion, cancellationToken)
+            ?? SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
 
-    private async Task SavePublishingAsync(GroupedSiteBuilderPage groupedPage, List<string> pagesToDelete)
+    /// <param name="draft">The version is of the draft, else of the published page.</param>
+    /// <param name="expectedVersion">The version the page has to be at, compared under the lock of the save; <c>null</c> saves it whatever it holds.</param>
+    /// <returns>The conflict when the page is at another version, with nothing written; <c>null</c> when it is saved.</returns>
+    private async Task<SiteBuilderOperationResult> SavePublishingAsync(GroupedSiteBuilderPage groupedPage, List<string> pagesToDelete, bool draft,
+        string expectedVersion, CancellationToken cancellationToken)
     {
-        await groupedPageService.SaveChangesAsync([groupedPage]);
+        if (expectedVersion == null)
+        {
+            await groupedPageService.SaveChangesAsync([groupedPage]);
+        }
+        else
+        {
+            try
+            {
+                await pageContentService.SaveGroupAtVersionAsync(groupedPage, draft, expectedVersion.Trim(), cancellationToken);
+            }
+            catch (SiteBuilderContentConflictException ex)
+            {
+                return SiteBuilderOperationResult.Conflict(ex.Message);
+            }
+        }
+
         await pageService.DeleteAsync(pagesToDelete);
+
+        return null;
     }
 
     public virtual Task<SiteBuilderOperationResult> DiscardDraftAsync(GroupedPageDiscardOperationRequest request, ClaimsPrincipal user,
@@ -369,11 +395,16 @@ public class GroupedPageOperationService(
             command.StoreId = groupedPage.StoreId;
             command.SaveId = request.SaveId;
             command.Group = groupedPage;
+            command.PageETag = request.ExpectedDraftVersion;
             await designerContentService.DiscardAsync(command, user, cancellationToken);
         }
         catch (InvalidDataException ex)
         {
             return SiteBuilderOperationResult.Invalid(ex.Message);
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message);
         }
 
         return SiteBuilderOperationResult.Success();
@@ -605,10 +636,13 @@ public class GroupedPageOperationService(
 
     protected virtual SiteBuilderChangePreview CreatePreview() => AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
 
-    private SiteBuilderOperationResult PreviewPublishing(GroupedSiteBuilderPage group, string from, string to)
+    /// <summary>With the version of the page a publish (from a draft) or an unpublish takes, which the caller sends back to ship only what it reviewed.</summary>
+    private async Task<SiteBuilderOperationResult> PreviewPublishingAsync(GroupedSiteBuilderPage group, string from, string to,
+        CancellationToken cancellationToken)
     {
+        var current = await pageContentService.LoadGroupContentAsync(group, draft: from == Draft, cancellationToken);
         var preview = CreatePreview();
-        preview.AddPublishing(group, from, to);
+        preview.AddPublishing(group, from, to).ETag = current.ETag;
 
         return SiteBuilderOperationResult.DryRun(preview);
     }

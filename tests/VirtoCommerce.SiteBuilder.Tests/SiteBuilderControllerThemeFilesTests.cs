@@ -16,6 +16,7 @@ using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
@@ -387,6 +388,86 @@ public class SiteBuilderControllerThemeFilesTests
         Assert.Equal("draft", _live.Files[Theme($"{Path}-draft")]);
         Assert.Empty(history.Records);
         Assert.Empty(_live.Events.OfType<SiteBuilderContentChangedEvent>());
+    }
+
+    [Theory]
+    [InlineData("themes", Path)]
+    [InlineData("pages", "about.page")]
+    public async Task DiscardDraftOperation_DryRun_TellsTheVersionOfTheDraft(string contentType, string path)
+    {
+        SeedDraft(contentType, path, "draft");
+
+        var result = await DiscardOperations().DiscardDraftAsync(DiscardRequest(contentType, path, dryRun: true), Alice, Ct);
+
+        var expected = contentType == "themes"
+            ? SiteBuilderContentVersion.CreateForThemeFile("s1", path, "draft")
+            : SiteBuilderContentVersion.CreateForFilePage("s1", contentType, path, "draft");
+        Assert.Equal(expected, Assert.Single(result.Preview.Objects).ETag);
+    }
+
+    [Theory]
+    [InlineData("themes", Path)]
+    [InlineData("pages", "about.page")]
+    public async Task DiscardDraftOperation_DraftChangedSinceTheReview_IsAConflictAndKeepsTheDraft(string contentType, string path)
+    {
+        var history = new RecordingContentHistory();
+        SeedDraft(contentType, path, "draft");
+        var request = await ReviewedDiscardAsync(contentType, path);
+        _live.Files[DraftFile(contentType, path)] = "draft, edited";
+
+        var result = await DiscardOperations(history).DiscardDraftAsync(request, Alice, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftChangedMessage), (result.Status, result.Error));
+        Assert.Equal("draft, edited", _live.Files[DraftFile(contentType, path)]);
+        Assert.Empty(history.Records);
+    }
+
+    [Theory]
+    [InlineData("themes", Path)]
+    [InlineData("pages", "about.page")]
+    public async Task DiscardDraftOperation_TheReviewedDraft_IsDiscarded(string contentType, string path)
+    {
+        SeedDraft(contentType, path, "draft");
+        var request = await ReviewedDiscardAsync(contentType, path);
+
+        var result = await DiscardOperations().DiscardDraftAsync(request, Alice, Ct);
+
+        Assert.Equal((true, DraftDiscardStatus.Discarded), (result.Succeeded, result.Value.Status));
+        Assert.False(_live.Files.ContainsKey(DraftFile(contentType, path)));
+    }
+
+    private static ClaimsPrincipal Alice => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
+
+    private static string DraftFile(string contentType, string path) => contentType == "themes" ? Theme($"{path}-draft") : Page($"{path}-draft");
+
+    private void SeedDraft(string contentType, string path, string draft)
+    {
+        _live.Files[contentType == "themes" ? Theme(path) : Page(path)] = "published";
+        _live.Files[DraftFile(contentType, path)] = draft;
+    }
+
+    private static FileDraftDiscardOperationRequest DiscardRequest(string contentType, string path, bool dryRun = false) =>
+        new() { StoreId = "s1", ContentType = contentType, Path = path, Theme = contentType == "themes" ? "default" : null, DryRun = dryRun };
+
+    /// <summary>The discard of the draft a dry run lists, at the version it tells.</summary>
+    private async Task<FileDraftDiscardOperationRequest> ReviewedDiscardAsync(string contentType, string path)
+    {
+        var dryRun = await DiscardOperations().DiscardDraftAsync(DiscardRequest(contentType, path, dryRun: true), Alice, Ct);
+        var request = DiscardRequest(contentType, path);
+        request.ExpectedDraftVersion = Assert.Single(dryRun.Preview.Objects).ETag;
+
+        return request;
+    }
+
+    private FilePageOperationService DiscardOperations(RecordingContentHistory history = null)
+    {
+        var options = Options.Create(new GitContentOptions());
+        var policy = new FakeGitContentPolicy(enabled: false);
+
+        return TestServices.FilePageOperations(new FakeAuthorizationService(true), RequestValidators.Content("s1"), options, null, policy, null,
+            filePageDraftService: TestServices.FilePageDrafts(_live, options, null, policy),
+            themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, _live, NullLogger<ThemeDraftService>.Instance),
+            contentHistory: history ?? new RecordingContentHistory());
     }
 
     [Fact]
