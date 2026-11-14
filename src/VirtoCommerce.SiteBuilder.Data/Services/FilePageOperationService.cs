@@ -77,7 +77,7 @@ public class FilePageOperationService(
             return await PublishInBlobStorageAsync(request);
         }
 
-        var location = GetLocation(storeRepository.Name, type, path, user);
+        var location = GetDraftLocation(storeRepository.Name, request, user);
 
         var draft = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken);
         if (draft == null)
@@ -117,6 +117,12 @@ public class FilePageOperationService(
         string draft, FilePagePublishOperationRequest request, ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         var (storeId, type, path) = (request.StoreId, request.ContentType, request.Path);
+        // before the rebase, which moves the branch itself
+        if (await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        {
+            return moved.As<FilePageShipment>();
+        }
+
         if (request.Rebase)
         {
             await RebaseDraftAsync(location, draft, path, storeId, user, cancellationToken);
@@ -134,9 +140,15 @@ public class FilePageOperationService(
     }
 
     protected virtual async Task<SiteBuilderOperationResult<FilePageShipment>> RespondToNothingToPublishAsync(StoreRepository storeRepository,
-        GitPageFileLocation location, FilePageOperationRequest request, CancellationToken cancellationToken)
+        GitPageFileLocation location, FilePageShipOperationRequest request, CancellationToken cancellationToken)
     {
         await EnsureRepositoryReadableAsync(location.Repository, await GetBaseBranchAsync(cancellationToken), cancellationToken);
+
+        // the draft reviewed is gone: a publish that only writes the live copy again is not what was approved
+        if (!request.DryRun && await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        {
+            return moved.As<FilePageShipment>();
+        }
 
         if (request.DryRun)
         {
@@ -166,9 +178,10 @@ public class FilePageOperationService(
         var published = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, cancellationToken);
 
         var preview = CreatePreview();
-        preview.AddObject(FilePage, request.Path)
+        var change = preview.AddObject(FilePage, request.Path)
             .AddField(Status, published == null ? Draft : Published, Published)
             .AddField(Content, published, draft);
+        await AddDraftBranchAsync(change, location, cancellationToken);
         preview.Warnings.Add(request.Rebase
             ? $"Moves the draft branch {location.Branch} onto {baseBranch} and commits the draft on it, replacing what changed in {baseBranch} " +
               $"since the draft began, then merges the draft branch into {baseBranch}."
@@ -257,7 +270,7 @@ public class FilePageOperationService(
         }
     }
 
-    public virtual Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishAsync(FilePageOperationRequest request, ClaimsPrincipal user,
+    public virtual Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishAsync(FilePageShipOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -266,7 +279,7 @@ public class FilePageOperationService(
     }
 
     /// <summary>Removes the page from live storage of a repository the platform manages only once the removal is merged, so a revert stays a rollback.</summary>
-    private async Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishInternalAsync(FilePageOperationRequest request, ClaimsPrincipal user,
+    private async Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishInternalAsync(FilePageShipOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
         var (storeId, type, path) = (request.StoreId, request.ContentType, request.Path);
@@ -278,17 +291,11 @@ public class FilePageOperationService(
         var storeRepository = await gitContentPolicy.GetRepositoryInfoAsync(storeId, cancellationToken);
         if (storeRepository == null)
         {
-            if (request.DryRun)
-            {
-                return DryRunShipment(CreateBlobPublishingPreview(path, Published, Draft, "Unpublishes the page in blob storage."));
-            }
-
-            await publishingService.PublishingAsync(type ?? PagesContentType, storeId, path, publish: false);
-            return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false), request);
+            return await UnpublishInBlobStorageAsync(request);
         }
 
         var baseBranch = await GetBaseBranchAsync(cancellationToken);
-        var location = GetLocation(storeRepository.Name, type, path, user);
+        var location = GetDraftLocation(storeRepository.Name, request, user);
 
         var published = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, baseBranch, cancellationToken);
         if (published == null)
@@ -298,11 +305,13 @@ public class FilePageOperationService(
 
         if (request.DryRun)
         {
-            var preview = CreatePreview();
-            preview.AddObject(FilePage, path).AddField(Status, Published, Draft).AddField(Content, published, null);
-            preview.Warnings.Add($"Deletes the page on the draft branch {location.Branch} and merges the draft branch into {baseBranch}.");
-            preview.Warnings.Add(MergeOutcomeWarning);
-            return DryRunShipment(preview);
+            return DryRunShipment(await CreateUnpublishPreviewAsync(location, baseBranch, path, published, cancellationToken));
+        }
+
+        // before the deletion is committed, which moves the branch itself
+        if (await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        {
+            return moved.As<FilePageShipment>();
         }
 
         await CommitUnpublishAsync(location, baseBranch, storeId, path, user, cancellationToken);
@@ -316,6 +325,29 @@ public class FilePageOperationService(
         }
 
         return Shipped(shipment, request);
+    }
+
+    private async Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishInBlobStorageAsync(FilePageOperationRequest request)
+    {
+        if (request.DryRun)
+        {
+            return DryRunShipment(CreateBlobPublishingPreview(request.Path, Published, Draft, "Unpublishes the page in blob storage."));
+        }
+
+        await publishingService.PublishingAsync(request.ContentType ?? PagesContentType, request.StoreId, request.Path, publish: false);
+        return Shipped(CreateShipment(GitPublishState.Merged, gitFlow: false), request);
+    }
+
+    protected virtual async Task<SiteBuilderChangePreview> CreateUnpublishPreviewAsync(GitPageFileLocation location, string baseBranch, string path,
+        string published, CancellationToken cancellationToken)
+    {
+        var preview = CreatePreview();
+        var change = preview.AddObject(FilePage, path).AddField(Status, Published, Draft).AddField(Content, published, null);
+        await AddDraftBranchAsync(change, location, cancellationToken);
+        preview.Warnings.Add($"Deletes the page on the draft branch {location.Branch} and merges the draft branch into {baseBranch}.");
+        preview.Warnings.Add(MergeOutcomeWarning);
+
+        return preview;
     }
 
     protected virtual async Task<SiteBuilderOperationResult<FilePageShipment>> RespondToNothingToUnpublishAsync(StoreRepository storeRepository,
@@ -732,7 +764,7 @@ public class FilePageOperationService(
         await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken)
         ?? await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, await GetBaseBranchAsync(cancellationToken), cancellationToken);
 
-    public virtual Task<SiteBuilderOperationResult> DiscardGitDraftAsync(FilePageOperationRequest request, ClaimsPrincipal user,
+    public virtual Task<SiteBuilderOperationResult> DiscardGitDraftAsync(FilePageDraftOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -744,7 +776,7 @@ public class FilePageOperationService(
     /// Throws this editor's draft of the page away, so the next read starts from what is published.
     /// The way out of a conflict, and the only one that does not quietly pick a winner.
     /// </summary>
-    private async Task<SiteBuilderOperationResult> DiscardGitDraftInternalAsync(FilePageOperationRequest request, ClaimsPrincipal user,
+    private async Task<SiteBuilderOperationResult> DiscardGitDraftInternalAsync(FilePageDraftOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
         var (storeId, type, path) = (request.StoreId, request.ContentType, request.Path);
@@ -759,25 +791,37 @@ public class FilePageOperationService(
             return SiteBuilderOperationResult.NotFound();
         }
 
+        var location = GetLocation(repository, type, path, user);
         if (request.DryRun)
         {
-            var location = GetLocation(repository, type, path, user);
-            var draft = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken);
-            var preview = CreatePreview();
-            if (draft != null)
-            {
-                var published = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, await GetBaseBranchAsync(cancellationToken),
-                    cancellationToken);
-                preview.AddObject(FilePage, path).AddField(Content, draft, published);
-            }
+            return SiteBuilderOperationResult.DryRun(await CreateDiscardGitDraftPreviewAsync(location, path, cancellationToken));
+        }
 
-            preview.Warnings.Add($"Deletes the draft branch {location.Branch}.");
-            return SiteBuilderOperationResult.DryRun(preview);
+        if (await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        {
+            return moved;
         }
 
         await filePageDraftService.DiscardGitDraftAsync(repository, type, path, user, cancellationToken);
 
         return SiteBuilderOperationResult.Success();
+    }
+
+    protected virtual async Task<SiteBuilderChangePreview> CreateDiscardGitDraftPreviewAsync(GitPageFileLocation location, string path,
+        CancellationToken cancellationToken)
+    {
+        var draft = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken);
+        var preview = CreatePreview();
+        if (draft != null)
+        {
+            var published = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, await GetBaseBranchAsync(cancellationToken),
+                cancellationToken);
+            await AddDraftBranchAsync(preview.AddObject(FilePage, path).AddField(Content, draft, published), location, cancellationToken);
+        }
+
+        preview.Warnings.Add($"Deletes the draft branch {location.Branch}.");
+
+        return preview;
     }
 
     public virtual Task<SiteBuilderOperationResult<FileDraftDiscard>> DiscardDraftAsync(FileDraftDiscardOperationRequest request, ClaimsPrincipal user,
@@ -812,11 +856,35 @@ public class FilePageOperationService(
 
         if (contentType != Themes)
         {
-            var status = await filePageDraftService.DiscardBlobDraftAsync(storeId, contentType, path, theme, cancellationToken);
-            return status == DraftDiscardStatus.OnlyCopy ? RefuseOnlyCopy() : Discarded(status);
+            return await DiscardBlobDraftAsync(request, contentType, cancellationToken);
         }
 
-        return await DiscardThemeDraftAsync(storeId, path, request.SaveId, user, cancellationToken);
+        try
+        {
+            return await DiscardThemeDraftAsync(storeId, path, request.SaveId, request.ExpectedDraftVersion, user, cancellationToken);
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<FileDraftDiscard>();
+        }
+    }
+
+    /// <summary>Blob storage holds no lock over a draft: its version is read right before the discard.</summary>
+    protected virtual async Task<SiteBuilderOperationResult<FileDraftDiscard>> DiscardBlobDraftAsync(FileDraftDiscardOperationRequest request, string contentType,
+        CancellationToken cancellationToken)
+    {
+        var (storeId, path, theme) = (request.StoreId, request.Path, request.Theme);
+        if (request.ExpectedDraftVersion != null)
+        {
+            var draft = await filePageDraftService.PreviewDiscardBlobDraftAsync(storeId, contentType, path, theme, cancellationToken);
+            if (!string.Equals(GetDiscardVersion(storeId, contentType, path, draft), request.ExpectedDraftVersion.Trim(), StringComparison.Ordinal))
+            {
+                return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.DraftChangedMessage).As<FileDraftDiscard>();
+            }
+        }
+
+        var status = await filePageDraftService.DiscardBlobDraftAsync(storeId, contentType, path, theme, cancellationToken);
+        return status == DraftDiscardStatus.OnlyCopy ? RefuseOnlyCopy() : Discarded(status);
     }
 
     /// <summary>The permission to edit a theme file; a page kept in git has its draft discarded in git instead.</summary>
@@ -850,13 +918,17 @@ public class FilePageOperationService(
             return RefuseOnlyCopy();
         }
 
-        return SiteBuilderOperationResult.DryRun<FileDraftDiscard>(CreateDiscardPreview(isThemeFile ? ThemeFile : FilePage, path, draft));
+        var eTag = GetDiscardVersion(storeId, contentType, path, draft);
+        return SiteBuilderOperationResult.DryRun<FileDraftDiscard>(CreateDiscardPreview(isThemeFile ? ThemeFile : FilePage, path, eTag, draft));
     }
 
-    protected virtual async Task<SiteBuilderOperationResult<FileDraftDiscard>> DiscardThemeDraftAsync(string storeId, string path, string saveId,
+    /// <param name="eTag">The version the draft has to be at; <c>null</c> discards it whatever it holds.</param>
+    /// <exception cref="SiteBuilderContentConflictException">The draft is at another version, or gone: nothing is discarded.</exception>
+    protected virtual async Task<SiteBuilderOperationResult<FileDraftDiscard>> DiscardThemeDraftAsync(string storeId, string path, string saveId, string eTag,
         ClaimsPrincipal user, CancellationToken cancellationToken)
     {
-        var draft = (await themeDraftService.DiscardDraftsAsync(storeId, [path], _ => Task.CompletedTask, cancellationToken)).Single();
+        var eTags = eTag == null ? null : new Dictionary<string, string> { [path] = eTag };
+        var draft = (await themeDraftService.DiscardDraftsAsync(storeId, [path], eTags, _ => Task.CompletedTask, cancellationToken)).Single();
         if (draft.Status == DraftDiscardStatus.OnlyCopy)
         {
             return RefuseOnlyCopy();
@@ -872,12 +944,13 @@ public class FilePageOperationService(
         return Discarded(draft.Status);
     }
 
-    protected virtual SiteBuilderChangePreview CreateDiscardPreview(string objectType, string path, DraftDiscardPreview draft)
+    /// <param name="eTag">The version of the draft, which the caller sends back to discard only what it reviewed.</param>
+    protected virtual SiteBuilderChangePreview CreateDiscardPreview(string objectType, string path, string eTag, DraftDiscardPreview draft)
     {
         var preview = CreatePreview();
         if (draft.Status == DraftDiscardStatus.Discarded)
         {
-            preview.AddObject(objectType, path).AddField(Content, draft.DraftContent, draft.PublishedContent);
+            preview.AddObject(objectType, path, eTag).AddField(Content, draft.DraftContent, draft.PublishedContent);
         }
         else
         {
@@ -885,6 +958,19 @@ public class FilePageOperationService(
         }
 
         return preview;
+    }
+
+    /// <summary>The version of a draft a discard deletes; <c>null</c> when it deletes none.</summary>
+    protected virtual string GetDiscardVersion(string storeId, string contentType, string path, DraftDiscardPreview draft)
+    {
+        if (draft.Status != DraftDiscardStatus.Discarded)
+        {
+            return null;
+        }
+
+        return contentType == Themes
+            ? SiteBuilderContentVersion.CreateForThemeFile(storeId, path, draft.DraftContent)
+            : SiteBuilderContentVersion.CreateForFilePage(storeId, contentType, path, draft.DraftContent);
     }
 
     protected virtual SiteBuilderOperationResult<FileDraftDiscard> RefuseOnlyCopy()
@@ -965,11 +1051,42 @@ public class FilePageOperationService(
         }
     }
 
+    /// <summary>The draft branch has to be at the commit the caller reviewed; <c>null</c> takes it wherever it is.</summary>
+    /// <returns>The conflict when the branch has moved or is gone; <c>null</c> otherwise.</returns>
+    protected virtual async Task<SiteBuilderOperationResult> CheckDraftHeadAsync(GitPageFileLocation location, string expectedDraftHead,
+        CancellationToken cancellationToken)
+    {
+        if (expectedDraftHead == null)
+        {
+            return null;
+        }
+
+        // GitHub merges a branch wherever it is when the merge runs, so this is read as late as the operation can
+        var head = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken);
+
+        return string.Equals(head, expectedDraftHead.Trim(), StringComparison.OrdinalIgnoreCase)
+            ? null
+            : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.DraftBranchMovedMessage);
+    }
+
+    /// <summary>The branch a write takes the draft from and the commit it is at, which the caller sends back to ship only what it reviewed.</summary>
+    protected virtual async Task AddDraftBranchAsync(SiteBuilderObjectChange change, GitPageFileLocation location, CancellationToken cancellationToken)
+    {
+        change.DraftBranch = location.Branch;
+        change.DraftHead = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken);
+    }
+
     protected virtual async Task<string> GetBaseBranchAsync(CancellationToken cancellationToken) =>
         (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch;
 
     protected virtual GitPageFileLocation GetLocation(string repository, string type, string path, ClaimsPrincipal user) =>
         gitContentOptions.Value.GetPageLocation(repository, type, path, user?.Identity?.Name);
+
+    /// <summary>The draft branch of the request's draft owner, else the caller's own.</summary>
+    protected virtual GitPageFileLocation GetDraftLocation(string repository, FilePageShipOperationRequest request, ClaimsPrincipal user) =>
+        string.IsNullOrWhiteSpace(request.DraftOwner)
+            ? GetLocation(repository, request.ContentType, request.Path, user)
+            : gitContentOptions.Value.GetPageLocation(repository, request.ContentType, request.Path, request.DraftOwner.Trim());
 
     /// <summary>
     /// A commit message with the authenticated login recorded under it. Git authorship is signed with

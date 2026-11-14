@@ -222,7 +222,7 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Publish)]
     public async Task<ActionResult<MultilanguagePageBatchResult>> PublishAll([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        var request = new MultilanguagePageOperationRequest { MultilanguagePageId = id };
+        var request = new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = id };
 
         return (await multilanguagePageOperationService.PublishAllAsync(request, User, cancellationToken)).ToPageActionResult();
     }

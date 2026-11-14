@@ -55,17 +55,17 @@ public class ThemeDraftService(
         return result;
     }
 
-    public virtual Task<IList<DiscardedThemeDraft>> DiscardDraftsAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
-        CancellationToken cancellationToken = default)
+    public virtual Task<IList<DiscardedThemeDraft>> DiscardDraftsAsync(string storeId, IList<string> paths, IDictionary<string, string> eTags,
+        Func<CancellationToken, Task> discardOthersAsync, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(discardOthersAsync);
 
-        return DiscardDraftsInternalAsync(storeId, paths, discardOthersAsync, cancellationToken);
+        return DiscardDraftsInternalAsync(storeId, paths, eTags, discardOthersAsync, cancellationToken);
     }
 
-    private async Task<IList<DiscardedThemeDraft>> DiscardDraftsInternalAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
-        CancellationToken cancellationToken)
+    private async Task<IList<DiscardedThemeDraft>> DiscardDraftsInternalAsync(string storeId, IList<string> paths, IDictionary<string, string> eTags,
+        Func<CancellationToken, Task> discardOthersAsync, CancellationToken cancellationToken)
     {
         if (paths.Count == 0)
         {
@@ -75,7 +75,7 @@ public class ThemeDraftService(
 
         var result = await distributedLock.ExecuteAsync(
             ThemeStorage.GetLockResource(storeId),
-            lockToken => DiscardUnderLockAsync(storeId, paths, discardOthersAsync, lockToken, cancellationToken),
+            lockToken => DiscardUnderLockAsync(storeId, paths, eTags, discardOthersAsync, lockToken, cancellationToken),
             cancellationToken: cancellationToken);
 
         await PublishChangedEventAsync(result.Where(x => x.Status == DraftDiscardStatus.Discarded).Select(x => x.Path), cancellationToken);
@@ -135,33 +135,35 @@ public class ThemeDraftService(
         }
     }
 
-    protected virtual async Task<IList<DiscardedThemeDraft>> DiscardUnderLockAsync(string storeId, IList<string> paths, Func<CancellationToken, Task> discardOthersAsync,
-        CancellationToken cancellationToken, CancellationToken requestToken)
+    protected virtual async Task<IList<DiscardedThemeDraft>> DiscardUnderLockAsync(string storeId, IList<string> paths, IDictionary<string, string> eTags,
+        Func<CancellationToken, Task> discardOthersAsync, CancellationToken cancellationToken, CancellationToken requestToken)
     {
+        // every version is checked before anything is deleted
+        var drafts = new List<(ThemeDraft Draft, DiscardedThemeDraft Discarded)>();
+        foreach (var path in paths)
+        {
+            var draft = await ReadDraftAsync(storeId, path);
+            var discarded = AbstractTypeFactory<DiscardedThemeDraft>.TryCreateInstance();
+            discarded.Path = path;
+            discarded.PublishedContent = draft.Content == null ? null : await draft.Storage.ReadAsync(draft.Storage.GetLivePath(draft.File));
+            discarded.Status = GetDiscardStatus(draft, discarded.PublishedContent);
+            CheckDiscardVersion(storeId, path, draft, discarded.Status, eTags);
+            drafts.Add((draft, discarded));
+        }
+
         var removedDrafts = new List<ThemeDraft>();
-        var result = new List<DiscardedThemeDraft>();
         try
         {
-            foreach (var path in paths)
+            foreach (var (draft, _) in drafts.Where(x => x.Discarded.Status == DraftDiscardStatus.Discarded))
             {
-                var draft = await ReadDraftAsync(storeId, path);
-                var discarded = AbstractTypeFactory<DiscardedThemeDraft>.TryCreateInstance();
-                discarded.Path = path;
-                discarded.PublishedContent = draft.Content == null ? null : await draft.Storage.ReadAsync(draft.Storage.GetLivePath(draft.File));
-                discarded.Status = GetDiscardStatus(draft, discarded.PublishedContent);
-                result.Add(discarded);
-
-                if (discarded.Status == DraftDiscardStatus.Discarded)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await draft.Storage.RemoveAsync([draft.File]);
-                    removedDrafts.Add(draft);
-                }
+                cancellationToken.ThrowIfCancellationRequested();
+                await draft.Storage.RemoveAsync([draft.File]);
+                removedDrafts.Add(draft);
             }
 
             await discardOthersAsync(cancellationToken);
 
-            return result;
+            return drafts.Select(x => x.Discarded).ToList();
         }
         catch
         {
@@ -194,6 +196,24 @@ public class ThemeDraftService(
             !string.Equals(current, content, StringComparison.Ordinal))
         {
             throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.ThemeFileMessage);
+        }
+    }
+
+    /// <summary>
+    /// With versions named, a draft to delete has to be at the version named for it, and one that is not to delete must not be named.
+    /// </summary>
+    protected virtual void CheckDiscardVersion(string storeId, string path, ThemeDraft draft, DraftDiscardStatus status, IDictionary<string, string> eTags)
+    {
+        if (eTags == null)
+        {
+            return;
+        }
+
+        var expected = eTags.TryGetValue(path, out var eTag) ? eTag?.Trim() : null;
+        var current = status == DraftDiscardStatus.Discarded ? SiteBuilderContentVersion.CreateForThemeFile(storeId, path, draft.Content) : null;
+        if (!string.Equals(current, expected, StringComparison.Ordinal))
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
         }
     }
 

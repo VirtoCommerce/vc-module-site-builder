@@ -14,7 +14,9 @@ public interface IFilePageOperationService
     /// <summary>
     /// Merges the editor's draft branch into the base branch, or publishes the draft in blob storage. A merge that conflicts is an outcome
     /// told in the shipment; publishing again with <see cref="FilePagePublishOperationRequest.Rebase"/> is its way out. With no draft the
-    /// page is already published. Where the platform keeps the live copy it is written again from what is published.
+    /// page is already published. Where the platform keeps the live copy it is written again from what is published. A dry run in git tells the
+    /// draft branch and its head commit, which <see cref="FilePageShipOperationRequest.DraftOwner"/> and
+    /// <see cref="FilePageDraftOperationRequest.ExpectedDraftHead"/> pin the publish to.
     /// A page that is not a page document is refused with the problems one by one.
     /// </summary>
     Task<SiteBuilderOperationResult<FilePageShipment>> PublishAsync(FilePagePublishOperationRequest request, ClaimsPrincipal user,
@@ -24,7 +26,7 @@ public interface IFilePageOperationService
     /// Deletes the page on the editor's branch and merges that, or unpublishes it in blob storage. A page the base branch does not hold
     /// is not found, unless it has been removed from there and only its live copy is left to remove.
     /// </summary>
-    Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishAsync(FilePageOperationRequest request, ClaimsPrincipal user,
+    Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishAsync(FilePageShipOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -50,7 +52,7 @@ public interface IFilePageOperationService
         CancellationToken cancellationToken = default);
 
     /// <summary>Deletes the editor's draft branch of the page. Not found without git.</summary>
-    Task<SiteBuilderOperationResult> DiscardGitDraftAsync(FilePageOperationRequest request, ClaimsPrincipal user,
+    Task<SiteBuilderOperationResult> DiscardGitDraftAsync(FilePageDraftOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
     /// <summary>

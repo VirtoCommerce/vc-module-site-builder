@@ -319,7 +319,7 @@ public class PageControllerResponseTests
         public Task<SiteBuilderOperationResult<MultilanguagePage>> CloneAsync(MultilanguagePageOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => Answer<MultilanguagePage>(request, user);
 
-        public Task<SiteBuilderOperationResult<MultilanguagePageBatchResult>> PublishAllAsync(MultilanguagePageOperationRequest request,
+        public Task<SiteBuilderOperationResult<MultilanguagePageBatchResult>> PublishAllAsync(MultilanguagePagePublishAllOperationRequest request,
             ClaimsPrincipal user, CancellationToken cancellationToken = default) => Answer<MultilanguagePageBatchResult>(request, user);
 
         private Task<SiteBuilderOperationResult> Answer(object request, ClaimsPrincipal user)

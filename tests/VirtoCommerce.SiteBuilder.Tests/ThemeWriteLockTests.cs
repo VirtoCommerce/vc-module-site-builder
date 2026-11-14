@@ -122,7 +122,7 @@ public class ThemeWriteLockTests
         _live.Files[Theme(Path)] = "{}";
         _live.Files[Theme($"{Path}-draft")] = "{\"old\":true}";
 
-        await Assert.ThrowsAnyAsync<Exception>(() => ThemeDrafts().DiscardDraftsAsync("s1", [Path], _ =>
+        await Assert.ThrowsAnyAsync<Exception>(() => ThemeDrafts().DiscardDraftsAsync("s1", [Path], null, _ =>
         {
             _lock.LoseHeldLocks();
             throw new IOException("the page could not be discarded");

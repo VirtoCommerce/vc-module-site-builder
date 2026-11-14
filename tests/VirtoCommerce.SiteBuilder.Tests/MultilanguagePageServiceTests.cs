@@ -567,6 +567,38 @@ public class MultilanguagePageServiceTests
     }
 
     [Fact]
+    public async Task SaveGroupAtVersionAsync_ContentChangedSinceItWasRead_WritesNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var group = await fixture.Groups.GetByIdAsync(en.Id);
+        var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
+        await fixture.Groups.SaveGroupContentAsync(group, Content("changed"), read.ETag, TestContext.Current.CancellationToken);
+        Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
+
+        await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() =>
+            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken));
+
+        Assert.Equal("Draft", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+    }
+
+    [Fact]
+    public async Task SaveGroupAtVersionAsync_ContentAtTheVersion_IsSaved()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var group = await fixture.Groups.GetByIdAsync(en.Id);
+        var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
+        Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
+
+        await fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+    }
+
+    [Fact]
     public async Task PublishAllAsync_DraftPublishedWhileWaitingForTheLock_IsNotPublishedAgain()
     {
         await using var fixture = await Fixture.CreateAsync();

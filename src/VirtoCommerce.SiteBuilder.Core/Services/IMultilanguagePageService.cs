@@ -70,6 +70,16 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     /// <summary>Publishes the draft of every language version that has one.</summary>
     Task<MultilanguagePageBatchResult> PublishAllAsync(string multilanguagePageId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Publishes the draft of every language version that has one, when the drafts are those reviewed: the version of each, by the id of its
+    /// language version, as <see cref="PreviewPublishAllAsync"/> answers them. A draft compared again under the lock of its save that has changed
+    /// since is skipped with <see cref="MultilanguagePageBatchResult.ChangedReason"/>.
+    /// </summary>
+    /// <param name="expectedDraftVersions"><c>null</c> publishes the drafts whatever they hold.</param>
+    /// <exception cref="SiteBuilderContentConflictException">A draft changed, appeared or went: nothing is published.</exception>
+    Task<MultilanguagePageBatchResult> PublishAllAsync(string multilanguagePageId, IDictionary<string, string> expectedDraftVersions,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Archives every language version.</summary>
     Task<MultilanguagePageBatchResult> ArchiveAllAsync(string multilanguagePageId, CancellationToken cancellationToken = default);
 
@@ -98,6 +108,6 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     Task<SiteBuilderChangePreview> PreviewCreateLanguageAsync(string multilanguagePageId, string cultureName, bool copyContent,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lists the versions whose draft would be published; the others are skipped by the write too.</summary>
+    /// <summary>Lists the versions whose draft would be published, each with the version of its draft; the others are skipped by the write too.</summary>
     Task<SiteBuilderChangePreview> PreviewPublishAllAsync(string multilanguagePageId, CancellationToken cancellationToken = default);
 }

@@ -46,6 +46,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
         private static string MyBranch => GitPageLocation.BranchFor("designer/{user}/{slug}", Login, "about-us.page");
 
+        private static string MarysBranch => GitPageLocation.BranchFor("designer/{user}/{slug}", "mary", "about-us.page");
+
         [Fact]
         public async Task Unpublish_CommitsTheDeletionOnMyBranchAndMergesIt()
         {
@@ -284,7 +286,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var publisher = Publisher(GitPublishState.Merged);
             var live = new FakeBlobStorage();
             live.Files[LivePage] = Published;
-            var request = new FilePageOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+            var request = new FilePageShipOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
 
             var result = await Operations(repository, publisher, live).UnpublishAsync(request, User, CancellationToken.None);
 
@@ -300,6 +302,54 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Empty(publisher.Merges);
             Assert.Equal(Published, live.Files[LivePage]);
             Assert.Empty(live.Events);
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_DryRun_TellsTheDraftBranchAndItsHead()
+        {
+            var request = new FilePageShipOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+
+            var result = await Operations(Repository(), Publisher(), new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            var change = Assert.Single(result.Preview.Objects);
+            Assert.Equal((MyBranch, BranchHead), (change.DraftBranch, change.DraftHead));
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_DraftOwner_DeletesThePageOnTheOwnersBranch()
+        {
+            var repository = Repository();
+            repository.Files[(RepoPath, MarysBranch)] = Published;
+            repository.BranchHeads[MarysBranch] = BranchHead;
+            var publisher = Publisher();
+            var request = new FilePageShipOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DraftOwner = "mary", ExpectedDraftHead = BranchHead };
+
+            var result = await Operations(repository, publisher, new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal((RepoPath, MarysBranch), Assert.Single(repository.DeletedFiles));
+            Assert.Equal((MarysBranch, "master"), Assert.Single(publisher.Merges));
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_DraftBranchMovedSinceTheReview_IsAConflictAndCommitsNothing()
+        {
+            var repository = Repository();
+            var publisher = Publisher();
+            var request = new FilePageShipOperationRequest
+            {
+                StoreId = "s1",
+                ContentType = "pages",
+                Path = Page,
+                ExpectedDraftHead = "7333333333333333333333333333333333333333",
+            };
+
+            var result = await Operations(repository, publisher, new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftBranchMovedMessage), (result.Status, result.Error));
+            Assert.Empty(repository.DeletedFiles);
+            Assert.Empty(repository.CreatedBranches);
+            Assert.Empty(publisher.Merges);
         }
 
         private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test"));
