@@ -33,6 +33,9 @@ public class MultilanguagePageService(
         repositoryFactory, platformMemoryCache, eventPublisher),
       IMultilanguagePageService
 {
+    // What a save of the root asks of the saves of its language versions that follow it in AfterSaveChangesAsync, for the call that set it.
+    private static readonly AsyncLocal<GroupedPageSaveCondition> LanguageVersionSaveCondition = new();
+
     protected override Task<IList<MultilanguagePageEntity>> LoadEntities(IRepository repository, IList<string> ids, string responseGroup)
     {
         return ((ISiteBuilderRepository)repository).GetMultilanguagePagesByIdsAsync(ids, responseGroup);
@@ -74,6 +77,7 @@ public class MultilanguagePageService(
     {
         await base.AfterSaveChangesAsync(models, changedEntries);
 
+        var condition = LanguageVersionSaveCondition.Value;
         foreach (var root in changedEntries.Where(x => x.EntryState == EntryState.Modified).Select(x => x.NewEntry))
         {
     #pragma warning disable S3267 // Apply changes the group; a Where predicate should not have side effects
@@ -81,7 +85,9 @@ public class MultilanguagePageService(
             {
                 if (MultilanguagePageInheritance.Apply(root, group))
                 {
-                    await groupedPageContentService.SaveGroupSettingsAsync(group);
+                    await (condition == null
+                        ? groupedPageContentService.SaveGroupSettingsAsync(group)
+                        : groupedPageContentService.SaveGroupSettingsAsync(group, condition));
                 }
             }
 #pragma warning restore S3267
@@ -159,6 +165,59 @@ public class MultilanguagePageService(
         return model;
     }
 
+    public virtual Task<MultilanguagePage> UpdateAsync(MultilanguagePage model, bool requireUnpublished, string expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        return UpdateUnderConditionAsync(model, requireUnpublished, expectedVersion, cancellationToken);
+    }
+
+    private async Task<MultilanguagePage> UpdateUnderConditionAsync(MultilanguagePage model, bool requireUnpublished, string expectedVersion,
+        CancellationToken cancellationToken)
+    {
+        // a published version changes only by the settings passed on to it, as the dry run tells it
+        if (requireUnpublished && (await PreviewUpdateAsync(model, cancellationToken)).AffectsPublished)
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PublishedPageMessage);
+        }
+
+        await PrepareUpdateAsync(model);
+        if (expectedVersion != null)
+        {
+            await CheckRootVersionAsync(model.Id, expectedVersion.Trim(), cancellationToken);
+        }
+
+        LanguageVersionSaveCondition.Value = requireUnpublished ? new GroupedPageSaveCondition { RequireUnpublished = true } : null;
+        try
+        {
+            await SaveChangesAsync([model]);
+        }
+        finally
+        {
+            LanguageVersionSaveCondition.Value = null;
+        }
+
+        return model;
+    }
+
+    /// <summary>The root has no lock of its own: it is read right before the save, as close to it as the storage allows.</summary>
+    /// <exception cref="SiteBuilderContentConflictException">It is at another version, or gone.</exception>
+    protected virtual async Task CheckRootVersionAsync(string multilanguagePageId, string expectedVersion, CancellationToken cancellationToken)
+    {
+        MultilanguagePage stored;
+        using (var repository = repositoryFactory())
+        {
+            stored = (await repository.GetMultilanguagePagesByIdsAsync([multilanguagePageId], null)).FirstOrDefault()
+                ?.ToModel(AbstractTypeFactory<MultilanguagePage>.TryCreateInstance());
+        }
+
+        if (stored == null || !string.Equals(SiteBuilderContentVersion.CreateForMultilanguagePage(stored), expectedVersion, StringComparison.Ordinal))
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
+        }
+    }
+
     public virtual Task<SiteBuilderChangePreview> PreviewUpdateAsync(MultilanguagePage model, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -173,7 +232,8 @@ public class MultilanguagePageService(
         await PrepareSaveAsync(root);
 
         var preview = CreatePreview();
-        preview.AddMultilanguagePage(existing, root);
+        // the version a caller sends back to update only the root it reviewed
+        preview.AddMultilanguagePage(existing, root).ETag = SiteBuilderContentVersion.CreateForMultilanguagePage(existing);
         // the save passes the shared name and the inherited settings on, as AfterSaveChangesAsync does
         foreach (var group in await GetLanguageVersionsAsync(existing.Id))
         {
@@ -210,7 +270,15 @@ public class MultilanguagePageService(
         return existing;
     }
 
-    public virtual async Task<GroupedSiteBuilderPage> LinkAsync(string multilanguagePageId, string groupId, CancellationToken cancellationToken = default)
+    public virtual Task<GroupedSiteBuilderPage> LinkAsync(string multilanguagePageId, string groupId, CancellationToken cancellationToken = default) =>
+        LinkInternalAsync(multilanguagePageId, groupId, requireUnpublished: false, cancellationToken);
+
+    public virtual Task<GroupedSiteBuilderPage> LinkAsync(string multilanguagePageId, string groupId, bool requireUnpublished,
+        CancellationToken cancellationToken = default) =>
+        LinkInternalAsync(multilanguagePageId, groupId, requireUnpublished, cancellationToken);
+
+    private async Task<GroupedSiteBuilderPage> LinkInternalAsync(string multilanguagePageId, string groupId, bool requireUnpublished,
+        CancellationToken cancellationToken)
     {
         var (root, group, cultureName) = await PrepareLinkAsync(multilanguagePageId, groupId);
         if (cultureName == null)
@@ -218,7 +286,7 @@ public class MultilanguagePageService(
             return group;
         }
 
-        await SetMultilanguagePageIdAsync(groupId, root.Id, cancellationToken);
+        await SetMultilanguagePageIdAsync(groupId, root.Id, requireUnpublished, cancellationToken);
 
         try
         {
@@ -232,7 +300,7 @@ public class MultilanguagePageService(
         catch
         {
             // A failed or cancelled save (e.g. a concurrent version of the same language) must not leave the page linked.
-            await TryRollbackAsync(() => SetMultilanguagePageIdAsync(groupId, null, CancellationToken.None), $"unlink page '{groupId}'");
+            await TryRollbackAsync(() => SetMultilanguagePageIdAsync(groupId, null, requireUnpublished: false, CancellationToken.None), $"unlink page '{groupId}'");
             throw;
         }
 
@@ -305,7 +373,28 @@ public class MultilanguagePageService(
         return linked;
     }
 
-    public virtual async Task<IList<string>> ResetOverridesAsync(string multilanguagePageId, IList<string> fields, CancellationToken cancellationToken = default)
+    public virtual Task<IList<string>> ResetOverridesAsync(string multilanguagePageId, IList<string> fields, CancellationToken cancellationToken = default) =>
+        ResetOverridesInternalAsync(multilanguagePageId, fields, condition: null, cancellationToken);
+
+    public virtual async Task<IList<string>> ResetOverridesAsync(string multilanguagePageId, IList<string> fields, bool requireUnpublished,
+        CancellationToken cancellationToken = default)
+    {
+        if (!requireUnpublished)
+        {
+            return await ResetOverridesInternalAsync(multilanguagePageId, fields, condition: null, cancellationToken);
+        }
+
+        // refused before the first save as the dry run tells it, then by each save under its lock
+        if ((await PreviewResetOverridesAsync(multilanguagePageId, fields, cancellationToken)).AffectsPublished)
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PublishedPageMessage);
+        }
+
+        return await ResetOverridesInternalAsync(multilanguagePageId, fields, new GroupedPageSaveCondition { RequireUnpublished = true }, cancellationToken);
+    }
+
+    private async Task<IList<string>> ResetOverridesInternalAsync(string multilanguagePageId, IList<string> fields, GroupedPageSaveCondition condition,
+        CancellationToken cancellationToken)
     {
         var root = await GetRequiredAsync(multilanguagePageId);
         var changedCultureNames = new List<string>();
@@ -316,7 +405,9 @@ public class MultilanguagePageService(
             // The save derives the mask again, so the reset fields become inherited.
             if (MultilanguagePageInheritance.Reset(root, group, fields ?? []))
             {
-                await groupedPageContentService.SaveGroupSettingsAsync(group, cancellationToken);
+                await (condition == null
+                    ? groupedPageContentService.SaveGroupSettingsAsync(group, cancellationToken)
+                    : groupedPageContentService.SaveGroupSettingsAsync(group, condition, cancellationToken));
                 changedCultureNames.Add(group.CultureName);
             }
         }
@@ -347,28 +438,50 @@ public class MultilanguagePageService(
 
     public virtual async Task<GroupedSiteBuilderPage> MarkUpToDateAsync(string groupId, CancellationToken cancellationToken = default)
     {
-        var (group, sourceRevisionDate) = await PrepareMarkUpToDateAsync(groupId);
+        var (group, source) = await PrepareMarkUpToDateAsync(groupId);
 
-        group.SourceRevisionDate = sourceRevisionDate;
+        group.SourceRevisionDate = source.SourceRevisionDate;
         await groupedPageService.SaveChangesAsync([group]);
+
+        return group;
+    }
+
+    public virtual async Task<GroupedSiteBuilderPage> MarkUpToDateAsync(string groupId, DateTime? expectedSourceRevisionDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (expectedSourceRevisionDate == null)
+        {
+            return await MarkUpToDateAsync(groupId, cancellationToken);
+        }
+
+        var (group, source) = await PrepareMarkUpToDateAsync(groupId);
+        if (source.SourceRevisionDate != expectedSourceRevisionDate)
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
+        }
+
+        // read again under the lock of the save, which the source's next publication takes too
+        group.SourceRevisionDate = expectedSourceRevisionDate;
+        var condition = new GroupedPageSaveCondition { SourceGroupId = source.Id, ExpectedSourceRevisionDate = expectedSourceRevisionDate };
+        await groupedPageContentService.SaveGroupAsync(group, condition, cancellationToken);
 
         return group;
     }
 
     public virtual async Task<SiteBuilderChangePreview> PreviewMarkUpToDateAsync(string groupId, CancellationToken cancellationToken = default)
     {
-        var (group, sourceRevisionDate) = await PrepareMarkUpToDateAsync(groupId);
+        var (group, source) = await PrepareMarkUpToDateAsync(groupId);
 
         var marked = group.CloneTyped();
-        marked.SourceRevisionDate = sourceRevisionDate;
+        marked.SourceRevisionDate = source.SourceRevisionDate;
         var preview = CreatePreview();
         preview.AddPage(group, marked);
 
         return preview;
     }
 
-    /// <returns>The translation, and the source publication it is to be based on.</returns>
-    private async Task<(GroupedSiteBuilderPage Group, DateTime? SourceRevisionDate)> PrepareMarkUpToDateAsync(string groupId)
+    /// <returns>The translation, and the source language version whose publication it is to be based on.</returns>
+    private async Task<(GroupedSiteBuilderPage Group, GroupedSiteBuilderPage Source)> PrepareMarkUpToDateAsync(string groupId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
@@ -390,7 +503,7 @@ public class MultilanguagePageService(
             throw new InvalidOperationException($"The source language '{root.DefaultCultureName}' version has not been published yet.");
         }
 
-        return (group, source.SourceRevisionDate);
+        return (group, source);
     }
 
     public virtual async Task<MultilanguagePage> CloneAsync(string multilanguagePageId, CancellationToken cancellationToken = default)
@@ -472,15 +585,28 @@ public class MultilanguagePageService(
         return group;
     }
 
-    public virtual async Task<MultilanguagePage> ConvertAsync(string groupId, CancellationToken cancellationToken = default)
+    public virtual Task<MultilanguagePage> ConvertAsync(string groupId, CancellationToken cancellationToken = default) =>
+        ConvertInternalAsync(groupId, requireUnpublished: false, cancellationToken);
+
+    public virtual Task<MultilanguagePage> ConvertAsync(string groupId, bool requireUnpublished, CancellationToken cancellationToken = default) =>
+        ConvertInternalAsync(groupId, requireUnpublished, cancellationToken);
+
+    private async Task<MultilanguagePage> ConvertInternalAsync(string groupId, bool requireUnpublished, CancellationToken cancellationToken)
     {
-        var (_, root) = await PrepareConvertAsync(groupId);
+        var (group, root) = await PrepareConvertAsync(groupId);
+        // before the root is created, then again under the lock of the link
+        if (requireUnpublished && group.Status == ModuleConstants.PageStatuses.Published)
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PublishedPageMessage);
+        }
 
         await SaveChangesAsync([root]);
 
         try
         {
-            await LinkAsync(root.Id, groupId, cancellationToken);
+            await (requireUnpublished
+                ? LinkAsync(root.Id, groupId, requireUnpublished: true, cancellationToken)
+                : LinkAsync(root.Id, groupId, cancellationToken));
         }
         catch
         {
@@ -543,7 +669,13 @@ public class MultilanguagePageService(
         return (group, root);
     }
 
-    public virtual async Task<GroupedSiteBuilderPage> UnlinkAsync(string groupId, CancellationToken cancellationToken = default)
+    public virtual Task<GroupedSiteBuilderPage> UnlinkAsync(string groupId, CancellationToken cancellationToken = default) =>
+        UnlinkInternalAsync(groupId, requireUnpublished: false, cancellationToken);
+
+    public virtual Task<GroupedSiteBuilderPage> UnlinkAsync(string groupId, bool requireUnpublished, CancellationToken cancellationToken = default) =>
+        UnlinkInternalAsync(groupId, requireUnpublished, cancellationToken);
+
+    private async Task<GroupedSiteBuilderPage> UnlinkInternalAsync(string groupId, bool requireUnpublished, CancellationToken cancellationToken)
     {
         var group = await GetRequiredGroupAsync(groupId);
 
@@ -552,7 +684,7 @@ public class MultilanguagePageService(
             return group;
         }
 
-        await SetMultilanguagePageIdAsync(groupId, null, cancellationToken);
+        await SetMultilanguagePageIdAsync(groupId, null, requireUnpublished, cancellationToken);
 
         group = await groupedPageService.GetByIdAsync(groupId);
         // The page already stores effective values, so it keeps serving exactly what it served as a language version.
@@ -902,7 +1034,9 @@ public class MultilanguagePageService(
         return await groupedPageSearchService.SearchAllAsync(criteria);
     }
 
-    private async Task SetMultilanguagePageIdAsync(string groupId, string multilanguagePageId, CancellationToken cancellationToken)
+    /// <param name="requireUnpublished">The page must not be published, as read under the lock of the write: a link or an unlink of a published page changes what it serves.</param>
+    /// <exception cref="SiteBuilderContentConflictException">It is published: nothing is written.</exception>
+    private async Task SetMultilanguagePageIdAsync(string groupId, string multilanguagePageId, bool requireUnpublished, CancellationToken cancellationToken)
     {
         // A regular grouped save never patches the link (see GroupedSiteBuilderPageEntity.Patch), so it is written here,
         // under the same lock as other grouped writers.
@@ -914,6 +1048,11 @@ public class MultilanguagePageService(
                 {
                     var entity = await repository.GroupedSiteBuilderPages.FirstOrDefaultAsync(x => x.Id == groupId, ct)
                         ?? throw new KeyNotFoundException($"Page '{groupId}' not found.");
+                    if (requireUnpublished &&
+                        await repository.SiteBuilderPages.AnyAsync(x => x.GroupId == groupId && x.Status == ModuleConstants.PageStatuses.Published, ct))
+                    {
+                        throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PublishedPageMessage);
+                    }
                     entity.MultilanguagePageId = multilanguagePageId;
                     // The revision a translation was based on belongs to the previous root, if any.
                     entity.SourceRevisionDate = null;

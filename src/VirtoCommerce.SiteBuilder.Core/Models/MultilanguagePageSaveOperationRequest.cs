@@ -13,4 +13,16 @@ public class MultilanguagePageSaveOperationRequest
     /// A dry run always tells it; a write without this answers <c>false</c>.
     /// </summary>
     public bool ReportImpact { get; set; }
+
+    /// <summary>
+    /// An update is refused when it would change what a published language version serves, as the settings it passes on to the versions are
+    /// compared under the lock of each save. Not read by a create.
+    /// </summary>
+    public bool RequireUnpublished { get; set; }
+
+    /// <summary>
+    /// The version of the multilanguage page the caller reviewed, as a dry run of the update tells it in <see cref="SiteBuilderObjectChange.ETag"/>:
+    /// the update is refused once someone changed it. <c>null</c> writes over whatever it holds. Not read by a create.
+    /// </summary>
+    public string ExpectedSettingsVersion { get; set; }
 }

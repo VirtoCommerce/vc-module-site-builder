@@ -30,6 +30,14 @@ public static class GitContentOptionsExtensions
             GitPageLocation.BranchFor(options.BranchTemplate, userName, contentPath));
     }
 
+    /// <summary>The branch a publish or an unpublish pinned to an approved commit of the editor's work branch ships from.</summary>
+    public static string GetPublishBranch(this GitContentOptions options, string contentType, string path, string userName)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        return GitPageLocation.BranchFor(options.PublishBranchTemplate, userName, GitPageLocation.ContentPath(contentType, path));
+    }
+
     /// <summary>
     /// Promotion is per page, not per editor: the branch carries no {user}, so two people promoting the same page reuse one branch and
     /// one pull request instead of racing with two.

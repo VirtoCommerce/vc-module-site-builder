@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
 
 namespace VirtoCommerce.SiteBuilder.Data.GitContent
 {
@@ -233,6 +235,46 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
                 CacheWrittenRead(repository, path, branch, content);
                 return await ReadCommitShaAsync(response, operation, cancellationToken);
             }
+        }
+
+        [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+            Justification = "The parameters of CommitFileAsync and the comparison: a parameter object would set this commit apart from every other one here.")]
+        public virtual async Task<string> CommitFileIfUnchangedAsync(string repository, string path, string content, string branch, string message,
+            GitCommitAuthor author, Func<string, Task<bool>> isExpected, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(repository);
+            ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            ArgumentException.ThrowIfNullOrWhiteSpace(branch);
+            ArgumentNullException.ThrowIfNull(isExpected);
+
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            var escapedPath = EscapePath(path);
+            var bytes = PageJson.Encoding.GetBytes(content ?? string.Empty);
+
+            // a file too large to be inlined cannot be compared, so it is never the one expected
+            var current = await GetFileAsync(client, repository, escapedPath, branch, cancellationToken);
+            if (current is { Content: null } || !await isExpected(current == null ? null : PageJson.Encoding.GetString(current.Content)))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+            }
+
+            if (current?.Holds(bytes) == true)
+            {
+                return await GetBranchHeadShaAsync(repository, branch, cancellationToken);
+            }
+
+            // GitHub compares the sha named with the file's own as it writes, and refuses a stale one, or a missing one for a file that is there
+            using var response = await PutContentAsync(client, new ContentWrite(repository, escapedPath, content, branch, message, author), current?.Sha,
+                cancellationToken);
+            if (response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.UnprocessableEntity)
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+            }
+
+            var operation = $"commit \"{path}\" to branch \"{branch}\"";
+            await GitHubApiClient.EnsureSuccessAsync(response, operation, cancellationToken);
+            CacheWrittenRead(repository, path, branch, content);
+            return await ReadCommitShaAsync(response, operation, cancellationToken);
         }
 
         public virtual async Task<string> DeleteFileAsync(string repository, string path, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)

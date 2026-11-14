@@ -60,6 +60,24 @@ public sealed class SiteBuilderPageContentService(
         }
     }
 
+    /// <summary>Updates the settings as <see cref="SaveGroupUpdateAsync(GroupedSiteBuilderPage, string, CancellationToken)"/> does, when the condition holds under the group lock.</summary>
+    /// <exception cref="SiteBuilderContentConflictException">It does not hold: nothing is written.</exception>
+    public async Task<SiteBuilderPageContentWriteResult> SaveGroupUpdateAsync(
+        GroupedSiteBuilderPage groupedPage,
+        GroupedPageSaveCondition condition,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await VersionedContent.SaveGroupSettingsAsync(groupedPage, condition, cancellationToken);
+            return SiteBuilderPageContentWriteResult.Success;
+        }
+        catch (InvalidDataException ex)
+        {
+            return SiteBuilderPageContentWriteResult.Invalid(ex.Message);
+        }
+    }
+
     /// <summary>The draft is selected under the group lock; pageId is retained for compatibility.</summary>
     public async Task UpdateGroupSettingsAsync(
         string pageId,

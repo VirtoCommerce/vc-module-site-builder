@@ -49,6 +49,55 @@ public class FilePageDraftService(
         await SaveBlobDraftAsync(storeId, page, cancellationToken);
     }
 
+    public virtual Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, string expectedVersion, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        return expectedVersion == null
+            ? SaveDraftInternalAsync(storeId, page, user, cancellationToken)
+            : SaveDraftAtVersionAsync(storeId, page, expectedVersion.Trim(), user, cancellationToken);
+    }
+
+    private async Task SaveDraftAtVersionAsync(string storeId, SiteBuilderContentFile page, string expectedVersion, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        if (await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+            var baseBranch = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch;
+            var location = gitContentOptions.Value.GetPageLocation(repository, page.ContentType, page.Path, user?.Identity?.Name);
+            // a branch without the page reads as ReadDraftAsync reads it: what is published, else the blob copy from before the store opted in
+            await CommitDraftInternalAsync(storeId, repository, page, SaveAction, user,
+                async current => IsVersion(current
+                    ?? await gitContentRepository.ReadFileAsync(repository, location.RepoPath, baseBranch, cancellationToken)
+                    ?? await ReadBlobDraftAsync(storeId, page.ContentType, page.Path), expectedVersion),
+                cancellationToken);
+            return;
+        }
+
+        // blob storage holds no lock over a draft: it is read right before the write, as close to it as the storage allows
+        if (!IsVersion(await ReadBlobDraftAsync(storeId, page.ContentType, page.Path), expectedVersion))
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+        }
+
+        await SaveBlobDraftAsync(storeId, page, cancellationToken);
+    }
+
+    public virtual async Task<string> ReadBlobPageAsync(string storeId, string contentType, string path, bool draft, CancellationToken cancellationToken = default)
+    {
+        if (draft)
+        {
+            return await ReadBlobDraftAsync(storeId, contentType, path);
+        }
+
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType.ToLowerInvariant(), theme: null);
+        var publishedPath = publishingService.GetRelativeDraftUrl(path, false);
+
+        return await storageProvider.GetBlobInfoAsync(publishedPath) == null ? null : await ReadBlobTextAsync(storageProvider, publishedPath);
+    }
+
     public virtual async Task<string> ReadDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
@@ -74,11 +123,12 @@ public class FilePageDraftService(
     {
         ArgumentNullException.ThrowIfNull(page);
 
-        return CommitDraftInternalAsync(storeId, repository, page, action, user, cancellationToken);
+        return CommitDraftInternalAsync(storeId, repository, page, action, user, isExpected: null, cancellationToken);
     }
 
+    /// <param name="isExpected">Whether the file the branch holds is the one the caller read; <c>null</c> commits over whatever it holds.</param>
     private async Task<GitPageCommit> CommitDraftInternalAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
-        CancellationToken cancellationToken)
+        Func<string, Task<bool>> isExpected, CancellationToken cancellationToken)
     {
         var options = gitContentOptions.Value;
         var baseBranch = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch;
@@ -87,6 +137,12 @@ public class FilePageDraftService(
         // cut from the base branch at the first save, so a merge ships today's published page plus this edit only
         if (await gitContentRepository.GetBranchHeadShaAsync(repository, location.Branch, cancellationToken) == null)
         {
+            // compared before the branch is cut too, so that a refused save leaves none behind
+            if (isExpected != null && !await isExpected(null))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+            }
+
             // the store was enabled before its repository was created
             if (await gitContentRepository.GetBranchHeadShaAsync(repository, baseBranch, cancellationToken) == null)
             {
@@ -100,8 +156,11 @@ public class FilePageDraftService(
         var message = GitCommitMessage.WithVcUser($"designer: {action} {page.Path} (store: {storeId}, by: {author.Name})", user?.Identity?.Name);
 
         // canonical bytes: publish status compares this branch with the base branch
-        var commitSha = await gitContentRepository.CommitFileAsync(repository, location.RepoPath, PageJson.Serialize(page.Content), location.Branch,
-            message, author, cancellationToken);
+        var content = PageJson.Serialize(page.Content);
+        var commitSha = isExpected == null
+            ? await gitContentRepository.CommitFileAsync(repository, location.RepoPath, content, location.Branch, message, author, cancellationToken)
+            : await gitContentRepository.CommitFileIfUnchangedAsync(repository, location.RepoPath, content, location.Branch, message, author, isExpected,
+                cancellationToken);
         gitContentHistory.Invalidate(repository, location.RepoPath);
 
         var result = AbstractTypeFactory<GitPageCommit>.TryCreateInstance();
@@ -237,6 +296,9 @@ public class FilePageDraftService(
 
         return await ReadBlobTextAsync(storageProvider, blobInfo.RelativeUrl);
     }
+
+    private static bool IsVersion(string content, string expectedVersion) =>
+        string.Equals(SiteBuilderContentVersion.CreateForFileContent(content), expectedVersion, StringComparison.Ordinal);
 
     protected virtual async Task<string> ReadBlobTextAsync(IBlobContentStorageProvider storageProvider, string relativeUrl)
     {

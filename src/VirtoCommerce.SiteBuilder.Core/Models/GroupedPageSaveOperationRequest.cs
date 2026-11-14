@@ -13,4 +13,13 @@ public class GroupedPageSaveOperationRequest
     /// A dry run always tells it; a write without this answers <c>false</c>.
     /// </summary>
     public bool ReportImpact { get; set; }
+
+    /// <summary>An update is refused when it would change what a published page serves, as read under the lock of its save. Not read by a create.</summary>
+    public bool RequireUnpublished { get; set; }
+
+    /// <summary>
+    /// The version of the settings the caller reviewed, as a dry run of the update tells it in <see cref="SiteBuilderObjectChange.ETag"/>: the update
+    /// is refused once someone changed them. <c>null</c> writes over whatever they hold. Not read by a create.
+    /// </summary>
+    public string ExpectedSettingsVersion { get; set; }
 }

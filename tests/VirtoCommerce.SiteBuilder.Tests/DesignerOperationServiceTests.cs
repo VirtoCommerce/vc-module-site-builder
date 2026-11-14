@@ -197,6 +197,42 @@ public class DesignerOperationServiceTests
     }
 
     [Fact]
+    public async Task SaveAsync_FilePageAtTheReviewedVersion_IsSaved()
+    {
+        await SaveContentCatalogAsync();
+        const string published = """{"settings":{"type":"settings"},"content":[]}""";
+        _live.Files[Page("about.page")] = published;
+        var dryRun = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        dryRun.DryRun = true;
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        request.ExpectedFilePageVersion = Assert.Single((await Operations().SaveAsync(dryRun, _user, Ct)).Preview.Objects).ETag;
+
+        var result = await Operations().SaveAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderContentVersion.CreateForFileContent(published), request.ExpectedFilePageVersion);
+        Assert.True(result.Succeeded);
+        Assert.True(_live.Files.ContainsKey(Page("about.page-draft")));
+    }
+
+    [Fact]
+    public async Task SaveAsync_FilePageDraftSavedSinceTheReview_IsAConflictAndWritesNothing()
+    {
+        await SaveContentCatalogAsync();
+        const string published = """{"settings":{"type":"settings"},"content":[]}""";
+        const string saved = """{"settings":{"type":"settings","name":"Saved meanwhile"},"content":[]}""";
+        _live.Files[Page("about.page")] = published;
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        request.ExpectedFilePageVersion = SiteBuilderContentVersion.CreateForFileContent(published);
+        _live.Files[Page("about.page-draft")] = saved;
+
+        var result = await Operations().SaveAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftChangedMessage), (result.Status, result.Error));
+        Assert.Equal(saved, _live.Files[Page("about.page-draft")]);
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
     public async Task SaveAsync_DryRunOfContentThatCanRunScript_IsInvalidAsTheSaveIs()
     {
         await SaveCatalogAsync();

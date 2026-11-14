@@ -101,11 +101,17 @@ public class MultilanguagePageOperationService(
         {
             return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewUpdateAsync(model, cancellationToken),
-                () => multilanguagePageService.UpdateAsync(model, cancellationToken));
+                () => request.RequireUnpublished || request.ExpectedSettingsVersion != null
+                    ? multilanguagePageService.UpdateAsync(model, request.RequireUnpublished, request.ExpectedSettingsVersion, cancellationToken)
+                    : multilanguagePageService.UpdateAsync(model, cancellationToken));
         }
         catch (InvalidOperationException ex)
         {
             return SiteBuilderOperationResult.Invalid(ex.Message).As<MultilanguagePage>();
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<MultilanguagePage>();
         }
     }
 
@@ -137,10 +143,12 @@ public class MultilanguagePageOperationService(
 
         return await RunForRootAsync(request, user,
             () => multilanguagePageService.PreviewLinkAsync(request.MultilanguagePageId, request.GroupId, cancellationToken),
-            () => multilanguagePageService.LinkAsync(request.MultilanguagePageId, request.GroupId, cancellationToken));
+            () => request.RequireUnpublished
+                ? multilanguagePageService.LinkAsync(request.MultilanguagePageId, request.GroupId, requireUnpublished: true, cancellationToken)
+                : multilanguagePageService.LinkAsync(request.MultilanguagePageId, request.GroupId, cancellationToken));
     }
 
-    public virtual Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    public virtual Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -148,7 +156,7 @@ public class MultilanguagePageOperationService(
         return ConvertInternalAsync(request, user, cancellationToken);
     }
 
-    private async Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertInternalAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    private async Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertInternalAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
         if (await CheckGroupAsync(request.GroupId, user) is (_, { } refused))
@@ -160,11 +168,17 @@ public class MultilanguagePageOperationService(
         {
             return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewConvertAsync(request.GroupId, cancellationToken),
-                () => multilanguagePageService.ConvertAsync(request.GroupId, cancellationToken));
+                () => request.RequireUnpublished
+                    ? multilanguagePageService.ConvertAsync(request.GroupId, requireUnpublished: true, cancellationToken)
+                    : multilanguagePageService.ConvertAsync(request.GroupId, cancellationToken));
         }
         catch (InvalidOperationException ex)
         {
             return SiteBuilderOperationResult.Invalid(ex.Message).As<MultilanguagePage>();
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<MultilanguagePage>();
         }
         catch (DbUpdateException)
         {
@@ -173,7 +187,7 @@ public class MultilanguagePageOperationService(
         }
     }
 
-    public virtual Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    public virtual Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateAsync(MultilanguagePageMarkUpToDateOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -181,7 +195,7 @@ public class MultilanguagePageOperationService(
         return MarkUpToDateInternalAsync(request, user, cancellationToken);
     }
 
-    private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateInternalAsync(GroupedPageOperationRequest request,
+    private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateInternalAsync(MultilanguagePageMarkUpToDateOperationRequest request,
         ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         var (group, refused) = await CheckGroupAsync(request.GroupId, user);
@@ -199,15 +213,21 @@ public class MultilanguagePageOperationService(
         {
             return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewMarkUpToDateAsync(request.GroupId, cancellationToken),
-                () => multilanguagePageService.MarkUpToDateAsync(request.GroupId, cancellationToken));
+                () => request.ExpectedSourceRevisionDate == null
+                    ? multilanguagePageService.MarkUpToDateAsync(request.GroupId, cancellationToken)
+                    : multilanguagePageService.MarkUpToDateAsync(request.GroupId, request.ExpectedSourceRevisionDate, cancellationToken));
         }
         catch (InvalidOperationException ex)
         {
             return SiteBuilderOperationResult.Invalid(ex.Message).As<GroupedSiteBuilderPage>();
         }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<GroupedSiteBuilderPage>();
+        }
     }
 
-    public virtual Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    public virtual Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -215,7 +235,7 @@ public class MultilanguagePageOperationService(
         return UnlinkInternalAsync(request, user, cancellationToken);
     }
 
-    private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkInternalAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkInternalAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
         if (await CheckGroupAsync(request.GroupId, user) is (_, { } refused))
@@ -223,9 +243,23 @@ public class MultilanguagePageOperationService(
             return refused.As<GroupedSiteBuilderPage>();
         }
 
-        return await RunAsync(request.DryRun, request.ReportImpact,
-            () => multilanguagePageService.PreviewUnlinkAsync(request.GroupId, cancellationToken),
-            () => multilanguagePageService.UnlinkAsync(request.GroupId, cancellationToken));
+        if (!request.RequireUnpublished)
+        {
+            return await RunAsync(request.DryRun, request.ReportImpact,
+                () => multilanguagePageService.PreviewUnlinkAsync(request.GroupId, cancellationToken),
+                () => multilanguagePageService.UnlinkAsync(request.GroupId, cancellationToken));
+        }
+
+        try
+        {
+            return await RunAsync(request.DryRun, request.ReportImpact,
+                () => multilanguagePageService.PreviewUnlinkAsync(request.GroupId, cancellationToken),
+                () => multilanguagePageService.UnlinkAsync(request.GroupId, requireUnpublished: true, cancellationToken));
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<GroupedSiteBuilderPage>();
+        }
     }
 
     public virtual Task<SiteBuilderOperationResult<IList<string>>> ResetOverridesAsync(MultilanguagePageResetOverridesOperationRequest request,
@@ -235,7 +269,9 @@ public class MultilanguagePageOperationService(
 
         return RunForRootAsync(request, user,
             () => multilanguagePageService.PreviewResetOverridesAsync(request.MultilanguagePageId, request.Fields, cancellationToken),
-            () => multilanguagePageService.ResetOverridesAsync(request.MultilanguagePageId, request.Fields, cancellationToken));
+            () => request.RequireUnpublished
+                ? multilanguagePageService.ResetOverridesAsync(request.MultilanguagePageId, request.Fields, requireUnpublished: true, cancellationToken)
+                : multilanguagePageService.ResetOverridesAsync(request.MultilanguagePageId, request.Fields, cancellationToken));
     }
 
     public virtual Task<SiteBuilderOperationResult<MultilanguagePage>> CloneAsync(MultilanguagePageOperationRequest request, ClaimsPrincipal user,

@@ -114,6 +114,14 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         public string PromoteBranchTemplate { get; set; } = "promote/{slug}";
 
         /// <summary>
+        /// Branch name for a publish or an unpublish pinned to the commit it was approved at, one per editor AND page like
+        /// <see cref="BranchTemplate"/>. The pull request is opened from it rather than from the work branch: GitHub merges a branch wherever
+        /// it is when the merge runs, so a commit made to the work branch while the checks run would be merged under an approval it never had.
+        /// It is pointed at the approved commit on each such publish and deleted once that is merged.
+        /// </summary>
+        public string PublishBranchTemplate { get; set; } = "publish/{user}/{slug}";
+
+        /// <summary>
         /// Repository-relative folder that holds the page files: a page saved by the builder with
         /// path "docs/foo.page" is committed as "{PagesRoot}/docs/foo.page".
         /// </summary>

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.ExportImport;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Models;
@@ -1098,6 +1099,16 @@ public class MultilanguagePageServiceTests
         }
 
         public FakeStoreService StoreService { get; }
+
+        /// <summary>Another root service over the same data, whose writes of language versions go through <paramref name="groupedPageContentService"/>.</summary>
+        public MultilanguagePageService CreateRoots(IGroupedPageContentService groupedPageContentService)
+        {
+            Func<ISiteBuilderRepository> repositoryFactory = () => new SiteBuilderRepository(CreateContext());
+            var events = new NoopEventPublisher();
+
+            return new MultilanguagePageService(repositoryFactory, _cache, events, Groups, groupedPageContentService, GroupSearch, StoreService,
+                new SiteBuilderPageService(repositoryFactory, _cache, events), Lock, NullLogger<MultilanguagePageService>.Instance);
+        }
 
         public InProcessDistributedLock Lock { get; } = new();
 

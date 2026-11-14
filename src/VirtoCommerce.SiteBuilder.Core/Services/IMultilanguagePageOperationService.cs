@@ -25,15 +25,15 @@ public interface IMultilanguagePageOperationService
         CancellationToken cancellationToken = default);
 
     /// <summary>Turns a Landing Page into a Multilanguage Page with the page as its default language version.</summary>
-    Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
     /// <summary>Marks an outdated translation as matching the current publication of its source language.</summary>
-    Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateAsync(MultilanguagePageMarkUpToDateOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
     /// <summary>Turns a language version back into a Landing Page.</summary>
-    Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+    Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
     /// <summary>Gives every language version the root values of the fields, dropping their overrides.</summary>

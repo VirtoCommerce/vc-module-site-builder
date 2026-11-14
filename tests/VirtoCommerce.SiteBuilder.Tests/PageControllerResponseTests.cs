@@ -208,7 +208,7 @@ public class PageControllerResponseTests
         var result = await MultilanguageController().Convert("g1", Ct);
 
         Assert.Equal("Changed by another request.", Assert.IsType<ConflictObjectResult>(result.Result).Value);
-        Assert.Equal("g1", Assert.IsType<GroupedPageOperationRequest>(_operations.Request).GroupId);
+        Assert.Equal("g1", Assert.IsType<MultilanguagePageVersionOperationRequest>(_operations.Request).GroupId);
     }
 
     [Fact]
@@ -304,13 +304,13 @@ public class PageControllerResponseTests
         public Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> LinkAsync(MultilanguagePageLinkOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => Answer<GroupedSiteBuilderPage>(request, user);
 
-        public Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+        public Task<SiteBuilderOperationResult<MultilanguagePage>> ConvertAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => Answer<MultilanguagePage>(request, user);
 
-        public Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+        public Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> MarkUpToDateAsync(MultilanguagePageMarkUpToDateOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => Answer<GroupedSiteBuilderPage>(request, user);
 
-        public Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkAsync(GroupedPageOperationRequest request, ClaimsPrincipal user,
+        public Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> UnlinkAsync(MultilanguagePageVersionOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => Answer<GroupedSiteBuilderPage>(request, user);
 
         public Task<SiteBuilderOperationResult<IList<string>>> ResetOverridesAsync(MultilanguagePageResetOverridesOperationRequest request,

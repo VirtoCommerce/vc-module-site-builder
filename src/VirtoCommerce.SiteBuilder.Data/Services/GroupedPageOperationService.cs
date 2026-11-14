@@ -225,13 +225,43 @@ public class GroupedPageOperationService(
         }
 
         var preview = CreatePreview();
-        preview.AddPage(stored, groupedPage);
+        var change = preview.AddPage(stored, groupedPage);
         if (request.DryRun)
         {
+            if (change != null && stored != null)
+            {
+                // the version a caller sends back to update only the settings it reviewed
+                change.ETag = SiteBuilderContentVersion.CreateForGroupSettings(stored);
+            }
+
             return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
         }
 
-        return await SaveGroupUpdateAsync(groupedPage, sourcePageId, request.ReportImpact && preview.AffectsPublished, cancellationToken);
+        var affectsPublished = request.ReportImpact && preview.AffectsPublished;
+        if (!request.RequireUnpublished && request.ExpectedSettingsVersion == null)
+        {
+            return await SaveGroupUpdateAsync(groupedPage, sourcePageId, affectsPublished, cancellationToken);
+        }
+
+        var condition = new GroupedPageSaveCondition { RequireUnpublished = request.RequireUnpublished, ExpectedSettingsVersion = request.ExpectedSettingsVersion };
+        return await SaveGroupUpdateAsync(groupedPage, condition, affectsPublished, cancellationToken);
+    }
+
+    /// <summary>The condition is read under the lock of the save, against the settings as they are stored then.</summary>
+    private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> SaveGroupUpdateAsync(GroupedSiteBuilderPage groupedPage,
+        GroupedPageSaveCondition condition, bool affectsPublished, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var writeResult = await pageContentService.SaveGroupUpdateAsync(groupedPage, condition, cancellationToken);
+            return writeResult.ErrorMessage != null
+                ? SiteBuilderOperationResult.Invalid(writeResult.ErrorMessage).As<GroupedSiteBuilderPage>()
+                : SiteBuilderOperationResult.Success(groupedPage, affectsPublished);
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message).As<GroupedSiteBuilderPage>();
+        }
     }
 
     /// <summary>The shared components of the content the update copies into a new draft; <c>null</c> when it copies none.</summary>

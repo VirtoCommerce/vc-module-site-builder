@@ -48,6 +48,10 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
         private static string MarysBranch => GitPageLocation.BranchFor("designer/{user}/{slug}", "mary", "about-us.page");
 
+        private static string MyPublishBranch => GitPageLocation.BranchFor("publish/{user}/{slug}", Login, "about-us.page");
+
+        private static string MarysPublishBranch => GitPageLocation.BranchFor("publish/{user}/{slug}", "mary", "about-us.page");
+
         [Fact]
         public async Task Unpublish_CommitsTheDeletionOnMyBranchAndMergesIt()
         {
@@ -328,7 +332,46 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
             Assert.True(result.Succeeded);
             Assert.Equal((RepoPath, MarysBranch), Assert.Single(repository.DeletedFiles));
-            Assert.Equal((MarysBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal((MarysPublishBranch, RecordingRepository.NewCommitSha), Assert.Single(repository.MovedBranches));
+            Assert.Equal((MarysPublishBranch, "master"), Assert.Single(publisher.Merges));
+        }
+
+        /// <summary>The deletion committed on top of the commit approved is what ships, not a save of the page made while the merge waits.</summary>
+        [Theory]
+        [InlineData(GitPublishState.Pending)]
+        [InlineData(GitPublishState.Merged)]
+        public async Task UnpublishOperation_AtTheReviewedHead_ACommitMadeWhileTheMergeWaits_IsNotShippedAndIsKept(GitPublishState state)
+        {
+            const string savedAgain = "7555555555555555555555555555555555555555";
+            var repository = Repository();
+            var publisher = Publisher(state);
+            publisher.OnMerge = () =>
+            {
+                repository.BranchHeads[MyBranch] = savedAgain;
+                repository.Files[(RepoPath, MyBranch)] = Published;
+            };
+            var request = new FilePageShipOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = BranchHead };
+
+            var result = await Operations(repository, publisher, new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal((MyPublishBranch, RecordingRepository.NewCommitSha), Assert.Single(repository.MovedBranches));
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal(state == GitPublishState.Merged, repository.DeletedBranches.Contains(MyPublishBranch));
+            Assert.DoesNotContain(MyBranch, repository.DeletedBranches);
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_AtTheReviewedHead_Merged_DeletesTheDraftBranchThatHoldsNothingMore()
+        {
+            var repository = Repository();
+            var publisher = Publisher(GitPublishState.Merged);
+            var request = new FilePageShipOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = BranchHead };
+
+            var result = await Operations(repository, publisher, new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal([MyPublishBranch, MyBranch], repository.DeletedBranches);
         }
 
         [Fact]
@@ -452,6 +495,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
             public List<(string Branch, string FromRef)> CreatedBranches { get; } = [];
             public List<string> DeletedBranches { get; } = [];
+            public List<(string Branch, string Sha)> MovedBranches { get; } = [];
             public List<(string Path, string Branch)> DeletedFiles { get; } = [];
             public HashSet<string> Repositories { get; } = [];
 
@@ -479,6 +523,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             public Task SetBranchAsync(string repository, string branch, string sha, string pagePath, CancellationToken cancellationToken = default)
             {
                 Repositories.Add(repository);
+                MovedBranches.Add((branch, sha));
                 BranchHeads[branch] = sha;
                 return Task.CompletedTask;
             }
@@ -508,6 +553,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 }
 
                 DeletedFiles.Add((path, branch));
+                BranchHeads[branch] = NewCommitSha;
                 return Task.FromResult(NewCommitSha);
             }
         }
