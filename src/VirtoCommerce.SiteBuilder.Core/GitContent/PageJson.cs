@@ -84,5 +84,35 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
 
             return string.Equals(Canonicalize(left), Canonicalize(right), StringComparison.Ordinal);
         }
+
+        /// <summary>Ignores formatting; a document that does not parse differs from any other.</summary>
+        public static bool AreSameDocuments(string left, string right)
+        {
+            if (left == null || right == null)
+            {
+                return left == null && right == null;
+            }
+
+            try
+            {
+                return JToken.DeepEquals(Parse(left), Parse(right));
+            }
+            catch (JsonReaderException)
+            {
+                return false;
+            }
+        }
+
+        private static JToken Parse(string json)
+        {
+            using var reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None };
+            var token = JToken.ReadFrom(reader);
+            while (reader.Read())
+            {
+                // as JToken.Parse: the reader throws on anything but a comment after the document
+            }
+
+            return token;
+        }
     }
 }

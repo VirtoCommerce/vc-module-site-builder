@@ -4,6 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <!-- the version vc-module-catalog ships: modules share one process -->
+    <PackageReference Include="HtmlSanitizer" Version="9.1.973" />
     <PackageReference Include="VirtoCommerce.ContentModule.Data" Version="3.1006.0" />
     <PackageReference Include="VirtoCommerce.Platform.Data" Version="3.1095.0" />
     <PackageReference Include="VirtoCommerce.Platform.Security" Version="3.1095.0" />

@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
@@ -113,6 +113,24 @@ public class SiteBuilderPermalinkTests
     }
 
     [Fact]
+    public async Task CreateGroupPage_ContentWithScriptUrl_ReturnsBadRequestAndDoesNotSave()
+    {
+        var service = new PublishedRenameContentPreservationTests.FakeGroupedPageService();
+        var controller = CreateController(service);
+
+        var result = await controller.CreateGroupPage(new CreateGroupedPageRequest
+        {
+            StoreId = StoreId,
+            Name = "Test page",
+            Permalink = "/test",
+            Content = """{"settings":{},"content":[{"id":"a","type":"hero","link":"vbscript:msgbox(1)"}]}""",
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Contains("'content[0].link' holds a vbscript: URL", (string)Assert.IsType<BadRequestObjectResult>(result.Result).Value);
+        Assert.Empty(await service.GetAsync(["group-new-1"]));
+    }
+
+    [Fact]
     public async Task UpdateGroup_UnchangedLegacyInvalidPermalink_AllowsOtherChanges()
     {
         var service = CreateServiceWithPublishedGroup("/legacy page");
@@ -182,17 +200,18 @@ public class SiteBuilderPermalinkTests
         var pageContentService = new SiteBuilderPageContentService(
             pageService,
             service,
-            new NoopSharedComponentReferenceIndexService(),
             new PublishedRenameContentPreservationTests.NoopEventPublisher(),
             NullLogger<SiteBuilderPageContentService>.Instance);
+        var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
         var controller = new SiteBuilderPageController(
-            pageService,
             service,
             new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-            new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+            authorization,
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
             pageContentService,
-            NullLogger<SiteBuilderPageController>.Instance);
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService),
+            TestServices.PublishStatuses(authorization, service));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) },

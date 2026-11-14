@@ -1,10 +1,11 @@
+using System.Text.RegularExpressions;
+
 namespace VirtoCommerce.SiteBuilder.Core.GitContent
 {
     /// <summary>
-    /// Connection to the content repository for the git content flow: when it is on, a page save is a
+    /// Connection to the content repositories for the git content flow: when it is on, a page save is a
     /// commit on a work branch (git is the source of truth) and publishing is a merge into
-    /// <see cref="BaseBranch"/>, performed by CI. Direct live writes are restricted to callers holding
-    /// the publish permission (the CI deploy).
+    /// <see cref="BaseBranch"/>. Direct live writes are restricted to callers holding the publish permission.
     /// <para>
     /// <see cref="Enabled"/> is a global kill switch, not the whole answer: a store also has to opt in
     /// through its own setting. Ask <see cref="IGitContentPolicy"/> rather than reading this flag.
@@ -14,12 +15,33 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
     {
         public const string SectionName = "SiteBuilder:GitContent";
 
+        private const string AnyRepositoryOfOwner = "/*";
+
+        private static readonly Regex AllowedRepositoryPattern = new(@"^[A-Za-z0-9-]+/(?:\*|(?!\.{1,2}$)[A-Za-z0-9._-]+)$", RegexOptions.None, TimeSpan.FromSeconds(1));
+
         public bool Enabled { get; set; }
 
-        /// <summary>
-        /// Content repository in "owner/name" form, e.g. "VirtoCommerce/vc-content".
-        /// </summary>
+        /// <summary>Mutually exclusive with <see cref="Organization"/>.</summary>
         public string Repository { get; set; }
+
+        public string Organization { get; set; }
+
+        /// <summary>
+        /// Repositories a store's own setting may name besides <see cref="Repository"/>. Empty allows none, because
+        /// whoever edits a store's settings would otherwise reach every repository the platform's credentials can write to.
+        /// </summary>
+        public IList<string> AllowedRepositories { get; set; } = [];
+
+        public string RepositoryPrefix { get; set; } = "site-";
+
+        /// <summary>Requires <see cref="Organization"/>.</summary>
+        public bool AutoCreateRepositories { get; set; }
+
+        /// <summary>With <see cref="PrivateKey"/>, replaces <see cref="Token"/>.</summary>
+        public string AppId { get; set; }
+
+        /// <summary>GitHub App private key (PEM); "\n" escapes are accepted. Keep it in secret storage.</summary>
+        public string PrivateKey { get; set; }
 
         /// <summary>
         /// Base url of the GitHub REST API. Override for GitHub Enterprise.
@@ -39,10 +61,7 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// </summary>
         public Uri GraphQlUrl { get; set; } = new("https://api.github.com/graphql");
 
-        /// <summary>
-        /// Token with contents and pull-request read/write access to the repository (fine-grained PAT or
-        /// GitHub App installation token). A platform secret — keep it in environment/secret storage.
-        /// </summary>
+        /// <summary>Keep it in secret storage.</summary>
         public string Token { get; set; }
 
         /// <summary>
@@ -95,6 +114,14 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         public string PromoteBranchTemplate { get; set; } = "promote/{slug}";
 
         /// <summary>
+        /// Branch name for a publish or an unpublish pinned to the commit it was approved at, one per editor AND page like
+        /// <see cref="BranchTemplate"/>. The pull request is opened from it rather than from the work branch: GitHub merges a branch wherever
+        /// it is when the merge runs, so a commit made to the work branch while the checks run would be merged under an approval it never had.
+        /// It is pointed at the approved commit on each such publish and deleted once that is merged.
+        /// </summary>
+        public string PublishBranchTemplate { get; set; } = "publish/{user}/{slug}";
+
+        /// <summary>
         /// Repository-relative folder that holds the page files: a page saved by the builder with
         /// path "docs/foo.page" is committed as "{PagesRoot}/docs/foo.page".
         /// </summary>
@@ -113,13 +140,11 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// How long a page read by branch name is cached. Every template the designer opens is a GitHub
         /// call, so the cache is what keeps the flow inside the API rate limit. A branch moves, hence
         /// the short life; a write through this module drops the entry it invalidated straight away.
+        /// Also how long an unowned repository is cached.
         /// </summary>
         public TimeSpan ReadCacheExpiration { get; set; } = TimeSpan.FromMinutes(1);
 
-        /// <summary>
-        /// How long a page read by commit sha is cached. A sha is immutable, so the only reason to
-        /// expire it at all is to bound memory.
-        /// </summary>
+        /// <summary>Also how long a repository owner is cached.</summary>
         public TimeSpan ImmutableReadCacheExpiration { get; set; } = TimeSpan.FromHours(1);
 
         /// <summary>
@@ -159,10 +184,12 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// <summary>
         /// True when the connection is filled in well enough to talk to GitHub at all.
         /// </summary>
-        public bool IsConfigured =>
-            !string.IsNullOrWhiteSpace(Repository) &&
-            !string.IsNullOrWhiteSpace(Token) &&
-            !string.IsNullOrWhiteSpace(BaseBranch);
+        public bool IsConfigured => HasTarget() && HasCredentials() && !string.IsNullOrWhiteSpace(BaseBranch);
+
+        public bool IsRepositoryAllowed(string repository) => AllowedRepositories.Any(entry =>
+            entry.EndsWith(AnyRepositoryOfOwner, StringComparison.Ordinal)
+                ? repository.StartsWith(entry[..^1], StringComparison.OrdinalIgnoreCase)
+                : string.Equals(entry, repository, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// Fail fast at start-up: a half-configured git flow must not boot. Silently falling back to the
@@ -171,46 +198,83 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// </summary>
         public void Validate()
         {
+            // before the switch: a connection made through the one-click setup leaves Enabled unset
+            ValidateAllowedRepositories();
+
             if (!Enabled)
             {
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(Repository) && !string.IsNullOrWhiteSpace(Organization))
+            {
+                throw new InvalidOperationException(
+                    $"{SectionName}:{nameof(Repository)} and {SectionName}:{nameof(Organization)} are both set. " +
+                    $"Use {nameof(Organization)} for one repository per site; to keep a store on the shared repository, " +
+                    $"set it as that store's Git repository and list it in {nameof(AllowedRepositories)}, then remove {nameof(Repository)}.");
+            }
+
             if (IsConfigured)
             {
-                // One branch on both ends turns promotion into a no-op that reports success: the page is
-                // written back to the branch it already came from, CI redeploys the environment it was
-                // already on, and production never hears about it. There is no configuration in which
-                // this is meant, so it is a start-up failure rather than a surprise at the first promotion.
-                if (!string.IsNullOrWhiteSpace(ReleaseBranch) &&
-                    string.Equals(ReleaseBranch.Trim(), BaseBranch?.Trim(), StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException(
-                        $"{SectionName}:{nameof(ReleaseBranch)} and {SectionName}:{nameof(BaseBranch)} both name " +
-                        $"\"{BaseBranch}\". Promotion to production would merge that branch into itself. " +
-                        $"Name the production branch, or leave {nameof(ReleaseBranch)} empty to disable promotion.");
-                }
-
+                ValidateReleaseBranch();
                 return;
             }
 
-            var missing = new List<string>();
-            if (string.IsNullOrWhiteSpace(Repository))
+            throw new InvalidOperationException(
+                $"{SectionName}:Enabled is set but the connection is incomplete — missing: {string.Join(", ", GetMissingSettings())}. " +
+                $"Fill them in, or set {SectionName}:Enabled to false.");
+        }
+
+        // One branch on both ends turns promotion into a no-op that reports success: the page is
+        // written back to the branch it already came from, CI redeploys the environment it was
+        // already on, and production never hears about it. There is no configuration in which
+        // this is meant, so it is a start-up failure rather than a surprise at the first promotion.
+        private void ValidateReleaseBranch()
+        {
+            if (!string.IsNullOrWhiteSpace(ReleaseBranch) &&
+                string.Equals(ReleaseBranch.Trim(), BaseBranch?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
-                missing.Add(nameof(Repository));
+                throw new InvalidOperationException(
+                    $"{SectionName}:{nameof(ReleaseBranch)} and {SectionName}:{nameof(BaseBranch)} both name " +
+                    $"\"{BaseBranch}\". Promotion to production would merge that branch into itself. " +
+                    $"Name the production branch, or leave {nameof(ReleaseBranch)} empty to disable promotion.");
             }
-            if (string.IsNullOrWhiteSpace(Token))
+        }
+
+        private List<string> GetMissingSettings()
+        {
+            var missing = new List<string>();
+            if (!HasTarget())
             {
-                missing.Add(nameof(Token));
+                missing.Add($"{nameof(Organization)} (or {nameof(Repository)})");
+            }
+            if (!HasCredentials())
+            {
+                missing.Add($"{nameof(AppId)} and {nameof(PrivateKey)} (or {nameof(Token)})");
             }
             if (string.IsNullOrWhiteSpace(BaseBranch))
             {
                 missing.Add(nameof(BaseBranch));
             }
 
-            throw new InvalidOperationException(
-                $"{SectionName}:Enabled is set but the connection is incomplete — missing: {string.Join(", ", missing)}. " +
-                $"Fill them in, or set {SectionName}:Enabled to false.");
+            return missing;
         }
+
+        private void ValidateAllowedRepositories()
+        {
+            var malformed = AllowedRepositories.Where(x => x == null || !AllowedRepositoryPattern.IsMatch(x)).ToList();
+            if (malformed.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"{SectionName}:{nameof(AllowedRepositories)} has entries that are neither \"owner/name\" nor \"owner/*\": " +
+                    $"{string.Join(", ", malformed.Select(x => $"\"{x}\""))}.");
+            }
+        }
+
+        private bool HasTarget() => !string.IsNullOrWhiteSpace(Repository) || !string.IsNullOrWhiteSpace(Organization);
+
+        private bool HasCredentials() => !string.IsNullOrWhiteSpace(Token) || HasApp();
+
+        private bool HasApp() => !string.IsNullOrWhiteSpace(AppId) && !string.IsNullOrWhiteSpace(PrivateKey);
     }
 }

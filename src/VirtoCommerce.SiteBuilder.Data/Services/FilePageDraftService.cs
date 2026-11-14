@@ -1,0 +1,327 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
+using VirtoCommerce.ContentModule.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Events;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.Platform.Core.Events;
+
+namespace VirtoCommerce.SiteBuilder.Data.Services;
+
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
+public class FilePageDraftService(
+    IGitContentPolicy gitContentPolicy,
+    IGitContentRepository gitContentRepository,
+    IGitContentHistory gitContentHistory,
+    IGitContentProvisioner gitContentProvisioner,
+    IGitHubConnectionService gitHubConnectionService,
+    IOptions<GitContentOptions> gitContentOptions,
+    IThemeStorageFactory themeStorageFactory,
+    IContentPathResolver contentPathResolver,
+    IBlobContentStorageProviderFactory blobContentStorageProviderFactory,
+    IPublishingService publishingService,
+    IEventPublisher eventPublisher) : IFilePageDraftService
+{
+    private const string SaveAction = "save";
+
+    public virtual Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, ClaimsPrincipal user, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        return SaveDraftInternalAsync(storeId, page, user, cancellationToken);
+    }
+
+    private async Task SaveDraftInternalAsync(string storeId, SiteBuilderContentFile page, ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        if (await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+            await CommitDraftAsync(storeId, repository, page, SaveAction, user, cancellationToken);
+            return;
+        }
+
+        await SaveBlobDraftAsync(storeId, page, cancellationToken);
+    }
+
+    public virtual Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, string expectedVersion, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        return expectedVersion == null
+            ? SaveDraftInternalAsync(storeId, page, user, cancellationToken)
+            : SaveDraftAtVersionAsync(storeId, page, expectedVersion.Trim(), user, cancellationToken);
+    }
+
+    private async Task SaveDraftAtVersionAsync(string storeId, SiteBuilderContentFile page, string expectedVersion, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        if (await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+            var baseBranch = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch;
+            var location = gitContentOptions.Value.GetPageLocation(repository, page.ContentType, page.Path, user?.Identity?.Name);
+            // a branch without the page reads as ReadDraftAsync reads it: what is published, else the blob copy from before the store opted in
+            await CommitDraftInternalAsync(storeId, repository, page, SaveAction, user,
+                async current => IsVersion(current
+                    ?? await gitContentRepository.ReadFileAsync(repository, location.RepoPath, baseBranch, cancellationToken)
+                    ?? await ReadBlobDraftAsync(storeId, page.ContentType, page.Path), expectedVersion),
+                cancellationToken);
+            return;
+        }
+
+        // blob storage holds no lock over a draft: it is read right before the write, as close to it as the storage allows
+        if (!IsVersion(await ReadBlobDraftAsync(storeId, page.ContentType, page.Path), expectedVersion))
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+        }
+
+        await SaveBlobDraftAsync(storeId, page, cancellationToken);
+    }
+
+    public virtual async Task<string> ReadBlobPageAsync(string storeId, string contentType, string path, bool draft, CancellationToken cancellationToken = default)
+    {
+        if (draft)
+        {
+            return await ReadBlobDraftAsync(storeId, contentType, path);
+        }
+
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType.ToLowerInvariant(), theme: null);
+        var publishedPath = publishingService.GetRelativeDraftUrl(path, false);
+
+        return await storageProvider.GetBlobInfoAsync(publishedPath) == null ? null : await ReadBlobTextAsync(storageProvider, publishedPath);
+    }
+
+    public virtual async Task<string> ReadDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        if (await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+            var location = gitContentOptions.Value.GetPageLocation(repository, contentType, path, user?.Identity?.Name);
+            var fromGit = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken)
+                ?? await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath,
+                    (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch, cancellationToken);
+            // a page the store had before it opted in reaches git at its first save: until then the blob copy is the page
+            if (fromGit != null)
+            {
+                return fromGit;
+            }
+        }
+
+        return await ReadBlobDraftAsync(storeId, contentType, path);
+    }
+
+    public virtual Task<GitPageCommit> CommitDraftAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        return CommitDraftInternalAsync(storeId, repository, page, action, user, isExpected: null, cancellationToken);
+    }
+
+    /// <param name="isExpected">Whether the file the branch holds is the one the caller read; <c>null</c> commits over whatever it holds.</param>
+    private async Task<GitPageCommit> CommitDraftInternalAsync(string storeId, string repository, SiteBuilderContentFile page, string action, ClaimsPrincipal user,
+        Func<string, Task<bool>> isExpected, CancellationToken cancellationToken)
+    {
+        var options = gitContentOptions.Value;
+        var baseBranch = (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch;
+        var location = options.GetPageLocation(repository, page.ContentType, page.Path, user?.Identity?.Name);
+
+        // cut from the base branch at the first save, so a merge ships today's published page plus this edit only
+        if (await gitContentRepository.GetBranchHeadShaAsync(repository, location.Branch, cancellationToken) == null)
+        {
+            // compared before the branch is cut too, so that a refused save leaves none behind
+            if (isExpected != null && !await isExpected(null))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+            }
+
+            // the store was enabled before its repository was created
+            if (await gitContentRepository.GetBranchHeadShaAsync(repository, baseBranch, cancellationToken) == null)
+            {
+                await gitContentProvisioner.EnsureRepositoryAsync(storeId, cancellationToken);
+            }
+
+            await gitContentRepository.CreateBranchAsync(repository, location.Branch, baseBranch, cancellationToken);
+        }
+
+        var author = options.GetCommitAuthor(user);
+        var message = GitCommitMessage.WithVcUser($"designer: {action} {page.Path} (store: {storeId}, by: {author.Name})", user?.Identity?.Name);
+
+        // canonical bytes: publish status compares this branch with the base branch
+        var content = PageJson.Serialize(page.Content);
+        var commitSha = isExpected == null
+            ? await gitContentRepository.CommitFileAsync(repository, location.RepoPath, content, location.Branch, message, author, cancellationToken)
+            : await gitContentRepository.CommitFileIfUnchangedAsync(repository, location.RepoPath, content, location.Branch, message, author, isExpected,
+                cancellationToken);
+        gitContentHistory.Invalidate(repository, location.RepoPath);
+
+        var result = AbstractTypeFactory<GitPageCommit>.TryCreateInstance();
+        result.Path = page.Path;
+        result.Branch = location.Branch;
+        result.CommitSha = commitSha;
+
+        return result;
+    }
+
+    public virtual async Task<DraftDiscardStatus> DiscardDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            return await DiscardBlobDraftAsync(storeId, contentType, path, theme: null, cancellationToken);
+        }
+
+        var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+        await DiscardGitDraftAsync(repository, contentType, path, user, cancellationToken);
+
+        return DraftDiscardStatus.Discarded;
+    }
+
+    public virtual async Task<DraftDiscardPreview> PreviewDiscardDraftAsync(string storeId, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
+        {
+            return await PreviewDiscardBlobDraftAsync(storeId, contentType, path, theme: null, cancellationToken);
+        }
+
+        var repository = await gitContentPolicy.GetRepositoryAsync(storeId, cancellationToken);
+        var location = gitContentOptions.Value.GetPageLocation(repository, contentType, path, user?.Identity?.Name);
+
+        // the user's draft is their branch, which the discard deletes whatever is published
+        var result = AbstractTypeFactory<DraftDiscardPreview>.TryCreateInstance();
+        result.DraftContent = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath, location.Branch, cancellationToken);
+        if (result.DraftContent == null)
+        {
+            result.Status = DraftDiscardStatus.NoDraft;
+            return result;
+        }
+
+        result.Status = DraftDiscardStatus.Discarded;
+        result.PublishedContent = await gitContentRepository.ReadFileAsync(location.Repository, location.RepoPath,
+            (await gitHubConnectionService.GetConnectionAsync(cancellationToken)).BaseBranch, cancellationToken);
+
+        return result;
+    }
+
+    public virtual async Task DiscardGitDraftAsync(string repository, string contentType, string path, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        var location = gitContentOptions.Value.GetPageLocation(repository, contentType, path, user?.Identity?.Name);
+
+        await gitContentRepository.DeleteBranchAsync(location.Repository, location.Branch, location.RepoPath, cancellationToken);
+        // the versions that lived only on that branch are gone with it
+        gitContentHistory.Invalidate(location.Repository, location.RepoPath);
+    }
+
+    public virtual async Task<DraftDiscardStatus> DiscardBlobDraftAsync(string storeId, string contentType, string path, string theme,
+        CancellationToken cancellationToken = default)
+    {
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType, theme);
+        var draftPath = publishingService.GetRelativeDraftUrl(path, true);
+        if (await storageProvider.GetBlobInfoAsync(draftPath) == null)
+        {
+            return DraftDiscardStatus.NoDraft;
+        }
+
+        if (await storageProvider.GetBlobInfoAsync(publishingService.GetRelativeDraftUrl(path, false)) == null)
+        {
+            return DraftDiscardStatus.OnlyCopy;
+        }
+
+        await storageProvider.RemoveAsync([draftPath]);
+        await PublishChangedEventAsync(contentType, path, cancellationToken);
+
+        return DraftDiscardStatus.Discarded;
+    }
+
+    public virtual async Task<DraftDiscardPreview> PreviewDiscardBlobDraftAsync(string storeId, string contentType, string path, string theme,
+        CancellationToken cancellationToken = default)
+    {
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType, theme);
+        var draftPath = publishingService.GetRelativeDraftUrl(path, true);
+        var publishedPath = publishingService.GetRelativeDraftUrl(path, false);
+
+        var result = AbstractTypeFactory<DraftDiscardPreview>.TryCreateInstance();
+        if (await storageProvider.GetBlobInfoAsync(draftPath) == null)
+        {
+            result.Status = DraftDiscardStatus.NoDraft;
+            return result;
+        }
+
+        result.DraftContent = await ReadBlobTextAsync(storageProvider, draftPath);
+        if (await storageProvider.GetBlobInfoAsync(publishedPath) == null)
+        {
+            result.Status = DraftDiscardStatus.OnlyCopy;
+            return result;
+        }
+
+        result.Status = DraftDiscardStatus.Discarded;
+        result.PublishedContent = await ReadBlobTextAsync(storageProvider, publishedPath);
+
+        return result;
+    }
+
+    protected virtual async Task SaveBlobDraftAsync(string storeId, SiteBuilderContentFile page, CancellationToken cancellationToken)
+    {
+        var contentType = page.ContentType.ToLowerInvariant();
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType, theme: null);
+
+        await using (var stream = await storageProvider.OpenWriteAsync(publishingService.GetRelativeDraftUrl(page.Path, true)))
+        await using (var writer = new StreamWriter(stream))
+        {
+            await writer.WriteAsync(JsonConvert.SerializeObject(page.Content, Formatting.Indented));
+        }
+
+        await PublishChangedEventAsync(contentType, page.Path, cancellationToken);
+    }
+
+    protected virtual async Task<string> ReadBlobDraftAsync(string storeId, string contentType, string path)
+    {
+        var storageProvider = await CreateStorageProviderAsync(storeId, contentType.ToLowerInvariant(), theme: null);
+        var blobInfo = await storageProvider.GetBlobInfoAsync(publishingService.GetRelativeDraftUrl(path, true))
+            ?? await storageProvider.GetBlobInfoAsync(publishingService.GetRelativeDraftUrl(path, false));
+        if (blobInfo == null)
+        {
+            return null;
+        }
+
+        return await ReadBlobTextAsync(storageProvider, blobInfo.RelativeUrl);
+    }
+
+    private static bool IsVersion(string content, string expectedVersion) =>
+        string.Equals(SiteBuilderContentVersion.CreateForFileContent(content), expectedVersion, StringComparison.Ordinal);
+
+    protected virtual async Task<string> ReadBlobTextAsync(IBlobContentStorageProvider storageProvider, string relativeUrl)
+    {
+        await using var stream = await storageProvider.OpenReadAsync(relativeUrl);
+        using var reader = new StreamReader(stream);
+
+        return await reader.ReadToEndAsync();
+    }
+
+    protected virtual async Task<IBlobContentStorageProvider> CreateStorageProviderAsync(string storeId, string contentType, string theme)
+    {
+        var themeName = string.IsNullOrEmpty(theme) ? await themeStorageFactory.GetThemeNameAsync(storeId) : theme;
+
+        return blobContentStorageProviderFactory.CreateProvider(contentPathResolver.GetContentBasePath(contentType, storeId, themeName));
+    }
+
+    protected virtual Task PublishChangedEventAsync(string contentType, string path, CancellationToken cancellationToken)
+    {
+        var file = AbstractTypeFactory<FileEntity>.TryCreateInstance();
+        file.Path = path;
+        file.Type = contentType;
+
+        return eventPublisher.Publish(new SiteBuilderContentChangedEvent(contentType, [new GenericChangedEntry<FileEntity>(file, EntryState.Modified)]),
+            cancellationToken);
+    }
+}

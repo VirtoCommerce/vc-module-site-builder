@@ -5,9 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
@@ -94,24 +94,53 @@ public class SiteBuilderSharedComponentCreateStoreTests
     }
 
     [Fact]
-    public async Task Create_PublishedConstructor_ResolvesStoreServiceFromRequestServices()
+    public async Task Create_ScriptUrl_ReturnsBadRequestWithoutSaving()
     {
-        var stores = new FakeStoreService(new Store { Id = "store" });
         var components = new RecordingComponentService();
-        using var services = new ServiceCollection().AddSingleton<IStoreService>(stores).BuildServiceProvider();
-        var controller = new SiteBuilderSharedComponentsController(components, null, null, null,
-            new FakeAuthorizationService(true))
+        var request = Request("store");
+        request.Content = JObject.Parse("""{"settings":{},"content":[{"id":"hero","type":"text","link":"javascript:alert(1)"}]}""");
+
+        var response = await CreateController(new FakeStoreService(new Store { Id = "store" }), components).Create(request, TestContext.Current.CancellationToken);
+
+        Assert.Contains("shared component: 'content[0].link' holds a javascript: URL", (string)Assert.IsType<BadRequestObjectResult>(response.Result).Value);
+        Assert.Null(components.SavedContent);
+    }
+
+    [Fact]
+    public async Task Create_MarkdownHtml_SavesItSanitized()
+    {
+        var components = new RecordingComponentService();
+        var request = Request("store");
+        request.Content = JObject.Parse("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p><script>alert(1)</script>"}}]}""");
+
+        await CreateController(new FakeStoreService(new Store { Id = "store" }), components).Create(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p>"}}]}""", components.SavedContent);
+    }
+
+    [Fact]
+    public async Task CreateOperation_DryRun_AnswersTheSanitizedComponent_AndSavesNothing()
+    {
+        var components = new RecordingComponentService();
+        var operations = TestServices.SharedComponentOperations(new FakeAuthorizationService(true), components,
+            storeService: new FakeStoreService(new Store { Id = "store" }));
+        var request = new SharedComponentCreateOperationRequest
         {
-            ControllerContext = new ControllerContext
-            {
-                HttpContext = new DefaultHttpContext { RequestServices = services },
-            },
+            StoreId = "store",
+            Name = "Shared hero",
+            Content = JObject.Parse("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p><script>alert(1)</script>"}}]}"""),
+            DryRun = true,
         };
 
-        var response = await controller.Create(Request("store"), TestContext.Current.CancellationToken);
+        var result = await operations.CreateAsync(request, new ClaimsPrincipal(new ClaimsIdentity()), TestContext.Current.CancellationToken);
 
-        Assert.IsType<CreatedAtActionResult>(response.Result);
-        Assert.False(stores.LastClone);
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Value);
+        Assert.Null(components.SavedModel);
+        var change = Assert.Single(result.Preview.Objects);
+        Assert.Null(change.ObjectId);
+        Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text","text":{"markdown":"x","html":"<p>x</p>"}}]}""",
+            Assert.Single(change.Fields, x => x.Name == ModuleConstants.ChangePreview.Content).To);
     }
 
     private static SiteBuilderSharedComponentCreateModel Request(string storeId) => new()
@@ -123,7 +152,8 @@ public class SiteBuilderSharedComponentCreateStoreTests
 
     private static SiteBuilderSharedComponentsController CreateController(
         IStoreService stores, ISiteBuilderSharedComponentService components, bool authorized = true) =>
-        new(components, null, null, null, new FakeAuthorizationService(authorized), stores)
+        new(components, null, null, new FakeAuthorizationService(authorized),
+            TestServices.SharedComponentOperations(new FakeAuthorizationService(authorized), components, storeService: stores))
         {
             ControllerContext = new ControllerContext
             {

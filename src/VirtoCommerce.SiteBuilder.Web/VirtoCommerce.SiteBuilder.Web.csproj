@@ -11,19 +11,13 @@
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data.PostgreSql\VirtoCommerce.SiteBuilder.Data.PostgreSql.csproj" />
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data.SqlServer\VirtoCommerce.SiteBuilder.Data.SqlServer.csproj" />
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data\VirtoCommerce.SiteBuilder.Data.csproj" />
+    <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Xapi\VirtoCommerce.SiteBuilder.Xapi.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="VirtoCommerce.SiteBuilder.Tests" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- NSwag emits repeated request/response plumbing; regenerate these clients instead of refactoring them. -->
-    <SonarQubeSetting Include="sonar.cpd.exclusions">
-      <Value>**/Apps/site-builder-shell/src/api_client/virtocommerce.*.ts</Value>
-    </SonarQubeSetting>
-  </ItemGroup>
-  
   <ItemGroup>
     <Content Include="ai\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -37,5 +31,38 @@
   <Target Name="CopyCustomContentOnPublish" AfterTargets="Publish">
     <Copy SourceFiles="@(SiteBuilderApp)" DestinationFiles="$(PublishDir)\..\%(Identity)" />
     <Copy SourceFiles="@(AiFolder)" DestinationFiles="$(PublishDir)\..\%(Identity)" />
+  </Target>
+  <!-- The Admin Shell plugin's sources and build output: yarn builds them, not this project -->
+  <ItemGroup>
+    <Compile Remove="vue\**" />
+    <Content Remove="vue\**" />
+    <EmbeddedResource Remove="vue\**" />
+    <None Remove="vue\**" />
+    <Content Remove="plugins\**" />
+    <None Remove="plugins\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- NSwag emits repeated request/response plumbing; regenerate these clients instead of refactoring them.
+         They stay project items so this project-level setting reaches them. -->
+    <None Include="vue\src\api_client\virtocommerce.*.ts" />
+    <SonarQubeSetting Include="sonar.cpd.exclusions">
+      <Value>**/vue/src/api_client/virtocommerce.*.ts</Value>
+    </SonarQubeSetting>
+  </ItemGroup>
+  <!-- Admin Shell plugin: built before publish, so vc-build Compress (locally and in CI) packs it. -->
+  <Target Name="BuildAdminShellPlugin" BeforeTargets="Publish" Condition="'$(SkipAdminShellPlugin)' != 'true' AND Exists('$(MSBuildProjectDirectory)\vue\package.json')">
+    <Exec Command="corepack enable" ContinueOnError="true" />
+    <Exec Command="yarn install --immutable" WorkingDirectory="$(MSBuildProjectDirectory)\vue" />
+    <Exec Command="yarn type-check" WorkingDirectory="$(MSBuildProjectDirectory)\vue" />
+    <Exec Command="yarn test" WorkingDirectory="$(MSBuildProjectDirectory)\vue" />
+    <Exec Command="yarn build" WorkingDirectory="$(MSBuildProjectDirectory)\vue" />
+  </Target>
+  <!-- The platform probes {moduleRoot}/plugins/, but publish goes to {moduleRoot}/bin. The files are listed here, after the
+       build: listed when the project loads, a clean checkout (no plugins/ yet) would copy nothing. -->
+  <Target Name="CopyAdminShellPluginOnPublish" AfterTargets="Publish" DependsOnTargets="BuildAdminShellPlugin" Condition="'$(SkipAdminShellPlugin)' != 'true'">
+    <ItemGroup>
+      <AdminShellPlugin Include="$(MSBuildProjectDirectory)\plugins\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AdminShellPlugin)" DestinationFiles="$(PublishDir)\..\plugins\%(RecursiveDir)%(Filename)%(Extension)" />
   </Target>
 </Project>

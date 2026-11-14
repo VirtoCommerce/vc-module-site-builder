@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -17,7 +16,8 @@ using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
-using VirtoCommerce.SiteBuilder.Web.Services;
+using VirtoCommerce.SiteBuilder.Web.Extensions;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.Pages.Core.Search;
 using VirtoCommerce.Platform.Core.Common;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
@@ -28,36 +28,43 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 [Authorize]
 public class SiteBuilderPageController : Controller
 {
-    private readonly ISiteBuilderPageService crudService;
     private readonly IGroupedPageService groupedPageService;
     private readonly IGroupedPageSearchService groupedPageSearchService;
     private readonly IAuthorizationService authorizationService;
     private readonly IPageDocumentSearchService pageDocumentSearchService;
     private readonly SiteBuilderPageContentService pageContentService;
     private readonly ILogger<SiteBuilderPageController> logger;
+    private readonly IGroupedPageOperationService groupedPageOperationService;
+    private readonly ISiteBuilderPublishStatusQueryService publishStatusQueryService;
 
     public SiteBuilderPageController(
-        ISiteBuilderPageService crudService,
         IGroupedPageService groupedPageService,
         IGroupedPageSearchService groupedPageSearchService,
         IAuthorizationService authorizationService,
         IPageDocumentSearchService pageDocumentSearchService,
         SiteBuilderPageContentService pageContentService,
-        ILogger<SiteBuilderPageController> logger)
+        ILogger<SiteBuilderPageController> logger,
+        IGroupedPageOperationService groupedPageOperationService,
+        ISiteBuilderPublishStatusQueryService publishStatusQueryService)
     {
-        this.crudService = crudService;
         this.groupedPageService = groupedPageService;
         this.groupedPageSearchService = groupedPageSearchService;
         this.authorizationService = authorizationService;
         this.pageDocumentSearchService = pageDocumentSearchService;
         this.pageContentService = pageContentService;
         this.logger = logger;
+        this.groupedPageOperationService = groupedPageOperationService;
+        this.publishStatusQueryService = publishStatusQueryService;
     }
 
     [HttpPost("search")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<GroupedSiteBuilderPageSearchResult>> SearchGroups([FromBody] SiteBuilderPageSearchCriteria criteria)
     {
+        if (criteria == null)
+        {
+            return BadRequest("Search criteria are required.");
+        }
+
         var authorizationResult = await authorizationService.AuthorizeAsync(User, criteria, new SiteBuilderAuthorizationRequirement());
         if (!authorizationResult.Succeeded)
         {
@@ -73,7 +80,6 @@ public class SiteBuilderPageController : Controller
     /// Pages list where a Multilanguage Page is a single row with its language statuses.
     /// </summary>
     [HttpPost("list")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<SiteBuilderPageListSearchResult>> SearchList(
         [FromBody] SiteBuilderPageSearchCriteria criteria,
         [FromServices] ISiteBuilderPageListService pageListService,
@@ -97,7 +103,6 @@ public class SiteBuilderPageController : Controller
     /// Pages that already serve the permalink in the given languages; shown as a warning before saving.
     /// </summary>
     [HttpPost("permalink-usage")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<IList<PermalinkUsage>>> FindPermalinkUsage(
         [FromBody] PermalinkUsageRequest request,
         [FromServices] ISiteBuilderPageListService pageListService,
@@ -122,7 +127,6 @@ public class SiteBuilderPageController : Controller
     /// Name and permalink for a copy of the page that no page of the store uses yet; Clone saves the copy with them.
     /// </summary>
     [HttpGet("grouped/{groupId}/copy-name")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<PageCopyName>> GetCopyName(
         [FromRoute] string groupId,
         [FromServices] ISiteBuilderPageListService pageListService,
@@ -144,7 +148,6 @@ public class SiteBuilderPageController : Controller
     }
 
     [HttpGet("grouped/{groupId}")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> GetGroup([FromRoute] string groupId, [FromQuery] string responseGroup = null)
     {
         var groupedPage = await groupedPageService.GetNoCloneAsync(groupId, responseGroup);
@@ -172,97 +175,18 @@ public class SiteBuilderPageController : Controller
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> UpdateGroup([FromBody] GroupedSiteBuilderPage model, CancellationToken cancellationToken = default)
     {
-        // A body that does not bind (e.g. userGroups sent as an array instead of a comma-separated string) arrives as null.
-        if (model == null)
-        {
-            return BadRequest("The page is missing or invalid.");
-        }
+        var request = new GroupedPageSaveOperationRequest { Page = model };
 
-        var groupedPage = await groupedPageService.GetByIdAsync(model.Id);
-        var storeChanged = HasStoreChanged(groupedPage, model);
-        var authorizationError = await AuthorizeGroupUpdateAsync(groupedPage, model, storeChanged);
-        if (authorizationError != null)
-        {
-            return authorizationError;
-        }
-
-        var updateError = ValidateGroupUpdate(groupedPage, model);
-        if (updateError != null)
-        {
-            return updateError;
-        }
-
-        groupedPage ??= AbstractTypeFactory<GroupedSiteBuilderPage>.TryCreateInstance();
-        ApplyGroupChanges(groupedPage, model, storeChanged);
-
-        var sourcePageId = GetPublishedContentSourceId(groupedPage);
-        if (sourcePageId != null)
-        {
-            var sourceContent = await groupedPageService.LoadContent(sourcePageId, cancellationToken);
-            var validationError = await ValidateSharedComponentContentAsync(
-                groupedPage.StoreId,
-                sourceContent,
-                cancellationToken);
-            if (validationError != null)
-            {
-                return validationError;
-            }
-        }
-
-        var writeResult = await pageContentService.SaveGroupUpdateAsync(
-            groupedPage,
-            sourcePageId,
-            cancellationToken);
-        if (writeResult.ErrorMessage != null)
-        {
-            return BadRequest(writeResult.ErrorMessage);
-        }
-
-        return Ok(groupedPage);
+        return (await groupedPageOperationService.UpdateAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpPost("grouped")]
     [Authorize(ModuleConstants.Security.Permissions.Create)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> CreateGroup([FromBody] GroupedSiteBuilderPage model, CancellationToken cancellationToken = default)
     {
-        if (model == null)
-        {
-            return BadRequest("The page is missing or invalid.");
-        }
+        var request = new GroupedPageSaveOperationRequest { Page = model };
 
-        if (!SiteBuilderPermalink.IsValid(model.Permalink))
-        {
-            return BadRequest(SiteBuilderPermalink.InvalidMessage);
-        }
-
-        if (!SiteBuilderPageName.IsValid(model.Name))
-        {
-            return BadRequest(SiteBuilderPageName.InvalidMessage);
-        }
-
-        var authorizationResult = await authorizationService.AuthorizeAsync(User, model, new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        // A page becomes a language version only through the multilanguage page endpoints, which check the root.
-        model.MultilanguagePageId = null;
-        model.OverriddenFields = null;
-        model.SourceRevisionDate = null;
-
-        var draftPage = AbstractTypeFactory<SiteBuilderPage>.TryCreateInstance();
-
-        draftPage.Id = null;
-        draftPage.Status = Draft; // always create a new page in draft status
-        draftPage.StoreId = model.StoreId;
-        draftPage.Content = SiteBuilderContentSettings.Synchronize(null, model);
-
-        model.Pages.Add(draftPage);
-
-        await groupedPageService.SaveChangesAsync([model]);
-
-        return Ok(model);
+        return (await groupedPageOperationService.CreateAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     /// <summary>
@@ -274,130 +198,9 @@ public class SiteBuilderPageController : Controller
         [FromBody] CreateGroupedPageRequest model,
         CancellationToken cancellationToken = default)
     {
-        if (model == null ||
-            string.IsNullOrWhiteSpace(model.StoreId) ||
-            string.IsNullOrWhiteSpace(model.Name) ||
-            string.IsNullOrWhiteSpace(model.Content))
-        {
-            return BadRequest("StoreId, Name and Content are required.");
-        }
+        var request = new GroupedPageCreateOperationRequest { Page = model };
 
-        if (!SiteBuilderPermalink.IsValid(model.Permalink))
-        {
-            return BadRequest(SiteBuilderPermalink.InvalidMessage);
-        }
-
-        if (!SiteBuilderPageName.IsValid(model.Name))
-        {
-            return BadRequest(SiteBuilderPageName.InvalidMessage);
-        }
-
-        if (!TryValidatePageContentEnvelope(model.Content, out var envelopeError))
-        {
-            return BadRequest(envelopeError);
-        }
-
-        var authorizationResult = await authorizationService.AuthorizeAsync(User, model, new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        var validationError = await ValidateSharedComponentContentAsync(
-            model.StoreId,
-            model.Content,
-            cancellationToken);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        var groupedPage = AbstractTypeFactory<GroupedSiteBuilderPage>.TryCreateInstance();
-        groupedPage.StoreId = model.StoreId;
-        groupedPage.Name = model.Name;
-        groupedPage.Permalink = model.Permalink;
-        groupedPage.CultureName = model.CultureName;
-        groupedPage.OrganizationId = model.OrganizationId;
-        groupedPage.Visibility = model.Visibility;
-        groupedPage.UserGroups = model.UserGroups;
-        groupedPage.StartDate = model.StartDate;
-        groupedPage.EndDate = model.EndDate;
-
-        var draftPage = AbstractTypeFactory<SiteBuilderPage>.TryCreateInstance();
-        draftPage.Status = Draft;
-        draftPage.StoreId = model.StoreId;
-        // Assigning Content before SaveChangesAsync ensures the page row and its PageContent
-        // are persisted in a single INSERT (EF table-splitting), and the synchronous Changed
-        // event sees the content already committed.
-        draftPage.Content = model.Content;
-        groupedPage.Pages.Add(draftPage);
-
-        try
-        {
-            await groupedPageService.SaveChangesAsync([groupedPage]);
-        }
-        catch (InvalidDataException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-
-        return Ok(groupedPage);
-    }
-
-    internal static bool TryValidatePageContentEnvelope(string content, out string error)
-    {
-        JsonNode node;
-        try
-        {
-            node = JsonNode.Parse(content);
-        }
-        catch (System.Text.Json.JsonException ex)
-        {
-            error = $"Content is not valid JSON: {ex.Message}";
-            return false;
-        }
-
-        if (node is not JsonObject root)
-        {
-            error = "Content root must be a JSON object with `settings` and `content` keys.";
-            return false;
-        }
-
-        if (root["settings"] is not JsonObject)
-        {
-            error = "`settings` must be a JSON object.";
-            return false;
-        }
-
-        if (root["content"] is not JsonArray contentArray)
-        {
-            error = "`content` must be a JSON array of section objects.";
-            return false;
-        }
-
-        for (var i = 0; i < contentArray.Count; i++)
-        {
-            if (contentArray[i] is not JsonObject section)
-            {
-                error = $"`content[{i}]` must be a JSON object.";
-                return false;
-            }
-
-            string sectionType = null;
-            if (section["type"] is JsonValue typeValue)
-            {
-                typeValue.TryGetValue<string>(out sectionType);
-            }
-
-            if (string.IsNullOrWhiteSpace(sectionType))
-            {
-                error = $"`content[{i}].type` is required (non-empty string matching a section key from the schema catalog).";
-                return false;
-            }
-        }
-
-        error = null;
-        return true;
+        return (await groupedPageOperationService.CreateWithContentAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpPost("grouped/archive")]
@@ -431,52 +234,23 @@ public class SiteBuilderPageController : Controller
     [Authorize(ModuleConstants.Security.Permissions.Publish)]
     public async Task<ActionResult> PublishGroup([FromRoute] string groupId, [FromQuery] bool publish, CancellationToken cancellationToken = default)
     {
-        var groupedPage = await groupedPageService.GetByIdAsync(groupId);
+        var request = new GroupedPagePublishOperationRequest { GroupId = groupId, Publish = publish, SaveId = Request.GetOrCreateSaveId() };
 
-        if (groupedPage == null)
+        return (await groupedPageOperationService.PublishAsync(request, User, cancellationToken)).ToPageRefusal() ?? Ok();
+    }
+
+    [HttpPost("grouped/{groupId}/discard")]
+    [Authorize(ModuleConstants.Security.Permissions.Update)]
+    public async Task<ActionResult> DiscardGroupDraft([FromRoute] string groupId, CancellationToken cancellationToken = default)
+    {
+        var request = new GroupedPageDiscardOperationRequest { GroupId = groupId, SaveId = Request.GetOrCreateSaveId() };
+        var result = await groupedPageOperationService.DiscardDraftAsync(request, User, cancellationToken);
+        if (result.Status == SiteBuilderOperationStatus.Invalid)
         {
-            return NotFound();
+            return BadRequest(new { error = result.Error });
         }
 
-        var authorizationResult = await authorizationService.AuthorizeAsync(User, groupedPage, new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        List<string> pagesToDelete;
-
-        if (publish)
-        {
-            if (!GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds))
-            {
-                return BadRequest("Draft page not found.");
-            }
-
-            pagesToDelete = obsoletePageIds.ToList();
-        }
-        else
-        {
-            var pageToUnpublish = SiteBuilderPageSelection.Order(groupedPage.Pages).FirstOrDefault(x => x.Status == Published);
-            if (pageToUnpublish == null)
-            {
-                return BadRequest("Published page not found.");
-            }
-
-            var hasDraft = groupedPage.Pages.Any(x => x.Status == Draft);
-            if (hasDraft)
-            {
-                return BadRequest("Can't unpublish a page that has changes.");
-            }
-
-            pageToUnpublish.Status = Draft;
-            pagesToDelete = groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
-        }
-
-        await groupedPageService.SaveChangesAsync([groupedPage]);
-        await crudService.DeleteAsync(pagesToDelete);
-
-        return Ok();
+        return result.ToPageRefusal() ?? Ok();
     }
 
     [HttpDelete]
@@ -521,24 +295,11 @@ public class SiteBuilderPageController : Controller
 
     [HttpGet]
     [Route("grouped/publish-status/{groupId}")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<FilePublishStatus>> PublishStatus([FromRoute] string groupId)
     {
-        var groupedPage = await groupedPageService.GetNoCloneAsync(groupId);
+        var request = new GroupedPageQueryRequest { GroupId = groupId };
 
-        var authorizationResult = await authorizationService.AuthorizeAsync(User, groupedPage, new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        var result = new FilePublishStatus
-        {
-            Published = groupedPage.Status == Published,
-            HasChanges = groupedPage.HasChanges,
-        };
-
-        return Ok(result);
+        return (await publishStatusQueryService.GetGroupedPageStatusAsync(request, User, HttpContext.RequestAborted)).ToPageActionResult();
     }
 
     // Retain the published direct-call signature without exposing a second HTTP action.
@@ -549,7 +310,6 @@ public class SiteBuilderPageController : Controller
     }
 
     [HttpGet("grouped/{groupId}/content")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task GetPageContent([FromRoute] string groupId, [FromQuery] bool draft = true,
         [FromQuery] bool includeVersion = false, CancellationToken cancellationToken = default)
     {
@@ -615,40 +375,21 @@ public class SiteBuilderPageController : Controller
 
     [HttpPost("grouped/{groupId}/content")]
     [Authorize(ModuleConstants.Security.Permissions.Update)]
+    [ProducesResponseType(typeof(UpdatePageContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> SavePageContent([FromRoute] string groupId,
         [FromHeader(Name = "If-Match")] string ifMatch = null, [FromQuery] bool includeVersion = false,
         CancellationToken cancellationToken = default)
     {
-        var groupedPage = await groupedPageService.GetByIdAsync(groupId);
-
-        if (groupedPage == null)
+        var request = new GroupedPageContentSaveOperationRequest
         {
-            return NotFound();
-        }
+            GroupId = groupId,
+            ContentReader = ReadRequestContentAsync,
+            IfMatch = ifMatch,
+            SaveId = Request.GetOrCreateSaveId(),
+        };
 
-        var authorizationResult = await authorizationService.AuthorizeAsync(User, groupedPage, new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        var content = await ReadRequestContentAsync(cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(content) || !IsWellFormedJson(content))
-        {
-            return BadRequest("Page content must be a non-empty, well-formed JSON document.");
-        }
-
-        var validationError = await ValidateSharedComponentContentAsync(
-            groupedPage.StoreId,
-            content,
-            cancellationToken);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        return await SaveConditionalContentAsync(groupedPage, content, ifMatch, includeVersion, cancellationToken);
+        return ToContentSaveResponse(await groupedPageOperationService.SaveRawContentAsync(request, User, cancellationToken), includeVersion);
     }
 
     [NonAction]
@@ -664,6 +405,8 @@ public class SiteBuilderPageController : Controller
     /// </summary>
     [HttpPost("grouped/{groupId}/content-json")]
     [Authorize(ModuleConstants.Security.Permissions.Update)]
+    [ProducesResponseType(typeof(UpdatePageContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> SavePageContentJson(
         [FromRoute] string groupId,
         [FromBody] UpdatePageContentRequest model,
@@ -671,87 +414,28 @@ public class SiteBuilderPageController : Controller
         [FromQuery] bool includeVersion = false,
         CancellationToken cancellationToken = default)
     {
-        if (model == null || string.IsNullOrWhiteSpace(model.Content))
+        var request = new GroupedPageContentSaveOperationRequest
         {
-            return BadRequest("Content is required.");
-        }
+            GroupId = groupId,
+            Content = model?.Content,
+            ETag = model?.ETag,
+            IfMatch = ifMatch,
+            SaveId = Request.GetOrCreateSaveId(),
+        };
 
-        if (!TryValidatePageContentEnvelope(model.Content, out var envelopeError))
-        {
-            return BadRequest(envelopeError);
-        }
-
-        var groupedPage = await groupedPageService.GetByIdAsync(groupId);
-
-        if (groupedPage == null)
-        {
-            return NotFound();
-        }
-
-        var authorizationResult = await authorizationService.AuthorizeAsync(User, groupedPage, new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        var validationError = await ValidateSharedComponentContentAsync(
-            groupedPage.StoreId,
-            model.Content,
-            cancellationToken);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        var headerVersion = ifMatch;
-        if (HasConflictingContentVersions(headerVersion, model.ETag))
-        {
-            return BadRequest("If-Match and the body ETag must identify the same content version.");
-        }
-        return await SaveConditionalContentAsync(groupedPage, model.Content,
-            string.IsNullOrWhiteSpace(headerVersion) ? model.ETag : headerVersion, includeVersion, cancellationToken);
+        return ToContentSaveResponse(await groupedPageOperationService.SaveContentAsync(request, User, cancellationToken), includeVersion);
     }
 
-    private static bool HasConflictingContentVersions(string headerVersion, string bodyVersion)
+    private IActionResult ToContentSaveResponse(SiteBuilderOperationResult<UpdatePageContentResult> result, bool includeVersion)
     {
-        return !string.IsNullOrWhiteSpace(headerVersion) && !string.IsNullOrWhiteSpace(bodyVersion) &&
-            !string.Equals(headerVersion.Trim(), bodyVersion.Trim(), StringComparison.Ordinal);
-    }
-
-    private async Task<IActionResult> SaveConditionalContentAsync(
-        GroupedSiteBuilderPage group, string content, string expectedETag, bool includeVersion, CancellationToken cancellationToken)
-    {
-        expectedETag = expectedETag?.Trim();
-        if (string.IsNullOrEmpty(expectedETag))
+        if (!result.Succeeded)
         {
-            return StatusCode(StatusCodes.Status428PreconditionRequired,
-                "Read the page content and send its ETag in If-Match or in the content-json body before saving.");
+            return result.ToPageRefusal();
         }
 
-        // Require one concrete strong version. A wildcard does not protect an author's work.
-        if (!SiteBuilderContentVersion.IsWellFormed(expectedETag))
-        {
-            return BadRequest("If-Match must contain the single strong ETag returned by the content GET.");
-        }
+        Response.Headers.ETag = result.Value.ETag;
 
-        try
-        {
-            var result = await pageContentService.SaveConditionalContentAsync(group, content, expectedETag, cancellationToken);
-            Response.Headers.ETag = result.ETag;
-            return includeVersion ? Ok(new { eTag = result.ETag }) : NoContent();
-        }
-        catch (SiteBuilderContentConflictException ex)
-        {
-            return StatusCode(StatusCodes.Status412PreconditionFailed, ex.Message);
-        }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
-        catch (InvalidDataException ex)
-        {
-            return BadRequest(ex.Message);
-        }
+        return includeVersion ? Ok(result.Value) : NoContent();
     }
 
     [HttpPost("grouped/{targetGroupId}/content/{sourceGroupId}")]
@@ -761,125 +445,9 @@ public class SiteBuilderPageController : Controller
         [FromRoute] string sourceGroupId,
         CancellationToken cancellationToken = default)
     {
-        var sourceGroup = await groupedPageService.GetByIdAsync(sourceGroupId);
-        var targetGroup = await groupedPageService.GetByIdAsync(targetGroupId);
+        var request = new GroupedPageContentCopyOperationRequest { GroupId = targetGroupId, SourceGroupId = sourceGroupId };
 
-        if (sourceGroup == null || targetGroup == null)
-        {
-            return NotFound();
-        }
-
-        var sourceAuth = await authorizationService.AuthorizeAsync(User, sourceGroup, new SiteBuilderAuthorizationRequirement());
-        var targetAuth = await authorizationService.AuthorizeAsync(User, targetGroup, new SiteBuilderAuthorizationRequirement());
-        if (!sourceAuth.Succeeded || !targetAuth.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        var sourcePageId = GetCopySourcePageId(sourceGroup);
-        if (sourcePageId == null)
-        {
-            return NotFound();
-        }
-
-        var sourceContent = await groupedPageService.LoadContent(sourcePageId, cancellationToken);
-        var validationError = await ValidateSharedComponentContentAsync(
-            targetGroup.StoreId,
-            sourceContent,
-            cancellationToken);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        var writeResult = await pageContentService.CopyContentAsync(
-            targetGroupId,
-            targetGroup,
-            sourcePageId,
-            cancellationToken);
-        if (!writeResult.PageFound)
-        {
-            return NotFound();
-        }
-
-        if (writeResult.ErrorMessage != null)
-        {
-            return BadRequest(writeResult.ErrorMessage);
-        }
-
-        return NoContent();
-    }
-
-    private async Task<ActionResult> AuthorizeGroupUpdateAsync(
-        GroupedSiteBuilderPage groupedPage,
-        GroupedSiteBuilderPage model,
-        bool storeChanged)
-    {
-        // Authorize the persisted resource first. Authorizing only the incoming model would let a caller spoof
-        // a store they can access and then learn the existing group's store from validation details.
-        var authorizationResult = await authorizationService.AuthorizeAsync(
-            User,
-            groupedPage ?? model,
-            new SiteBuilderAuthorizationRequirement());
-        if (!authorizationResult.Succeeded)
-        {
-            return Forbidden;
-        }
-
-        if (!storeChanged)
-        {
-            return null;
-        }
-
-        // A move crosses two resource boundaries: the caller must be allowed to update both the persisted
-        // source and the requested destination store.
-        authorizationResult = await authorizationService.AuthorizeAsync(
-            User,
-            model,
-            new SiteBuilderAuthorizationRequirement());
-
-        return authorizationResult.Succeeded ? null : Forbidden;
-    }
-
-    private async Task<ActionResult> ValidateSharedComponentContentAsync(
-        string storeId,
-        string content,
-        CancellationToken cancellationToken)
-    {
-        bool hasSharedComponents;
-        try
-        {
-            hasSharedComponents = pageContentService.HasSharedComponentReferences(content);
-        }
-        catch (InvalidDataException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-
-        if (hasSharedComponents)
-        {
-            var authorizationResult = await authorizationService.AuthorizeAsync(
-                User,
-                null,
-                ModuleConstants.Security.Permissions.SharedComponentsRead);
-            if (!authorizationResult.Succeeded)
-            {
-                return Forbidden;
-            }
-        }
-
-        try
-        {
-            await pageContentService.ValidateReferencesForStoreAsync(
-                storeId,
-                content,
-                cancellationToken);
-            return null;
-        }
-        catch (InvalidDataException ex)
-        {
-            return BadRequest(ex.Message);
-        }
+        return (await groupedPageOperationService.CopyContentAsync(request, User, cancellationToken)).ToPageRefusal() ?? NoContent();
     }
 
     private async Task<string> ReadRequestContentAsync(CancellationToken cancellationToken)
@@ -895,104 +463,8 @@ public class SiteBuilderPageController : Controller
         return await reader.ReadToEndAsync(cancellationToken);
     }
 
-    private static bool HasStoreChanged(
-        GroupedSiteBuilderPage groupedPage,
-        GroupedSiteBuilderPage model)
-    {
-        return groupedPage != null &&
-            !string.Equals(groupedPage.StoreId, model.StoreId, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private BadRequestObjectResult ValidateGroupUpdate(
-        GroupedSiteBuilderPage groupedPage,
-        GroupedSiteBuilderPage model)
-    {
-        if (groupedPage?.Status == Archived)
-        {
-            return BadRequest("Archived page cannot be updated.");
-        }
-
-        if (!IsPermalinkAccepted(groupedPage, model))
-        {
-            return BadRequest(SiteBuilderPermalink.InvalidMessage);
-        }
-
-        if (!SiteBuilderPageName.IsValid(model.Name))
-        {
-            return BadRequest(SiteBuilderPageName.InvalidMessage);
-        }
-
-        return null;
-    }
-
-    // An unchanged permalink stored before validation existed must not block editing the page's other fields.
-    private static bool IsPermalinkAccepted(
-        GroupedSiteBuilderPage groupedPage,
-        GroupedSiteBuilderPage model)
-    {
-        return groupedPage?.Permalink == model.Permalink || SiteBuilderPermalink.IsValid(model.Permalink);
-    }
-
-    private static void ApplyGroupChanges(
-        GroupedSiteBuilderPage groupedPage,
-        GroupedSiteBuilderPage model,
-        bool storeChanged)
-    {
-        groupedPage.Name = model.Name;
-        groupedPage.Permalink = model.Permalink;
-        groupedPage.CultureName = model.CultureName;
-        groupedPage.StoreId = model.StoreId;
-
-        if (storeChanged)
-        {
-            foreach (var page in groupedPage.Pages)
-            {
-                page.StoreId = model.StoreId;
-            }
-        }
-
-        groupedPage.Visibility = model.Visibility;
-        groupedPage.UserGroups = model.UserGroups;
-        groupedPage.StartDate = model.StartDate;
-        groupedPage.EndDate = model.EndDate;
-        groupedPage.OrganizationId = model.OrganizationId;
-    }
-
-    private static string GetPublishedContentSourceId(GroupedSiteBuilderPage groupedPage)
-    {
-        return groupedPage.Pages.Any(x => x.Status == Draft)
-            ? null
-            : SiteBuilderPageSelection.Order(groupedPage.Pages).FirstOrDefault(x => x.Status == Published)?.Id;
-    }
-
-    private static string GetCopySourcePageId(GroupedSiteBuilderPage sourceGroup)
-    {
-        return sourceGroup.Pages.Where(x => x.Status == Draft || x.Status == Published)
-            .OrderByDescending(x => x.ModifiedDate)
-            .ThenBy(x => x.Id, StringComparer.Ordinal)
-            .Select(x => x.Id)
-            .FirstOrDefault();
-    }
-
     private static ActionResult Forbidden => new ObjectResult(new { })
     {
         StatusCode = (int)HttpStatusCode.Forbidden,
     };
-
-    // Only well-formedness is checked, not the document's shape: content stored by older designer versions can
-    // be an array rather than the current { settings, content } object, and both still load. What this rules
-    // out is a payload that never parses at all — a truncated upload, which is indistinguishable from a real
-    // save once written, and which every reader downstream chokes on (settings synchronization parses it).
-    private static bool IsWellFormedJson(string content)
-    {
-        try
-        {
-            JsonNode.Parse(content);
-            return true;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
 }

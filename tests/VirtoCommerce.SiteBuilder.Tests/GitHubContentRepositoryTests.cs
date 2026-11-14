@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.GitContent;
 using Xunit;
 
@@ -27,7 +29,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var handler = new ScriptedHandler(
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=master", _ => RespondJson(ContentsPayload("{ \"a\": 1 }"))));
 
-            var content = await Create(handler).ReadFileAsync("pages/foo.page", "master", TestContext.Current.CancellationToken);
+            var content = await Create(handler).ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken);
 
             Assert.Equal("{ \"a\": 1 }", content);
             handler.AssertDone();
@@ -39,7 +41,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var handler = new ScriptedHandler(
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=designer%2Fjohn%2Ffoo", _ => Respond(HttpStatusCode.NotFound)));
 
-            Assert.Null(await Create(handler).ReadFileAsync("pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
+            Assert.Null(await Create(handler).ReadFileAsync("o/r", "pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
         }
 
         [Fact]
@@ -50,28 +52,97 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=master", _ => Respond(HttpStatusCode.NotFound)));
             var repository = Create(handler);
 
-            Assert.Null(await repository.ReadFileAsync("pages/foo.page", "master", TestContext.Current.CancellationToken));
-            Assert.Null(await repository.ReadFileAsync("pages/foo.page", "master", TestContext.Current.CancellationToken));
+            Assert.Null(await repository.ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken));
+            Assert.Null(await repository.ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken));
 
             handler.AssertDone();
         }
 
         [Fact]
-        public async Task CommitFileAsync_DropsTheCachedReadOfThatBranch()
+        public async Task CommitFileAsync_ReadsBackTheWrittenContent_ThoughGitHubStillAnswersThePreviousOne()
         {
             var handler = new ScriptedHandler(
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(ContentsPayload("old"))),
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson("""{ "sha": "file-sha" }""")),
                 ("PUT", "repos/o/r/contents/pages/foo.page", _ => RespondJson(CommitPayload())),
-                // the stale entry is gone, so this read goes to GitHub again
-                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(ContentsPayload("new"))));
+                // right after a commit the contents API can still answer from a replica that has not seen it
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(ContentsPayload("old"))));
             var repository = Create(handler);
 
-            Assert.Equal("old", await repository.ReadFileAsync("pages/foo.page", "work", TestContext.Current.CancellationToken));
-            await repository.CommitFileAsync("pages/foo.page", "new", "work", "msg", Author, TestContext.Current.CancellationToken);
+            Assert.Equal("old", await repository.ReadFileAsync("o/r", "pages/foo.page", "work", TestContext.Current.CancellationToken));
+            await repository.CommitFileAsync("o/r", "pages/foo.page", "new", "work", "msg", Author, TestContext.Current.CancellationToken);
 
-            Assert.Equal("new", await repository.ReadFileAsync("pages/foo.page", "work", TestContext.Current.CancellationToken));
+            Assert.Equal("new", await repository.ReadFileAsync("o/r", "pages/foo.page", "work", TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public async Task ReadFileAsync_ThatStartedBeforeACommit_DoesNotCacheOverTheWrittenContent()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(ContentsPayload("old"))),
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson("""{ "sha": "file-sha" }""")),
+                ("PUT", "repos/o/r/contents/pages/foo.page", _ => RespondJson(CommitPayload())));
+            var release = new TaskCompletionSource();
+            var requested = handler.HoldResponse(0, release.Task);
+            var repository = Create(handler);
+
+            var read = repository.ReadFileAsync("o/r", "pages/foo.page", "work", TestContext.Current.CancellationToken);
+            await requested;
+            await repository.CommitFileAsync("o/r", "pages/foo.page", "new", "work", "msg", Author, TestContext.Current.CancellationToken);
+            release.SetResult();
+            await read;
+
+            Assert.Equal("new", await repository.ReadFileAsync("o/r", "pages/foo.page", "work", TestContext.Current.CancellationToken));
             handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task ReadFileAsync_ThatStartedBeforeAnInvalidation_DoesNotCacheTheOldContent()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=master", _ => RespondJson(ContentsPayload("before"))),
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=master", _ => RespondJson(ContentsPayload("after"))));
+            var release = new TaskCompletionSource();
+            var requested = handler.HoldResponse(0, release.Task);
+            var repository = Create(handler);
+
+            var read = repository.ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken);
+            await requested;
+            repository.InvalidateRead("o/r", "pages/foo.page", "master");
+            release.SetResult();
+            await read;
+
+            Assert.Equal("after", await repository.ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken));
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task CommitFileAsync_LeavesTheSamePathOnOtherBranchesToGitHub()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => Respond(HttpStatusCode.NotFound)),
+                ("PUT", "repos/o/r/contents/pages/foo.page", _ => RespondJson(CommitPayload())),
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=master", _ => RespondJson(ContentsPayload("live"))));
+            var repository = Create(handler);
+
+            await repository.CommitFileAsync("o/r", "pages/foo.page", "new", "work", "msg", Author, TestContext.Current.CancellationToken);
+
+            Assert.Equal("live", await repository.ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken));
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task DeleteFileAsync_ReadsBackTheMiss_ThoughGitHubStillAnswersTheDeletedFile()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson("""{ "sha": "file-sha" }""")),
+                ("DELETE", "repos/o/r/contents/pages/foo.page", _ => RespondJson(CommitPayload())),
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(ContentsPayload("old"))));
+            var repository = Create(handler);
+
+            await repository.DeleteFileAsync("o/r", "pages/foo.page", "work", "msg", Author, TestContext.Current.CancellationToken);
+
+            Assert.Null(await repository.ReadFileAsync("o/r", "pages/foo.page", "work", TestContext.Current.CancellationToken));
         }
 
         // ── branches ───────────────────────────────────────────────────────────────────────────────
@@ -82,7 +153,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var handler = new ScriptedHandler(
                 ("GET", "repos/o/r/git/ref/heads/designer/john/foo", _ => Respond(HttpStatusCode.NotFound)));
 
-            Assert.Null(await Create(handler).GetBranchHeadShaAsync("designer/john/foo", TestContext.Current.CancellationToken));
+            Assert.Null(await Create(handler).GetBranchHeadShaAsync("o/r", "designer/john/foo", TestContext.Current.CancellationToken));
         }
 
         [Fact]
@@ -98,7 +169,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     return RespondJson("{}", HttpStatusCode.Created);
                 }));
 
-            await Create(handler).CreateBranchAsync("designer/john/foo", "master", TestContext.Current.CancellationToken);
+            await Create(handler).CreateBranchAsync("o/r", "designer/john/foo", "master", TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 
@@ -112,7 +183,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     return RespondJson("{}", HttpStatusCode.Created);
                 }));
 
-            await Create(handler).CreateBranchAsync("designer/john/foo", Sha, TestContext.Current.CancellationToken);
+            await Create(handler).CreateBranchAsync("o/r", "designer/john/foo", Sha, TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 
@@ -123,7 +194,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/git/ref/heads/master", _ => RespondJson($$"""{ "object": { "sha": "{{Sha}}" } }""")),
                 ("POST", "repos/o/r/git/refs", _ => Respond422("Reference already exists")));
 
-            await Create(handler).CreateBranchAsync("designer/john/foo", "master", TestContext.Current.CancellationToken);
+            await Create(handler).CreateBranchAsync("o/r", "designer/john/foo", "master", TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 
@@ -137,8 +208,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/git/ref/heads/master", _ => RespondJson($$"""{ "object": { "sha": "{{Sha}}" } }""")),
                 ("POST", "repos/o/r/git/refs", _ => Respond422("Object does not exist")));
 
-            await Assert.ThrowsAsync<HttpRequestException>(() =>
-                Create(handler).CreateBranchAsync("designer/john/foo", "master", TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<GitContentException>(() =>
+                Create(handler).CreateBranchAsync("o/r", "designer/john/foo", "master", TestContext.Current.CancellationToken));
             handler.AssertDone();
         }
 
@@ -148,8 +219,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var handler = new ScriptedHandler(
                 ("GET", "repos/o/r/git/ref/heads/nope", _ => Respond(HttpStatusCode.NotFound)));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                Create(handler).CreateBranchAsync("designer/john/foo", "nope", TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<GitContentException>(() =>
+                Create(handler).CreateBranchAsync("o/r", "designer/john/foo", "nope", TestContext.Current.CancellationToken));
         }
 
         [Fact]
@@ -158,7 +229,35 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var handler = new ScriptedHandler(
                 ("DELETE", "repos/o/r/git/refs/heads/designer/john/foo", _ => Respond(HttpStatusCode.NotFound)));
 
-            await Create(handler).DeleteBranchAsync("designer/john/foo", "pages/foo.page", TestContext.Current.CancellationToken);
+            await Create(handler).DeleteBranchAsync("o/r", "designer/john/foo", "pages/foo.page", TestContext.Current.CancellationToken);
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task DeleteBranchAsync_ReferenceDoesNotExist_IsAlreadyGone()
+        {
+            // GitHub answers a DELETE of a ref that is not there with 422 rather than 404
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=designer%2Fjohn%2Ffoo", _ => RespondJson(ContentsPayload("draft"))),
+                ("DELETE", "repos/o/r/git/refs/heads/designer/john/foo", _ => RespondJson("""{ "message": "Reference does not exist", "status": "422" }""", HttpStatusCode.UnprocessableEntity)),
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=designer%2Fjohn%2Ffoo", _ => Respond(HttpStatusCode.NotFound)));
+            var repository = Create(handler);
+
+            Assert.Equal("draft", await repository.ReadFileAsync("o/r", "pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
+            await repository.DeleteBranchAsync("o/r", "designer/john/foo", "pages/foo.page", TestContext.Current.CancellationToken);
+
+            Assert.Null(await repository.ReadFileAsync("o/r", "pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task DeleteBranchAsync_A422ThatIsNotAboutAMissingRef_Throws()
+        {
+            var handler = new ScriptedHandler(
+                ("DELETE", "repos/o/r/git/refs/heads/designer/john/foo", _ => Respond422("Cannot delete this protected branch")));
+
+            await Assert.ThrowsAsync<GitContentException>(() =>
+                Create(handler).DeleteBranchAsync("o/r", "designer/john/foo", "pages/foo.page", TestContext.Current.CancellationToken));
             handler.AssertDone();
         }
 
@@ -172,10 +271,10 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=designer%2Fjohn%2Ffoo", _ => Respond(HttpStatusCode.NotFound)));
             var repository = Create(handler);
 
-            Assert.Equal("draft", await repository.ReadFileAsync("pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
-            await repository.DeleteBranchAsync("designer/john/foo", "pages/foo.page", TestContext.Current.CancellationToken);
+            Assert.Equal("draft", await repository.ReadFileAsync("o/r", "pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
+            await repository.DeleteBranchAsync("o/r", "designer/john/foo", "pages/foo.page", TestContext.Current.CancellationToken);
 
-            Assert.Null(await repository.ReadFileAsync("pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
+            Assert.Null(await repository.ReadFileAsync("o/r", "pages/foo.page", "designer/john/foo", TestContext.Current.CancellationToken));
             handler.AssertDone();
         }
 
@@ -189,10 +288,10 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=master", _ => RespondJson(ContentsPayload("after"))));
             var repository = Create(handler);
 
-            Assert.Equal("before", await repository.ReadFileAsync("pages/foo.page", "master", TestContext.Current.CancellationToken));
-            repository.InvalidateRead("pages/foo.page", "master");
+            Assert.Equal("before", await repository.ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken));
+            repository.InvalidateRead("o/r", "pages/foo.page", "master");
 
-            Assert.Equal("after", await repository.ReadFileAsync("pages/foo.page", "master", TestContext.Current.CancellationToken));
+            Assert.Equal("after", await repository.ReadFileAsync("o/r", "pages/foo.page", "master", TestContext.Current.CancellationToken));
             handler.AssertDone();
         }
 
@@ -213,7 +312,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     return RespondJson(CommitPayload());
                 }));
 
-            var commit = await Create(handler).CommitFileAsync("pages/docs/foo.page", "{ \"a\": 1 }", "work", "msg", Author, TestContext.Current.CancellationToken);
+            var commit = await Create(handler).CommitFileAsync("o/r", "pages/docs/foo.page", "{ \"a\": 1 }", "work", "msg", Author, TestContext.Current.CancellationToken);
 
             Assert.Equal(Sha, commit);
             handler.AssertDone();
@@ -230,7 +329,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     return RespondJson(CommitPayload());
                 }));
 
-            await Create(handler).CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
+            await Create(handler).CommitFileAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 
@@ -247,7 +346,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     return RespondJson(CommitPayload());
                 }));
 
-            await Create(handler).CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
+            await Create(handler).CommitFileAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 
@@ -260,7 +359,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("file-sha", "{}"))),
                 ("GET", "repos/o/r/git/ref/heads/work", _ => RespondJson($$"""{ "object": { "sha": "{{Sha}}" } }""")));
 
-            var commit = await Create(handler).CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
+            var commit = await Create(handler).CommitFileAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
 
             Assert.Equal(Sha, commit);
             handler.AssertDone(); // no PUT in the script
@@ -277,7 +376,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     return RespondJson(CommitPayload());
                 }));
 
-            await Create(handler).CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
+            await Create(handler).CommitFileAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 
@@ -290,9 +389,74 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("fresh", "{}"))),
                 ("GET", "repos/o/r/git/ref/heads/work", _ => RespondJson($$"""{ "object": { "sha": "{{Sha}}" } }""")));
 
-            var commit = await Create(handler).CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
+            var repository = Create(handler);
+
+            var commit = await repository.CommitFileAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
 
             Assert.Equal(Sha, commit);
+            // read back without another request: none is scripted
+            Assert.Equal("{}", await repository.ReadFileAsync("o/r", "pages/foo.page", "work", TestContext.Current.CancellationToken));
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task CommitFileIfUnchangedAsync_TheExpectedFile_PutsWithItsSha()
+        {
+            string compared = null;
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("file-sha", "{ \"a\": 1 }"))),
+                ("PUT", "repos/o/r/contents/pages/foo.page", body =>
+                {
+                    Assert.Equal("file-sha", JObject.Parse(body)["sha"]?.Value<string>());
+                    return RespondJson(CommitPayload());
+                }));
+
+            await Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author,
+                current => Task.FromResult((compared = current) == "{ \"a\": 1 }"), TestContext.Current.CancellationToken);
+
+            Assert.Equal("{ \"a\": 1 }", compared);
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task CommitFileIfUnchangedAsync_AnotherFile_IsAConflictAndPutsNothing()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("file-sha", "{ \"a\": 2 }"))));
+
+            await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() => Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}",
+                "work", "msg", Author, current => Task.FromResult(current == "{ \"a\": 1 }"), TestContext.Current.CancellationToken));
+            handler.AssertDone(); // no PUT in the script
+        }
+
+        /// <summary>A commit between the read and the write is refused by GitHub, and the stale file is never read again and written over.</summary>
+        [Theory]
+        [InlineData(HttpStatusCode.Conflict)]
+        [InlineData(HttpStatusCode.UnprocessableEntity)]
+        public async Task CommitFileIfUnchangedAsync_FileChangedBeforeThePut_IsAConflictWithoutARetry(HttpStatusCode refusal)
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => RespondJson(FilePayload("stale", "{ \"a\": 1 }"))),
+                ("PUT", "repos/o/r/contents/pages/foo.page", _ => Respond(refusal)));
+
+            await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() => Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}",
+                "work", "msg", Author, _ => Task.FromResult(true), TestContext.Current.CancellationToken));
+            handler.AssertDone();
+        }
+
+        [Fact]
+        public async Task CommitFileIfUnchangedAsync_NoFileExpectedAndNone_CreatesItWithoutASha()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => Respond(HttpStatusCode.NotFound)),
+                ("PUT", "repos/o/r/contents/pages/foo.page", body =>
+                {
+                    Assert.Null(JObject.Parse(body)["sha"]);
+                    return RespondJson(CommitPayload());
+                }));
+
+            await Create(handler).CommitFileIfUnchangedAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author,
+                current => Task.FromResult(current == null), TestContext.Current.CancellationToken);
             handler.AssertDone();
         }
 
@@ -307,11 +471,11 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var repository = Create(handler);
 
             await Assert.ThrowsAsync<ArgumentException>(() =>
-                repository.CommitFileAsync(path, "{}", "work", "msg", Author, TestContext.Current.CancellationToken));
+                repository.CommitFileAsync("o/r", path, "{}", "work", "msg", Author, TestContext.Current.CancellationToken));
             await Assert.ThrowsAsync<ArgumentException>(() =>
-                repository.ReadFileAsync(path, "work", TestContext.Current.CancellationToken));
+                repository.ReadFileAsync("o/r", path, "work", TestContext.Current.CancellationToken));
             await Assert.ThrowsAsync<ArgumentException>(() =>
-                repository.DeleteFileAsync(path, "work", "msg", Author, TestContext.Current.CancellationToken));
+                repository.DeleteFileAsync("o/r", path, "work", "msg", Author, TestContext.Current.CancellationToken));
 
             handler.AssertDone();
         }
@@ -325,7 +489,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => Respond(HttpStatusCode.NotFound)),
                 ("PUT", "repos/o/r/contents/pages/foo.page", _ => RespondJson(CommitPayload())));
 
-            await Create(handler).CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
+            await Create(handler).CommitFileAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken);
 
             handler.AssertDone(); // the script contains no git/ref calls
         }
@@ -337,8 +501,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => Respond(HttpStatusCode.NotFound)),
                 ("PUT", "repos/o/r/contents/pages/foo.page", _ => Respond(HttpStatusCode.InternalServerError)));
 
-            await Assert.ThrowsAsync<HttpRequestException>(() =>
-                Create(handler).CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<GitContentException>(() =>
+                Create(handler).CommitFileAsync("o/r", "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken));
         }
 
         [Fact]
@@ -354,7 +518,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     return RespondJson(CommitPayload());
                 }));
 
-            var commit = await Create(handler).DeleteFileAsync("pages/foo.page", "work", "msg", Author, TestContext.Current.CancellationToken);
+            var commit = await Create(handler).DeleteFileAsync("o/r", "pages/foo.page", "work", "msg", Author, TestContext.Current.CancellationToken);
 
             Assert.Equal(Sha, commit);
             handler.AssertDone();
@@ -366,24 +530,37 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var handler = new ScriptedHandler(
                 ("GET", "repos/o/r/contents/pages/foo.page?ref=work", _ => Respond(HttpStatusCode.NotFound)));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                Create(handler).DeleteFileAsync("pages/foo.page", "work", "msg", Author, TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<GitContentException>(() =>
+                Create(handler).DeleteFileAsync("o/r", "pages/foo.page", "work", "msg", Author, TestContext.Current.CancellationToken));
         }
 
         [Fact]
-        public async Task RepositoryNotConfigured_Throws()
+        public async Task CommitFileAsync_NullRepository_ThrowsBeforeAnyRequest()
         {
-            var repository = Create(new ScriptedHandler(), repository: null);
+            var repository = Create(new ScriptedHandler());
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                repository.CommitFileAsync("pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<ArgumentNullException>(() =>
+                repository.CommitFileAsync(null, "pages/foo.page", "{}", "work", "msg", Author, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public async Task ReadFileAsync_SamePathInTwoRepositories_ReadsAndCachesEachSeparately()
+        {
+            var handler = new ScriptedHandler(
+                ("GET", "repos/a/site-one/contents/pages/foo.page?ref=master", _ => RespondJson(ContentsPayload("one"))),
+                ("GET", "repos/a/site-two/contents/pages/foo.page?ref=master", _ => RespondJson(ContentsPayload("two"))));
+            var repository = Create(handler);
+
+            Assert.Equal("one", await repository.ReadFileAsync("a/site-one", "pages/foo.page", "master", TestContext.Current.CancellationToken));
+            Assert.Equal("two", await repository.ReadFileAsync("a/site-two", "pages/foo.page", "master", TestContext.Current.CancellationToken));
+            handler.AssertDone();
         }
 
         // ── helpers ────────────────────────────────────────────────────────────────────────────────
 
-        private static GitHubContentRepository Create(ScriptedHandler handler, string repository = "o/r")
+        private static GitHubContentRepository Create(ScriptedHandler handler)
         {
-            var options = Options.Create(new GitContentOptions { Repository = repository, BaseBranch = "master" });
+            var options = Options.Create(new GitContentOptions { BaseBranch = "master" });
             var cache = new MemoryCache(new MemoryCacheOptions());
             return new GitHubContentRepository(new FakeHttpClientFactory(handler), cache, options);
         }
@@ -431,16 +608,34 @@ namespace VirtoCommerce.SiteBuilder.Tests
         /// </summary>
         private sealed class ScriptedHandler(params (string Method, string Url, Func<string, HttpResponseMessage> Respond)[] script) : HttpMessageHandler
         {
+            private readonly Dictionary<int, (TaskCompletionSource Requested, Task Release)> _holds = new();
             private int _step;
+
+            /// <summary>Keeps the response of a step until <paramref name="release"/> completes; the returned task completes once that step's request arrives.</summary>
+            public Task HoldResponse(int step, Task release)
+            {
+                var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _holds[step] = (requested, release);
+                return requested.Task;
+            }
 
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
-                Assert.True(_step < script.Length, $"Unexpected request #{_step + 1}: {request.Method} {request.RequestUri}");
-                var (method, url, respond) = script[_step++];
+                var step = Interlocked.Increment(ref _step) - 1;
+                Assert.True(step < script.Length, $"Unexpected request #{step + 1}: {request.Method} {request.RequestUri}");
+                var (method, url, respond) = script[step];
                 Assert.Equal(method, request.Method.Method);
                 Assert.Equal(url, request.RequestUri!.PathAndQuery.TrimStart('/'));
                 var body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-                return respond(body);
+                var response = respond(body);
+
+                if (_holds.TryGetValue(step, out var hold))
+                {
+                    hold.Requested.SetResult();
+                    await hold.Release;
+                }
+
+                return response;
             }
 
             public void AssertDone() => Assert.Equal(script.Length, _step);

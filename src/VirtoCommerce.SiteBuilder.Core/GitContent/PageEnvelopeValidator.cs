@@ -18,32 +18,13 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         {
             var errors = new List<string>();
 
-            JToken settings;
-            JToken content;
-            switch (page)
+            if (!TryReadEnvelope(page, out var settings, out var content))
             {
-                // legacy flat array: [0] = settings, the rest = sections
-                case JArray array:
-                    settings = array.Count > 0 ? array[0] : null;
-                    content = new JArray(array.Skip(1));
-                    break;
-                case JObject envelope:
-                    settings = envelope["settings"];
-                    content = envelope["content"];
-                    break;
-                default:
-                    errors.Add("Page is neither a {settings, content} envelope nor a legacy array.");
-                    return errors;
+                errors.Add("Page is neither a {settings, content} envelope nor a legacy array.");
+                return errors;
             }
 
-            if (settings is not JObject settingsObject)
-            {
-                errors.Add("Missing settings object (page-level settings).");
-            }
-            else if (settingsObject["type"]?.Value<string>() != "settings")
-            {
-                errors.Add($"settings.type must be \"settings\" (got: {settingsObject["type"]?.ToString() ?? "null"}).");
-            }
+            ValidateSettings(settings, errors);
 
             if (content is not JArray sections)
             {
@@ -54,36 +35,79 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
             var seenIds = new Dictionary<string, int>();
             for (var i = 0; i < sections.Count; i++)
             {
-                var section = sections[i];
-                if (section is not JObject sectionObject)
+                if (sections[i] is JObject sectionObject)
+                {
+                    ValidateSection(sectionObject, i, seenIds, errors);
+                }
+                else
                 {
                     errors.Add($"content[{i}]: section is not an object.");
-                    continue;
-                }
-
-                var type = sectionObject["type"]?.Value<string>();
-                var label = $"content[{i}]{(string.IsNullOrEmpty(type) ? string.Empty : $" ({type})")}";
-
-                if (string.IsNullOrEmpty(type))
-                {
-                    errors.Add($"{label}: missing type field.");
-                }
-
-                var id = sectionObject["id"]?.Value<string>();
-                if (!string.IsNullOrEmpty(id))
-                {
-                    if (seenIds.TryGetValue(id, out var firstIndex))
-                    {
-                        errors.Add($"{label}: duplicate id \"{id}\" (already in content[{firstIndex}]).");
-                    }
-                    else
-                    {
-                        seenIds.Add(id, i);
-                    }
                 }
             }
 
             return errors;
         }
+
+        private static bool TryReadEnvelope(JToken page, out JToken settings, out JToken content)
+        {
+            switch (page)
+            {
+                // legacy flat array: [0] = settings, the rest = sections
+                case JArray array:
+                    settings = array.Count > 0 ? array[0] : null;
+                    content = new JArray(array.Skip(1));
+                    return true;
+                case JObject envelope:
+                    settings = envelope["settings"];
+                    content = envelope["content"];
+                    return true;
+                default:
+                    settings = null;
+                    content = null;
+                    return false;
+            }
+        }
+
+        private static void ValidateSettings(JToken settings, List<string> errors)
+        {
+            if (settings is not JObject settingsObject)
+            {
+                errors.Add("Missing settings object (page-level settings).");
+            }
+            else if (TextOf(settingsObject["type"]) != "settings")
+            {
+                errors.Add($"settings.type must be \"settings\" (got: {settingsObject["type"]?.ToString() ?? "null"}).");
+            }
+        }
+
+        private static void ValidateSection(JObject section, int index, Dictionary<string, int> seenIds, List<string> errors)
+        {
+            var type = TextOf(section["type"]);
+            var label = $"content[{index}]{(string.IsNullOrEmpty(type) ? string.Empty : $" ({type})")}";
+
+            if (string.IsNullOrEmpty(type))
+            {
+                errors.Add($"{label}: missing type field.");
+            }
+
+            var id = TextOf(section["id"]);
+            if (string.IsNullOrEmpty(id))
+            {
+                return;
+            }
+
+            if (seenIds.TryGetValue(id, out var firstIndex))
+            {
+                errors.Add($"{label}: duplicate id \"{id}\" (already in content[{firstIndex}]).");
+            }
+            else
+            {
+                seenIds.Add(id, index);
+            }
+        }
+
+        // The document comes from whoever saves it: an object or an array where a value belongs reads as
+        // missing instead of throwing.
+        private static string TextOf(JToken token) => token is JValue value ? (string)value : null;
     }
 }

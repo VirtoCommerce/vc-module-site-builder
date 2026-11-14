@@ -1,0 +1,229 @@
+<template>
+  <VcBlade
+    :title="$t('SITE_BUILDER.GIT.TITLE')"
+    :subtitle="param"
+    :toolbar-items="toolbar"
+    :loading="busy"
+  >
+    <div
+      v-if="status"
+      class="pb-git"
+    >
+      <VcBanner
+        v-if="status.error"
+        variant="danger"
+        icon="lucide-triangle-alert"
+      >
+        {{ status.error }}
+      </VcBanner>
+
+      <template v-if="view === 'setup'">
+        <GitCard
+          icon="lucide-history"
+          :title="$t('SITE_BUILDER.GIT.TITLE')"
+          :status="$t('SITE_BUILDER.GITHUB.NOT_CONNECTED')"
+          status-variant="warning"
+        >
+          <template #actions>
+            <VcButton
+              size="sm"
+              icon="lucide-history"
+              @click="openConnection"
+            >
+              {{ $t("SITE_BUILDER.GITHUB.WIDGET_OFF") }}
+            </VcButton>
+          </template>
+        </GitCard>
+        <p class="pb-git__note">{{ $t("SITE_BUILDER.GIT.SETUP.INTRO") }} {{ $t("SITE_BUILDER.GIT.CONNECT_FIRST") }}</p>
+      </template>
+
+      <template v-else>
+        <GitCard
+          icon="lucide-history"
+          :title="status.repository ?? ''"
+          :href="status.url"
+          :subtitle="$t('SITE_BUILDER.GIT.REPOSITORY')"
+          :status="$t(status.enabled ? 'SITE_BUILDER.GIT.ON' : 'SITE_BUILDER.GIT.OFF')"
+          :status-variant="status.enabled ? 'success' : 'info'"
+        >
+          <div v-if="!status.url">
+            <dt>{{ $t("SITE_BUILDER.GIT.REPOSITORY") }}</dt>
+            <dd>{{ $t("SITE_BUILDER.GIT.NOT_CREATED") }}</dd>
+          </div>
+          <div>
+            <dt>{{ $t("SITE_BUILDER.GIT.BRANCH") }}</dt>
+            <dd>{{ status.baseBranch }}</dd>
+          </div>
+          <div v-if="status.url && status.lastCommitSha">
+            <dt>{{ $t("SITE_BUILDER.GIT.LAST_CHANGE") }}</dt>
+            <dd>
+              <a
+                :href="`${status.url}/commit/${status.lastCommitSha}`"
+                target="_blank"
+                rel="noopener"
+                ><code>{{ status.lastCommitSha.slice(0, 7) }}</code></a
+              >
+            </dd>
+          </div>
+          <template
+            v-if="mayTurnOn || view === 'error'"
+            #actions
+          >
+            <VcButton
+              v-if="mayTurnOn"
+              size="sm"
+              icon="lucide-history"
+              :disabled="busy"
+              @click="connect"
+            >
+              {{ $t("SITE_BUILDER.GIT.TURN_ON") }}
+            </VcButton>
+            <VcButton
+              v-if="view === 'error'"
+              variant="secondary"
+              size="sm"
+              icon="lucide-github"
+              @click="openConnection"
+            >
+              {{ $t("SITE_BUILDER.GIT.OPEN_GITHUB") }}
+            </VcButton>
+          </template>
+        </GitCard>
+        <p
+          v-if="view !== 'error'"
+          class="pb-git__note"
+        >
+          {{ $t(`SITE_BUILDER.GIT.HINT.${view.toUpperCase()}`, { repository: status.repository }) }}
+        </p>
+      </template>
+
+      <VcBanner
+        v-if="actionError"
+        variant="danger"
+        icon="lucide-triangle-alert"
+      >
+        {{ actionError }}
+      </VcBanner>
+    </div>
+    <div
+      v-else-if="actionError"
+      class="pb-git"
+    >
+      <VcBanner
+        variant="danger"
+        icon="lucide-triangle-alert"
+      >
+        {{ actionError }}
+      </VcBanner>
+    </div>
+  </VcBlade>
+</template>
+
+<script lang="ts" setup>
+import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+import { useApiClient, useBlade, usePermissions, usePopup, type IBladeToolbar } from "@vc-shell/framework";
+import { VcBanner, VcBlade, VcButton } from "@vc-shell/framework/ui";
+import { GitContentSetupClient, type GitContentSiteStatus } from "../../api_client/virtocommerce.sitebuilder";
+import GitCard from "../site-builder/components/GitCard.vue";
+import { gitErrorMessage, siteGitView } from "../widgets/siteGit";
+
+defineBlade({
+  name: "SiteBuilderGit",
+  url: "/site-builder-git",
+  permissions: "builder:read",
+});
+
+const { param, callParent, openBlade } = useBlade();
+const { t } = useI18n({ useScope: "global" });
+const { showConfirmation } = usePopup();
+const { hasAccess } = usePermissions();
+const { getApiClient } = useApiClient(GitContentSetupClient);
+
+const status = ref<GitContentSiteStatus>();
+const busy = ref(false);
+const actionError = ref<string>();
+const view = computed(() => (status.value ? siteGitView(status.value) : "setup"));
+const mayTurnOn = computed(() => !status.value?.enabled && hasAccess("store:update"));
+
+async function run(action: (client: GitContentSetupClient) => Promise<GitContentSiteStatus>, changed = false) {
+  if (!param.value) return;
+  busy.value = true;
+  actionError.value = undefined;
+  try {
+    status.value = await action(await getApiClient());
+    if (changed) await callParent("reload").catch(() => undefined);
+  } catch (error) {
+    actionError.value = gitErrorMessage(error, t("PERMISSION_MESSAGES.ACCESS_RESTRICTED"));
+  } finally {
+    busy.value = false;
+  }
+}
+
+// Reading the site asks GitHub live, so it is also the connection test.
+const refresh = () => run((client) => client.getSite(param.value));
+const connect = () => run((client) => client.connectSite(param.value), true);
+
+async function disconnect() {
+  if (await showConfirmation(t("SITE_BUILDER.GIT.CONFIRM_OFF"))) await run((client) => client.disconnectSite(param.value), true);
+}
+
+const openConnection = () => openBlade({ name: "SiteBuilderGitHub", onClose: refresh });
+
+const toolbar = computed<IBladeToolbar[]>(() => [
+  {
+    id: "test",
+    title: t("SITE_BUILDER.GIT.TEST"),
+    icon: "lucide-refresh-cw",
+    disabled: busy.value,
+    clickHandler: refresh,
+  },
+  {
+    id: "on",
+    title: t("SITE_BUILDER.GIT.TURN_ON"),
+    icon: "lucide-history",
+    isVisible: view.value === "off" || view.value === "missing",
+    permissions: "store:update",
+    disabled: busy.value,
+    clickHandler: connect,
+  },
+  {
+    id: "off",
+    title: t("SITE_BUILDER.GIT.TURN_OFF"),
+    icon: "lucide-circle-off",
+    isVisible: !!status.value?.enabled,
+    permissions: "store:update",
+    disabled: busy.value,
+    clickHandler: disconnect,
+  },
+]);
+
+onMounted(refresh);
+</script>
+
+<style lang="scss" scoped>
+.pb-git {
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  // The blade's content is 16px, while the shell's text, buttons and fields are 14px.
+  font-size: 14px;
+  line-height: 20px;
+
+  a {
+    color: var(--link-text-color);
+
+    &:hover {
+      color: var(--link-text-color-hover);
+    }
+  }
+
+  &__note {
+    margin: 0;
+    font-size: 13px;
+    color: var(--neutrals-500);
+  }
+}
+</style>

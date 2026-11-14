@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Models;
 using VirtoCommerce.SiteBuilder.Data.Repositories;
 using VirtoCommerce.Pages.Core.Events;
@@ -53,10 +54,12 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             return SaveChangesInternalAsync(models);
         }
 
+        /// <param name="condition">What has to hold for the save of the one group of <paramref name="models"/>, checked under the lock of the save.</param>
         private async Task SaveChangesInternalAsync(
             IList<GroupedSiteBuilderPage> models,
             Func<ISiteBuilderRepository, IList<GroupedSiteBuilderPageEntity>, CancellationToken, Task<PreparedSave>> prepare = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            GroupedPageSaveCondition condition = null)
         {
             var groupedEventEntries = new List<GenericChangedEntry<GroupedSiteBuilderPage>>();
             var primaryKeyMap = new PrimaryKeyResolvingMap();
@@ -66,9 +69,11 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
 
             using (var repository = _repositoryFactory())
             {
+                // the source the condition reads is locked too, so that it cannot change before the save commits
                 var groupIds = models
-                    .Where(x => !string.IsNullOrWhiteSpace(x.Id))
                     .Select(x => x.Id)
+                    .Append(condition?.SourceGroupId)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
                     .ToArray();
 
                 async Task SaveInternalAsync(CancellationToken ct)
@@ -90,6 +95,10 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
                         existingEntities,
                         repository,
                         ct);
+                    if (condition != null)
+                    {
+                        await CheckSaveConditionAsync(repository, models.Single(), existingEntities, condition, ct);
+                    }
                     await BeforeSaveChanges(models);
 
                     // Load only the content explicitly supplied for update, so Patch changes the tracked
@@ -570,7 +579,100 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             return await ReadContentAsync(repository, current, draft, cancellationToken);
         }
 
+        public virtual Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(group);
+
+            return SaveChangesInternalAsync([group], async (repository, entities, ct) =>
+            {
+                // read under the lock of the save, so that the version compared is the one the save replaces
+                var entity = entities.SingleOrDefault();
+                var current = entity == null ? null : await ReadContentAsync(repository, ToModel(entity, null), draft, ct);
+                if (!string.Equals(current?.ETag, expectedETag, StringComparison.Ordinal))
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
+                }
+                return new PreparedSave(group);
+            }, cancellationToken);
+        }
+
         public virtual Task SaveGroupSettingsAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default)
+        {
+            return SaveGroupSettingsInternalAsync(group, condition: null, cancellationToken);
+        }
+
+        public virtual Task SaveGroupSettingsAsync(GroupedSiteBuilderPage group, GroupedPageSaveCondition condition,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(group);
+            ArgumentNullException.ThrowIfNull(condition);
+
+            return SaveGroupSettingsInternalAsync(group, condition, cancellationToken);
+        }
+
+        public virtual Task SaveGroupAsync(GroupedSiteBuilderPage group, GroupedPageSaveCondition condition, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(group);
+            ArgumentNullException.ThrowIfNull(condition);
+
+            return SaveChangesInternalAsync([group], prepare: null, cancellationToken, condition);
+        }
+
+        public virtual Task<IList<string>> DeleteDraftsAtVersionAsync(GroupedSiteBuilderPage group, string expectedETag,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(group);
+
+            return DeleteDraftsAtVersionInternalAsync(group, expectedETag, cancellationToken);
+        }
+
+        /// <summary>
+        /// The drafts are deleted in the transaction that holds the lock of the group, as a content save takes it: a save that comes after the
+        /// version is read waits for the deletion, and one that came before has moved the version.
+        /// </summary>
+        private async Task<IList<string>> DeleteDraftsAtVersionInternalAsync(GroupedSiteBuilderPage group, string expectedETag,
+            CancellationToken cancellationToken)
+        {
+            var entries = new List<GenericChangedEntry<SiteBuilderPage>>();
+            using (var repository = _repositoryFactory())
+            {
+                await repository.ExecuteUnderGroupedPageWriteLocksAsync([group.Id], async ct =>
+                {
+                    var entity = (await repository.GetGroupedSiteBuilderPagesByIdsAsync([group.Id], null)).SingleOrDefault();
+                    var drafts = entity?.Pages.Where(x => x.Status == Draft).ToList() ?? [];
+                    var current = drafts.Count == 0 || !IsSameGroup(group, entity) ? null : await ReadContentAsync(repository, ToModel(entity, null), draft: true, ct);
+                    if (!string.Equals(current?.ETag, expectedETag, StringComparison.Ordinal))
+                    {
+                        throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
+                    }
+
+                    entries.AddRange(drafts.Select(x =>
+                        new GenericChangedEntry<SiteBuilderPage>(x.ToModel(AbstractTypeFactory<SiteBuilderPage>.TryCreateInstance()), EntryState.Deleted)));
+                    await _eventPublisher.Publish(new SiteBuilderPageChangingEvent(entries), ct);
+                    foreach (var draft in drafts)
+                    {
+                        repository.Remove(draft);
+                    }
+                    await repository.UnitOfWork.CommitAsync();
+                }, cancellationToken);
+            }
+
+            // as a delete through the page service: the pages, and the group whose cached aggregate lists them
+            foreach (var entry in entries)
+            {
+                GenericCachingRegion<SiteBuilderPage>.ExpireTokenForKey(entry.NewEntry.Id);
+            }
+            GenericSearchCachingRegion<SiteBuilderPage>.ExpireRegion();
+            GenericCachingRegion<GroupedSiteBuilderPage>.ExpireTokenForKey(group.Id);
+            GenericSearchCachingRegion<GroupedSiteBuilderPage>.ExpireRegion();
+            // committed: cancelling the request must not leave the index of the deleted pages behind
+            await _eventPublisher.Publish(new SiteBuilderPageChangedEvent(entries), CancellationToken.None);
+
+            return entries.Select(x => x.NewEntry.Id).ToList();
+        }
+
+        private Task SaveGroupSettingsInternalAsync(GroupedSiteBuilderPage group, GroupedPageSaveCondition condition, CancellationToken cancellationToken)
         {
             return SaveChangesInternalAsync([group], async (repository, entities, ct) =>
             {
@@ -601,8 +703,51 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
                     GetOrAddDraft(group).Content = updated;
                 }
                 return new PreparedSave(group);
-            }, cancellationToken);
+            }, cancellationToken, condition);
         }
+
+        /// <summary>The condition read under the lock of the save, against the group as it is stored and as the save leaves it.</summary>
+        /// <exception cref="SiteBuilderContentConflictException">It does not hold: nothing is written.</exception>
+        private async Task CheckSaveConditionAsync(ISiteBuilderRepository repository, GroupedSiteBuilderPage group,
+            IList<GroupedSiteBuilderPageEntity> existingEntities, GroupedPageSaveCondition condition, CancellationToken cancellationToken)
+        {
+            var existing = FindExistingEntity(existingEntities, group);
+            var stored = existing == null ? null : ToModel(existing, null);
+            if (condition.ExpectedSettingsVersion != null && (stored == null ||
+                !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(stored), condition.ExpectedSettingsVersion.Trim(), StringComparison.Ordinal)))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
+            }
+
+            if (condition.RequireUnpublished && AffectsPublished(stored, group))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PublishedPageMessage);
+            }
+
+            if (condition.SourceGroupId != null)
+            {
+                var source = await repository.GroupedSiteBuilderPages.AsNoTracking()
+                    .Where(x => x.Id == condition.SourceGroupId)
+                    .Select(x => new { x.SourceRevisionDate })
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (source == null || source.SourceRevisionDate != condition.ExpectedSourceRevisionDate)
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
+                }
+            }
+        }
+
+        /// <summary>The rule a dry run tells it by: a published page one of whose settings changes.</summary>
+        private static bool AffectsPublished(GroupedSiteBuilderPage stored, GroupedSiteBuilderPage group)
+        {
+            var preview = AbstractTypeFactory<SiteBuilderChangePreview>.TryCreateInstance();
+            preview.AddPage(stored, group);
+
+            return preview.AffectsPublished;
+        }
+
+        private static bool IsSameGroup(GroupedSiteBuilderPage group, GroupedSiteBuilderPageEntity entity) =>
+            string.Equals(entity.StoreId, group.StoreId, StringComparison.OrdinalIgnoreCase) && entity.CreatedDate == group.CreatedDate;
 
         // The settings the page content JSON repeats.
         private static bool HasContentSettingsChanged(GroupedSiteBuilderPageEntity existing, GroupedSiteBuilderPage group)

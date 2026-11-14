@@ -9,10 +9,11 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Events;
 using Xunit;
@@ -80,6 +81,42 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.DoesNotContain(group.Pages, x => x.Status == Draft);
         }
 
+        [Theory]
+        [InlineData("javascript:alert(1)")]
+        [InlineData(" JavaScript:alert(1)")]
+        [InlineData("vbscript:msgbox(1)")]
+        public async Task Script_url_is_refused_naming_its_path_and_leaves_the_published_content_intact(string link)
+        {
+            var service = NewServiceWithPublishedPage(out var groupId);
+            var body = new JObject
+            {
+                ["settings"] = new JObject(),
+                ["content"] = new JArray(new JObject { ["type"] = "hero", ["link"] = link }),
+            }.ToString();
+
+            var (result, _) = await SaveContent(service, groupId, body);
+
+            Assert.Contains("'content[0].link'", (string)Assert.IsType<BadRequestObjectResult>(result).Value);
+            Assert.DoesNotContain((await service.GetByIdAsync(groupId)).Pages, x => x.Status == Draft);
+            Assert.Equal(LiveContent, await service.LoadContent("page-published", TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public async Task Markdown_html_is_saved_sanitized()
+        {
+            var service = NewServiceWithPublishedPage(out var groupId);
+            const string edited =
+                "{\"settings\":{},\"content\":[{\"type\":\"text\",\"text\":{\"markdown\":\"Hi\",\"html\":\"<p>Hi</p><img src=x onerror=alert(1)>\"}}]}";
+
+            var (result, _) = await SaveContent(service, groupId, edited);
+
+            Assert.IsType<NoContentResult>(result);
+            var draft = Assert.Single((await service.GetByIdAsync(groupId)).Pages, x => x.Status == Draft);
+            Assert.Equal(
+                "{\"settings\":{},\"content\":[{\"type\":\"text\",\"text\":{\"markdown\":\"Hi\",\"html\":\"<p>Hi</p><img src=\\\"x\\\">\"}}]}",
+                await service.LoadContent(draft.Id, TestContext.Current.CancellationToken));
+        }
+
         [Fact]
         public async Task Valid_content_is_saved_to_a_freshly_created_draft()
         {
@@ -100,9 +137,11 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         [Fact]
-        public async Task Valid_content_save_publishes_page_changed_event_exactly_once()
+        public async Task Saving_over_an_existing_draft_publishes_page_changed_event_exactly_once()
         {
             var service = NewServiceWithPublishedPage(out var groupId);
+            // The first save creates the draft, and the grouped page service raises the events for that.
+            await SaveContent(service, groupId, "{ \"settings\": {}, \"content\": [ { \"type\": \"hero\" } ] }");
             var events = new RecordingEventPublisher();
 
             var (result, _) = await SaveContent(
@@ -219,17 +258,18 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var pageContentService = new SiteBuilderPageContentService(
                 pageService,
                 service,
-                new NoopSharedComponentReferenceIndexService(),
                 publisher,
                 NullLogger<SiteBuilderPageContentService>.Instance);
+            var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
             var controller = new SiteBuilderPageController(
-                crudService: pageService,
                 groupedPageService: service,
                 groupedPageSearchService: new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-                authorizationService: new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+                authorizationService: authorization,
                 pageDocumentSearchService: new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance);
+                logger: NullLogger<SiteBuilderPageController>.Instance,
+                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService),
+                publishStatusQueryService: TestServices.PublishStatuses(authorization, service));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));

@@ -1,46 +1,48 @@
-﻿# Site Builder
+﻿# Site Builder (Beta)
 
-Site Builder replaces Page Builder ([vc-module-pagebuilder](https://github.com/VirtoCommerce/vc-module-pagebuilder)): it cannot be installed alongside it and keeps the same database schema.
+> **Beta.** Site Builder is ready to try and its storage stays compatible with Page Builder, but its APIs and theme formats may still change before the first stable release.
 
+Site Builder lets a merchandiser build the storefront's pages, catalog templates and theme in a visual designer, next to a live preview of the real storefront.
 
-# Overview
+It replaces Page Builder ([vc-module-pagebuilder](https://github.com/VirtoCommerce/vc-module-pagebuilder)). The two cannot be installed together, and Site Builder uses Page Builder's database as it is, so existing pages stay after the switch.
 
-The Site Builder allows creating ecommerce pages from blocks and editing them using a visual editor.
+![A landing page in the Site Builder designer](docs/media/site-builder-designer.png)
 
-Each page consists of several different blocks. The block view and settings depend on web page requirements.
+## What it does
+* **Pages from sections.** Landing pages, content pages and blog articles are built from sections: add, reorder, copy, paste and hide them, and edit their settings while the preview updates.
+* **Catalog templates and rules.** Product, category and other storefront templates are edited the same way. Template rules decide which template a page gets, by category, product type or property, and the rule panel shows which rule a previewed product matches.
+* **Theme.** Header, footer, light and dark palettes, logos and favicon. The palette generator builds both palettes from one or two brand colors, with every text and background pair at WCAG 2.2 AA contrast.
+* **Theme publishing.** One action puts every theme draft live as a new versioned theme per language. A publication that fails validation leaves the previous one live.
+* **Multilanguage pages,** with per-language values for translatable fields.
+* **Version history on GitHub.** Each store can have its own repository: every save is a commit, any version can be restored, and pages can go live through a pull request.
+* **AI assistant (Virto OZ)** generates, edits, diagnoses and bulk-updates pages from a text prompt. See [AI Assistant for Site Builder](docs/ai-assistant.md).
+* **Admin Shell plugin and a standalone designer app.**
 
-The page is created in the builder as a list of blocks with specific settings applied to each block. All data are saved in a Json file format.
+The store setting **New Site Builder** switches a store to the new designer; with it off, the store keeps the classic designer.
 
-![image](https://user-images.githubusercontent.com/7639413/195313557-91c00a53-ea2a-4572-aca7-927e210d17b7.png)
+![A product template with its template rules](docs/media/site-builder-template-rules.png)
 
-## For Business
-* Build e-commerce landing pages – simple and faster.
-* Look at the content as the end customer see it.
-* Mobile-friendliness by design.
-* Ready-to-go building blocks and recommendations.
+## Switching from Page Builder
 
-## For Developers
-* Integrable into your unique design.
-* Configurable set of favourites blocks.
-* More blocks. Less code. Create new blocks with flexible JSON schema.
-* Can be integrated with your existing sites and apps.
-* Ready for integration with DevOps.
-* Ready for Publishing process.
+On its first start, Site Builder copies Page Builder's settings to its own names in a background job:
 
-## Key Features
-* Build a new landing page visually without developer.
-* AI assistant (Virto OZ) — generate, edit, diagnose, and bulk-update pages from a text prompt. See [AI Assistant for Site Builder](docs/ai-assistant.md).
-* Theme editor.
-* Ecommerce page customization (Preview).
-* Preview content.
-* Block library.
-* Seo by design.
-* Mobile-friendliness by design
-* Block management with Drag and drop, Copy, Paste, Hide, etc.
-* Integration with Virto Frontend.
-* Native Extensibility Framework.
-* Permissions.
-* Platform Backup & Restore support.
+* the global settings `StoreUrl`, `StorePreviewPath` and `OzAgentUrl`;
+* each store's `PreviewUserIds`, `GitContentEnabled`, `GitContentRepository`, and `NewPageBuilder` as `NewSiteBuilder`, so a store on the new designer stays on it;
+* the saved GitHub App connection, encrypted again for Site Builder.
+
+A setting that already has a stored Site Builder value keeps it. The copy runs once: if you later switch back to Page Builder and then to Site Builder again, Site Builder keeps its own values. If this server cannot decrypt the GitHub App connection (its data protection keys were not kept), the log has a warning naming the setting, and the connection has to be set up again.
+
+The `PageBuilder:GitContent` and `PageBuilder:ThemeSnapshot` configuration sections (`PageBuilder__…` environment variables included) and the `VirtoCommerce.PageBuilderModule` connection string still work when the Site Builder name is not set. They are deprecated, and a warning at startup lists them: rename them to `SiteBuilder:…` and `VirtoCommerce.SiteBuilder`.
+
+Roles keep working: the permissions are the same `builder:*` ones.
+
+Settings forced in configuration under `VirtoCommerce:Settings:Override` need a manual step: they are keyed by setting name, so rename `VirtoCommerce.PageBuilderModule.*` to `VirtoCommerce.SiteBuilder.*`, and `NewPageBuilder` to `NewSiteBuilder`.
+
+## Store access
+
+A role can hold `builder:read` and `builder:shared-components:read` for selected stores only (the **Only for selected stores** scope). Every Site Builder endpoint checks the store it addresses: besides its own permission, the user needs the read permission in that store, for every store or through the scope. An account bound to a store reaches that store only.
+
+The Vue designer lists a theme's alternate templates through the Content module's theme search (`GET api/content/themes/{storeId}/search`), so switching to one needs `content:read` as well; without it the template switcher offers only the default templates and says why.
 
 ## Shared Component creation
 

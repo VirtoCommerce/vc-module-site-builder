@@ -8,9 +8,19 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
+using VirtoCommerce.ContentModule.Core.Events;
+using VirtoCommerce.SiteBuilder.Core;
+using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.GitContent;
+using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using Xunit;
 
@@ -31,13 +41,24 @@ namespace VirtoCommerce.SiteBuilder.Tests
     {
         private const string Login = "john";
         private const string Page = "/about-us.page";
+        private const string LivePage = "pages/s1/about-us.page";
         private const string RepoPath = "pages/about-us.page";
         private const string Published = """{ "settings": { "type": "settings", "name": "About" }, "content": [] }""";
         private const string Draft = """{ "settings": { "type": "settings", "name": "About, rewritten" }, "content": [] }""";
+        private const string LastWeek = """{ "settings": { "type": "settings", "name": "About, last week" }, "content": [] }""";
         private const string BaseHead = "9111111111111111111111111111111111111111";
         private const string DraftHead = "7222222222222222222222222222222222222222";
 
+        private const string MarysHead = "7444444444444444444444444444444444444444";
+        private const string MovedHead = "7333333333333333333333333333333333333333";
+
         private static string MyBranch => GitPageLocation.BranchFor("designer/{user}/{slug}", Login, "about-us.page");
+
+        private static string MarysBranch => GitPageLocation.BranchFor("designer/{user}/{slug}", "mary", "about-us.page");
+
+        private static string MyPublishBranch => GitPageLocation.BranchFor("publish/{user}/{slug}", Login, "about-us.page");
+
+        private static string MarysPublishBranch => GitPageLocation.BranchFor("publish/{user}/{slug}", "mary", "about-us.page");
 
         [Fact]
         public async Task Publish_MergesTheEditorsBranchIntoTheBaseBranch()
@@ -182,16 +203,179 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         [Fact]
-        public async Task Publish_WithoutThePublishPermission_IsForbidden_RebaseOrNot()
+        public async Task Publish_WhenTheRepositoryCannotBeRead_FailsInsteadOfAnsweringAlreadyPublished()
+        {
+            // GitHub answers a missing repository, or one the platform cannot see, the way it answers a missing file.
+            var live = new FakeBlobStorage();
+            live.Files[LivePage] = Published;
+
+            var failure = await Assert.ThrowsAsync<GitContentException>(() =>
+                Controller(new RecordingRepository(), Publisher(GitPublishState.Merged), live: live).GitPublish("s1", Page, "pages"));
+
+            Assert.Equal("The GitHub repository \"acme/site-s1\" does not exist, or the platform has no access to it.", failure.Message);
+            Assert.Equal(Published, live.Files[LivePage]);
+            Assert.Empty(live.Events);
+        }
+
+        [Fact]
+        public async Task Publish_WhenMerged_WritesTheLivePageAsTheBaseBranchHasIt_NotTheDraft()
         {
             var repository = Repository();
+            var live = new FakeBlobStorage();
 
-            var result = await Controller(repository, Publisher(GitPublishState.Merged), allowed: false).GitPublish("vccom", Page, "pages", rebase: true);
+            await Controller(repository, Publisher(GitPublishState.Merged), live: live).GitPublish("s1", Page, "pages");
 
-            Assert.IsType<ForbidResult>(result);
-            Assert.Empty(repository.DeletedBranches);
-            Assert.Empty(repository.Commits);
+            Assert.True(JToken.DeepEquals(JToken.Parse(Published), JToken.Parse(live.Files[LivePage])));
+            Assert.Single(live.Events.OfType<SiteBuilderContentChangedEvent>());
+            var indexed = Assert.Single(live.Events.OfType<ContentFileChangedEvent>());
+            Assert.Equal(("pages", "s1"), (indexed.ContentType, indexed.StoreId));
+            var entry = Assert.Single(indexed.ChangedEntries);
+            Assert.Equal(Page, entry.NewEntry.RelativeUrl);
+            Assert.Equal(["acme/site-s1"], repository.Repositories);
         }
+
+        [Theory]
+        [InlineData(GitPublishState.Pending)]
+        [InlineData(GitPublishState.AwaitingMerge)]
+        [InlineData(GitPublishState.Conflict)]
+        public async Task Publish_WhenNotMerged_LeavesTheLivePageAlone(GitPublishState state)
+        {
+            var live = new FakeBlobStorage();
+
+            await Controller(Repository(), Publisher(state), live: live).GitPublish("s1", Page, "pages");
+
+            Assert.Empty(live.Files);
+            Assert.Empty(live.Events);
+        }
+
+        [Theory]
+        [InlineData(GitRepositorySource.Shared)]
+        [InlineData(GitRepositorySource.StoreSetting)]
+        public async Task Publish_InARepositoryAssignedByHand_LeavesTheLivePageToItsDeployment(GitRepositorySource source)
+        {
+            var repository = Repository();
+            var publisher = Publisher(GitPublishState.Merged);
+            var live = new FakeBlobStorage();
+
+            await Controller(repository, publisher, live: live, source: source).GitPublish("s1", Page, "pages");
+            await Controller(Repository(withDraft: false), publisher, live: live, source: source).GitPublish("s1", Page, "pages");
+
+            Assert.Empty(live.Files);
+            Assert.Empty(live.Events);
+        }
+
+        [Fact]
+        public async Task Publish_WithNothingOfMine_StillWritesTheLivePageFromTheBaseBranch()
+        {
+            // Publishing again repairs a live write that failed after its merge.
+            var live = new FakeBlobStorage();
+
+            await Controller(Repository(withDraft: false), Publisher(GitPublishState.Merged), live: live).GitPublish("s1", Page, "pages");
+
+            Assert.True(JToken.DeepEquals(JToken.Parse(Published), JToken.Parse(live.Files[LivePage])));
+        }
+
+        [Fact]
+        public async Task Publish_BaseBranchPageNotJson_ThrowsGitContentExceptionAndLeavesTheLivePageAlone()
+        {
+            var repository = Repository(withDraft: false);
+            repository.Files[(RepoPath, "master")] = "{ \"settings\": ";
+            var live = new FakeBlobStorage();
+            live.Files[LivePage] = LastWeek;
+
+            await Assert.ThrowsAsync<GitContentException>(() =>
+                Controller(repository, Publisher(GitPublishState.Merged), live: live).GitPublish("s1", Page, "pages"));
+
+            Assert.Equal(LastWeek, live.Files[LivePage]);
+        }
+
+        [Fact]
+        public async Task Publish_OfADraftTheBaseBranchAlreadyHas_WritesTheLivePageFromTheBaseBranch()
+        {
+            // A pull request merged on GitHub writes nothing live.
+            var live = new FakeBlobStorage();
+
+            await Controller(MergedOnGitHub(), Publisher(GitPublishState.AlreadyPublished), live: live).GitPublish("s1", Page, "pages");
+
+            Assert.True(JToken.DeepEquals(JToken.Parse(Published), JToken.Parse(live.Files[LivePage])));
+        }
+
+        [Theory]
+        [InlineData(GitRepositorySource.Shared)]
+        [InlineData(GitRepositorySource.StoreSetting)]
+        public async Task Publish_OfADraftTheBaseBranchAlreadyHas_InARepositoryAssignedByHand_LeavesTheLivePageAlone(GitRepositorySource source)
+        {
+            var live = new FakeBlobStorage();
+
+            await Controller(MergedOnGitHub(), Publisher(GitPublishState.AlreadyPublished), live: live, source: source).GitPublish("s1", Page, "pages");
+
+            Assert.Empty(live.Files);
+        }
+
+        [Fact]
+        public async Task GitPublishStatus_ReleaseBranchAndLivePageBehind_WritesTheStatusJson()
+        {
+            var live = new FakeBlobStorage();
+            live.Files[LivePage] = LastWeek;
+
+            var result = await Controller(Repository(), Publisher(GitPublishState.Merged), live: live, releaseBranch: "production").GitPublishStatus("s1", Page, "pages");
+
+            Assert.Equal(
+                """{"published":true,"hasChanges":true,"pending":false,"awaitingMerge":false,"flow":"git","production":{"published":false,"behind":true,"pending":false,"awaitingMerge":false},"liveBehind":true}""",
+                PlatformJson.SerializeBody(result));
+        }
+
+        [Theory]
+        [InlineData(GitRepositorySource.Site, LastWeek, true)]
+        [InlineData(GitRepositorySource.Site, null, true)]
+        [InlineData(GitRepositorySource.Site, """{"settings":{"name":"About","type":"settings"},"content":[]}""", false)]
+        [InlineData(GitRepositorySource.Shared, LastWeek, false)]
+        public async Task PublishStatus_TellsALivePageBehindTheBaseBranch_WhereThePlatformWritesLive(GitRepositorySource source, string livePage, bool liveBehind)
+        {
+            var live = new FakeBlobStorage();
+            if (livePage != null)
+            {
+                live.Files[LivePage] = livePage;
+            }
+
+            var result = await Controller(MergedOnGitHub(), Publisher(GitPublishState.AlreadyPublished), live: live, source: source).GitPublishStatus("s1", Page, "pages");
+
+            var status = PlatformJson.ParseBody(result);
+            Assert.True(status.Value<bool>("published"));
+            Assert.False(status.Value<bool>("hasChanges"));
+            Assert.Equal(liveBehind, status.Value<bool>("liveBehind"));
+        }
+
+        [Fact]
+        public async Task Publish_OfAPageTheBranchDoesNotHave_NeverRemovesItsLiveCopy()
+        {
+            var repository = Repository(withDraft: false);
+            repository.Files.Remove((RepoPath, "master"));
+            var live = new FakeBlobStorage();
+            live.Files[LivePage] = Published;
+
+            await Controller(repository, Publisher(GitPublishState.Merged), live: live).GitPublish("s1", Page, "pages");
+
+            Assert.Equal(Published, live.Files[LivePage]);
+            Assert.Empty(live.Removed);
+            Assert.Empty(live.Events);
+        }
+
+        [Fact]
+        public async Task Save_WhenTheRepositoryHasNoBaseBranch_HasItMadeFirst()
+        {
+            var repository = new RecordingRepository();
+            var provisioner = new FakeGitContentProvisioner { OnEnsure = () => repository.BranchHeads["master"] = BaseHead };
+            var files = new JArray { new JObject { ["path"] = Page, ["type"] = "pages", ["content"] = JObject.Parse(Draft) } };
+
+            await Controller(repository, Publisher(GitPublishState.Merged), provisioner: provisioner)
+                .SaveTemplates("s1", null, new SiteBuilderController.SaveFilesModel { Files = files.ToString() }, draft: true);
+
+            Assert.Equal(["s1"], provisioner.Ensured);
+            Assert.Equal((MyBranch, "master"), Assert.Single(repository.CreatedBranches));
+            Assert.Single(repository.Commits);
+        }
+
 
         // ── helpers ────────────────────────────────────────────────────────────────────────────────
 
@@ -210,10 +394,347 @@ namespace VirtoCommerce.SiteBuilder.Tests
             return repository;
         }
 
-        private static RecordingPublisher Publisher(GitPublishState state) => new(state);
+        [Fact]
+        public async Task Publish_WhenTheMergeConflicts_AnswersExactlyThePayloadTheBuilderReads()
+        {
+            var result = await Controller(Repository(), Publisher(GitPublishState.Conflict)).GitPublish("vccom", Page, "pages");
 
-        private static SiteBuilderController Controller(RecordingRepository repository, RecordingPublisher publisher,
-            bool allowed = true)
+            var body = JObject.FromObject(Assert.IsType<ConflictObjectResult>(result).Value);
+            Assert.Equal(["error", "pullRequest", "url", "canRebase"], body.Properties().Select(x => x.Name));
+            Assert.Equal(
+                "\"/about-us.page\" changed in master while this draft was being written, and the two edits cannot be merged. Re-read the page and " +
+                "apply the change again, or publish this draft as it is on top of the current page — that replaces what changed there.",
+                body.Value<string>("error"));
+            Assert.Equal(7, body.Value<int>("pullRequest"));
+            Assert.Equal("https://github.com/o/r/pull/7", body.Value<string>("url"));
+        }
+
+        [Fact]
+        public async Task Publish_WhenMerged_AnswersTheStateAndThePullRequest()
+        {
+            var result = await Controller(Repository(), Publisher(GitPublishState.Merged)).GitPublish("vccom", Page, "pages");
+
+            var body = JObject.FromObject(Assert.IsType<OkObjectResult>(result).Value);
+            Assert.Equal(["state", "pullRequest", "url"], body.Properties().Select(x => x.Name));
+        }
+
+        [Fact]
+        public async Task Publish_DraftThatIsNotAPageDocument_IsRefusedWithTheProblemsAlone()
+        {
+            var repository = Repository();
+            repository.Files[(RepoPath, MyBranch)] = "[]";
+            var publisher = Publisher(GitPublishState.Merged);
+
+            var result = await Controller(repository, publisher).GitPublish("vccom", Page, "pages");
+
+            var body = JObject.FromObject(Assert.IsType<BadRequestObjectResult>(result).Value);
+            Assert.Equal(["errors"], body.Properties().Select(x => x.Name));
+            Assert.NotEmpty(body["errors"]!);
+            Assert.Empty(publisher.Merges);
+        }
+
+        [Fact]
+        public async Task Publish_WhenTheRepositoryCannotBeRead_IsA502ThroughTheGitFilter()
+        {
+            var controller = Controller(new RecordingRepository(), Publisher(GitPublishState.Merged));
+            var failure = await Assert.ThrowsAsync<GitContentException>(() => controller.GitPublish("s1", Page, "pages"));
+            var context = new ExceptionContext(new ActionContext(controller.HttpContext, new RouteData(), new ActionDescriptor()), []) { Exception = failure };
+
+            new GitContentFailureAttribute().OnException(context);
+
+            var response = Assert.IsType<ObjectResult>(context.Result);
+            Assert.Equal(StatusCodes.Status502BadGateway, response.StatusCode);
+            Assert.Equal(failure.Message, JObject.FromObject(response.Value!).Value<string>("error"));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task PublishOperation_DryRun_DescribesTheMerge_AndWritesNothing(bool rebase)
+        {
+            var repository = Repository();
+            var publisher = Publisher(GitPublishState.Merged);
+            var live = new FakeBlobStorage();
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, Rebase = rebase, DryRun = true };
+
+            var result = await Operations(repository, publisher, live).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.True(result.AffectsPublished);
+            Assert.Null(result.Value);
+            var change = Assert.Single(result.Preview.Objects);
+            Assert.Equal((ModuleConstants.ChangePreview.FilePage, Page), (change.ObjectType, change.ObjectId));
+            var content = Assert.Single(change.Fields);
+            Assert.Equal((Published, Draft), (content.From, content.To));
+            Assert.Contains(result.Preview.Warnings, x => x.Contains(MyBranch) && x.Contains("master"));
+            Assert.Equal(rebase, result.Preview.Warnings.Any(x => x.Contains("replacing what changed")));
+            Assert.Contains(result.Preview.Warnings, x => x.Contains("known only when it runs"));
+            Assert.Empty(publisher.Merges);
+            Assert.Empty(repository.MovedBranches);
+            Assert.Empty(repository.CreatedBranches);
+            Assert.Empty(repository.DeletedBranches);
+            Assert.Empty(repository.Commits);
+            Assert.Empty(live.Files);
+            Assert.Empty(live.Events);
+        }
+
+        [Fact]
+        public async Task PublishOperation_DryRun_WithNoDraft_WritesNoLivePage()
+        {
+            var live = new FakeBlobStorage();
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+
+            var result = await Operations(Repository(withDraft: false), Publisher(GitPublishState.Merged), live).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.AffectsPublished);
+            Assert.Empty(result.Preview.Objects);
+            Assert.Contains(result.Preview.Warnings, x => x.Contains("written again"));
+            Assert.Empty(live.Files);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task PublishOperation_Merged_AffectsPublishedWhenAskedForTheImpact(bool reportImpact)
+        {
+            var publisher = Publisher(GitPublishState.Merged);
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ReportImpact = reportImpact };
+
+            var result = await Operations(Repository(), publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal((true, reportImpact), (result.Succeeded, result.AffectsPublished));
+            Assert.Single(publisher.Merges);
+        }
+
+        [Fact]
+        public async Task PublishOperation_StoreTheUserDoesNotWorkIn_IsForbiddenBeforeTheInvalidPath()
+        {
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = "../escape.page" };
+
+            var forbidden = await Operations(Repository(), Publisher(GitPublishState.Merged), authorization: new FakeAuthorizationService("s2", "builder:read"))
+                .PublishAsync(request, User, CancellationToken.None);
+            var invalid = await Operations(Repository(), Publisher(GitPublishState.Merged)).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderOperationStatus.Forbidden, forbidden.Status);
+            Assert.Equal(SiteBuilderOperationStatus.Invalid, invalid.Status);
+        }
+
+        [Fact]
+        public async Task DiscardGitDraftOperation_DryRun_KeepsTheBranch()
+        {
+            var repository = Repository();
+            var request = new FilePageDraftOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+
+            var result = await Operations(repository, Publisher(GitPublishState.Merged)).DiscardGitDraftAsync(request, User, CancellationToken.None);
+
+            Assert.False(result.AffectsPublished);
+            var content = Assert.Single(Assert.Single(result.Preview.Objects).Fields);
+            Assert.Equal((Draft, Published), (content.From, content.To));
+            Assert.Empty(repository.DeletedBranches);
+            Assert.Equal(Draft, repository.Files[(RepoPath, MyBranch)]);
+        }
+
+        [Fact]
+        public async Task PublishOperation_DryRun_TellsTheDraftBranchAndItsHead()
+        {
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+
+            var result = await Operations(Repository(), Publisher(GitPublishState.Merged)).PublishAsync(request, User, CancellationToken.None);
+
+            var change = Assert.Single(result.Preview.Objects);
+            Assert.Equal((MyBranch, DraftHead), (change.DraftBranch, change.DraftHead));
+        }
+
+        [Fact]
+        public async Task PublishOperation_DraftOwner_ShipsTheOwnersBranchAndNotTheCallers()
+        {
+            var repository = Repository();
+            repository.Files[(RepoPath, MarysBranch)] = LastWeek;
+            repository.BranchHeads[MarysBranch] = MarysHead;
+            var publisher = Publisher(GitPublishState.Merged);
+            var dryRun = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DraftOwner = "Mary", DryRun = true };
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DraftOwner = "Mary", ExpectedDraftHead = MarysHead };
+
+            var preview = (await Operations(repository, publisher).PublishAsync(dryRun, User, CancellationToken.None)).Preview;
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
+
+            var change = Assert.Single(preview.Objects);
+            Assert.Equal((MarysBranch, MarysHead), (change.DraftBranch, change.DraftHead));
+            Assert.Equal(LastWeek, change.Fields.Single(x => x.Name == ModuleConstants.ChangePreview.Content).To);
+            Assert.True(result.Succeeded);
+            Assert.Equal((MarysPublishBranch, MarysHead), Assert.Single(repository.MovedBranches));
+            Assert.Equal((MarysPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal([MarysPublishBranch, MarysBranch], repository.DeletedBranches);
+            Assert.Equal(Draft, repository.Files[(RepoPath, MyBranch)]);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task PublishOperation_DraftBranchMovedSinceTheReview_IsAConflictAndShipsNothing(bool rebase)
+        {
+            var repository = Repository();
+            var publisher = Publisher(GitPublishState.Merged);
+            var request = new FilePagePublishOperationRequest
+            {
+                StoreId = "s1",
+                ContentType = "pages",
+                Path = Page,
+                Rebase = rebase,
+                ExpectedDraftHead = MovedHead,
+            };
+
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftBranchMovedMessage), (result.Status, result.Error));
+            Assert.Empty(publisher.Merges);
+            Assert.Empty(repository.MovedBranches);
+            Assert.Empty(repository.Commits);
+            Assert.Empty(repository.DeletedBranches);
+        }
+
+        [Fact]
+        public async Task PublishOperation_AtTheReviewedHead_ShipsThatCommitFromThePublishBranch_AndCleansBothUp()
+        {
+            var repository = Repository();
+            var publisher = Publisher(GitPublishState.Merged);
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = DraftHead };
+
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal((MyPublishBranch, DraftHead), Assert.Single(repository.MovedBranches));
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal([MyPublishBranch, MyBranch], repository.DeletedBranches);
+        }
+
+        /// <summary>
+        /// GitHub merges a branch wherever it is when the checks pass: an edit committed to the draft branch after the approval must not
+        /// ride along. The pull request is from the publish branch, which stays at the commit approved, and the draft branch keeps the edit.
+        /// </summary>
+        [Theory]
+        [InlineData(GitPublishState.Pending)]
+        [InlineData(GitPublishState.Merged)]
+        public async Task PublishOperation_AtTheReviewedHead_ACommitMadeWhileTheMergeWaits_IsNotShippedAndIsKept(GitPublishState state)
+        {
+            var repository = Repository();
+            var publisher = Publisher(state);
+            publisher.OnMerge = () =>
+            {
+                repository.BranchHeads[MyBranch] = MovedHead;
+                repository.Files[(RepoPath, MyBranch)] = LastWeek;
+            };
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = DraftHead };
+
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Equal((MyPublishBranch, DraftHead), Assert.Single(repository.MovedBranches));
+            Assert.Equal(state == GitPublishState.Merged, repository.DeletedBranches.Contains(MyPublishBranch));
+            Assert.DoesNotContain(MyBranch, repository.DeletedBranches);
+            Assert.Equal((MovedHead, LastWeek), (repository.BranchHeads[MyBranch], repository.Files[(RepoPath, MyBranch)]));
+        }
+
+        [Fact]
+        public async Task PublishOperation_AtTheReviewedHead_WithRebase_ShipsTheCommitTheRebaseMade()
+        {
+            var repository = Repository();
+            var publisher = Publisher(GitPublishState.Pending);
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, Rebase = true, ExpectedDraftHead = DraftHead };
+
+            var result = await Operations(repository, publisher).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal([(MyBranch, BaseHead), (MyPublishBranch, RecordingRepository.NewCommitSha)], repository.MovedBranches);
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.Empty(repository.DeletedBranches);
+        }
+
+        [Fact]
+        public async Task PublishOperation_DraftGoneSinceTheReview_IsAConflictAndWritesNoLivePage()
+        {
+            var live = new FakeBlobStorage();
+            var request = new FilePagePublishOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = DraftHead };
+
+            var result = await Operations(Repository(withDraft: false), Publisher(GitPublishState.Merged), live).PublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+            Assert.False(live.Files.ContainsKey(LivePage));
+        }
+
+        [Fact]
+        public async Task DiscardGitDraftOperation_DryRun_TellsTheBranchAndItsHead()
+        {
+            var request = new FilePageDraftOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, DryRun = true };
+
+            var result = await Operations(Repository(), Publisher(GitPublishState.Merged)).DiscardGitDraftAsync(request, User, CancellationToken.None);
+
+            var change = Assert.Single(result.Preview.Objects);
+            Assert.Equal((MyBranch, DraftHead), (change.DraftBranch, change.DraftHead));
+        }
+
+        [Fact]
+        public async Task DiscardGitDraftOperation_BranchMovedSinceTheReview_IsAConflictAndKeepsTheBranch()
+        {
+            var repository = Repository();
+            var request = new FilePageDraftOperationRequest
+            {
+                StoreId = "s1",
+                ContentType = "pages",
+                Path = Page,
+                ExpectedDraftHead = MovedHead,
+            };
+
+            var result = await Operations(repository, Publisher(GitPublishState.Merged)).DiscardGitDraftAsync(request, User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+            Assert.Empty(repository.DeletedBranches);
+            Assert.Equal(Draft, repository.Files[(RepoPath, MyBranch)]);
+        }
+
+        [Fact]
+        public async Task DiscardGitDraftOperation_AtTheReviewedHead_DeletesTheBranch()
+        {
+            var repository = Repository();
+            var request = new FilePageDraftOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectedDraftHead = DraftHead };
+
+            var result = await Operations(repository, Publisher(GitPublishState.Merged)).DiscardGitDraftAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal([MyBranch], repository.DeletedBranches);
+        }
+
+        private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test"));
+
+        private static FilePageOperationService Operations(RecordingRepository repository, FakeGitContentPublisher publisher, FakeBlobStorage live = null,
+            IAuthorizationService authorization = null)
+        {
+            var options = Options.Create(new GitContentOptions { Enabled = true, Repository = "o/r", Token = "t0ken", BaseBranch = "master" });
+            live ??= new FakeBlobStorage();
+            var connection = GitHubConnections.CreateService(options.Value);
+            var history = new FakeGitContentHistory();
+            var policy = new FakeGitContentPolicy(repositoryFormat: "acme/site-{0}");
+            var filePageDrafts = TestServices.FilePageDrafts(live, options, connection, policy, repository, history, new FakeGitContentProvisioner());
+
+            return TestServices.FilePageOperations(authorization ?? new FakeAuthorizationService(true), RequestValidators.Content("s1", "vccom"), options,
+                connection, policy, repository, history, publisher, new GitLivePageService(repository, history, connection, live, live, live, live),
+                filePageDrafts, live);
+        }
+
+        private static RecordingRepository MergedOnGitHub()
+        {
+            var repository = Repository(withDraft: false);
+            repository.Files[(RepoPath, MyBranch)] = Published;
+            repository.BranchHeads[MyBranch] = BaseHead;
+            return repository;
+        }
+
+        private static FakeGitContentPublisher Publisher(GitPublishState state) => new(state) { PullRequestUrl = "https://github.com/o/r/pull/7" };
+
+        private static SiteBuilderController Controller(RecordingRepository repository, FakeGitContentPublisher publisher,
+            FakeBlobStorage live = null, FakeGitContentProvisioner provisioner = null, GitRepositorySource source = GitRepositorySource.Site,
+            string releaseBranch = null)
         {
             var options = Options.Create(new GitContentOptions
             {
@@ -221,23 +742,44 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 Repository = "o/r",
                 Token = "t0ken",
                 BaseBranch = "master",
+                ReleaseBranch = releaseBranch,
             });
 
-            // Only the git dependencies take part in this path; the rest are left null on purpose, so a
-            // change that starts reaching for blob storage fails loudly here.
-            var controller = new SiteBuilderController(
-                storeService: null,
-                pathResolver: null,
-                blobContentStorageProviderFactory: null,
-                publishingService: null,
-                eventPublisher: null,
+            // The platform writes the live page itself once a merge is done.
+            live ??= new FakeBlobStorage();
+            var connection = GitHubConnections.CreateService(options.Value);
+            var history = new FakeGitContentHistory();
+            // The store's own repository, not the shared one configured above, so a call to the wrong one shows.
+            var policy = new FakeGitContentPolicy(source: source, repositoryFormat: "acme/site-{0}");
+            var filePageDrafts = TestServices.FilePageDrafts(live, options, connection, policy, repository, history, provisioner ?? new FakeGitContentProvisioner());
+            var controller = TestServices.CreateSiteBuilderController(
+                storeService: live.StoreService,
+                pathResolver: live,
+                blobContentStorageProviderFactory: live,
+                publishingService: live,
+                eventPublisher: live,
                 gitContentOptions: options,
-                gitContentPolicy: new FakePolicy(),
+                gitHubConnectionService: connection,
+                gitContentPolicy: policy,
                 gitContentRepository: repository,
-                gitContentHistory: new SilentHistory(),
+                gitContentHistory: history,
                 gitContentPublisher: publisher,
+                gitLivePageService: new GitLivePageService(repository, history, connection, live, live, live, live),
                 settingsManager: null,
-                authorizationService: new FakeAuthorizationService(allowed));
+                authorizationService: new FakeAuthorizationService(true),
+                distributedLock: new InProcessDistributedLock(),
+                requestValidator: RequestValidators.Content("s1", "vccom"),
+                contentHistory: new NoContentHistory(),
+                themeDraftService: null,
+                designerOperationService: TestServices.DesignerOperations(
+                    authorizationService: new FakeAuthorizationService(true),
+                    contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
+                    requestValidator: RequestValidators.Content("s1", "vccom"),
+                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, live, null, null)),
+                contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
+                filePageDraftService: filePageDrafts,
+            contentGuard: TestServices.ContentGuard,
+            themeStorageFactory: new ThemeStorageFactory(live.StoreService, live, live, live));
 
             var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test");
             controller.ControllerContext = new ControllerContext
@@ -248,41 +790,10 @@ namespace VirtoCommerce.SiteBuilder.Tests
             return controller;
         }
 
-        private sealed class FakePolicy : IGitContentPolicy
-        {
-            public Task<bool> IsEnabledForStoreAsync(string storeId, CancellationToken cancellationToken = default) =>
-                Task.FromResult(true);
-        }
-
-
-        private sealed class SilentHistory : IGitContentHistory
-        {
-            public Task<GitPageHistory> GetHistoryAsync(string repoPath, GitHistoryQuery query, CancellationToken cancellationToken = default) =>
-                Task.FromResult(new GitPageHistory());
-
-            public void Invalidate(string repoPath) { }
-        }
-
-        private sealed class RecordingPublisher(GitPublishState state) : IGitContentPublisher
-        {
-            public List<(string Branch, string Into)> Merges { get; } = [];
-
-            public Task<GitPublishResult> MergeBranchAsync(string branch, string title, CancellationToken cancellationToken = default) =>
-                MergeBranchIntoAsync(branch, title, "master", cancellationToken);
-
-            public Task<GitPublishResult> MergeBranchIntoAsync(string branch, string title, string baseBranch, CancellationToken cancellationToken = default)
-            {
-                Merges.Add((branch, baseBranch));
-                return Task.FromResult(new GitPublishResult { State = state, PullRequestNumber = 7, Url = "https://github.com/o/r/pull/7" });
-            }
-
-            public Task<GitPendingPublish> GetOpenPullRequestAsync(string branch, CancellationToken cancellationToken = default) =>
-                Task.FromResult<GitPendingPublish>(null);
-        }
-
         /// <summary>
         /// Behaves like the real repository where it matters here: a branch cut from a ref starts with that
-        /// ref's copy of the page, and deleting a branch takes its copy away.
+        /// ref's copy of the page, a branch cannot be cut from a ref that does not exist, and deleting a
+        /// branch takes its copy away.
         /// </summary>
         private sealed class RecordingRepository : IGitContentRepository
         {
@@ -310,17 +821,27 @@ namespace VirtoCommerce.SiteBuilder.Tests
             /// </summary>
             public CancellationTokenSource CancelOnCommit { get; set; }
 
-            public Task<string> ReadFileAsync(string path, string gitRef, CancellationToken cancellationToken = default) =>
-                Task.FromResult(Files.GetValueOrDefault((path, gitRef)));
+            public HashSet<string> Repositories { get; } = [];
 
-            public Task<string> GetBranchHeadShaAsync(string branch, CancellationToken cancellationToken = default) =>
-                Task.FromResult(BranchHeads.GetValueOrDefault(branch));
-
-            public Task CreateBranchAsync(string branch, string fromRef, CancellationToken cancellationToken = default)
+            public Task<string> ReadFileAsync(string repository, string path, string gitRef, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
+                return Task.FromResult(Files.GetValueOrDefault((path, gitRef)));
+            }
+
+            public Task<string> GetBranchHeadShaAsync(string repository, string branch, CancellationToken cancellationToken = default)
+            {
+                Repositories.Add(repository);
+                return Task.FromResult(BranchHeads.GetValueOrDefault(branch));
+            }
+
+            public Task CreateBranchAsync(string repository, string branch, string fromRef, CancellationToken cancellationToken = default)
+            {
+                var head = BranchHeads.GetValueOrDefault(fromRef) ?? throw new GitContentException($"Could not resolve \"{fromRef}\" to a commit.");
+                Repositories.Add(repository);
                 Order.Add("create");
                 CreatedBranches.Add((branch, fromRef));
-                BranchHeads[branch] = BranchHeads.GetValueOrDefault(fromRef, NewCommitSha);
+                BranchHeads[branch] = head;
                 Files[(RepoPath, branch)] = Files.GetValueOrDefault((RepoPath, fromRef));
                 return Task.CompletedTask;
             }
@@ -330,7 +851,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             /// pointer to a commit, and the file on the branch is whatever that commit holds. Here that is
             /// the base branch's copy on the way out, and the draft again on the way back.
             /// </summary>
-            public Task SetBranchAsync(string branch, string sha, string pagePath, CancellationToken cancellationToken = default)
+            public Task SetBranchAsync(string repository, string branch, string sha, string pagePath, CancellationToken cancellationToken = default)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -339,6 +860,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     throw new HttpRequestException($"could not move \"{branch}\"");
                 }
 
+                Repositories.Add(repository);
                 Order.Add("move");
                 MovedBranches.Add((branch, sha));
                 BranchHeads[branch] = sha;
@@ -348,8 +870,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 return Task.CompletedTask;
             }
 
-            public Task DeleteBranchAsync(string branch, string pagePath, CancellationToken cancellationToken = default)
+            public Task DeleteBranchAsync(string repository, string branch, string pagePath, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
                 Order.Add("delete");
                 DeletedBranches.Add(branch);
                 BranchHeads.Remove(branch);
@@ -357,9 +880,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 return Task.CompletedTask;
             }
 
-            public void InvalidateRead(string path, string gitRef) { }
+            public void InvalidateRead(string repository, string path, string gitRef) => Repositories.Add(repository);
 
-            public Task<string> CommitFileAsync(string path, string content, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
+            public Task<string> CommitFileAsync(string repository, string path, string content, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
             {
                 if (CancelOnCommit != null)
                 {
@@ -378,14 +901,16 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     throw new InvalidOperationException($"Cannot commit to \"{branch}\": the branch does not exist.");
                 }
 
+                Repositories.Add(repository);
                 Order.Add("commit");
                 Commits.Add((path, branch, content, message));
                 Files[(path, branch)] = content;
                 return Task.FromResult(NewCommitSha);
             }
 
-            public Task<string> DeleteFileAsync(string path, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
+            public Task<string> DeleteFileAsync(string repository, string path, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
                 Files.Remove((path, branch));
                 return Task.FromResult(NewCommitSha);
             }

@@ -1,0 +1,408 @@
+<template>
+  <aside
+    class="vh"
+    :aria-label="$t('SITE_BUILDER.DESIGNER.HISTORY.TITLE')"
+  >
+    <PanelHeader
+      icon="lucide-history"
+      :title="$t('SITE_BUILDER.DESIGNER.HISTORY.TITLE')"
+      :close-label="$t('SITE_BUILDER.DESIGNER.HISTORY.CLOSE')"
+      @close="emit('close')"
+    >
+      <VcIcon
+        v-if="loading"
+        icon="lucide-refresh-cw"
+        size="xs"
+        class="vh__muted vh__spin"
+      />
+    </PanelHeader>
+
+    <div class="vh__list">
+      <p
+        v-if="failed"
+        class="vh__empty"
+      >
+        {{ $t("SITE_BUILDER.DESIGNER.HISTORY.FAILED") }}
+      </p>
+      <p
+        v-else-if="!loading && !versions.length"
+        class="vh__empty"
+      >
+        {{ $t("SITE_BUILDER.DESIGNER.HISTORY.EMPTY") }}
+      </p>
+      <div
+        v-for="(version, index) in versions"
+        :key="version.id"
+        class="vh__row"
+        :class="{ 'vh__row--live': version.id === liveId, 'vh__row--previewing': version.id === previewing }"
+      >
+        <div class="vh__line">
+          <p
+            class="vh__message"
+            :title="[version.description, describe?.(version)].filter(Boolean).join(' · ')"
+          >
+            {{ version.description || version.label }}
+            <span
+              v-if="describe?.(version)"
+              class="vh__files"
+              >· {{ describe(version) }}</span
+            >
+          </p>
+          <span
+            v-if="version.id === previewing"
+            class="vh__badge vh__badge--latest"
+            >{{ $t("SITE_BUILDER.DESIGNER.HISTORY.PREVIEWING") }}</span
+          >
+          <span
+            v-else-if="index === 0 && !previewing"
+            class="vh__badge vh__badge--latest"
+            >{{ $t("SITE_BUILDER.DESIGNER.HISTORY.LATEST") }}</span
+          >
+          <span
+            v-if="version.id === liveId"
+            class="vh__badge vh__badge--live"
+            >{{ $t("SITE_BUILDER.DESIGNER.HISTORY.PUBLISHED") }}</span
+          >
+          <span
+            v-if="version.mine"
+            class="vh__badge"
+            >{{ $t("SITE_BUILDER.DESIGNER.HISTORY.YOUR_DRAFT") }}</span
+          >
+        </div>
+        <div class="vh__line">
+          <p
+            class="vh__meta"
+            :title="[version.id, when(version.date), who(version)].filter(Boolean).join(' · ')"
+          >
+            <span class="vh__sha">{{ version.label }}</span>
+            · {{ when(version.date) }}<template v-if="who(version)"> · {{ who(version) }}</template>
+          </p>
+          <button
+            v-if="!previewable || previewable(version)"
+            type="button"
+            class="vh__action"
+            :class="{ 'vh__action--on': version.id === previewing }"
+            @click="emit('preview', version.id === previewing ? null : version)"
+          >
+            <VcIcon
+              icon="lucide-eye"
+              size="xs"
+            />
+            {{ $t(version.id === previewing ? "SITE_BUILDER.DESIGNER.HISTORY.EXIT" : "SITE_BUILDER.DESIGNER.HISTORY.PREVIEW") }}
+          </button>
+          <button
+            v-if="index > 0"
+            type="button"
+            class="vh__action vh__action--restore"
+            :disabled="dirty || busy || !!restoreRefused?.(version)"
+            :title="dirty ? $t('SITE_BUILDER.DESIGNER.HISTORY.SAVE_FIRST') : restoreRefused?.(version)"
+            @click="emit('restore', version)"
+          >
+            <VcIcon
+              icon="lucide-rotate-ccw"
+              size="xs"
+            />
+            {{ $t("SITE_BUILDER.DESIGNER.HISTORY.RESTORE") }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <footer
+      v-if="hasMore || canDiscard"
+      class="vh__footer"
+    >
+      <button
+        v-if="hasMore"
+        type="button"
+        class="vh__wide"
+        :disabled="loading"
+        @click="load(cursor)"
+      >
+        {{ $t("SITE_BUILDER.DESIGNER.HISTORY.MORE") }}
+      </button>
+      <button
+        v-if="canDiscard"
+        type="button"
+        class="vh__wide vh__wide--danger"
+        :disabled="busy"
+        @click="emit('discard')"
+      >
+        <VcIcon
+          icon="lucide-trash-2"
+          size="xs"
+        />
+        {{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD") }}
+      </button>
+    </footer>
+  </aside>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+import { VcIcon } from "@vc-shell/framework/ui";
+import type { HistoryVersion } from "../history";
+import PanelHeader from "./PanelHeader.vue";
+
+export interface VersionPage {
+  versions: HistoryVersion[];
+  hasMore?: boolean;
+  endCursor?: string;
+}
+
+const props = defineProps<{
+  source: (after?: string) => Promise<VersionPage>;
+  previewing?: string;
+  dirty: boolean;
+  busy: boolean;
+  canDiscard: boolean;
+  describe?: (version: HistoryVersion) => string | undefined;
+  previewable?: (version: HistoryVersion) => boolean;
+  restoreRefused?: (version: HistoryVersion) => string | undefined;
+}>();
+const emit = defineEmits<{ close: []; preview: [version: HistoryVersion | null]; restore: [version: HistoryVersion]; discard: [] }>();
+
+const { locale } = useI18n({ useScope: "global" });
+const versions = ref<HistoryVersion[]>([]);
+const hasMore = ref(false);
+const cursor = ref<string>();
+const loading = ref(false);
+const failed = ref(false);
+
+// A file page marks every version its production branch holds as published, and the newest one is live.
+const liveId = computed(() => versions.value.find((x) => x.published)?.id);
+
+const who = (v: HistoryVersion) => v.author?.name || v.author?.login || "";
+const when = (date?: string) =>
+  date ? new Date(date).toLocaleString(locale.value, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+
+// A reload after a save shifts the pages, so a page asked for before it no longer continues the list.
+let loadRun = 0;
+async function load(after?: string) {
+  const run = ++loadRun;
+  loading.value = true;
+  failed.value = false;
+  try {
+    const page = await props.source(after);
+    if (run !== loadRun) return;
+    const known = new Set(after ? versions.value.map((x) => x.id) : []);
+    versions.value = [...(after ? versions.value : []), ...page.versions.filter((x) => !known.has(x.id))];
+    hasMore.value = !!page.hasMore && !!page.endCursor;
+    cursor.value = page.endCursor;
+  } catch {
+    if (run === loadRun) failed.value = true;
+  } finally {
+    if (run === loadRun) loading.value = false;
+  }
+}
+
+onMounted(() => load());
+defineExpose({ reload: () => load() });
+</script>
+
+<style lang="scss" scoped>
+.vh {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-size: 13px;
+
+  &__muted {
+    color: var(--neutrals-500);
+  }
+
+  &__spin {
+    animation: vh-spin 1s linear infinite;
+  }
+
+  &__list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 24px 12px;
+    text-align: center;
+    color: var(--neutrals-500);
+  }
+
+  &__row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px 10px 16px;
+    border-bottom: 1px solid var(--neutrals-100);
+
+    &:hover {
+      background: var(--neutrals-100);
+    }
+
+    &--live {
+      background: color-mix(in srgb, var(--success-500) 6%, transparent);
+    }
+
+    &--previewing {
+      background: color-mix(in srgb, var(--primary-500) 8%, transparent);
+      box-shadow: inset 0 0 0 2px var(--primary-400, var(--primary-500));
+    }
+  }
+
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__message {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 500;
+    color: var(--neutrals-900);
+  }
+
+  &__files {
+    font-weight: 400;
+    color: var(--neutrals-500);
+  }
+
+  &__meta {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 11px;
+    color: var(--neutrals-500);
+  }
+
+  &__sha {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  &__badge {
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid;
+    border-radius: 4px;
+    border-color: var(--neutrals-200);
+    color: var(--neutrals-600);
+    font-size: 10px;
+    font-weight: 500;
+
+    &--live {
+      border-color: color-mix(in srgb, var(--success-500) 35%, transparent);
+      background: color-mix(in srgb, var(--success-500) 10%, transparent);
+      color: var(--success-700, var(--success-500));
+    }
+
+    &--latest {
+      border-color: color-mix(in srgb, var(--primary-500) 35%, transparent);
+      background: color-mix(in srgb, var(--primary-500) 10%, transparent);
+      color: var(--primary-700, var(--primary-500));
+    }
+  }
+
+  &__action {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid var(--neutrals-200);
+    border-radius: 4px;
+    background: var(--neutrals-50, #fff);
+    color: var(--neutrals-700);
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--neutrals-100);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    &--on {
+      border-color: color-mix(in srgb, var(--primary-500) 45%, transparent);
+      color: var(--primary-700, var(--primary-500));
+    }
+
+    &--restore {
+      border-color: color-mix(in srgb, var(--primary-500) 35%, transparent);
+      color: var(--primary-700, var(--primary-500));
+    }
+  }
+
+  // Preview and Restore take no room until the row is hovered or holds focus, so the date shows in full. Clipped, not
+  // undisplayed, they stay in the tab order; where nothing can hover they always show.
+  @media (hover: hover) {
+    &__row:not(:hover, :focus-within) &__action:not(.vh__action--on) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      border: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+
+  &__footer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--neutrals-200);
+    background: var(--neutrals-100);
+  }
+
+  &__wide {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--neutrals-200);
+    border-radius: 8px;
+    background: var(--neutrals-50, #fff);
+    color: var(--neutrals-700);
+    font-size: 12px;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    &--danger {
+      border-color: color-mix(in srgb, var(--danger-500) 35%, transparent);
+      background: color-mix(in srgb, var(--danger-500) 6%, transparent);
+      color: var(--danger-600, var(--danger-500));
+
+      &:hover {
+        background: color-mix(in srgb, var(--danger-500) 12%, transparent);
+      }
+    }
+  }
+}
+
+@keyframes vh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>

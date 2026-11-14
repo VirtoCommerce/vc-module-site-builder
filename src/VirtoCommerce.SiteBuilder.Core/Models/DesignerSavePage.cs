@@ -1,0 +1,16 @@
+namespace VirtoCommerce.SiteBuilder.Core.Models;
+
+/// <summary>A database page (<see cref="GroupId"/> and <see cref="ETag"/>) or a file page (<see cref="Path"/> and <see cref="Type"/>).</summary>
+public class DesignerSavePage
+{
+    public string GroupId { get; set; }
+
+    public string ETag { get; set; }
+
+    public string Path { get; set; }
+
+    /// <summary>"pages" or "blogs".</summary>
+    public string Type { get; set; }
+
+    public string Content { get; set; }
+}

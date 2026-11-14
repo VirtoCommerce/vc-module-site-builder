@@ -1,15 +1,21 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.Platform.Core.Settings;
@@ -29,6 +35,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         private const string Login = "john";
         private const string Page = "/about-us.page";
         private const string RepoPath = "pages/about-us.page";
+        private const string StoreRepository = "acme/site-vccom";
         private const string Sha = "70a3c34b5c6d7e8f90a1b2c3d4e5f60718293a4b";
         private const string OtherBranch = "content/hero-copy";
         private const string ValidPage = """{ "settings": { "type": "settings", "name": "About" }, "content": [] }""";
@@ -131,7 +138,17 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
             await Controller(repository, history).GitRestoreVersion("vccom", Page, "pages", Sha);
 
-            Assert.Equal([RepoPath], history.Invalidated);
+            Assert.Equal([(StoreRepository, RepoPath)], history.Invalidated);
+        }
+
+        [Fact]
+        public async Task Restore_WorksInTheStoresRepository_NotTheSharedOne()
+        {
+            var repository = Repository(ValidPage);
+
+            await Controller(repository, new RecordingHistory()).GitRestoreVersion("vccom", Page, "pages", Sha);
+
+            Assert.Equal([StoreRepository], repository.Repositories);
         }
 
         [Fact]
@@ -143,6 +160,27 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
             Assert.IsType<NotFoundObjectResult>(result);
             AssertNothingWritten(repository);
+        }
+
+        [Fact]
+        public async Task Restore_AVersionWithAScriptUrl_IsRejectedBeforeAnythingIsWritten()
+        {
+            var repository = Repository("""{ "settings": { "type": "settings" }, "content": [ { "id": "a", "type": "hero", "link": "javascript:alert(1)" } ] }""");
+
+            var result = await Controller(repository, new RecordingHistory()).GitRestoreVersion("vccom", Page, "pages", Sha);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            AssertNothingWritten(repository);
+        }
+
+        [Fact]
+        public async Task Restore_AVersionWithHtmlThatRuns_CommitsItSanitized()
+        {
+            var repository = Repository("""{ "settings": { "type": "settings" }, "content": [ { "id": "a", "type": "text", "text": { "markdown": "x", "html": "<p>x</p><img src=x onerror=alert(1)>" } } ] }""");
+
+            await Controller(repository, new RecordingHistory()).GitRestoreVersion("vccom", Page, "pages", Sha);
+
+            Assert.Equal("<p>x</p><img src=\"x\">", JToken.Parse(Assert.Single(repository.Commits).Content)["content"]![0]!["text"]!.Value<string>("html"));
         }
 
         [Fact]
@@ -162,7 +200,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         [InlineData(OtherBranch)]
         [InlineData("master")]
         [InlineData("70a3c34")]
-        [InlineData(null)]
+        [InlineData("")]
         public async Task Restore_ARefThatIsNotACommitSha_IsRefused(string gitRef)
         {
             // a branch name means "whatever is there when this runs", which is not a version
@@ -173,6 +211,29 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.IsType<BadRequestObjectResult>(result);
             Assert.Empty(repository.Reads);
             AssertNothingWritten(repository);
+        }
+
+        [Fact]
+        public async Task Restore_WithoutASha_IsRefused()
+        {
+            // MVC records a missing required value; the request check answers it before anything is read
+            var repository = Repository(ValidPage);
+            var controller = Controller(repository, new RecordingHistory());
+            controller.ModelState.AddModelError("sha", "A value for the 'sha' parameter or property was not provided.");
+
+            var result = await controller.GitRestoreVersion("vccom", Page, "pages", null);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Empty(repository.Reads);
+        }
+
+        [Fact]
+        public void Restore_RequiresASha()
+        {
+            var sha = typeof(SiteBuilderController).GetMethod(nameof(SiteBuilderController.GitRestoreVersion))!
+                .GetParameters().Single(parameter => parameter.Name == "sha");
+
+            Assert.NotNull(sha.GetCustomAttribute<BindRequiredAttribute>());
         }
 
         [Fact]
@@ -187,13 +248,13 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         [Fact]
-        public async Task Restore_AContentTypeGitDoesNotCover_IsNotFound()
+        public async Task Restore_AContentTypeGitDoesNotCover_IsBadRequest()
         {
             var repository = Repository(ValidPage);
 
             var result = await Controller(repository, new RecordingHistory()).GitRestoreVersion("vccom", "default/config.json", "themes", Sha);
 
-            Assert.IsType<NotFoundResult>(result);
+            Assert.IsType<BadRequestObjectResult>(result);
             AssertNothingWritten(repository);
         }
 
@@ -270,7 +331,150 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Contains("has no storefront url", error);
         }
 
+        [Theory]
+        [InlineData(null, "/designer-preview")]
+        [InlineData("", "/designer-preview")]
+        [InlineData("/preview", "/preview")]
+        public async Task DesignerStorefront_Store_AnswersItsUrlAndPreviewPath(string previewPathSetting, string expectedPath)
+        {
+            var store = new Store { Id = "vccom", Url = "http://vccom.example", SecureUrl = "https://vccom.example" };
+            var controller = Controller(new RecordingRepository(), new RecordingHistory(), configuredStoreUrl: null, store: store, previewPath: previewPathSetting);
+
+            var result = await controller.GetDesignerStorefront("vccom");
+
+            var storefront = Assert.IsType<DesignerStorefront>(Assert.IsType<OkObjectResult>(result.Result).Value);
+            Assert.Equal("https://vccom.example", storefront.Url);
+            Assert.Equal(expectedPath, storefront.PreviewPath);
+        }
+
+        [Fact]
+        public async Task DesignerStorefront_ModuleSetting_WinsOverTheStoresUrl()
+        {
+            var store = new Store { Id = "vccom", Url = "https://vccom.example" };
+            var controller = Controller(new RecordingRepository(), new RecordingHistory(), configuredStoreUrl: "https://tunnel.test", store: store);
+
+            var result = await controller.GetDesignerStorefront("vccom");
+
+            Assert.Equal("https://tunnel.test", Assert.IsType<DesignerStorefront>(Assert.IsType<OkObjectResult>(result.Result).Value).Url);
+        }
+
         // ── helpers ────────────────────────────────────────────────────────────────────────────────
+
+        [Fact]
+        public async Task Restore_UnknownCommit_NamesThePageAndTheCommit()
+        {
+            var result = await Controller(new RecordingRepository(), new RecordingHistory()).GitRestoreVersion("vccom", Page, "pages", Sha);
+
+            var body = JObject.FromObject(Assert.IsType<NotFoundObjectResult>(result).Value!);
+            Assert.Equal((Page, Sha), (body.Value<string>("templatePath"), body.Value<string>("gitRef")));
+        }
+
+        [Fact]
+        public async Task RestoreOperation_DryRun_AnswersTheVersionOverTheDraft_AndWritesNothing()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = """{ "settings": { "type": "settings", "name": "Published" }, "content": [] }""";
+            var history = new RecordingHistory();
+            var request = new FilePageRestoreVersionOperationRequest { StoreId = "vccom", ContentType = "pages", Path = Page, Sha = Sha, DryRun = true };
+
+            var result = await Operations(repository, history).RestoreVersionAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.False(result.AffectsPublished);
+            var content = Assert.Single(Assert.Single(result.Preview.Objects).Fields);
+            Assert.Equal("""{ "settings": { "type": "settings", "name": "Published" }, "content": [] }""", content.From);
+            Assert.Equal("About", JToken.Parse(content.To)["settings"]!.Value<string>("name"));
+            AssertNothingWritten(repository);
+            Assert.Empty(history.Invalidated);
+        }
+
+        [Fact]
+        public async Task RestoreOperation_AtTheReviewedVersionOfTheDraft_Commits()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            var reviewed = await ReviewAsync(repository);
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderContentVersion.CreateForFileContent(Published), reviewed);
+            Assert.True(result.Succeeded);
+            Assert.Equal(MyBranch, Assert.Single(repository.Commits).Branch);
+        }
+
+        [Fact]
+        public async Task RestoreOperation_DraftSavedSinceTheReview_IsAConflictAndCommitsNothing()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            var reviewed = await ReviewAsync(repository);
+            repository.BranchHeads[MyBranch] = "7333333333333333333333333333333333333333";
+            repository.Files[(RepoPath, MyBranch)] = Saved;
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftChangedMessage), (result.Status, result.Error));
+            Assert.Empty(repository.Commits);
+        }
+
+        [Fact]
+        public async Task RestoreOperation_PublishedPageChangedSinceTheReview_IsAConflictAndCutsNoBranch()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            var reviewed = await ReviewAsync(repository);
+            repository.Files[(RepoPath, "master")] = Saved;
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+            AssertNothingWritten(repository);
+        }
+
+        /// <summary>Where the plain commit refreshes a stale file and writes over it, a restore of a reviewed draft is refused instead.</summary>
+        [Fact]
+        public async Task RestoreOperation_ASaveBetweenTheComparisonAndTheCommit_IsAConflictWithoutARetry()
+        {
+            var repository = Repository(ValidPage);
+            repository.Files[(RepoPath, "master")] = Published;
+            repository.BranchHeads[MyBranch] = "7222222222222222222222222222222222222222";
+            repository.Files[(RepoPath, MyBranch)] = Published;
+            var reviewed = await ReviewAsync(repository);
+            repository.BeforeConditionalWrite = () => repository.Files[(RepoPath, MyBranch)] = Saved;
+
+            var result = await Operations(repository, new RecordingHistory()).RestoreVersionAsync(Restore(reviewed), User, CancellationToken.None);
+
+            Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+            Assert.Empty(repository.Commits);
+            Assert.Equal(Saved, repository.Files[(RepoPath, MyBranch)]);
+        }
+
+        private const string Published = """{ "settings": { "type": "settings", "name": "Published" }, "content": [] }""";
+
+        private const string Saved = """{ "settings": { "type": "settings", "name": "Saved meanwhile" }, "content": [] }""";
+
+        private static async Task<string> ReviewAsync(RecordingRepository repository)
+        {
+            var dryRun = Restore(expectedVersion: null);
+            dryRun.DryRun = true;
+
+            return Assert.Single((await Operations(repository, new RecordingHistory()).RestoreVersionAsync(dryRun, User, CancellationToken.None)).Preview.Objects).ETag;
+        }
+
+        private static FilePageRestoreVersionOperationRequest Restore(string expectedVersion) =>
+            new() { StoreId = "vccom", ContentType = "pages", Path = Page, Sha = Sha, ExpectedContentVersion = expectedVersion };
+
+        private static ClaimsPrincipal User => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test"));
+
+        private static FilePageOperationService Operations(RecordingRepository repository, RecordingHistory history)
+        {
+            var options = Options.Create(new GitContentOptions { Enabled = true, Repository = "o/r", Token = "t0ken", BaseBranch = "master" });
+            var requestValidator = new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = "vccom" })),
+                new SiteBuilderContentFileValidator());
+
+            return TestServices.FilePageOperations(new FakeAuthorizationService(true), requestValidator, options, GitHubConnections.CreateService(options.Value),
+                new FakeGitContentPolicy(repositoryFormat: "acme/site-{0}"), repository, history);
+        }
 
         private static RecordingRepository Repository(string contentAtSha)
         {
@@ -291,7 +495,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
             body.GetType().GetProperty(property)!.GetValue(body) as string;
 
         private static SiteBuilderController Controller(RecordingRepository repository, RecordingHistory history, bool gitFlow = true,
-            string configuredStoreUrl = "https://store.test", Store store = null)
+            string configuredStoreUrl = "https://store.test", Store store = null, string previewPath = null)
         {
             var options = Options.Create(new GitContentOptions
             {
@@ -301,21 +505,40 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 BaseBranch = "master",
             });
 
+            // The store's own repository, not the shared one configured above, so a call to the wrong one shows.
+            var policy = new FakeGitContentPolicy(gitFlow, repositoryFormat: "acme/site-{0}");
+
             // Only the git dependencies take part in these paths; the rest are left null on purpose, so a
             // change that starts reaching for blob storage or the publisher fails loudly here.
-            var controller = new SiteBuilderController(
-                storeService: new FakeStoreService(store),
+            var filePageDrafts = TestServices.FilePageDrafts(options, GitHubConnections.CreateService(options.Value), policy, repository, history, new FakeGitContentProvisioner(), new FakeStoreService(store ?? new Store { Id = "vccom" }), null, null, null, null);
+            var controller = TestServices.CreateSiteBuilderController(
+                storeService: new FakeStoreService(store ?? new Store { Id = "vccom" }),
                 pathResolver: null,
                 blobContentStorageProviderFactory: null,
                 publishingService: null,
                 eventPublisher: null,
                 gitContentOptions: options,
-                gitContentPolicy: new FakePolicy(gitFlow),
+                gitHubConnectionService: GitHubConnections.CreateService(options.Value),
+                gitContentPolicy: policy,
                 gitContentRepository: repository,
                 gitContentHistory: history,
                 gitContentPublisher: null,
-                settingsManager: new PerNameSettings(configuredStoreUrl),
-                authorizationService: null);
+                gitLivePageService: null,
+                settingsManager: new PerNameSettings(configuredStoreUrl, previewPath),
+                authorizationService: new FakeAuthorizationService(true),
+                distributedLock: new InProcessDistributedLock(),
+                requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(store ?? new Store { Id = "vccom" })), new SiteBuilderContentFileValidator()),
+                contentHistory: new NoContentHistory(),
+                themeDraftService: null,
+                designerOperationService: TestServices.DesignerOperations(
+                    authorizationService: new FakeAuthorizationService(true),
+                    contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
+                    requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(store ?? new Store { Id = "vccom" })), new SiteBuilderContentFileValidator()),
+                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null)),
+                contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
+                filePageDraftService: filePageDrafts,
+            contentGuard: TestServices.ContentGuard,
+            themeStorageFactory: new ThemeStorageFactory(new FakeStoreService(store ?? new Store { Id = "vccom" }), null, null, null));
 
             var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, Login)], "test");
             controller.ControllerContext = new ControllerContext
@@ -326,20 +549,14 @@ namespace VirtoCommerce.SiteBuilder.Tests
             return controller;
         }
 
-        private sealed class FakePolicy(bool enabled) : IGitContentPolicy
-        {
-            public Task<bool> IsEnabledForStoreAsync(string storeId, CancellationToken cancellationToken = default) =>
-                Task.FromResult(enabled);
-        }
-
         private sealed class RecordingHistory : IGitContentHistory
         {
-            public List<string> Invalidated { get; } = [];
+            public List<(string Repository, string RepoPath)> Invalidated { get; } = [];
 
-            public Task<GitPageHistory> GetHistoryAsync(string repoPath, GitHistoryQuery query, CancellationToken cancellationToken = default) =>
+            public Task<GitPageHistory> GetHistoryAsync(string repository, string repoPath, GitHistoryQuery query, CancellationToken cancellationToken = default) =>
                 Task.FromResult(new GitPageHistory());
 
-            public void Invalidate(string repoPath) => Invalidated.Add(repoPath);
+            public void Invalidate(string repository, string repoPath) => Invalidated.Add((repository, repoPath));
         }
 
         private sealed class RecordingRepository : IGitContentRepository
@@ -354,58 +571,92 @@ namespace VirtoCommerce.SiteBuilder.Tests
             public List<(string Branch, string FromRef)> CreatedBranches { get; } = [];
             public List<string> DeletedBranches { get; } = [];
             public List<(string Path, string Branch)> DeletedFiles { get; } = [];
+            public HashSet<string> Repositories { get; } = [];
 
-            public Task<string> ReadFileAsync(string path, string gitRef, CancellationToken cancellationToken = default)
+            public Task<string> ReadFileAsync(string repository, string path, string gitRef, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
                 Reads.Add((path, gitRef));
                 return Task.FromResult(Files.GetValueOrDefault((path, gitRef)));
             }
 
-            public Task<string> GetBranchHeadShaAsync(string branch, CancellationToken cancellationToken = default) =>
-                Task.FromResult(BranchHeads.GetValueOrDefault(branch));
-
-            public Task CreateBranchAsync(string branch, string fromRef, CancellationToken cancellationToken = default)
+            public Task<string> GetBranchHeadShaAsync(string repository, string branch, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
+                return Task.FromResult(BranchHeads.GetValueOrDefault(branch));
+            }
+
+            public Task CreateBranchAsync(string repository, string branch, string fromRef, CancellationToken cancellationToken = default)
+            {
+                Repositories.Add(repository);
                 CreatedBranches.Add((branch, fromRef));
                 BranchHeads[branch] = BranchHeads.GetValueOrDefault(fromRef, NewCommitSha);
                 return Task.CompletedTask;
             }
 
-            public Task SetBranchAsync(string branch, string sha, string pagePath, CancellationToken cancellationToken = default)
+            public Task SetBranchAsync(string repository, string branch, string sha, string pagePath, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
                 BranchHeads[branch] = sha;
                 return Task.CompletedTask;
             }
 
-            public Task DeleteBranchAsync(string branch, string pagePath, CancellationToken cancellationToken = default)
+            public Task DeleteBranchAsync(string repository, string branch, string pagePath, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
                 DeletedBranches.Add(branch);
                 return Task.CompletedTask;
             }
 
-            public void InvalidateRead(string path, string gitRef) { }
+            public void InvalidateRead(string repository, string path, string gitRef) => Repositories.Add(repository);
 
-            public Task<string> CommitFileAsync(string path, string content, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
+            public Task<string> CommitFileAsync(string repository, string path, string content, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
                 Commits.Add((path, content, branch, message, author));
                 return Task.FromResult(NewCommitSha);
             }
 
-            public Task<string> DeleteFileAsync(string path, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
+            public Task<string> DeleteFileAsync(string repository, string path, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default)
             {
+                Repositories.Add(repository);
                 DeletedFiles.Add((path, branch));
                 return Task.FromResult(NewCommitSha);
+            }
+
+            /// <summary>A commit of someone else that lands between the comparison and the write.</summary>
+            public Action BeforeConditionalWrite { get; set; }
+
+            // GitHub refuses a write that names a file the branch no longer holds.
+            public async Task<string> CommitFileIfUnchangedAsync(string repository, string path, string content, string branch, string message,
+                GitCommitAuthor author, Func<string, Task<bool>> isExpected, CancellationToken cancellationToken = default)
+            {
+                var compared = Files.GetValueOrDefault((path, branch));
+                if (!await isExpected(compared))
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+                }
+
+                BeforeConditionalWrite?.Invoke();
+                if (Files.GetValueOrDefault((path, branch)) != compared)
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.DraftChangedMessage);
+                }
+
+                return await CommitFileAsync(repository, path, content, branch, message, author, cancellationToken);
             }
         }
         /// <summary>
         /// Answers per setting name, unlike the shared fake which returns one value for every lookup —
         /// the preview url is assembled from two settings, and a fake that conflates them hides that.
         /// </summary>
-        private sealed class PerNameSettings(string storeUrl) : ISettingsManager
+        private sealed class PerNameSettings(string storeUrl, string previewPath) : ISettingsManager
         {
             public Task<ObjectSettingEntry> GetObjectSettingAsync(string name, string objectType = null, string objectId = null)
             {
-                var value = name == ModuleConstants.Settings.General.StoreUrl.Name ? storeUrl : null;
+                var value = name == ModuleConstants.Settings.General.StoreUrl.Name ? storeUrl
+                    : name == ModuleConstants.Settings.General.StorePreviewPath.Name ? previewPath
+                    : null;
                 return Task.FromResult(new ObjectSettingEntry { Name = name, Value = value });
             }
 

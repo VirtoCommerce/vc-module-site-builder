@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading;
@@ -9,9 +10,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Authorization;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
@@ -57,7 +60,7 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
         service.ConcurrentContentBeforeSaveFailure = "{ \"concurrent\": true }";
         service.SaveContentException = new InvalidDataException("Shared Component 'deleted' was not found.");
         var writer = new SiteBuilderPageContentService(new PublishedRenameContentPreservationTests.FakeSiteBuilderPageService(service),
-            service, new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.NoopEventPublisher(),
+            service, new PublishedRenameContentPreservationTests.NoopEventPublisher(),
             NullLogger<SiteBuilderPageContentService>.Instance);
 
         var result = await writer.SaveContentAsync("group", await service.GetByIdAsync("group"), ComponentReferenceContent, TestContext.Current.CancellationToken);
@@ -77,7 +80,7 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
         service.ReplaceNewDraftAfterSaveWithPageId = "concurrent-draft";
         service.SaveContentException = new InvalidDataException("Shared Component 'deleted' was not found.");
         var writer = new SiteBuilderPageContentService(new PublishedRenameContentPreservationTests.FakeSiteBuilderPageService(service),
-            service, new NoopSharedComponentReferenceIndexService(), new PublishedRenameContentPreservationTests.NoopEventPublisher(),
+            service, new PublishedRenameContentPreservationTests.NoopEventPublisher(),
             NullLogger<SiteBuilderPageContentService>.Instance);
 
         var result = await writer.SaveContentAsync("group", await service.GetByIdAsync("group"), ComponentReferenceContent, TestContext.Current.CancellationToken);
@@ -97,7 +100,7 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
             service,
             preflight,
             ComponentReferenceContent,
-            new DenyPolicyAuthorizationService());
+            new DenySharedComponentsReadAuthorizationService());
 
         var result = await controller.SavePageContent("group", TestContext.Current.CancellationToken);
 
@@ -245,17 +248,19 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
         var pageContentService = new SiteBuilderPageContentService(
             pageService,
             service,
-            referenceIndex,
             eventPublisher,
             NullLogger<SiteBuilderPageContentService>.Instance);
+        authorizationService ??= new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
         var controller = new SiteBuilderPageController(
-            pageService,
             service,
             new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-            authorizationService ?? new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+            authorizationService,
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
             pageContentService,
-            NullLogger<SiteBuilderPageController>.Instance);
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorizationService, service, pageContentService, pageService,
+                new SiteBuilderSharedComponentPlacementValidator(referenceIndex, authorizationService)),
+            TestServices.PublishStatuses(authorizationService, service));
         var httpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity()),
@@ -300,18 +305,20 @@ public class SiteBuilderPageControllerSharedComponentPreflightTests
             string policyName) => Task.FromResult(AuthorizationResult.Success());
     }
 
-    private sealed class DenyPolicyAuthorizationService : IAuthorizationService
+    private sealed class DenySharedComponentsReadAuthorizationService : IAuthorizationService
     {
         public Task<AuthorizationResult> AuthorizeAsync(
             ClaimsPrincipal user,
             object resource,
             IEnumerable<IAuthorizationRequirement> requirements) =>
-            Task.FromResult(AuthorizationResult.Success());
+            Task.FromResult(requirements.OfType<SiteBuilderAuthorizationRequirement>().Any(x => x.Permission == ModuleConstants.Security.Permissions.SharedComponentsRead)
+                ? AuthorizationResult.Failed()
+                : AuthorizationResult.Success());
 
         public Task<AuthorizationResult> AuthorizeAsync(
             ClaimsPrincipal user,
             object resource,
-            string policyName) => Task.FromResult(AuthorizationResult.Failed());
+            string policyName) => Task.FromResult(AuthorizationResult.Success());
     }
 
     private const string StoreId = "store";

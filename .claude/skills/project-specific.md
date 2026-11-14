@@ -82,7 +82,9 @@ Handlers in `Data/Handlers/` react to page save/delete to sync content.
 - `SiteBuilderAuthorizationHandler` validates `SiteBuilderAuthorizationRequirement`
 - Permissions defined in `ModuleConstants.Security`
 
-## Angular 20 Designer App
+## Page designer (Vue)
+
+The page designer is the full-screen `SiteBuilderDesigner` blade (`vue/src/modules/pages/SiteBuilderDesigner.vue`); its state, schema, document and preview code live in `vue/src/modules/designer/`. It edits database pages (param = page group id) and pages kept as files (query: storeId, path, type), with the git version history when the store keeps its pages in git. The preview is the storefront's `/designer-preview` page in an iframe, driven over postMessage (`designer/preview.ts`). The standalone app opens it from `/apps/site-builder-shell/?storeId=…&designGroup=…` or `&designPath=…&designType=…`, which is what the classic admin's page blade links to.
 
 ### Platform Integration Architecture
 
@@ -104,7 +106,7 @@ Handlers in `Data/Handlers/` react to page save/delete to sync content.
 ### Config-Driven HTTP
 
 **Config loading (`AppInitializator`):**
-1. Load `data/settings.json` (or `?configUrl=` query param)
+1. Load `data/settings.json` (or another bundled `data/*.json` named by the `?configUrl=` query param)
 2. Optionally load overrides from `/api/site-builder/settings`
 3. Recursively resolve nested config
 4. Store in `AppConfig` singleton
@@ -142,16 +144,17 @@ Features: LRU cache (100 items) for GET, fallback chains, jsonpath response mapp
 
 ## Vue 3 Shell App
 
-**Location:** `Apps/site-builder-shell/`
+**Location:** `vue/` (the Admin Shell plugin and the standalone app; `Apps/site-builder-shell/` keeps only the package.json vc-build runs)
 **Framework:** Vue 3 Composition API, Vite 6, TypeScript
-**Key libs:** `@vc-shell/framework@1.2.2`, `vue-router`, `vee-validate`, `@vueuse/core`
+**Key libs:** `@vc-shell/framework@2.7.0`, `vue-router`, `vee-validate`, `@vueuse/core`
 
 **Build commands:**
 ```bash
-yarn serve           # Dev
-yarn build           # Production
-yarn build:dev       # Dev build
-yarn type-check      # Vue-tsc
+yarn serve              # Dev
+yarn build              # Admin Shell plugin
+yarn build:standalone   # Standalone app
+yarn type-check         # Vue-tsc
+yarn test               # Unit tests and specs
 ```
 
 **API client** auto-generated via `@vc-shell/api-client-generator`. Regenerate when C# DTOs change.
@@ -175,11 +178,7 @@ yarn type-check      # Vue-tsc
 
 ## Build & Deployment
 
-- Build output: `dist/template-builder/` — deployed as part of the .NET module
-- Budget: 1500KB initial warning, 2MB error
 - CI: `.github/workflows/module-ci.yml` (Node 20, builds + packages as NuGet)
-- The Angular app lives inside the C# Web project at `Apps/site-builder-designer/`
-- `dist/template-builder/` gets bundled into the NuGet package and served by ASP.NET Core static files
 
 ## Known Issues / sonar-inspect.md
 
