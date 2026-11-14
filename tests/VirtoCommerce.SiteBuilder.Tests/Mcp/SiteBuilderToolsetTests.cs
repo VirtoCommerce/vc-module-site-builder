@@ -21,8 +21,71 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     [Fact]
     public void Toolset_FollowsTheConventions()
     {
+        const string DraftOnly = "Changes a draft only: customers see it after a publication, which waits for approval, and restore_version brings back the earlier draft.";
+
         McpToolsetConventions.Verify<McpAssemblyMarker>(x => x
-            .Ignore(McpConventionRules.Paging, "list_versions", "The git history pages by cursor: the answer carries next_cursor, and a skip would read every older version first."));
+            .Ignore(McpConventionRules.Paging, "list_versions", "The git history pages by cursor: the answer carries next_cursor, and a skip would read every older version first.")
+            .Ignore(McpConventionRules.Safeguard, "edit_page_draft", DraftOnly)
+            .Ignore(McpConventionRules.Safeguard, "edit_template", DraftOnly)
+            .Ignore(McpConventionRules.Safeguard, "edit_template_rules", DraftOnly)
+            .Ignore(McpConventionRules.Safeguard, "edit_theme_draft", DraftOnly)
+            .Ignore(McpConventionRules.Safeguard, "set_translations", DraftOnly + " A background job saves the pages, after a dry run of every item.")
+            .Ignore(McpConventionRules.Safeguard, "update_sections_bulk", DraftOnly + " A background job saves the pages, after a dry run of the first ones."));
+    }
+
+    // Clients ask the user before a destructive call: every tool that can remove or overwrite content says so, and only
+    // the tools that add something say they do not.
+    [Theory]
+    [InlineData("edit_page_draft")]
+    [InlineData("update_sections_bulk")]
+    [InlineData("edit_template")]
+    [InlineData("edit_template_rules")]
+    [InlineData("edit_theme_draft")]
+    [InlineData("set_translations")]
+    [InlineData("change_page_settings")]
+    [InlineData("discard_draft")]
+    [InlineData("restore_version")]
+    [InlineData("revise_shared_component")]
+    [InlineData("publish_page")]
+    [InlineData("unpublish_page")]
+    [InlineData("publish_theme")]
+    [InlineData("convert_page_to_multilanguage")]
+    [InlineData("link_page_language")]
+    [InlineData("unlink_page_language")]
+    [InlineData("reset_language_overrides")]
+    public void AToolThatRemovesOrOverwrites_IsDestructive(string name)
+    {
+        var annotations = _context.Harness.GetTool(name).ProtocolTool.Annotations;
+
+        Assert.False(annotations.ReadOnlyHint);
+        Assert.True(annotations.DestructiveHint);
+    }
+
+    [Theory]
+    [InlineData("create_page")]
+    [InlineData("create_shared_component")]
+    public void AToolThatOnlyAdds_IsNotDestructive(string name)
+    {
+        var annotations = _context.Harness.GetTool(name).ProtocolTool.Annotations;
+
+        Assert.False(annotations.ReadOnlyHint);
+        Assert.False(annotations.DestructiveHint);
+        Assert.False(annotations.IdempotentHint);
+    }
+
+    [Fact]
+    public void EveryTool_IsEitherReadOnlyOrListedAsAWrite()
+    {
+        string[] writes =
+        [
+            "change_page_settings", "convert_page_to_multilanguage", "create_page", "create_shared_component", "discard_draft", "edit_page_draft",
+            "edit_template", "edit_template_rules", "edit_theme_draft", "link_page_language", "publish_page", "publish_theme", "reset_language_overrides",
+            "restore_version", "revise_shared_component", "set_translations", "unlink_page_language", "unpublish_page", "update_sections_bulk",
+        ];
+
+        var readOnly = _context.Harness.Tools.Where(x => x.ProtocolTool.Annotations?.ReadOnlyHint == true).Select(x => x.ProtocolTool.Name).ToList();
+        Assert.All(readOnly, x => Assert.Matches("^(get|search|list|find)_", x));
+        Assert.Equal(writes, _context.Harness.Tools.Select(x => x.ProtocolTool.Name).Except(readOnly).Order());
     }
 
     [Fact]

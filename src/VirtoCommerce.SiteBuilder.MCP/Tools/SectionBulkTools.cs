@@ -36,7 +36,7 @@ public class SectionBulkTools(
     private const int MaxPages = 1000;
     private const int MaxPreviewPages = 10;
 
-    [McpServerTool(Name = "update_sections_bulk", ReadOnly = false, Destructive = false, Idempotent = false)]
+    [McpServerTool(Name = "update_sections_bulk", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
     [Description("Make one change to every section of a type, optionally only those whose setting matches a condition, " +

@@ -50,7 +50,7 @@ public class ThemeDraftTools(
         ("faviconUrl", "favicon_url", "favicon_image"),
     ];
 
-    [McpServerTool(Name = "edit_theme_draft", ReadOnly = false, Destructive = false, Idempotent = false)]
+    [McpServerTool(Name = "edit_theme_draft", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
     [Authorize(Theme)]

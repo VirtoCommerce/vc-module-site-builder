@@ -34,7 +34,7 @@ public class TranslationTools(
     private const int MaxPages = 200;
     private const int MaxPreviewPages = 10;
 
-    [McpServerTool(Name = "set_translations", ReadOnly = false, Destructive = false, Idempotent = false)]
+    [McpServerTool(Name = "set_translations", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
     [Description("Save texts you translated into the drafts of database pages: per item a page, its version_token, a " +

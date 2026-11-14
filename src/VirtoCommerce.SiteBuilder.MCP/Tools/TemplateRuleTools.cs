@@ -32,7 +32,7 @@ public class TemplateRuleTools(
     private const string IdCharacters = "abcdefghijklmnopqrstuvwxyz0123456789";
     private const int IdLength = 8;
 
-    [McpServerTool(Name = "edit_template_rules", ReadOnly = false, Destructive = false, Idempotent = false)]
+    [McpServerTool(Name = "edit_template_rules", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
     [Authorize(Templates)]

@@ -128,7 +128,7 @@ public class TemplateTools(
         return answer;
     }
 
-    [McpServerTool(Name = "edit_template", ReadOnly = false, Destructive = false, Idempotent = false)]
+    [McpServerTool(Name = "edit_template", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
     [Authorize(Templates)]

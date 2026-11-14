@@ -36,7 +36,7 @@ public class PageDraftTools(
     private const int MaxOperations = 100;
     private const string TemplateSetting = "template";
 
-    [McpServerTool(Name = "edit_page_draft", ReadOnly = false, Destructive = false, Idempotent = false)]
+    [McpServerTool(Name = "edit_page_draft", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
     [Description("Edit the draft of a page: add, duplicate, move, hide, show and remove sections and their " +
