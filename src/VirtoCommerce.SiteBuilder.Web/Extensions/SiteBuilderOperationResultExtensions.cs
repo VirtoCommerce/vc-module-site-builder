@@ -22,6 +22,7 @@ public static class SiteBuilderOperationResultExtensions
         SiteBuilderOperationStatus.Conflict => new ObjectResult(result.Error) { StatusCode = StatusCodes.Status412PreconditionFailed },
         SiteBuilderOperationStatus.VersionRequired => new ObjectResult(result.Error) { StatusCode = StatusCodes.Status428PreconditionRequired },
         SiteBuilderOperationStatus.ConcurrentChange => new ConflictObjectResult(new { error = result.Error }),
+        SiteBuilderOperationStatus.PermalinkConflict => new ConflictObjectResult(new { error = result.Error }),
         _ => throw new ArgumentOutOfRangeException(nameof(result), result.Status, null),
     };
 
@@ -42,6 +43,7 @@ public static class SiteBuilderOperationResultExtensions
         SiteBuilderOperationStatus.Conflict => new ObjectResult(result.Error) { StatusCode = StatusCodes.Status412PreconditionFailed },
         SiteBuilderOperationStatus.VersionRequired => new ObjectResult(result.Error) { StatusCode = StatusCodes.Status428PreconditionRequired },
         SiteBuilderOperationStatus.ConcurrentChange => new ConflictObjectResult(result.Error),
+        SiteBuilderOperationStatus.PermalinkConflict => new ConflictObjectResult(result.Error),
         _ => throw new ArgumentOutOfRangeException(nameof(result), result.Status, null),
     };
 }

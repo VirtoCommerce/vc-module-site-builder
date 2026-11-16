@@ -55,12 +55,19 @@ public class SiteBuilderOperationResult
 
     public static SiteBuilderOperationResult ConcurrentChange(string error) => new() { Status = SiteBuilderOperationStatus.ConcurrentChange, Error = error };
 
+    /// <summary>A publish refused for the published pages it would replace, listed in <see cref="SiteBuilderOperationResult{T}.Value"/>.</summary>
+    public static SiteBuilderOperationResult<SiteBuilderPermalinkConflictResult> PermalinkConflict(SiteBuilderPermalinkConflictResult conflict) =>
+        new() { Status = SiteBuilderOperationStatus.PermalinkConflict, Value = conflict, Error = conflict?.Error };
+
     /// <summary>The same outcome, for an operation that answers a <typeparamref name="T"/>.</summary>
     public SiteBuilderOperationResult<T> As<T>() => new() { Status = Status, Error = Error, Errors = Errors, Preview = Preview, AffectsPublished = AffectsPublished };
 }
 
 public class SiteBuilderOperationResult<T> : SiteBuilderOperationResult
 {
-    /// <summary>What the operation answers; <c>null</c> for a dry run and for a refusal, but a not-found or an invalid request that tells what it refused.</summary>
+    /// <summary>
+    /// What the operation answers; <c>null</c> for a dry run and for a refusal, but a not-found, an invalid request or a permalink conflict that tells
+    /// what it refused.
+    /// </summary>
     public T Value { get; init; }
 }

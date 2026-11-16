@@ -68,6 +68,7 @@ public class EndpointPermissionsTests
         [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.CreateGroup))] = Permissions.Create,
         [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.CreateGroupPage))] = Permissions.Create,
         [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.ArchiveGroups))] = Permissions.Delete,
+        [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.GetPermalinkUsages))] = NoPolicy,
         [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.PublishGroup))] = Permissions.Publish,
         [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.DiscardGroupDraft))] = Permissions.Update,
         [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.DeleteGroup))] = Permissions.Delete,
