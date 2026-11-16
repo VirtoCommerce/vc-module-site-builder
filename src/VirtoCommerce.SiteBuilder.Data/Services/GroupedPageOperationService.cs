@@ -230,23 +230,49 @@ public class GroupedPageOperationService(
         var change = preview.AddPage(stored, groupedPage);
         if (request.DryRun)
         {
-            if (change != null && stored != null)
-            {
-                // the version a caller sends back to update only the settings it reviewed
-                change.ETag = SiteBuilderContentVersion.CreateForGroupSettings(stored);
-            }
-
-            return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
+            return PreviewGroupUpdate(preview, change, stored);
         }
 
         var affectsPublished = request.ReportImpact && preview.AffectsPublished;
-        if (!request.RequireUnpublished && request.ExpectedSettingsVersion == null)
+        return GetSaveCondition(request) is { } condition
+            ? await SaveGroupUpdateAsync(groupedPage, condition, affectsPublished, cancellationToken)
+            : await SaveGroupUpdateAsync(groupedPage, sourcePageId, affectsPublished, cancellationToken);
+    }
+
+    /// <summary>The shared components of the content the update copies into a new draft; <c>null</c> when it copies none.</summary>
+    private async Task<SiteBuilderOperationResult> CheckSourceContentAsync(GroupedSiteBuilderPage groupedPage, string sourcePageId, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        if (sourcePageId == null)
         {
-            return await SaveGroupUpdateAsync(groupedPage, sourcePageId, affectsPublished, cancellationToken);
+            return null;
         }
 
-        var condition = new GroupedPageSaveCondition { RequireUnpublished = request.RequireUnpublished, ExpectedSettingsVersion = request.ExpectedSettingsVersion };
-        return await SaveGroupUpdateAsync(groupedPage, condition, affectsPublished, cancellationToken);
+        var sourceContent = await groupedPageService.LoadContent(sourcePageId, cancellationToken);
+        return await CheckSharedComponentsAsync(user, groupedPage.StoreId, sourceContent, cancellationToken);
+    }
+
+    private static SiteBuilderOperationResult<GroupedSiteBuilderPage> PreviewGroupUpdate(SiteBuilderChangePreview preview, SiteBuilderObjectChange change,
+        GroupedSiteBuilderPage stored)
+    {
+        if (change != null && stored != null)
+        {
+            // the version a caller sends back to update only the settings it reviewed
+            change.ETag = SiteBuilderContentVersion.CreateForGroupSettings(stored);
+        }
+
+        return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
+    }
+
+    /// <summary>The condition the request sets on the save; <c>null</c> when it sets none.</summary>
+    private static GroupedPageSaveCondition GetSaveCondition(GroupedPageSaveOperationRequest request)
+    {
+        if (!request.RequireUnpublished && request.ExpectedSettingsVersion == null)
+        {
+            return null;
+        }
+
+        return new GroupedPageSaveCondition { RequireUnpublished = request.RequireUnpublished, ExpectedSettingsVersion = request.ExpectedSettingsVersion };
     }
 
     /// <summary>The condition is read under the lock of the save, against the settings as they are stored then.</summary>
@@ -264,19 +290,6 @@ public class GroupedPageOperationService(
         {
             return SiteBuilderOperationResult.Conflict(ex.Message).As<GroupedSiteBuilderPage>();
         }
-    }
-
-    /// <summary>The shared components of the content the update copies into a new draft; <c>null</c> when it copies none.</summary>
-    private async Task<SiteBuilderOperationResult> CheckSourceContentAsync(GroupedSiteBuilderPage groupedPage, string sourcePageId, ClaimsPrincipal user,
-        CancellationToken cancellationToken)
-    {
-        if (sourcePageId == null)
-        {
-            return null;
-        }
-
-        var sourceContent = await groupedPageService.LoadContent(sourcePageId, cancellationToken);
-        return await CheckSharedComponentsAsync(user, groupedPage.StoreId, sourceContent, cancellationToken);
     }
 
     private async Task<SiteBuilderOperationResult<GroupedSiteBuilderPage>> SaveGroupUpdateAsync(GroupedSiteBuilderPage groupedPage, string sourcePageId,
