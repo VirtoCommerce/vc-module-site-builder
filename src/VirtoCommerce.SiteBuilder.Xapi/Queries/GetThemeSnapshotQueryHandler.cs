@@ -52,7 +52,7 @@ public class GetThemeSnapshotQueryHandler(
         storeRequest.StoreId = request.StoreId;
         storeRequest.Domain = request.Domain;
         var store = await storeDomainResolverService.GetStoreAsync(storeRequest);
-        if (store == null || !await themeSnapshotService.IsNewSiteBuilderEnabledAsync(store.Id, cancellationToken))
+        if (store == null)
         {
             return null;
         }

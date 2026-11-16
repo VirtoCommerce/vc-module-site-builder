@@ -34,7 +34,6 @@ public class SiteBuilderControllerThemeFilesTests
 
     private readonly FakeBlobStorage _live = new();
     private readonly FakeGitContentOwnership _ownership = new("another-store");
-    private readonly FakeSettingsManager _settings = new();
     private readonly InProcessDistributedLock _lock = new();
     private readonly ThemeStorageFactory _themeStorageFactory;
 
@@ -221,22 +220,17 @@ public class SiteBuilderControllerThemeFilesTests
     }
 
     [Fact]
-    public async Task SaveTemplates_LiveThemeFileOnNewSiteBuilderStore_ReturnsBadRequestAndWritesNothing()
+    public async Task SaveTemplates_LiveThemeFile_ReturnsBadRequestAndWritesNothing()
     {
-        _settings.Values[ModuleConstants.Settings.StoreLevelSettings.NewSiteBuilder.Name] = true;
-
         var result = await Builder().SaveTemplates("s1", "default", HeaderGroup("site-header"), draft: false);
 
         Assert.Contains("theme/publish", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result))["error"]);
         Assert.Empty(_live.Files);
-        Assert.Equal((ModuleConstants.Settings.StoreSettingsObjectType, "s1"), (_settings.AskedObjectType, _settings.AskedObjectId));
     }
 
     [Fact]
-    public async Task SaveTemplates_DraftThemeFileOnNewSiteBuilderStore_SavesDraft()
+    public async Task SaveTemplates_DraftThemeFile_SavesDraft()
     {
-        _settings.Values[ModuleConstants.Settings.StoreLevelSettings.NewSiteBuilder.Name] = true;
-
         Assert.IsType<OkObjectResult>(await Builder().SaveTemplates("s1", "default", HeaderGroup("site-header"), draft: true));
 
         Assert.True(_live.Files.ContainsKey(Theme($"{Path}-draft")));
@@ -244,20 +238,8 @@ public class SiteBuilderControllerThemeFilesTests
     }
 
     [Fact]
-    public async Task SaveTemplates_LiveThemeFileOnOtherStore_WritesLiveFile()
+    public async Task SaveTemplates_LivePage_WritesLivePage()
     {
-        _settings.Values[ModuleConstants.Settings.StoreLevelSettings.NewSiteBuilder.Name] = false;
-
-        Assert.IsType<OkResult>(await Builder().SaveTemplates("s1", "default", HeaderGroup("site-header"), draft: false));
-
-        Assert.True(_live.Files.ContainsKey(Theme(Path)));
-        Assert.Equal((ModuleConstants.Settings.StoreSettingsObjectType, "s1"), (_settings.AskedObjectType, _settings.AskedObjectId));
-    }
-
-    [Fact]
-    public async Task SaveTemplates_LivePageOnNewSiteBuilderStore_WritesLivePage()
-    {
-        _settings.Values[ModuleConstants.Settings.StoreLevelSettings.NewSiteBuilder.Name] = true;
         var page = new SiteBuilderController.SaveFilesModel
         {
             Files = JsonConvert.SerializeObject(new[] { new { path = "home.page", type = "pages", content = Group("text") } }),
@@ -565,8 +547,7 @@ public class SiteBuilderControllerThemeFilesTests
                 contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),
                 requestValidator: RequestValidators.Content("s1"),
                 designerContentService: TestServices.Designer(history ?? new NoContentHistory(), filePageDrafts,
-                    new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance), null, eventPublisher ?? _live, themePublisher, new ThemeSnapshotService(_live.StoreService, _settings, _themeStorageFactory, themePublisher, null,
-                    Options.Create(new ThemeSnapshotOptions()))),
+                    new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance), null, eventPublisher ?? _live, themePublisher),
                 themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance)),
             contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),
             filePageDraftService: filePageDrafts,

@@ -1,10 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent } from "vue";
-import { flushPromises, mount } from "@vue/test-utils";
+import { mount } from "@vue/test-utils";
 import { usePageDesigner } from "../../src/modules/site-builder/composables/usePageDesigner";
-import useUrlParams from "../../src/modules/site-builder/composables/useStoreParams";
-import { fakePlatform, status, type FakePlatform } from "./support/fakePlatform";
-import { notification } from "./support/vcShell";
 
 const shell = vi.hoisted(() => ({ openBlade: vi.fn() }));
 
@@ -16,9 +13,7 @@ vi.mock("@vc-shell/framework", async (importOriginal) => {
   };
 });
 
-const STORE = "B2B-store";
-const CONTEXT = { groupId: "g1", storeId: STORE };
-const SWITCH = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder";
+const CONTEXT = { groupId: "g1", storeId: "B2B-store" };
 
 function pageDesigner() {
   let open!: ReturnType<typeof usePageDesigner>;
@@ -34,58 +29,16 @@ function pageDesigner() {
 }
 
 describe("opening the page designer", () => {
-  let platform: FakePlatform;
-  let windowOpen: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
-    platform = fakePlatform().install();
-    windowOpen = vi.spyOn(window, "open").mockImplementation(() => null);
     shell.openBlade.mockClear();
   });
-  afterEach(() => windowOpen.mockRestore());
 
-  it("opens the Angular designer for a store on it, and tells the caller nothing opened here", async () => {
-    platform.on("GET", `/api/stores/${STORE}`, { languages: ["en-US"], settings: [] });
-    const onOpen = vi.fn();
-
-    await pageDesigner()(CONTEXT, { onOpen });
-
-    expect(windowOpen).toHaveBeenCalledTimes(1);
-    expect(String(windowOpen.mock.calls[0][0])).toContain("site-builder-designer/index.html");
-    expect(shell.openBlade).not.toHaveBeenCalled();
-    expect(onOpen).not.toHaveBeenCalled();
-    expect(notification.error).not.toHaveBeenCalled();
-  });
-
-  it("opens the designer blade for a store on the New Site Builder, with the caller's open and close callbacks", async () => {
-    platform.on("GET", `/api/stores/${STORE}`, { languages: ["en-US"], settings: [{ name: SWITCH, value: true }] });
+  it("opens the designer blade, with the caller's open and close callbacks", () => {
     const onOpen = vi.fn();
     const onClose = vi.fn();
 
-    await pageDesigner()(CONTEXT, { onOpen, onClose });
+    pageDesigner()(CONTEXT, { onOpen, onClose });
 
-    expect(windowOpen).not.toHaveBeenCalled();
     expect(shell.openBlade).toHaveBeenCalledWith({ name: "SiteBuilderDesigner", param: "g1", onOpen, onClose });
-  });
-
-  it("opens no designer and shows an error when the store can't be read", async () => {
-    platform.on("GET", `/api/stores/${STORE}`, status(500, "boom"));
-
-    await pageDesigner()(CONTEXT);
-
-    expect(windowOpen).not.toHaveBeenCalled();
-    expect(notification.error).toHaveBeenCalledWith("The site couldn't be read, so the designer didn't open. Try again.");
-  });
-
-  it("opens the Angular designer within the click for the store in context, whose setting was read ahead", async () => {
-    platform.on("GET", `/api/stores/${STORE}`, { languages: ["en-US"], settings: [] });
-    useUrlParams().setStoreId(STORE);
-    const open = pageDesigner();
-    await flushPromises();
-    expect(platform.to(`/api/stores/${STORE}`)).toHaveLength(1);
-
-    void open(CONTEXT);
-
-    expect(windowOpen).toHaveBeenCalledTimes(1);
   });
 });

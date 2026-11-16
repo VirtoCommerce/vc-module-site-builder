@@ -18,8 +18,6 @@ It replaces Page Builder ([vc-module-pagebuilder](https://github.com/VirtoCommer
 * **AI assistant (Virto OZ)** generates, edits, diagnoses and bulk-updates pages from a text prompt. See [AI Assistant for Site Builder](docs/ai-assistant.md).
 * **Admin Shell plugin and a standalone designer app.**
 
-The store setting **New Site Builder** switches a store to the new designer; with it off, the store keeps the classic designer.
-
 ![A product template with its template rules](docs/media/site-builder-template-rules.png)
 
 ## Switching from Page Builder
@@ -27,7 +25,7 @@ The store setting **New Site Builder** switches a store to the new designer; wit
 On its first start, Site Builder copies Page Builder's settings to its own names in a background job:
 
 * the global settings `StoreUrl`, `StorePreviewPath` and `OzAgentUrl`;
-* each store's `PreviewUserIds`, `GitContentEnabled`, `GitContentRepository`, and `NewPageBuilder` as `NewSiteBuilder`, so a store on the new designer stays on it;
+* each store's `PreviewUserIds`, `GitContentEnabled` and `GitContentRepository`;
 * the saved GitHub App connection, encrypted again for Site Builder.
 
 A setting that already has a stored Site Builder value keeps it. The copy runs once: if you later switch back to Page Builder and then to Site Builder again, Site Builder keeps its own values. If this server cannot decrypt the GitHub App connection (its data protection keys were not kept), the log has a warning naming the setting, and the connection has to be set up again.
@@ -36,7 +34,7 @@ The `PageBuilder:GitContent` and `PageBuilder:ThemeSnapshot` configuration secti
 
 Roles keep working: the permissions are the same `builder:*` ones.
 
-Settings forced in configuration under `VirtoCommerce:Settings:Override` need a manual step: they are keyed by setting name, so rename `VirtoCommerce.PageBuilderModule.*` to `VirtoCommerce.SiteBuilder.*`, and `NewPageBuilder` to `NewSiteBuilder`.
+Settings forced in configuration under `VirtoCommerce:Settings:Override` need a manual step: they are keyed by setting name, so rename `VirtoCommerce.PageBuilderModule.*` to `VirtoCommerce.SiteBuilder.*`.
 
 ## Store access
 

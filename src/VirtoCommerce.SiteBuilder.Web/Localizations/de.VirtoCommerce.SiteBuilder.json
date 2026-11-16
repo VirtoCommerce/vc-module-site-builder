@@ -127,10 +127,6 @@
           "PreviewUserIds": {
             "title": "Benutzer-IDs für Vorschau",
             "description": "Liste der Benutzer-IDs für die Vorschau-Imitation (eine pro Zeile)"
-          },
-          "NewSiteBuilder": {
-            "title": "Neuer Site Builder",
-            "description": "Öffnet die Seiten des Stores im neuen Site-Builder-Designer, und die Storefront zeigt das dort veröffentlichte Theme. Wenn deaktiviert, öffnen sich die Seiten im klassischen Designer und die Storefront funktioniert wie bisher."
           }
         },
         "Migration": {

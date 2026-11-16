@@ -278,7 +278,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         }
 
         // With the git flow on, live belongs to the CI deploy and editors publish through a pull request.
-        // Without git the designer saves theme settings straight to live, which needs no publish permission.
         private static bool IsPublication(List<SaveFileModel> files, bool draft, bool gitFlow) =>
             !draft && (gitFlow || files.Exists(file => file != null && GitPageLocation.IsPageContent(file.Type)));
 
@@ -1046,7 +1045,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
             if (themeFiles.Count > 0)
             {
-                await RecordThemeFilesAsync(storeId, themeFiles, draft, cancellationToken);
+                await RecordThemeFilesAsync(storeId, themeFiles, cancellationToken);
             }
 
             async Task WriteFilesAsync()
@@ -1081,9 +1080,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             }
         }
 
-        private async Task RecordThemeFilesAsync(string storeId, List<(string Path, string Content)> themeFiles, bool draft, CancellationToken cancellationToken)
+        private async Task RecordThemeFilesAsync(string storeId, List<(string Path, string Content)> themeFiles, CancellationToken cancellationToken)
         {
-            var record = ContentHistoryRecord.Create(draft ? ModuleConstants.GitHistory.SavedSummary : ModuleConstants.GitHistory.PublishedSummary, Request.GetOrCreateSaveId(), User);
+            var record = ContentHistoryRecord.Create(ModuleConstants.GitHistory.SavedSummary, Request.GetOrCreateSaveId(), User);
             foreach (var (path, content) in themeFiles)
             {
                 record.AddEntry(HistoryItem.ForThemeFile(path), content);

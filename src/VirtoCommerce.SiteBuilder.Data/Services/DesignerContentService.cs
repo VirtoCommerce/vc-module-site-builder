@@ -20,7 +20,6 @@ namespace VirtoCommerce.SiteBuilder.Data.Services;
 public class DesignerContentService(
     IThemeDraftService themeDraftService,
     IThemePublisher themePublisher,
-    IThemeSnapshotService themeSnapshotService,
     ISiteBuilderPageService pageService,
     IGroupedPageService groupedPageService,
     IGroupedPageContentService groupedPageContentService,
@@ -44,10 +43,10 @@ public class DesignerContentService(
     private async Task ValidateThemeFilesInternalAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
         CancellationToken cancellationToken)
     {
-        // the new Site Builder publishes the theme as a whole, from drafts
-        if (!draft && await themeSnapshotService.IsNewSiteBuilderEnabledAsync(storeId, cancellationToken))
+        // the theme is published as a whole, from drafts
+        if (!draft)
         {
-            throw new InvalidDataException("The store uses the new Site Builder: theme files are saved as drafts and published with theme/publish.");
+            throw new InvalidDataException("Theme files are saved as drafts and published with theme/publish.");
         }
 
         var catalog = await GetCatalogAsync(storeId, catalogHash, cancellationToken);
@@ -59,13 +58,10 @@ public class DesignerContentService(
             throw new ThemeValidationException(errors);
         }
 
-        if (draft)
+        var mainSectionErrors = await GetMainSectionErrorsAsync(storeId, files, cancellationToken);
+        if (mainSectionErrors.Count > 0)
         {
-            var mainSectionErrors = await GetMainSectionErrorsAsync(storeId, files, cancellationToken);
-            if (mainSectionErrors.Count > 0)
-            {
-                throw new ThemeValidationException([.. mainSectionErrors]);
-            }
+            throw new ThemeValidationException([.. mainSectionErrors]);
         }
 
         if (string.IsNullOrEmpty(catalogHash))

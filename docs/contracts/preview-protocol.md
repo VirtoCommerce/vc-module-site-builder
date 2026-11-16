@@ -4,14 +4,12 @@ The designer shows the storefront in an iframe and drives it with `postMessage`.
 names the protocol, what the storefront can do and the template rule conditions it knows; a draft layer for the
 unsaved theme; one render message; inline text editing; and the light and dark switch.
 
-The same storefront serves both designers: a store with the New Site Builder setting off previews in the Angular
-designer, which speaks version 1. The storefront keeps every version 1 message (`page`, `changed`, `update`, `remove`,
-`add`, `reload`, `swap`, `preview`, `navigate`, `select`, `hover`, `settings`, `auth`), and tells the designers apart
-by the `protocol` of the preview URL ([Handshake](#handshake)). The Vue designer never sends `settings`: it does not
-edit the theme settings ([theme snapshot](theme-snapshot.md#theme-settings)). A storefront whose `loaded` has no
-`protocol` (an older
-vc-frontend, or a fork that did not update) does not work with the Vue designer: the designer says so and does not
-render, and the store stays on the Angular designer.
+The storefront keeps every version 1 message (`page`, `changed`, `update`, `remove`, `add`, `reload`, `swap`,
+`preview`, `navigate`, `select`, `hover`, `settings`, `auth`), which the Page Builder module's designer speaks, and tells
+the versions apart by the `protocol` of the preview URL ([Handshake](#handshake)). The designer never sends `settings`:
+it does not edit the theme settings ([theme snapshot](theme-snapshot.md#theme-settings)). A storefront whose `loaded`
+has no `protocol` (an older vc-frontend, or a fork that did not update) does not work with the designer: the designer
+says so and does not render. A store on such a storefront uses the Page Builder module.
 
 ## Frame and channel
 
@@ -45,8 +43,7 @@ Designer to preview: `{ source: "builder", type, ...payload }`. Preview to desig
    it is anonymous, light, with the inspector off: no outlines, clicks blocked.
 
 The storefront decides what `loaded` carries from the `protocol` of the preview URL, not from `connect`: its unasked
-`loaded` can go first. A page opened without `protocol=2`, as the Angular designer opens it, gets the schemas as the
-Angular designer knows them, with none of the additions below.
+`loaded` can go first. A page opened without `protocol=2` gets the version 1 schemas, with none of the additions below.
 
 ```ts
 // designer → preview
@@ -99,7 +96,7 @@ interface Catalog {
   shared: Record<string, ItemSchema>;
   objects: Record<string, ItemSchema>;
   templates: Record<string, TemplateEntry>;
-  /** the theme settings' schema, which only the Angular designer reads */
+  /** the theme settings' schema, which the designer does not read */
   settingsSchema?: { settings_schema?: { name: string; icon?: string; settings: Field[] }[] };
   /** the token names a palette has, from the storefront's built-in presets */
   paletteTokens: { light: string[]; dark: string[] };
@@ -250,7 +247,7 @@ light logo's source. The designer marks the fields in `overriddenByWhiteLabeling
 editor sees why a change to them does not show:
 the brand fields and the palette on the Theme tab, `menus.header` on the `catalog_menu` setting of `site-header`,
 `menus.footer` on each of the footer's `footer-menu` blocks, which the footer links replace whole (heading, menu and
-links). White-labeling replaces no other menu: the header's icons menu is the theme's. The Angular designer drops `resolved`.
+links). White-labeling replaces no other menu: the header's icons menu is the theme's.
 
 ## Inline editing
 
@@ -276,19 +273,19 @@ is not overwritten by its own echo.
 Schemas are data, never code.
 
 - `visibility` is the only expression a schema runs. It is an expression of the designer's expression language
-  (the `safe-expression` evaluator, the same in both designers): literals, `this.…` members, `!`, arithmetic,
+  (the `safe-expression` evaluator): literals, `this.…` members, `!`, arithmetic,
   comparisons, `&&`, `||`, `??`, `?:`, array literals and the evaluator's helper functions; or one of its known forms,
-  matched as written. An expression that is none of these, or that fails, hides the field, as in the Angular designer.
+  matched as written. An expression that is none of these, or that fails, hides the field.
 - A field with `request` fetches options; `request.response.result` is a dotted path to the rows, not an expression.
   On the platform's origin only two requests are made, with the admin token: `GET /api/site-builder/search` (or its deprecated
   Page Builder address `/api/pagebuilder/search`, which themes made for Page Builder name), and
   `POST /graphql` without a query string, whose filled `body.query` is a string with no `mutation` or `subscription`
   keyword outside its string literals and comments. Any other request to the platform is refused: nothing is sent, the
   field gets no options and the console has a warning. A URL on any other origin is requested without the
-  `Authorization` header, and a 401 from it does not end the designer's session. Expression keys only the Angular designer reads (`selector`, `optionsSelector`, `previewRule`) are
-  ignored by the Vue designer.
+  `Authorization` header, and a 401 from it does not end the designer's session. The designer ignores the expression
+  keys `selector`, `optionsSelector` and `previewRule`.
 - A field may be `"translatable": true` ([theme snapshot](theme-snapshot.md#translatable-fields)).
-- A `string` field holding a link is `"format": "url"`. The Angular designer ignores the key.
+- A `string` field holding a link is `"format": "url"`.
 - A section may have a `limit`: the designer adds, duplicates or pastes no more sections of its type than that on a
   page, its header and footer counted in. `site-header`, `announcement-bar` and `site-footer` have `"limit": 1`, since
   the storefront shows the first of each.
@@ -297,6 +294,6 @@ Schemas are data, never code.
 - Field types added for the theme:
   - `menu`: the name of a store link list; the designer lists the store's menus;
   - `color-token`: a palette token; the designer lists `paletteTokens`.
-- `search`, as in the Angular designer: a typed query (or a `button`) runs the field's `request`, or its `requests` in
+- `search`: a typed query (or a `button`) runs the field's `request`, or its `requests` in
   turn, with the query as `__searchQuery`; the value is `{ __nodata, __searchQuery, value }` (with `requests`, an
   answer per key) and `displayInfo` lists what of it to show. The origin rule of `request` applies.

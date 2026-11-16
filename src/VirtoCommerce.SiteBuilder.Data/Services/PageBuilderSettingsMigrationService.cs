@@ -50,7 +50,6 @@ public class PageBuilderSettingsMigrationService(
         new("VirtoCommerce.PageBuilderModule.Store.PreviewUserIds", StoreLevelSettings.PreviewUserIds),
         new("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", StoreLevelSettings.GitContentEnabled),
         new("VirtoCommerce.PageBuilderModule.Store.GitContentRepository", StoreLevelSettings.GitContentRepository),
-        new("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", StoreLevelSettings.NewSiteBuilder),
     ];
 
     private static readonly object LockObject = new();

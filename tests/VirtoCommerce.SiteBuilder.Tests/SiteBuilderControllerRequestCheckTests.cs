@@ -404,7 +404,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     authorizationService: authorizationService ?? new ScopedAuthorizationService(storeAccess, granted),
                     contentPermissionService: TestServices.Permissions(authorizationService ?? new ScopedAuthorizationService(storeAccess, granted)),
                     requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = Store })), new SiteBuilderContentFileValidator()),
-                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null)),
+                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null)),
                 contentPermissionService: TestServices.Permissions(authorizationService ?? new ScopedAuthorizationService(storeAccess, granted)),
                 filePageDraftService: filePageDrafts,
             contentGuard: TestServices.ContentGuard,

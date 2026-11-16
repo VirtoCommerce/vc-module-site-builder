@@ -165,7 +165,7 @@ public class ThemeWriteLockTests
                 authorizationService: new FakeAuthorizationService(true),
                 contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
                 requestValidator: RequestValidators.Content("s1"),
-                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, ThemeDrafts(), null, _live, null, null),
+                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, ThemeDrafts(), null, _live, null),
                 themeDraftService: ThemeDrafts()),
             contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
             filePageDraftService: filePageDrafts,
