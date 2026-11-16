@@ -100,6 +100,9 @@
           "USER_GROUPS": "Grupos de utilizadores",
           "ORGANIZATION": "Organização"
         },
+        "WARNINGS": {
+          "PERMALINK_USED": "Outras páginas usam este link permanente: {pages}. Isso é permitido para outros visitantes ou períodos; a publicação verifica conflitos."
+        },
         "VALIDATION": {
           "PERMALINK": "O link permanente deve ter no máximo 2048 caracteres e não pode conter espaços ou caracteres invisíveis, os caracteres ? # & % \\ \" < > {'{'} {'}'} {'|'} ^ `, barras duplas nem os segmentos . e .."
         },
@@ -134,6 +137,10 @@
           "MESSAGE": "Tem a certeza de que pretende arquivar {count} páginas selecionadas?",
           "ALL": "todas {totalCount}"
         },
+        "PUBLISH_CONFLICT": "Já publicadas neste link permanente para os mesmos visitantes: {pages}. Despublicá-las e publicar esta página?",
+        "PUBLISH_CONFLICT_HAS_CHANGES": "Já publicadas neste link permanente para os mesmos visitantes: {pages}. Elas têm alterações não publicadas; publique ou descarte essas alterações primeiro.",
+        "PUBLISH_POSSIBLE_CONFLICT": "Também publicadas neste link permanente para parte dos mesmos visitantes ou datas: {pages}. Onde as duas se aplicam, é exibida a última publicada. Publicar mesmo assim?",
+        "PUBLISH_CONFLICT_CHANGED": "A publicação foi recusada: estas páginas já estão publicadas neste link permanente para os mesmos visitantes: {pages}. Publique novamente para resolver o conflito.",
         "UNPUBLISH_WITH_DRAFT": "Não é possível despublicar uma página que tem alterações.",
         "DOWNLOAD_SUCCESS": "Conteúdo guardado em ficheiro com sucesso",
         "CLONE_SUCCESS": "Página clonada com sucesso",
@@ -208,6 +215,7 @@
       "ALERTS": {
         "PUBLISH_ALL_RESULT": "Publicadas: {processed}. Ignoradas (sem rascunho): {skipped}.",
         "BATCH_FAILED": "Com falha: {failed}. Tente novamente para esses idiomas.",
+        "BATCH_PERMALINK_CONFLICT": "Não publicadas: {conflicted}. Outra página já está publicada neste link permanente para os mesmos visitantes. Publique estes idiomas um a um para substituí-la.",
         "ARCHIVE_ALL_RESULT": "Arquivadas: {processed}. Já arquivadas: {skipped}.",
         "ARCHIVE_ALL": "Arquivar todas as versões de idioma desta página?",
         "DELETE": "Excluir esta página multilíngue? Ela não tem versões de idioma.",
@@ -308,7 +316,6 @@
       "PREVIEW_SLOW": "O site está demorando para carregar. Verifique se a loja em {url} está em execução e recarregue.",
       "RELOAD_PREVIEW": "Recarregar",
       "NO_STOREFRONT": "Sem visualização: o site não tem URL da loja virtual. Defina-a nas Configurações do site e reabra a página.",
-      "STORE_READ_FAILED": "Não foi possível ler o site, por isso o designer não foi aberto. Tente novamente.",
       "PREVIEW_UNSUPPORTED": "Esta loja não é compatível com o novo designer do Site Builder.",
       "LOAD_FAILED": "Não foi possível carregar a página. Ela pode ter sido excluída, ou você pode não ter acesso a ela.",
       "SAVE": "Salvar",

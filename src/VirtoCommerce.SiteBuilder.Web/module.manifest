@@ -32,12 +32,6 @@
       <iconUrl>/apps/site-builder-shell/assets/logo-only.svg</iconUrl>
       <placement>Hidden</placement>
     </app>
-    <app id="site-builder-designer">
-      <title>Site Builder Designer</title>
-      <description>Site Builder Designer</description>
-      <iconUrl>/apps/site-builder-designer/assets/images/logo-only.svg</iconUrl>
-      <placement>Hidden</placement>
-    </app>
   </apps>
 
   <authors>

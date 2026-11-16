@@ -1,11 +1,12 @@
 import { computed, ref, reactive, Ref, ComputedRef, onMounted } from "vue";
-import { useAsync, useLoading, useApiClient } from "@vc-shell/framework";
+import { useAsync, useLoading, useApiClient, i18n } from "@vc-shell/framework";
 import {
   FilePublishStatus,
   MultilanguagePage,
   MultilanguagePageClient,
   SiteBuilderPageClient,
   GroupedSiteBuilderPage,
+  SiteBuilderPermalinkUsage,
 } from "../../../../api_client/virtocommerce.sitebuilder";
 
 import useUserGroups, { IUserGroupsResult } from "./../useUserGroups";
@@ -15,6 +16,7 @@ import { downloadPageContent, PageExportData } from "../usePageContentApi";
 import { usePageDesigner } from "../usePageDesigner";
 import { serializeImportedPageContent } from "./importContent";
 import { loadPage, savePage } from "../../../designer/api";
+import { formatPageNames, getConflictsOfRejectedPublish } from "../../utilities/permalinkUsages";
 
 const { getApiClient } = useApiClient(SiteBuilderPageClient);
 const { getApiClient: getMultilanguageApiClient } = useApiClient(MultilanguagePageClient);
@@ -38,7 +40,9 @@ export interface IUseSiteBuilderDetails {
   loadOrganizations: (keyword?: string, skip?: number, objectIds?: string[]) => Promise<IOrganizationsResult>;
   isReadOnly: ComputedRef<boolean>;
   statusText: ComputedRef<string>;
-  publishGroup: () => Promise<void>;
+  // unpublishConflicting unpublishes the published pages that publishing this one conflicts with.
+  publishGroup: (unpublishConflicting?: boolean) => Promise<void>;
+  loadPermalinkUsages: () => Promise<SiteBuilderPermalinkUsage[]>;
   unpublishGroup: () => Promise<void>;
   openDraftDesigner: (onClose?: () => void) => void;
   downloadContent: () => Promise<void>;
@@ -139,13 +143,23 @@ export function useSiteBuilderDetails(options?: UseSiteBuilderDetailsOptions): I
     await apiClient.archiveGroups([groupId]);
   });
 
-  const { action: publishGroup, loading: publishingGroup } = useAsync(async () => {
+  const { action: publishGroup, loading: publishingGroup } = useAsync<boolean>(async (unpublishConflicting) => {
     const groupId = item.value?.id;
     if (!groupId) {
       throw new Error("Can't publish group.");
     }
     const apiClient = await getApiClient();
-    await apiClient.publishGroup(groupId, true);
+    try {
+      await apiClient.publishGroup(groupId, true, unpublishConflicting || undefined);
+    } catch (error) {
+      const conflicts = getConflictsOfRejectedPublish(error);
+      if (conflicts === null || conflicts.length === 0) {
+        throw error;
+      }
+      throw new Error(
+        i18n.global.t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_CONFLICT_CHANGED", { pages: formatPageNames(conflicts) }),
+      );
+    }
 
     if (item.value) {
       await loadGroup();
@@ -226,6 +240,19 @@ export function useSiteBuilderDetails(options?: UseSiteBuilderDetailsOptions): I
     );
   }
 
+  // The page is checked as edited, so the result follows changes that are not saved yet.
+  async function loadPermalinkUsages(): Promise<SiteBuilderPermalinkUsage[]> {
+    if (!item.value?.permalink) {
+      return [];
+    }
+    const apiClient = await getApiClient();
+    const usages = await apiClient.getPermalinkUsages({
+      ...item.value,
+      storeId: item.value.storeId || groupStoreId,
+    });
+    return usages ?? [];
+  }
+
   async function loadUserGroupsAsync() {
     return getUserGroups();
   }
@@ -277,6 +304,7 @@ export function useSiteBuilderDetails(options?: UseSiteBuilderDetailsOptions): I
     isReadOnly,
     statusText,
     publishGroup,
+    loadPermalinkUsages,
     unpublishGroup,
     openDraftDesigner,
     downloadContent,

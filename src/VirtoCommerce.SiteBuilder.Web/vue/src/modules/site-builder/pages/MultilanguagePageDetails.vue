@@ -251,6 +251,7 @@ import {
   isMultilanguageRowArchived,
   isPermalinkCheckNeeded,
   summarizeBatchResult,
+  getConflictedLanguages,
 } from "../composables/useMultilanguagePageDetails/helpers";
 import Tag from "../components/tag.vue";
 import { getPermalinkRules } from "../utilities/permalink";
@@ -484,6 +485,10 @@ function notifyBatchResult(result: MultilanguagePageBatchResult, key: string) {
   notification.success(t(`SITE_BUILDER.MULTILANGUAGE.ALERTS.${key}`, summary));
   if (summary.failed) {
     notification.error(t("SITE_BUILDER.MULTILANGUAGE.ALERTS.BATCH_FAILED", { failed: summary.failed }));
+  }
+  const conflicted = getConflictedLanguages(result);
+  if (conflicted) {
+    notification.error(t("SITE_BUILDER.MULTILANGUAGE.ALERTS.BATCH_PERMALINK_CONFLICT", { conflicted }));
   }
 }
 

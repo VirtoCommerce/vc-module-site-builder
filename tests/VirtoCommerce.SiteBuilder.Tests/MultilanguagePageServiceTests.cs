@@ -601,6 +601,28 @@ public class MultilanguagePageServiceTests
     }
 
     [Fact]
+    public async Task PublishAllAsync_VersionThatWouldReplaceAnotherPublishedPage_IsSkipped()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", draftContent: Content("nl"));
+        var landing = await fixture.CreateLanguageAsync(null, "en-US", permalink: root.Permalink, draftContent: Content("landing"));
+        landing = await fixture.Groups.GetByIdAsync(landing.Id);
+        landing.Visibility = root.Visibility;
+        await fixture.Groups.SaveChangesAsync([landing]);
+        await fixture.PublishNewDraftAsync(landing.Id, null);
+
+        var result = await fixture.Roots.PublishAllAsync(root.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["nl-NL"], result.ProcessedCultureNames);
+        Assert.Equal([("en-US", MultilanguagePageBatchResult.PermalinkConflictReason)], result.Skipped.Select(x => (x.CultureName, x.Reason)));
+        Assert.Equal("Draft", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+        Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(nl.Id)).Status);
+        Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(landing.Id)).Status);
+    }
+
+    [Fact]
     public async Task PublishAllAsync_DraftPublishedWhileWaitingForTheLock_IsNotPublishedAgain()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -1126,6 +1148,7 @@ public class MultilanguagePageServiceTests
                 storeService,
                 new SiteBuilderPageService(repositoryFactory, _cache, events),
                 Lock,
+                new SiteBuilderPublishConflictService(Groups, groupSearch, storeService, new InProcessDistributedLock()),
                 NullLogger<MultilanguagePageService>.Instance);
             RootSearch = new MultilanguagePageSearchService(repositoryFactory, _cache, Roots, Options.Create(new CrudOptions()));
             List = new SiteBuilderPageListService(repositoryFactory, groupSearch, Groups, Roots, storeService);
@@ -1140,7 +1163,8 @@ public class MultilanguagePageServiceTests
             var events = new NoopEventPublisher();
 
             return new MultilanguagePageService(repositoryFactory, _cache, events, Groups, groupedPageContentService, GroupSearch, StoreService,
-                new SiteBuilderPageService(repositoryFactory, _cache, events), Lock, NullLogger<MultilanguagePageService>.Instance);
+                new SiteBuilderPageService(repositoryFactory, _cache, events), Lock,
+                new SiteBuilderPublishConflictService(Groups, GroupSearch, StoreService, new InProcessDistributedLock()), NullLogger<MultilanguagePageService>.Instance);
         }
 
         public InProcessDistributedLock Lock { get; } = new();

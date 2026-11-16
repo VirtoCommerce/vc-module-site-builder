@@ -356,7 +356,7 @@ public partial class PageContentAtomicWriteTests
         var written = await service.SaveGroupContentAsync(cached, UpdatedPageContent, snapshot.ETag, TestContext.Current.CancellationToken);
         Assert.Equal(snapshot.PageId, written.PageId);
         var controller = CreateContentController(database.ConnectionString, cache, service);
-        Assert.IsType<OkResult>(await controller.PublishGroup(GroupId, true, TestContext.Current.CancellationToken));
+        Assert.IsType<OkResult>(await controller.PublishGroup(GroupId, true, cancellationToken: TestContext.Current.CancellationToken));
         var published = await service.LoadGroupContentAsync(cached, false, TestContext.Current.CancellationToken);
         Assert.Equal(written.PageId, published.PageId);
         Assert.Equal(UpdatedPageContent, published.Content);

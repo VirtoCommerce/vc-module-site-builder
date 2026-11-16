@@ -89,27 +89,12 @@ public class SiteBuilderQueryServicesTests
     }
 
     [Fact]
-    public async Task GetSectionsSettings_Schemas_AnswersEachKindByKeyAsStored()
+    public async Task GetObjects_Schemas_AnswersThemAsTheEndpointAlwaysHas()
     {
-        _live.Files[$"{Schemas}/sections/banner.json"] = """{ "name": "Banner" }""";
-        _live.Files[$"{Schemas}/blocks/badge.json"] = """{"name":"Badge"}""";
-
-        var result = await Controller().GetSectionsSettings("s1", null);
-
-        Assert.Equal("""{ "sections": {"banner": { "name": "Banner" }}, "blocks": {"badge": {"name":"Badge"}}, "objects": {}, "shared": {} }""",
-            Assert.IsType<ContentResult>(result).Content);
-    }
-
-    [Fact]
-    public async Task GetTemplatesAndObjects_Schemas_AnswerThemAsTheEndpointsAlwaysHave()
-    {
-        _live.Files[$"{Schemas}/templates/product.json"] = """{ "name": "Product" }""";
         _live.Files[$"{Schemas}/objects/menu.json"] = """{ "name": "Menu" }""";
 
-        var templates = await Controller().GetTemplates("s1", null);
         var objects = await Controller().GetObjects("s1", null);
 
-        Assert.Equal(("""{"product": { "name": "Product" }}""", "application/json"), (Assert.IsType<ContentResult>(templates).Content, ((ContentResult)templates).ContentType));
         Assert.Equal("""{"menu": { "name": "Menu" }}""", Assert.IsType<OkObjectResult>(objects).Value);
     }
 

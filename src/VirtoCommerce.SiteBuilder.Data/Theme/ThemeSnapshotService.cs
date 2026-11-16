@@ -3,19 +3,16 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.Platform.Core.Caching;
 using VirtoCommerce.Platform.Core.Common;
-using VirtoCommerce.Platform.Core.Settings;
 using VirtoCommerce.StoreModule.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
 public class ThemeSnapshotService(
     IStoreService storeService,
-    ISettingsManager settingsManager,
     IThemeStorageFactory themeStorageFactory,
     IThemePublisher themePublisher,
     IPlatformMemoryCache platformMemoryCache,
@@ -25,7 +22,7 @@ public class ThemeSnapshotService(
 
     public virtual async Task<ThemeSnapshot> GetPublishedAsync(string storeId, string cultureName, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(storeId) || !await IsNewSiteBuilderEnabledAsync(storeId, cancellationToken))
+        if (string.IsNullOrEmpty(storeId))
         {
             return null;
         }
@@ -48,14 +45,6 @@ public class ThemeSnapshotService(
             ConfigureCache(cacheOptions, store.Id);
             return await GetPublishedNoCacheAsync(store.Id, language, defaultLanguage, cancellationToken);
         });
-    }
-
-    public virtual async Task<bool> IsNewSiteBuilderEnabledAsync(string storeId, CancellationToken cancellationToken = default)
-    {
-        var descriptor = ModuleConstants.Settings.StoreLevelSettings.NewSiteBuilder;
-        var settings = await settingsManager.GetObjectSettingsAsync([descriptor.Name], ModuleConstants.Settings.StoreSettingsObjectType, storeId);
-
-        return settings.GetValue<bool>(descriptor);
     }
 
     protected virtual string ResolveLanguage(IList<string> languages, string defaultLanguage, string cultureName)

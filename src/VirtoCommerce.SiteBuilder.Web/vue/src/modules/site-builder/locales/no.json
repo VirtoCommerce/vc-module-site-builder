@@ -100,6 +100,9 @@
           "USER_GROUPS": "Brukergrupper",
           "ORGANIZATION": "Organisasjon"
         },
+        "WARNINGS": {
+          "PERMALINK_USED": "Andre sider bruker denne permalinken: {pages}. Det er tillatt for andre besøkende eller perioder; publisering sjekker for konflikter."
+        },
         "VALIDATION": {
           "PERMALINK": "Permalinken kan være på høyst 2048 tegn og kan ikke inneholde mellomrom eller usynlige tegn, tegnene ? # & % \\ \" < > {'{'} {'}'} {'|'} ^ `, doble skråstreker eller segmentene . og .."
         },
@@ -134,6 +137,10 @@
           "MESSAGE": "Er du sikker på at du vil arkivere {count} valgte sider?",
           "ALL": "alle {totalCount}"
         },
+        "PUBLISH_CONFLICT": "Allerede publisert med denne permalinken for de samme besøkende: {pages}. Avpublisere dem og publisere denne siden?",
+        "PUBLISH_CONFLICT_HAS_CHANGES": "Allerede publisert med denne permalinken for de samme besøkende: {pages}. De har upubliserte endringer; publiser eller forkast dem først.",
+        "PUBLISH_POSSIBLE_CONFLICT": "Også publisert med denne permalinken for noen av de samme besøkende eller datoene: {pages}. Der begge gjelder, vises den sist publiserte. Publisere likevel?",
+        "PUBLISH_CONFLICT_CHANGED": "Publiseringen ble avvist: disse sidene er allerede publisert med denne permalinken for de samme besøkende: {pages}. Publiser på nytt for å løse konflikten.",
         "UNPUBLISH_WITH_DRAFT": "Kan ikke avpublisere en side som har endringer.",
         "DOWNLOAD_SUCCESS": "Innhold lagret til fil",
         "CLONE_SUCCESS": "Siden ble klonet",
@@ -208,6 +215,7 @@
       "ALERTS": {
         "PUBLISH_ALL_RESULT": "Publisert: {processed}. Hoppet over (ingen utkast): {skipped}.",
         "BATCH_FAILED": "Mislyktes: {failed}. Prøv igjen for disse språkene.",
+        "BATCH_PERMALINK_CONFLICT": "Ikke publisert: {conflicted}. En annen side er allerede publisert med denne permalinken for de samme besøkende. Publiser disse språkene ett om gangen for å erstatte den.",
         "ARCHIVE_ALL_RESULT": "Arkivert: {processed}. Allerede arkivert: {skipped}.",
         "ARCHIVE_ALL": "Arkivere alle språkversjoner av denne siden?",
         "DELETE": "Slette denne flerspråklige siden? Den har ingen språkversjoner.",
@@ -308,7 +316,6 @@
       "PREVIEW_SLOW": "Nettstedet bruker lang tid på å laste. Sjekk at nettbutikken på {url} kjører, og last inn på nytt.",
       "RELOAD_PREVIEW": "Last inn på nytt",
       "NO_STOREFRONT": "Ingen forhåndsvisning: nettstedet har ingen nettbutikk-URL. Angi den i nettstedets innstillinger, og åpne siden på nytt.",
-      "STORE_READ_FAILED": "Kunne ikke lese nettstedet, så designeren ble ikke åpnet. Prøv igjen.",
       "PREVIEW_UNSUPPORTED": "Denne nettbutikken støtter ikke den nye Site Builder-designeren.",
       "LOAD_FAILED": "Siden kunne ikke lastes inn. Den kan ha blitt slettet, eller du har kanskje ikke tilgang til den.",
       "SAVE": "Lagre",

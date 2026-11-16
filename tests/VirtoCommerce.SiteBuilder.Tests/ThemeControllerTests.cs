@@ -144,42 +144,6 @@ public class ThemeControllerTests
     }
 
     [Fact]
-    public async Task Publish_StoreWithoutTheNewSiteBuilder_ReturnsBadRequestWithoutPublishing()
-    {
-        _services.NewSiteBuilder = false;
-        var controller = Controller(new FakeAuthorizationService(true));
-
-        var result = Assert.IsType<BadRequestObjectResult>((await controller.Publish("s1", "abcdefgh", Ct)).Result);
-
-        Assert.Equal("""{"error":"The store does not use the new Site Builder: its theme is not published with theme/publish."}""", PlatformJson.Serialize(result.Value));
-        Assert.Equal(["new site builder s1"], _services.Calls);
-    }
-
-    [Fact]
-    public async Task Publish_StoreWithoutTheNewSiteBuilderUserDoesNotWorkIn_ReturnsForbid()
-    {
-        _services.NewSiteBuilder = false;
-        var controller = Controller(new FakeAuthorizationService("s2", Permissions.Publish));
-
-        Assert.IsType<ForbidResult>((await controller.Publish("s1", "abcdefgh", Ct)).Result);
-        Assert.Empty(_services.Calls);
-    }
-
-    [Fact]
-    public async Task OtherThemeActions_StoreWithoutTheNewSiteBuilder_DoNotAskForIt()
-    {
-        _services.NewSiteBuilder = false;
-        var controller = Controller(new FakeAuthorizationService(true), """{ "hash": "abcdefgh" }""");
-
-        Assert.IsType<OkObjectResult>((await controller.GetStatus("s1", Ct)).Result);
-        Assert.IsType<OkObjectResult>((await controller.SaveCatalog("s1", Ct)).Result);
-        Assert.IsType<OkObjectResult>((await controller.GeneratePalette("s1", GenerationRequest("#1b789b"), Ct)).Result);
-        Assert.IsType<OkObjectResult>((await controller.CheckPalette("s1", CheckRequest(), Ct)).Result);
-
-        Assert.DoesNotContain("new site builder s1", _services.Calls);
-    }
-
-    [Fact]
     public async Task GeneratePalette_BodyThatDidNotBind_ReturnsBadRequest()
     {
         var controller = Controller(new FakeAuthorizationService(true));
@@ -211,7 +175,7 @@ public class ThemeControllerTests
         var http = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test")) };
         http.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
         return new ThemeController(
-            new ThemeOperationService(authorization, RequestValidators.Stores("s1"), _services, _services, new NoContentHistory()),
+            new ThemeOperationService(authorization, RequestValidators.Stores("s1"), _services, new NoContentHistory()),
             _services,
             _services,
             authorization,
@@ -223,23 +187,9 @@ public class ThemeControllerTests
         };
     }
 
-    private sealed class RecordingThemeServices : IThemePublisher, ISchemaCatalogService, IThemePaletteService, IThemeSnapshotService
+    private sealed class RecordingThemeServices : IThemePublisher, ISchemaCatalogService, IThemePaletteService
     {
         public List<string> Calls { get; } = [];
-
-        public bool NewSiteBuilder { get; set; } = true;
-
-        public Task<bool> IsNewSiteBuilderEnabledAsync(string storeId, CancellationToken cancellationToken = default)
-        {
-            Calls.Add($"new site builder {storeId}");
-            return Task.FromResult(NewSiteBuilder);
-        }
-
-        public Task<ThemeSnapshot> GetPublishedAsync(string storeId, string cultureName, CancellationToken cancellationToken = default)
-        {
-            Calls.Add($"snapshot {storeId}");
-            return Task.FromResult<ThemeSnapshot>(null);
-        }
 
         public Task<int> PublishAsync(string storeId, string catalogHash, ClaimsPrincipal user, CancellationToken cancellationToken = default) =>
             PublishAsync(storeId, catalogHash, null, user, cancellationToken);

@@ -61,51 +61,6 @@ test("getDefaultLanguage returns the store default language", async () => {
   assert.equal(await storeContext.getDefaultLanguage(), "fr-FR");
 });
 
-function respondWithStore(newSiteBuilder: boolean) {
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      url: "https://example.com",
-      languages: ["en-US"],
-      settings: [{ name: "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder", value: newSiteBuilder }],
-    }),
-  }) as Response;
-}
-
-test("isNewSiteBuilder reads the switch anew, as the store's settings change it", async () => {
-  const storeContext = useUrlParams();
-
-  respondWithStore(false);
-  assert.equal(await storeContext.isNewSiteBuilder("switching-store"), false);
-
-  respondWithStore(true);
-  assert.equal(await storeContext.isNewSiteBuilder("switching-store"), true);
-});
-
-test("isNewSiteBuilder answers false for a store that does not exist", async () => {
-  globalThis.fetch = async () => ({ ok: false, status: 404 }) as Response;
-
-  assert.equal(await useUrlParams().isNewSiteBuilder("deleted-store"), false);
-});
-
-test("isNewSiteBuilder answers nothing when the store cannot be read, and leaves the store context as it is", async () => {
-  setStoreSearch("context-store");
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ url: "https://example.com", languages: ["en-US"] }),
-  }) as Response;
-  const storeContext = useUrlParams();
-  storeContext.initUrlParams();
-  assert.equal(await storeContext.validateStoreContext(), true);
-
-  globalThis.fetch = async () => ({ ok: false, status: 500 }) as Response;
-
-  assert.equal(await storeContext.isNewSiteBuilder(), undefined);
-  assert.equal(storeContext.storeContextStatus.value, "ready");
-});
-
 test("a store a blade holds gives way to the store in the address once the blade lets it go", () => {
   setStoreSearch("B2B-store");
   const storeContext = useUrlParams();

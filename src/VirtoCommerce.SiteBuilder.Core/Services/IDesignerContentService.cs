@@ -9,7 +9,7 @@ public interface IDesignerContentService
 {
     /// <summary>Also sanitizes the HTML the files store, in place.</summary>
     /// <param name="files">Contents by the path with the theme folder.</param>
-    /// <exception cref="InvalidDataException">A live theme write on a store with the new Site Builder.</exception>
+    /// <exception cref="InvalidDataException">A live theme write.</exception>
     /// <exception cref="Theme.ThemeValidationException">A file can run script, or does not fit the catalog.</exception>
     Task ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
         CancellationToken cancellationToken = default);

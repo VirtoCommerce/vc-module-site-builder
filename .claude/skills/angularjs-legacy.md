@@ -13,7 +13,7 @@ Rules and architecture overview for the legacy AngularJS admin integration locat
 
 ## Core Rule
 
-**Do not add new features here.** This is legacy code integrated with the VirtoCommerce AngularJS admin shell. New functionality belongs in the Angular 20 designer app or the Vue 3 shell app.
+**Do not add new features here.** This is legacy code integrated with the VirtoCommerce AngularJS admin shell. New functionality belongs in the Vue 3 shell app.
 
 Acceptable changes:
 - Bug fixes

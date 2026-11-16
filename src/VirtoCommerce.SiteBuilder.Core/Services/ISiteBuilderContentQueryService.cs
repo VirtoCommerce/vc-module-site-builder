@@ -15,10 +15,6 @@ public interface ISiteBuilderContentQueryService
     Task<SiteBuilderOperationResult<string>> GetSchemasAsync(SiteBuilderSchemaQueryRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default);
 
-    /// <summary>The schemas of sections, blocks, objects and shared fields as one JSON object, by their kind.</summary>
-    Task<SiteBuilderOperationResult<string>> GetSectionSchemasAsync(SiteBuilderThemeQueryRequest request, ClaimsPrincipal user,
-        CancellationToken cancellationToken = default);
-
     /// <summary>
     /// The JSON catalog of the schemas: the key, name and a short description of each, by kind. A theme's internal schemas and its static
     /// sections are left out; the full schema is read with <see cref="GetSchemaAsync"/>.

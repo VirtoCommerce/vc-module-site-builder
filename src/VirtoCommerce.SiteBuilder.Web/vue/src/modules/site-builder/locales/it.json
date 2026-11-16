@@ -100,6 +100,9 @@
           "USER_GROUPS": "Gruppi utenti",
           "ORGANIZATION": "Organizzazione"
         },
+        "WARNINGS": {
+          "PERMALINK_USED": "Altre pagine usano questo permalink: {pages}. È consentito per altri visitatori o periodi; la pubblicazione verifica i conflitti."
+        },
         "VALIDATION": {
           "PERMALINK": "Il permalink deve avere al massimo 2048 caratteri e non può contenere spazi o caratteri invisibili, i caratteri ? # & % \\ \" < > {'{'} {'}'} {'|'} ^ `, doppie barre o i segmenti . e .."
         },
@@ -134,6 +137,10 @@
           "MESSAGE": "Sei sicuro di voler archiviare {count} pagine selezionate?",
           "ALL": "tutte {totalCount}"
         },
+        "PUBLISH_CONFLICT": "Già pubblicate con questo permalink per gli stessi visitatori: {pages}. Annullarne la pubblicazione e pubblicare questa pagina?",
+        "PUBLISH_CONFLICT_HAS_CHANGES": "Già pubblicate con questo permalink per gli stessi visitatori: {pages}. Hanno modifiche non pubblicate; pubblica o scarta prima tali modifiche.",
+        "PUBLISH_POSSIBLE_CONFLICT": "Pubblicate con questo permalink anche per parte degli stessi visitatori o date: {pages}. Dove valgono entrambe, viene mostrata l'ultima pubblicata. Pubblicare comunque?",
+        "PUBLISH_CONFLICT_CHANGED": "Pubblicazione rifiutata: queste pagine sono già pubblicate con questo permalink per gli stessi visitatori: {pages}. Pubblica di nuovo per risolvere il conflitto.",
         "UNPUBLISH_WITH_DRAFT": "Non è possibile annullare la pubblicazione di una pagina con modifiche.",
         "DOWNLOAD_SUCCESS": "Contenuto salvato su file con successo",
         "CLONE_SUCCESS": "Pagina clonata con successo",
@@ -208,6 +215,7 @@
       "ALERTS": {
         "PUBLISH_ALL_RESULT": "Pubblicate: {processed}. Saltate (nessuna bozza): {skipped}.",
         "BATCH_FAILED": "Non riuscite: {failed}. Riprova per queste lingue.",
+        "BATCH_PERMALINK_CONFLICT": "Non pubblicate: {conflicted}. Un'altra pagina è già pubblicata con questo permalink per gli stessi visitatori. Pubblica queste lingue una alla volta per sostituirla.",
         "ARCHIVE_ALL_RESULT": "Archiviate: {processed}. Già archiviate: {skipped}.",
         "ARCHIVE_ALL": "Archiviare tutte le versioni linguistiche di questa pagina?",
         "DELETE": "Eliminare questa pagina multilingue? Non ha versioni linguistiche.",
@@ -308,7 +316,6 @@
       "PREVIEW_SLOW": "Il sito impiega molto a caricarsi. Verifica che lo storefront su {url} sia in esecuzione, poi ricarica.",
       "RELOAD_PREVIEW": "Ricarica",
       "NO_STOREFRONT": "Nessuna anteprima: il sito non ha un URL dello storefront. Impostalo nelle Impostazioni del sito, poi riapri la pagina.",
-      "STORE_READ_FAILED": "Impossibile leggere il sito, quindi il designer non si è aperto. Riprova.",
       "PREVIEW_UNSUPPORTED": "Questo storefront non supporta il nuovo designer di Site Builder.",
       "LOAD_FAILED": "Impossibile caricare la pagina. Potrebbe essere stata eliminata o potresti non avere accesso.",
       "SAVE": "Salva",

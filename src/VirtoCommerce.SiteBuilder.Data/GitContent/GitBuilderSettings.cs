@@ -10,7 +10,7 @@ public static class GitBuilderSettings
     /// it ships the same way a publish does — a commit on the work branch and a merge.
     /// <para>
     /// The same mechanism switches version history on: the panel exists only for a store whose pages
-    /// are in git, and it learns where to ask from here rather than from the app's bundled config.
+    /// are in git.
     /// </para>
     /// </summary>
     public static JObject GetDescriptors()

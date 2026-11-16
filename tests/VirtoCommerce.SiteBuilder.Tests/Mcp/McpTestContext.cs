@@ -359,7 +359,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton<IThemePaletteService>(new ThemePaletteService())
             .AddSingleton(Previews.Object)
             .AddSingleton<IThemeOperationService>(provider => new ThemeOperationService(provider.GetRequiredService<IAuthorizationService>(),
-                RequestValidators.Stores(StoreA, StoreB, StoreC), new NewSiteBuilderStores(), CreateThemePublisher(), SavedVersions))
+                RequestValidators.Stores(StoreA, StoreB, StoreC), CreateThemePublisher(), SavedVersions))
             .AddSingleton<ISiteBuilderContentQueryService>(provider => new SiteBuilderContentQueryService(provider.GetRequiredService<IAuthorizationService>(),
                 RequestValidators.Content(StoreA, StoreB, StoreC), Blobs, Blobs, Blobs, ThemeStorage, new FakeGitContentPolicy(enabled: GitFlow), null,
                 GitHubConnections.CreateService(new GitContentOptions()), Options.Create(new GitContentOptions()), GitHistory.Object));
@@ -433,7 +433,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             var filePages = TestServices.FilePageDrafts(Options.Create(new GitContentOptions()), connection: null, policy: new FakeGitContentPolicy(enabled: false),
                 storeService: Stores, pathResolver: Blobs, blobs: Blobs, publishing: Blobs, events: Blobs);
             _designer = (TestServices.Designer(SavedVersions, filePageDrafts: filePages, themeDrafts: themes, pages: PageStore, themePublisher: CreateThemePublisher(),
-                themeSnapshots: new NewSiteBuilderStores(), catalogs: new SchemaCatalogService(ThemeStorage)), themes);
+                catalogs: new SchemaCatalogService(ThemeStorage)), themes);
         }
 
         return _designer;
@@ -521,15 +521,6 @@ internal sealed class McpTestContext : IAsyncDisposable
 
         public Task<SiteBuilderOperationResult> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft, string catalogHash,
             CancellationToken cancellationToken = default) => inner.ValidateThemeFilesAsync(storeId, files, draft, catalogHash, cancellationToken);
-    }
-
-    // Every store of the test uses the new Site Builder, which publishes its theme from drafts.
-    private sealed class NewSiteBuilderStores : IThemeSnapshotService
-    {
-        public Task<ThemeSnapshot> GetPublishedAsync(string storeId, string cultureName, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<bool> IsNewSiteBuilderEnabledAsync(string storeId, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 
     private UserManager<ApplicationUser> CreateUserManager()

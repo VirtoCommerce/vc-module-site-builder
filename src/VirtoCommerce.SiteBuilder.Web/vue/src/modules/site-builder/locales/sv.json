@@ -100,6 +100,9 @@
           "USER_GROUPS": "Användargrupper",
           "ORGANIZATION": "Organisation"
         },
+        "WARNINGS": {
+          "PERMALINK_USED": "Andra sidor använder den här permalänken: {pages}. Det är tillåtet för andra besökare eller perioder; publiceringen kontrollerar konflikter."
+        },
         "VALIDATION": {
           "PERMALINK": "Permalänken får vara högst 2048 tecken och får inte innehålla mellanslag eller osynliga tecken, tecknen ? # & % \\ \" < > {'{'} {'}'} {'|'} ^ `, dubbla snedstreck eller segmenten . och .."
         },
@@ -134,6 +137,10 @@
           "MESSAGE": "Är du säker på att du vill arkivera {count} valda sidor?",
           "ALL": "alla {totalCount}"
         },
+        "PUBLISH_CONFLICT": "Redan publicerade med den här permalänken för samma besökare: {pages}. Avpublicera dem och publicera den här sidan?",
+        "PUBLISH_CONFLICT_HAS_CHANGES": "Redan publicerade med den här permalänken för samma besökare: {pages}. De har opublicerade ändringar; publicera eller ignorera dem först.",
+        "PUBLISH_POSSIBLE_CONFLICT": "Även publicerade med den här permalänken för en del av samma besökare eller datum: {pages}. Där båda gäller visas den senast publicerade. Publicera ändå?",
+        "PUBLISH_CONFLICT_CHANGED": "Publiceringen avvisades: dessa sidor är redan publicerade med den här permalänken för samma besökare: {pages}. Publicera igen för att lösa konflikten.",
         "UNPUBLISH_WITH_DRAFT": "Kan inte avpublicera en sida som har ändringar.",
         "DOWNLOAD_SUCCESS": "Innehåll sparat i fil",
         "CLONE_SUCCESS": "Sidan klonades",
@@ -208,6 +215,7 @@
       "ALERTS": {
         "PUBLISH_ALL_RESULT": "Publicerade: {processed}. Överhoppade (inget utkast): {skipped}.",
         "BATCH_FAILED": "Misslyckades: {failed}. Försök igen för dessa språk.",
+        "BATCH_PERMALINK_CONFLICT": "Inte publicerade: {conflicted}. En annan sida är redan publicerad med den här permalänken för samma besökare. Publicera dessa språk ett i taget för att ersätta den.",
         "ARCHIVE_ALL_RESULT": "Arkiverade: {processed}. Redan arkiverade: {skipped}.",
         "ARCHIVE_ALL": "Arkivera alla språkversioner av den här sidan?",
         "DELETE": "Ta bort den här flerspråkiga sidan? Den har inga språkversioner.",
@@ -308,7 +316,6 @@
       "PREVIEW_SLOW": "Webbplatsen tar lång tid att läsa in. Kontrollera att butiken på {url} körs och läs sedan in igen.",
       "RELOAD_PREVIEW": "Läs in igen",
       "NO_STOREFRONT": "Ingen förhandsgranskning: webbplatsen saknar butiks-URL. Ange den i webbplatsens inställningar och öppna sidan igen.",
-      "STORE_READ_FAILED": "Webbplatsen kunde inte läsas, så designern öppnades inte. Försök igen.",
       "PREVIEW_UNSUPPORTED": "Den här butiken stöder inte den nya Site Builder-designern.",
       "LOAD_FAILED": "Sidan kunde inte läsas in. Den kan ha tagits bort, eller så saknar du åtkomst till den.",
       "SAVE": "Spara",

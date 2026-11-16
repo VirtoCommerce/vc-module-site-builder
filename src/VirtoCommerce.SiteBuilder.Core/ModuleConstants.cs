@@ -287,22 +287,11 @@ namespace VirtoCommerce.SiteBuilder.Core
                     DefaultValue = "",
                 };
 
-                /// <summary>Public, so the storefront sees it in the store's module settings.</summary>
-                public static SettingDescriptor NewSiteBuilder { get; } = new()
-                {
-                    Name = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder",
-                    GroupName = "CMS|Site builder",
-                    ValueType = SettingValueType.Boolean,
-                    DefaultValue = false,
-                    IsPublic = true,
-                };
-
                 public static IEnumerable<SettingDescriptor> AllStoreLevelSettings
                 {
                     get
                     {
                         yield return PreviewUserIds;
-                        yield return NewSiteBuilder;
                         yield return GitContentEnabled;
                         yield return GitContentRepository;
                     }

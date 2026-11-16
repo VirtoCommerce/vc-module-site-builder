@@ -8,7 +8,7 @@ import {
 } from "../src/modules/shared-components/utilities/sharedComponentDeletionError";
 import { createSharedComponentDetailsLoader } from "../src/modules/shared-components/utilities/sharedComponentDetailsRequest";
 import { getDistinctUsagePages, getUsagePageTitle } from "../src/modules/shared-components/utilities/sharedComponent";
-import { buildClassicDesignerUrl, canOpenPageDesigner } from "../src/utilities/pageDesigner";
+import { canOpenPageDesigner } from "../src/utilities/pageDesigner";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -37,25 +37,8 @@ function createComponent(id: string, usageCount = 0): SharedComponent {
   };
 }
 
-test("classic designer URL opens the page in the Angular designer, in its language", () => {
-  const url = buildClassicDesignerUrl(
-    { groupId: " home page ", storeId: "B2B/store", cultureName: "en-US" },
-    "https://platform.example.com/",
-  );
-
-  assert.equal(
-    url,
-    "https://platform.example.com/Modules/$(VirtoCommerce.SiteBuilder)/Content/site-builder-designer/index.html" +
-      "?storeId=B2B%2Fstore#/pages?type=pages&groupId=home+page&cultureName=en-US",
-  );
-  assert.throws(
-    () => buildClassicDesignerUrl({ groupId: "page-1", storeId: "store-1", status: "Archived" }, "https://p.example.com"),
-    /Can't open page/,
-  );
-});
-
-test("page designer URL requires page identity", () => {
-  assert.throws(() => buildClassicDesignerUrl({ storeId: "store-1" }, "https://platform.example.com"), /Can't open page/);
+test("page designer requires page identity", () => {
+  assert.equal(canOpenPageDesigner({ storeId: "store-1" }), false);
   assert.equal(canOpenPageDesigner({ groupId: "  ", storeId: "store-1" }), false);
   assert.equal(canOpenPageDesigner({ groupId: "page-1", storeId: "  " }), false);
 });

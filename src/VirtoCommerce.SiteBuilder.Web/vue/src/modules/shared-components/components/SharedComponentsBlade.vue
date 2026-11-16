@@ -86,7 +86,7 @@
           :can-update="canUpdate"
           :can-delete="canDelete"
           :can-open-usage-page="canOpenUsagePageDesigner"
-          :can-edit-content="canEditContent"
+          :can-edit-content="canOpenDesigner"
           :loading="loading"
           :details-loading="detailsLoading"
           @close="clearDetailsSelection"
@@ -113,7 +113,7 @@
 
 <script lang="ts" setup>
 import { computed, onMounted, ref } from "vue";
-import { breakpointsTailwind, computedAsync, useBreakpoints } from "@vueuse/core";
+import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { focusFallbackTarget, focusIfLoose, usePermissions, type IBladeToolbar } from "@vc-shell/framework";
 import { VcBlade, VcButton, VcHint, VcIcon } from "@vc-shell/framework/ui";
@@ -123,11 +123,10 @@ import RenameSharedComponentPopup from "./RenameSharedComponentPopup.vue";
 import { useSharedComponentActions, useSharedComponents } from "../composables";
 import type { SharedComponent, SharedComponentUsagePage } from "../types";
 import { canOpenPageDesigner } from "../../../utilities/pageDesigner";
-import { usePageDesigner, useSharedComponentDesigner, useUrlParams } from "../../site-builder/composables";
+import { usePageDesigner, useSharedComponentDesigner } from "../../site-builder/composables";
 
 const openPageDesigner = usePageDesigner();
 const openSharedComponentDesigner = useSharedComponentDesigner();
-const { isNewSiteBuilder } = useUrlParams();
 const detailsStacked = useBreakpoints(breakpointsTailwind).smaller("lg");
 const { t } = useI18n({ useScope: "global" });
 const { hasAccess } = usePermissions();
@@ -182,8 +181,6 @@ const canDelete = computed(() => hasAccess("builder:shared-components:delete") &
 const canOpenDesigner = computed(
   () => hasAccess("builder:read") && isStoreContextReady.value && Boolean(storeId.value),
 );
-// A component's content is edited in the Vue designer, which a store without the New Site Builder switch doesn't use.
-const canEditContent = computedAsync(async () => canOpenDesigner.value && (await isNewSiteBuilder(storeId.value)) === true, false);
 const storeContextTitle = computed(() =>
   storeContextStatus.value === "missing"
     ? t("COMMON.STORE_CONTEXT.MISSING_TITLE")

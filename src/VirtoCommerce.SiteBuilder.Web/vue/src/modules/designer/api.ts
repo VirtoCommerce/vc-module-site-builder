@@ -91,8 +91,9 @@ export async function publishStatus(groupId: string): Promise<PublishStatus> {
   }) as PublishStatus;
 }
 
-export async function setPublished(groupId: string, publish: boolean) {
-  await call(`/api/site-builder-pages/grouped/publishing/${encodeURIComponent(groupId)}?publish=${publish}`, { method: "POST" });
+export async function setPublished(groupId: string, publish: boolean, unpublishConflicting = false) {
+  const query = `publish=${publish}${unpublishConflicting ? "&unpublishConflicting=true" : ""}`;
+  await call(`/api/site-builder-pages/grouped/publishing/${encodeURIComponent(groupId)}?${query}`, { method: "POST" });
 }
 
 export interface SharedComponent {

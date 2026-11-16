@@ -18,4 +18,10 @@ public class GroupedPagePublishOperationRequest : GroupedPageOperationRequest
     /// the unpublish is refused once the page is at another one. <c>null</c> unpublishes the page whatever it holds.
     /// </summary>
     public string ExpectedPublishedVersion { get; set; }
+
+    /// <summary>
+    /// <c>true</c> unpublishes the published pages that publishing the draft would completely replace (a Certain permalink conflict)
+    /// with the publish; <c>false</c> refuses the publish while there are any.
+    /// </summary>
+    public bool UnpublishConflicting { get; set; }
 }

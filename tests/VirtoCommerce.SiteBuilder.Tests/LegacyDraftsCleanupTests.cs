@@ -426,7 +426,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     authorizationService: new FakeAuthorizationService(allowed),
                     contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
                     requestValidator: RequestValidators.Content("s1", "vccom"),
-                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null)),
+                    designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null)),
                 contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
                 filePageDraftService: filePageDrafts,
             contentGuard: TestServices.ContentGuard,

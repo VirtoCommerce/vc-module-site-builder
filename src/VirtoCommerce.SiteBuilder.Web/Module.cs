@@ -83,6 +83,7 @@ namespace VirtoCommerce.SiteBuilder.Web
                 ?? ActivatorUtilities.CreateInstance<GroupedPageService>(provider));
             serviceCollection.AddTransient<IGroupedPageSearchService, GroupedPageSearchService>();
             serviceCollection.AddTransient<IMultilanguagePageService, MultilanguagePageService>();
+            serviceCollection.AddTransient<ISiteBuilderPublishConflictService, SiteBuilderPublishConflictService>();
             serviceCollection.AddTransient<IMultilanguagePageOperationService, MultilanguagePageOperationService>();
             serviceCollection.AddTransient<IMultilanguagePageSearchService, MultilanguagePageSearchService>();
             serviceCollection.AddTransient<ISiteBuilderPageListService, SiteBuilderPageListService>();

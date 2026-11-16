@@ -5,10 +5,8 @@ angular.module('virtoCommerce.siteBuilderModule')
         'platformWebApp.dynamicProperties.dictionaryItemsApi', 'platformWebApp.settings',
         'virtoCommerce.siteBuilderModule.resourceNameService', 'virtoCommerce.searchModule.searchIndexation', "moment",
         'virtoCommerce.contentModule.broadcastChannelFactory', 'virtoCommerce.contentModule.files-draft',
-        'virtoCommerce.storeModule.stores',
         function ($rootScope, $scope, $q, validators, contentApi, siteBuilderApi, bladeNavigationService, dialogService,
-            dictionaryItemsApi, settings, nameHelper, searchApi, moment, broadcastChannelFactory, filesDraftService,
-            stores) {
+            dictionaryItemsApi, settings, nameHelper, searchApi, moment, broadcastChannelFactory, filesDraftService) {
 
             var momentFormat = "YYYYMMDDHHmmss";
 
@@ -19,7 +17,6 @@ angular.module('virtoCommerce.siteBuilderModule')
 
             var blade = $scope.blade;
             blade.updatePermission = 'content:update';
-            blade.designerUrl = null;
             $scope.blade.currentEntity.settings = { type: 'settings', permalink: '' };
             $scope.validators = validators;
             $scope.searchEnabled = false;
@@ -28,13 +25,8 @@ angular.module('virtoCommerce.siteBuilderModule')
             // place under each, so it must never run on a guess.
             var flowResolved = false;
 
-            var newSiteBuilderSetting = 'VirtoCommerce.SiteBuilder.Store.NewSiteBuilder';
-            var designerReady = $q.resolve(false);
-
             blade.initialize = function () {
                 channel = broadcastChannelFactory(blade);
-                blade.newSiteBuilder = false;
-                designerReady = loadDesigner();
                 loadPublishStatus();
                 if (blade.isNew) {
                     blade.isLoading = false;
@@ -78,26 +70,6 @@ angular.module('virtoCommerce.siteBuilderModule')
                 loadSearchIndex();
                 loadLegacyDraft();
             };
-
-            // Without an answer neither designer opens: not opening is recoverable, editing the page
-            // in the wrong designer is not.
-            function loadDesigner() {
-                var pathname = window.location.pathname === '/' ? '' : window.location.pathname;
-                var platformUrl = window.location.origin + pathname;
-                return stores.get({ id: blade.storeId }).$promise.then(function (store) {
-                    var setting = _.find(store.settings || [], function (x) {
-                        return x.name === newSiteBuilderSetting;
-                    });
-                    blade.newSiteBuilder = !!setting && setting.value === true;
-                    blade.designerUrl = blade.newSiteBuilder
-                        ? `${platformUrl}/apps/site-builder-shell/`
-                        : `${platformUrl}/Modules/$(VirtoCommerce.SiteBuilder)/Content/site-builder-designer/index.html`;
-                    return true;
-                }, function (error) {
-                    bladeNavigationService.setError('Error ' + error.status, $scope.blade);
-                    return false;
-                });
-            }
 
             // Which flow this store is on, and the page's real publish state. The list one blade back
             // derives both from blob file names, which says nothing about a page whose drafts are
@@ -301,7 +273,7 @@ angular.module('virtoCommerce.siteBuilderModule')
                     {
                         name: "siteBuilder.commands.open-designer", icon: 'fa fa-crop',
                         executeMethod: function () {
-                            runDesigner();
+                            openDesigner();
                         },
                         canExecuteMethod: function () { return true; }
                     }
@@ -609,48 +581,19 @@ angular.module('virtoCommerce.siteBuilderModule')
                 return isDirty() && formScope && formScope.$valid;
             }
 
-            function runDesigner() {
-                designerReady.then(function (resolved) {
-                    if (resolved) {
-                        openDesigner();
-                        return;
-                    }
-                    designerReady = loadDesigner();
-                    designerReady.then(function (loaded) {
-                        if (loaded) {
-                            openDesigner();
-                        }
-                    });
-                });
-            }
-
             function openDesigner() {
-                if (blade.designerUrl) {
-                    var parameters;
-                    if (blade.newSiteBuilder) {
-                        // The designer reads the draft, or in git this editor's branch, itself, so it needs only the page's path.
-                        parameters = `storeId=${encodeURIComponent(blade.storeId)}` +
-                            `&designType=${encodeURIComponent(blade.contentType)}` +
-                            `&designPath=${encodeURIComponent(blade.currentEntity.relativeUrl)}`;
-                    } else {
-                        var relativeUrl = filesDraftService.getDraftFileName(blade);
-                        var previewId = filesDraftService.getDocumentId(blade, true);
-                        parameters = `storeId=${blade.storeId}#/pages?type=${blade.contentType}&path=${relativeUrl}&previewId=${encodeURIComponent(previewId)}`;
-                    }
-                    // Pass the page language so the designer preview renders in that language (VCST-5219).
-                    var designerLanguage = blade.currentEntity && blade.currentEntity.language;
-                    if (designerLanguage) {
-                        parameters += `&cultureName=${encodeURIComponent(designerLanguage)}`;
-                    }
-                    window.open(`${blade.designerUrl}?${parameters}`, '_blank', 'noopener');
-                } else {
-                    var dialog = {
-                        id: "noUrlInStore",
-                        title: "content.dialogs.set-designer-url.title",
-                        message: "content.dialogs.set-designer-url.message"
-                    };
-                    dialogService.showNotificationDialog(dialog);
+                var pathname = window.location.pathname === '/' ? '' : window.location.pathname;
+                var platformUrl = window.location.origin + pathname;
+                // The designer reads the draft, or in git this editor's branch, itself, so it needs only the page's path.
+                var parameters = `storeId=${encodeURIComponent(blade.storeId)}` +
+                    `&designType=${encodeURIComponent(blade.contentType)}` +
+                    `&designPath=${encodeURIComponent(blade.currentEntity.relativeUrl)}`;
+                // Pass the page language so the designer preview renders in that language (VCST-5219).
+                var designerLanguage = blade.currentEntity && blade.currentEntity.language;
+                if (designerLanguage) {
+                    parameters += `&cultureName=${encodeURIComponent(designerLanguage)}`;
                 }
+                window.open(`${platformUrl}/apps/site-builder-shell/?${parameters}`, '_blank', 'noopener');
             }
 
             function reloadPageAndSave(newFileName, originFileName) {
@@ -791,7 +734,7 @@ angular.module('virtoCommerce.siteBuilderModule')
                 updateToolbarCommands();
 
                 if (blade.isNew) {
-                    runDesigner();
+                    openDesigner();
                     blade.parentBlade.refresh();
                 }
             }

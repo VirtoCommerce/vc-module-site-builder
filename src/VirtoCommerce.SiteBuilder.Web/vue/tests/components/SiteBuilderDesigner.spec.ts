@@ -12,7 +12,7 @@ import VersionHistory from "../../src/modules/designer/components/VersionHistory
 import { pagesChanged, useUrlParams } from "../../src/modules/site-builder/composables";
 import { PickAssetKey } from "../../src/modules/designer/types";
 import { toClipboard } from "../../src/modules/designer/clipboard";
-import { BladeStackKey, blade, notification } from "./support/vcShell";
+import { BladeStackKey, blade, notification, popup } from "./support/vcShell";
 import { fakePlatform, status, themeFileAnswer, type FakePlatform } from "./support/fakePlatform";
 
 const STORE = "B2B-store";
@@ -403,5 +403,114 @@ describe("the template switcher", () => {
 
     expect(wrapper.find(".pd-switch__notice").text()).toBe(message);
     expect(items(wrapper).filter((x) => x === "Default")).toHaveLength(3);
+  });
+});
+
+describe("publishing a page at a permalink other pages have", () => {
+  const PUBLISHING = "/api/site-builder-pages/grouped/publishing/g1";
+  const USAGES = "/api/site-builder-pages/grouped/permalink-usages";
+  const OLD = { groupId: "g2", name: "Old about", cultureName: "en-US", conflict: "Certain", canUnpublish: true };
+  const ANY_LANGUAGE = { groupId: "g3", name: "About for all", conflict: "Certain", canUnpublish: true };
+  let platform: FakePlatform;
+
+  async function openPage(usages: unknown[], refusals: unknown[] = []) {
+    platform = fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", permalink: "about", cultureName: "en-US", status: "Draft" })
+      .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: false, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({}))
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: [] })
+      .on("POST", USAGES, usages)
+      .on("POST", PUBLISHING, () => {
+        const conflicts = refusals.shift();
+        return conflicts ? status(409, { error: "Pages are published with the same permalink", conflicts }) : "";
+      })
+      .install();
+    blade.param.value = "g1";
+    const wrapper = shallowMount(SiteBuilderDesigner, { global: { plugins: [await routerAt("/")], stubs: { VcBlade: false } } });
+    await flushPromises();
+    return wrapper;
+  }
+
+  async function publish(wrapper: VueWrapper) {
+    await wrapper.find('[role="toolbar"] [data-test-id="publish"]').trigger("click");
+    await flushPromises();
+  }
+
+  const publishes = () => platform.to(PUBLISHING, "POST").map((x) => x.query);
+  const confirmations = () => popup.showConfirmation.mock.calls.map(([message]) => message);
+
+  it("publishes at once when no other published page has the permalink", async () => {
+    const wrapper = await openPage([{ groupId: "g4", name: "About draft", conflict: "None", canUnpublish: true }]);
+    const before = pagesChanged.value;
+
+    await publish(wrapper);
+
+    expect(platform.to(USAGES, "POST")[0].body).toMatchObject({ id: "g1", permalink: "about", cultureName: "en-US" });
+    expect(confirmations()).toEqual([]);
+    expect(publishes()).toEqual([{ publish: "true" }]);
+    expect(pagesChanged.value).toBe(before + 1);
+  });
+
+  it("asks to unpublish the pages it would replace, naming each with its language, and unpublishes them in the same publish", async () => {
+    const wrapper = await openPage([OLD, ANY_LANGUAGE]);
+
+    await publish(wrapper);
+
+    expect(confirmations()).toEqual([
+      'Already published at this permalink for the same visitors: "Old about" (en-US), "About for all". Unpublish them and publish this page?',
+    ]);
+    expect(publishes()).toEqual([{ publish: "true", unpublishConflicting: "true" }]);
+  });
+
+  it("asks before publishing over a page it meets for some visitors or dates only, and publishes nothing when declined", async () => {
+    popup.confirm = false;
+    const wrapper = await openPage([{ ...OLD, conflict: "Possible" }]);
+
+    await publish(wrapper);
+
+    expect(confirmations()).toEqual([
+      'Also published at this permalink for some of the same visitors or dates: "Old about" (en-US). Where both pages apply, the one published last is shown. Publish anyway?',
+    ]);
+    expect(publishes()).toEqual([]);
+  });
+
+  it("offers to unpublish a page published after the check, and publishes again unpublishing it", async () => {
+    const wrapper = await openPage([], [[OLD]]);
+    const before = pagesChanged.value;
+
+    await publish(wrapper);
+
+    expect(confirmations()).toEqual([
+      'Already published at this permalink for the same visitors: "Old about" (en-US). Unpublish them and publish this page?',
+    ]);
+    expect(publishes()).toEqual([{ publish: "true" }, { publish: "true", unpublishConflicting: "true" }]);
+    expect(notification.error).not.toHaveBeenCalled();
+    expect(pagesChanged.value).toBe(before + 1);
+  });
+
+  it("publishes nothing more and keeps Publish when the editor keeps the other page", async () => {
+    popup.confirm = false;
+    const wrapper = await openPage([], [[OLD]]);
+
+    await publish(wrapper);
+
+    expect(confirmations()).toHaveLength(1);
+    expect(publishes()).toEqual([{ publish: "true" }]);
+    expect(notification.error).not.toHaveBeenCalled();
+    expect(toolbarItem(wrapper, "publish").disabled).toBe(false);
+  });
+
+  it("says the other page has changes to resolve first, and offers no unpublishing", async () => {
+    const wrapper = await openPage([], [[{ ...OLD, canUnpublish: false }]]);
+
+    await publish(wrapper);
+
+    expect(confirmations()).toEqual([]);
+    expect(publishes()).toEqual([{ publish: "true" }]);
+    expect(notification.error).toHaveBeenCalledWith(
+      'Already published at this permalink for the same visitors: "Old about" (en-US). They have unpublished changes, so publish or discard those changes first.',
+    );
   });
 });

@@ -285,7 +285,6 @@ Not yet included (tracked separately):
 - [Create a landing page](create-landing-page.md)
 - [Block library](block-library.md)
 - [Schemas](schemas.md)
-- [Theme editor](theme-editor.md)
 
 
-For grouped-page edits, retain the `eTag` returned with the document and send it with the edited content. Add `includeVersion=true` to a content POST to receive the next token in its JSON body (`200 { eTag }`), avoiding dependence on proxy-transformed ETag headers. A `412` requires reading the current document and reconciling changes; do not attach a new token to stale content. An identical retry after a lost response is accepted without rewriting content. Notify the Designer with the existing `RELOAD_BLADE` message after an assistant save. The Designer checks the server version on notification and panel close: a changed, clean page reloads its document and version together, while a changed, dirty page preserves local work and prompts the author to reconcile. An unchanged page produces no warning; a busy page is left alone.
+For grouped-page edits, retain the `eTag` returned with the document and send it with the edited content. Add `includeVersion=true` to a content POST to receive the next token in its JSON body (`200 { eTag }`), avoiding dependence on proxy-transformed ETag headers. A `412` requires reading the current document and reconciling changes; do not attach a new token to stale content. An identical retry after a lost response is accepted without rewriting content.

@@ -39,7 +39,6 @@ public class ThemeOperationServiceTests
 
     private readonly FakeBlobStorage _storage = new();
     private readonly InProcessDistributedLock _lock = new();
-    private readonly NewSiteBuilder _newSiteBuilder = new();
     private readonly FakeStoreService _stores = new(new Store { Id = StoreId, DefaultLanguage = "en-US", Languages = ["en-US"], DynamicProperties = [] });
     private readonly ThemeStorageFactory _themes;
 
@@ -60,18 +59,16 @@ public class ThemeOperationServiceTests
         var result = await Service(new FakeAuthorizationService("other", Permissions.Publish)).PublishAsync(request, User, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Forbidden, result.Status);
-        Assert.Equal(0, _newSiteBuilder.Asked);
     }
 
     [Fact]
-    public async Task PublishAsync_ValueThatDidNotBind_IsInvalidBeforeTheStoreIsAskedForTheNewSiteBuilder()
+    public async Task PublishAsync_ValueThatDidNotBind_IsInvalid()
     {
         var request = new ThemePublishOperationRequest { StoreId = StoreId, CatalogHash = Catalog, BindingErrors = ["The value is not valid."] };
 
         var result = await Service().PublishAsync(request, User, Ct);
 
         Assert.Equal((SiteBuilderOperationStatus.Invalid, "The value is not valid."), (result.Status, result.Error));
-        Assert.Equal(0, _newSiteBuilder.Asked);
     }
 
     [Fact]
@@ -331,7 +328,7 @@ public class ThemeOperationServiceTests
         new() { StoreId = StoreId, CatalogHash = Catalog, ExpectedVersions = expectedVersions };
 
     private ThemeOperationService Service(FakeAuthorizationService authorization = null, IContentHistory history = null) =>
-        TestServices.ThemeOperations(authorization ?? new FakeAuthorizationService(true), _newSiteBuilder, Publisher(), history, StoreId);
+        TestServices.ThemeOperations(authorization ?? new FakeAuthorizationService(true), Publisher(), history, StoreId);
 
     private ThemePublisher Publisher() =>
         new(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_themes), _lock, _storage, new NoContentHistory(),
@@ -352,20 +349,6 @@ public class ThemeOperationServiceTests
             ["settings"] = new JObject { ["type"] = "settings" },
             ["content"] = new JArray(sections.Select((type, i) => new JObject { ["id"] = $"s{i}", ["type"] = type })),
         }.ToString();
-
-    private sealed class NewSiteBuilder : IThemeSnapshotService
-    {
-        public int Asked { get; private set; }
-
-        public Task<ThemeSnapshot> GetPublishedAsync(string storeId, string cultureName, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<bool> IsNewSiteBuilderEnabledAsync(string storeId, CancellationToken cancellationToken = default)
-        {
-            Asked++;
-            return Task.FromResult(true);
-        }
-    }
 
     /// <summary>The last version of each theme file, by its path with the theme folder.</summary>
     private sealed class AuthoredHistory : IContentHistory

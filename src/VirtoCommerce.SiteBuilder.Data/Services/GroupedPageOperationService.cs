@@ -24,7 +24,8 @@ public class GroupedPageOperationService(
     ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator,
     IDesignerContentService designerContentService,
     ISiteBuilderContentGuard contentGuard,
-    IContentHistory contentHistory) : IGroupedPageOperationService
+    IContentHistory contentHistory,
+    ISiteBuilderPublishConflictService publishConflictService) : IGroupedPageOperationService
 {
     private const string PageRequiredError = "The page is missing or invalid.";
     private const string CreateFieldsRequiredError = "StoreId, Name and Content are required.";
@@ -79,7 +80,8 @@ public class GroupedPageOperationService(
         draftPage.StoreId = model.StoreId;
         draftPage.Content = SiteBuilderContentSettings.Synchronize(null, model);
 
-        model.Pages.Add(draftPage);
+        // Pages sent by the client are ignored: a page is published only through PublishAsync, which checks permalink conflicts
+        model.Pages = [draftPage];
 
         await groupedPageService.SaveChangesAsync([model]);
 
@@ -307,28 +309,61 @@ public class GroupedPageOperationService(
         }
 
         return request.Publish
-            ? await PublishDraftAsync(groupedPage, request, user, cancellationToken)
+            ? await PublishDraftLockedAsync(groupedPage, request, user, cancellationToken)
             : await UnpublishAsync(groupedPage, request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reloads the page under the lock: another publish may have changed it while this one waited. A dry run writes nothing, so it takes no lock.
+    /// </summary>
+    private Task<SiteBuilderOperationResult> PublishDraftLockedAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        if (request.DryRun)
+        {
+            return PublishDraftAsync(groupedPage, request, user, cancellationToken);
+        }
+
+        return publishConflictService.ExecuteExclusiveAsync(groupedPage, async () =>
+        {
+            var currentPage = await groupedPageService.GetByIdAsync(groupedPage.Id);
+
+            return currentPage == null
+                ? SiteBuilderOperationResult.NotFound()
+                : await PublishDraftAsync(currentPage, request, user, cancellationToken);
+        }, cancellationToken);
     }
 
     private async Task<SiteBuilderOperationResult> PublishDraftAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
         ClaimsPrincipal user, CancellationToken cancellationToken)
     {
-        if (request.DryRun)
-        {
-            return GroupedPagePublishing.GetDraft(groupedPage) == null
-                ? SiteBuilderOperationResult.Invalid(DraftNotFoundError)
-                : await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
-        }
-
-        if (!GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds))
+        if (GroupedPagePublishing.GetDraft(groupedPage) == null)
         {
             return SiteBuilderOperationResult.Invalid(DraftNotFoundError);
         }
 
+        var (conflicts, conflictingGroups) = await publishConflictService.FindBlockingConflictsAsync(groupedPage);
+        if (await CheckPermalinkConflictsAsync(conflicts, conflictingGroups, request.UnpublishConflicting, user) is { } refused)
+        {
+            return refused;
+        }
+
+        if (request.DryRun)
+        {
+            var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
+            foreach (var conflictingGroup in conflictingGroups)
+            {
+                dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft);
+            }
+
+            return dryRun;
+        }
+
+        GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds);
         var pagesToDelete = obsoletePageIds.ToList();
+        pagesToDelete.AddRange(conflictingGroups.SelectMany(UnpublishConflictingGroup));
         var publishedPageId = groupedPage.Pages.Single(x => !obsoletePageIds.Contains(x.Id)).Id;
-        if (await SavePublishingAsync(groupedPage, pagesToDelete, draft: true, request.ExpectedDraftVersion, cancellationToken) is { } conflict)
+        if (await SavePublishingAsync(groupedPage, conflictingGroups, pagesToDelete, draft: true, request.ExpectedDraftVersion, cancellationToken) is { } conflict)
         {
             return conflict;
         }
@@ -366,19 +401,22 @@ public class GroupedPageOperationService(
         pageToUnpublish.Status = Draft;
         var pagesToDelete = groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
 
-        return await SavePublishingAsync(groupedPage, pagesToDelete, draft: false, request.ExpectedPublishedVersion, cancellationToken)
+        return await SavePublishingAsync(groupedPage, [], pagesToDelete, draft: false, request.ExpectedPublishedVersion, cancellationToken)
             ?? SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
 
+    /// <param name="unpublishedGroups">
+    /// Published pages turned back into drafts with the page: in the same save, or right after the page is saved at its version.
+    /// </param>
     /// <param name="draft">The version is of the draft, else of the published page.</param>
     /// <param name="expectedVersion">The version the page has to be at, compared under the lock of the save; <c>null</c> saves it whatever it holds.</param>
     /// <returns>The conflict when the page is at another version, with nothing written; <c>null</c> when it is saved.</returns>
-    private async Task<SiteBuilderOperationResult> SavePublishingAsync(GroupedSiteBuilderPage groupedPage, List<string> pagesToDelete, bool draft,
-        string expectedVersion, CancellationToken cancellationToken)
+    private async Task<SiteBuilderOperationResult> SavePublishingAsync(GroupedSiteBuilderPage groupedPage, IList<GroupedSiteBuilderPage> unpublishedGroups,
+        List<string> pagesToDelete, bool draft, string expectedVersion, CancellationToken cancellationToken)
     {
         if (expectedVersion == null)
         {
-            await groupedPageService.SaveChangesAsync([groupedPage]);
+            await groupedPageService.SaveChangesAsync([groupedPage, .. unpublishedGroups]);
         }
         else
         {
@@ -390,11 +428,57 @@ public class GroupedPageOperationService(
             {
                 return SiteBuilderOperationResult.Conflict(ex.Message);
             }
+
+            if (unpublishedGroups.Count > 0)
+            {
+                await groupedPageService.SaveChangesAsync(unpublishedGroups);
+            }
         }
 
         await pageService.DeleteAsync(pagesToDelete);
 
         return null;
+    }
+
+    /// <returns>The refusal when publishing would replace other published pages that are not to be, or cannot be, unpublished; <c>null</c> to go on.</returns>
+    private async Task<SiteBuilderOperationResult> CheckPermalinkConflictsAsync(IList<SiteBuilderPermalinkUsage> conflicts,
+        IList<GroupedSiteBuilderPage> conflictingGroups, bool unpublishConflicting, ClaimsPrincipal user)
+    {
+        var hasUnpublishedChanges = conflicts.Any(x => !x.CanUnpublish);
+        if (conflicts.Count > 0 && (!unpublishConflicting || hasUnpublishedChanges))
+        {
+            return PermalinkConflict(conflicts, hasUnpublishedChanges);
+        }
+
+        return conflictingGroups.Count > 0 ? await authorizationService.CheckStoreOperationAsync(user, conflictingGroups) : null;
+    }
+
+    // Turns the published page of a group without a draft back into a draft, like unpublishing does, and returns
+    // the ids of the group's other pages to delete. A group unpublished meanwhile is left as it is.
+    private static IEnumerable<string> UnpublishConflictingGroup(GroupedSiteBuilderPage group)
+    {
+        var pageToUnpublish = SiteBuilderPageSelection.Order(group.Pages).FirstOrDefault(x => x.Status == Published);
+        if (pageToUnpublish == null)
+        {
+            return [];
+        }
+
+        pageToUnpublish.Status = Draft;
+        return group.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
+    }
+
+    private static SiteBuilderOperationResult PermalinkConflict(IList<SiteBuilderPermalinkUsage> conflicts, bool hasUnpublishedChanges)
+    {
+        var names = string.Join(", ", conflicts.Select(x => $"'{x.Name}'"));
+        var error = hasUnpublishedChanges
+            ? $"Pages {names} are published with the same permalink for the same visitors, and some of them have unpublished changes. Publish or discard those changes first."
+            : $"Pages {names} are published with the same permalink for the same visitors. Unpublish them first, or publish with unpublishConflicting=true.";
+
+        var result = AbstractTypeFactory<SiteBuilderPermalinkConflictResult>.TryCreateInstance();
+        result.Error = error;
+        result.Conflicts = conflicts;
+
+        return SiteBuilderOperationResult.PermalinkConflict(result);
     }
 
     public virtual Task<SiteBuilderOperationResult> DiscardDraftAsync(GroupedPageDiscardOperationRequest request, ClaimsPrincipal user,

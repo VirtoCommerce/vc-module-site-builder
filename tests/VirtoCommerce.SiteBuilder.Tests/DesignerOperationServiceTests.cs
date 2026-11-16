@@ -538,7 +538,7 @@ public class DesignerOperationServiceTests
             authorizationService: authorization,
             contentPermissionService: TestServices.Permissions(authorization),
             requestValidator: RequestValidators.Content("s1"),
-            designerContentService: TestServices.Designer(_history, filePageDrafts, themeDrafts, _pages, _live, themePublisher, null, new SchemaCatalogService(_themes)),
+            designerContentService: TestServices.Designer(_history, filePageDrafts, themeDrafts, _pages, _live, themePublisher, new SchemaCatalogService(_themes)),
             themeDraftService: themeDrafts,
             groupedPageService: _pages,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization));

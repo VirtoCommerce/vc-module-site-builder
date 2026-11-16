@@ -4,10 +4,7 @@ interface IStoreItem {
   url: string;
   languages: string[];
   defaultLanguage?: string;
-  settings?: { name?: string; value?: unknown }[];
 }
-
-const newSiteBuilderSetting = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder";
 
 export type StoreContextStatus = "idle" | "missing" | "loading" | "ready" | "notFound" | "error";
 
@@ -139,21 +136,6 @@ export default () => {
     return store?.defaultLanguage ?? undefined;
   }
 
-  /** Read on every call: the store's settings may change while the shell is open. `undefined`: the store couldn't be read. */
-  async function isNewSiteBuilder(id: string | null = storeId.value): Promise<boolean | undefined> {
-    if (!id) {
-      return false;
-    }
-    const response = await requestStore(id);
-    if (response.status === "error") {
-      return undefined;
-    }
-    return (
-      response.status === "ready" &&
-      response.store.settings?.find((x) => x.name === newSiteBuilderSetting)?.value === true
-    );
-  }
-
   async function validateStoreContext(): Promise<boolean> {
     return (await getStore()) !== null;
   }
@@ -212,6 +194,5 @@ export default () => {
     getStoreUrl,
     getLanguages,
     getDefaultLanguage,
-    isNewSiteBuilder,
   };
 };

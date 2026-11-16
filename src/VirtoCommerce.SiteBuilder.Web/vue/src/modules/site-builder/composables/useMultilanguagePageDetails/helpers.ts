@@ -3,8 +3,9 @@ import type {
   MultilanguagePageLanguage,
 } from "../../../../api_client/virtocommerce.sitebuilder";
 
-// Matches the backend's reason for a failed batch item.
+// Match the backend's reasons for a failed batch item and for a permalink conflict.
 const failedReason = "Failed";
+const permalinkConflictReason = "PermalinkConflict";
 
 export function hasLanguageVersions(languages?: MultilanguagePageLanguage[]): boolean {
   return (languages ?? []).some((x) => !!x.page);
@@ -45,7 +46,7 @@ export function summarizeBatchResult(result: MultilanguagePageBatchResult): {
     processed: result.processedCultureNames?.join(", ") || "—",
     skipped:
       skipped
-        .filter((x) => x.reason !== failedReason)
+        .filter((x) => x.reason !== failedReason && x.reason !== permalinkConflictReason)
         .map((x) => x.cultureName)
         .join(", ") || "—",
     failed: skipped
@@ -53,6 +54,14 @@ export function summarizeBatchResult(result: MultilanguagePageBatchResult): {
       .map((x) => x.cultureName)
       .join(", "),
   };
+}
+
+/** Languages not published because another published page would be replaced; empty when there are none. */
+export function getConflictedLanguages(result: MultilanguagePageBatchResult): string {
+  return (result.skipped ?? [])
+    .filter((x) => x.reason === permalinkConflictReason)
+    .map((x) => x.cultureName)
+    .join(", ");
 }
 
 export function getLanguagePillText(cultureName: string | undefined, cultureNames: (string | undefined)[]): string {

@@ -127,10 +127,6 @@
           "PreviewUserIds": {
             "title": "IDs utilisateur pour l'aperçu",
             "description": "Liste des IDs utilisateur pour l'usurpation d'identité lors de l'aperçu (un par ligne)"
-          },
-          "NewSiteBuilder": {
-            "title": "Nouveau Site Builder",
-            "description": "Ouvre les pages de la boutique dans le nouveau concepteur Site Builder, et la vitrine affiche le thème qui y est publié. Si désactivé, les pages s'ouvrent dans le concepteur classique et la vitrine fonctionne comme avant."
           }
         },
         "Migration": {

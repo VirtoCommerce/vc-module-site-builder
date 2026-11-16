@@ -69,7 +69,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         // storage. PagesContentType is the default assumed when a caller sends no type at all.
         private const string PagesContentType = "pages";
         private const string JsonContentType = "application/json";
-        private const string SchemaKindTemplates = ModuleConstants.SchemaKinds.Templates;
         private const string SchemaKindObjects = ModuleConstants.SchemaKinds.Objects;
         // The blob name of a draft in the flow that came before git: the page's name with this appended.
         // Only the legacy-draft cleanup deals in these; everywhere else GitPageLocation strips the suffix.
@@ -125,30 +124,12 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         }
 
         [HttpGet]
-        [Route("templates")]
-        public async Task<ActionResult> GetTemplates(string storeId, string theme)
-        {
-            var result = await contentQueryService.GetSchemasAsync(SchemaQuery(storeId, theme, SchemaKindTemplates), User, HttpContext.RequestAborted);
-
-            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
-        }
-
-        [HttpGet]
         [Route("objects")]
         public async Task<ActionResult> GetObjects(string storeId, string theme)
         {
             var result = await contentQueryService.GetSchemasAsync(SchemaQuery(storeId, theme, SchemaKindObjects), User, HttpContext.RequestAborted);
 
             return result.Succeeded ? Ok(result.Value) : result.ToRefusal();
-        }
-
-        [HttpGet]
-        [Route("sections")]
-        public async Task<ActionResult> GetSectionsSettings(string storeId, string theme)
-        {
-            var result = await contentQueryService.GetSectionSchemasAsync(ThemeQuery(storeId, theme), User, HttpContext.RequestAborted);
-
-            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
         }
 
         [HttpGet]
@@ -278,7 +259,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         }
 
         // With the git flow on, live belongs to the CI deploy and editors publish through a pull request.
-        // Without git the designer saves theme settings straight to live, which needs no publish permission.
         private static bool IsPublication(List<SaveFileModel> files, bool draft, bool gitFlow) =>
             !draft && (gitFlow || files.Exists(file => file != null && GitPageLocation.IsPageContent(file.Type)));
 
@@ -1046,7 +1026,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
 
             if (themeFiles.Count > 0)
             {
-                await RecordThemeFilesAsync(storeId, themeFiles, draft, cancellationToken);
+                await RecordThemeFilesAsync(storeId, themeFiles, cancellationToken);
             }
 
             async Task WriteFilesAsync()
@@ -1081,9 +1061,9 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             }
         }
 
-        private async Task RecordThemeFilesAsync(string storeId, List<(string Path, string Content)> themeFiles, bool draft, CancellationToken cancellationToken)
+        private async Task RecordThemeFilesAsync(string storeId, List<(string Path, string Content)> themeFiles, CancellationToken cancellationToken)
         {
-            var record = ContentHistoryRecord.Create(draft ? ModuleConstants.GitHistory.SavedSummary : ModuleConstants.GitHistory.PublishedSummary, Request.GetOrCreateSaveId(), User);
+            var record = ContentHistoryRecord.Create(ModuleConstants.GitHistory.SavedSummary, Request.GetOrCreateSaveId(), User);
             foreach (var (path, content) in themeFiles)
             {
                 record.AddEntry(HistoryItem.ForThemeFile(path), content);

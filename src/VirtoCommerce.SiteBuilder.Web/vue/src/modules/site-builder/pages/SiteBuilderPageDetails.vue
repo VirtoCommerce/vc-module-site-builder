@@ -64,6 +64,19 @@
               </VcInput>
             </Field>
 
+            <VcBanner
+              v-if="permalinkUsagesInLanguage.length"
+              variant="warning"
+              icon="lucide-triangle-alert"
+              data-test-id="permalink-usages"
+            >
+              {{
+                $t("SITE_BUILDER.PAGES.DETAILS.WARNINGS.PERMALINK_USED", {
+                  pages: formatPageNames(permalinkUsagesInLanguage),
+                })
+              }}
+            </VcBanner>
+
             <VcSelect option-value="name" option-label="name" v-model="item.cultureName"
                       :label="$t('SITE_BUILDER.PAGES.DETAILS.FIELDS.CULTURE_NAME')" :options="loadCultureNamesAsync"
                       :clearable="false"
@@ -113,6 +126,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Field } from "vee-validate";
+import { watchDebounced } from "@vueuse/core";
 import { IBladeToolbar, useBlade, useBladeForm, usePopup, notification } from "@vc-shell/framework";
 import PageStatus from "../components/pageStatus.vue";
 import useUrlParams from "../composables/useStoreParams";
@@ -121,13 +135,18 @@ import { notifyPagesChanged } from "../composables/useSiteBuilderList";
 import { useSiteBuilderDetails } from "../composables/useSiteBuilderDetails";
 import type { PageExportData } from "../composables/usePageContentApi";
 import PageAdvancedOptions from "../components/pageAdvancedOptions.vue";
-import { usePermalinkUsage } from "../composables/usePermalinkUsage";
 import {
   inheritableFields,
   parseOverriddenFields,
   type InheritableField,
 } from "../composables/useMultilanguageInheritance";
-import { isPermalinkCheckNeeded, type IPermalinkTarget } from "../composables/useMultilanguagePageDetails/helpers";
+import {
+  canUnpublishAll,
+  formatPageNames,
+  getPublishConflicts,
+  getUsagesInLanguage,
+} from "../utilities/permalinkUsages";
+import type { SiteBuilderPermalinkUsage } from "../../../api_client/virtocommerce.sitebuilder";
 import { getPermalinkRules } from "../utilities/permalink";
 
 import { VcBanner, VcBlade, VcCard, VcCol, VcContainer, VcForm, VcInput, VcSelect, VcTextarea } from "@vc-shell/framework/ui";
@@ -138,7 +157,7 @@ defineBlade({
 });
 
 const { t } = useI18n({ useScope: "global" });
-const { showConfirmation } = usePopup();
+const { showConfirmation, showError } = usePopup();
 const { param, options, closeSelf, replaceWith } = useBlade();
 const { storeId, setStoreId, getStoreUrl, getLanguages } = useUrlParams();
 
@@ -152,6 +171,7 @@ const {
   saveGroup,
   deleteGroup,
   publishGroup,
+  loadPermalinkUsages,
   unpublishGroup,
   openDraftDesigner,
   downloadContent,
@@ -205,6 +225,56 @@ const bladeTitle = computed(() => {
 const storeUrl = ref<string | null>(null);
 const pageUrl = computed(() => `${(storeUrl.value ?? "").replace(/\/$/, "")}/${(item.value.permalink ?? "").replace(/^\//, "")}`);
 
+// Other pages are allowed to use the same permalink, for another audience or period; the author is warned, and
+// publishing checks whether the storefront would offer both pages to the same visitors.
+const permalinkUsages = ref<SiteBuilderPermalinkUsage[]>([]);
+const permalinkUsagesInLanguage = computed(() => getUsagesInLanguage(permalinkUsages.value, item.value?.cultureName));
+// Only the latest check counts: an earlier, slower response must not replace the warning for the current permalink.
+let latestPermalinkUsagesRequest = 0;
+watchDebounced(
+  [() => item.value?.id, () => item.value?.permalink],
+  async () => {
+    const request = ++latestPermalinkUsagesRequest;
+    let usages: SiteBuilderPermalinkUsage[] = [];
+    try {
+      usages = await loadPermalinkUsages();
+    } catch {
+      // The warning is advisory and publishing checks again, so a failed check only leaves it out.
+    }
+    if (request === latestPermalinkUsagesRequest) {
+      permalinkUsages.value = usages;
+    }
+  },
+  { debounce: 500 },
+);
+
+// Returns false when the author cancels or the conflict has to be resolved on the other page first.
+// If the check itself fails, publishing goes ahead: the server checks again and refuses a conflict.
+async function publishWithConflictCheck(): Promise<boolean> {
+  const conflicts = getPublishConflicts(await loadPermalinkUsages().catch(() => []));
+  if (conflicts.blocking.length > 0) {
+    const pages = formatPageNames(conflicts.blocking);
+    if (!canUnpublishAll(conflicts.blocking)) {
+      showError(t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_CONFLICT_HAS_CHANGES", { pages }));
+      return false;
+    }
+    if (!(await showConfirmation(t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_CONFLICT", { pages })))) {
+      return false;
+    }
+  }
+
+  if (
+    conflicts.possible.length > 0 &&
+    !(await showConfirmation(
+      t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_POSSIBLE_CONFLICT", { pages: formatPageNames(conflicts.possible) }),
+    ))
+  ) {
+    return false;
+  }
+  await publishGroup(conflicts.blocking.length > 0);
+  return true;
+}
+
 // item is replaced on every load and save, while edits change its fields, so this keeps the stored permalink.
 const storedPermalink = ref<string>();
 watch(
@@ -234,29 +304,6 @@ const fieldHints = computed<Partial<Record<InheritableField, string>>>(() => {
   );
 });
 
-const { confirmPermalinkUsage } = usePermalinkUsage();
-// Permalink and language as saved: an unchanged permalink was already confirmed.
-const savedPermalinkTarget = ref<IPermalinkTarget>();
-
-function rememberPermalinkTarget() {
-  savedPermalinkTarget.value = item.value?.id
-    ? { permalink: item.value.permalink, cultureName: item.value.cultureName }
-    : undefined;
-}
-
-async function confirmPagePermalinkUsage(): Promise<boolean> {
-  if (!isPermalinkCheckNeeded(savedPermalinkTarget.value, item.value)) {
-    return true;
-  }
-
-  return confirmPermalinkUsage({
-    storeId: item.value.storeId ?? (options.value?.storeId as string | undefined),
-    permalink: item.value.permalink,
-    cultureNames: item.value.cultureName ? [item.value.cultureName] : [],
-    excludeGroupIds: item.value.id ? [item.value.id] : [],
-  });
-}
-
 // Converting needs a second store language to translate into.
 const hasSeveralStoreLanguages = ref(false);
 
@@ -267,9 +314,6 @@ const bladeToolbar = computed((): IBladeToolbar[] => [
     title: t("SITE_BUILDER.PAGES.DETAILS.TOOLBAR.SAVE"),
     disabled: !canSave.value,
     clickHandler: async () => {
-      if (!(await confirmPagePermalinkUsage())) {
-        return;
-      }
       await handleSave();
       notification.success(t("SITE_BUILDER.PAGES.ALERTS.SAVE_SUCCESS"));
     },
@@ -355,7 +399,9 @@ const bladeToolbar = computed((): IBladeToolbar[] => [
     isVisible: isPageLoaded.value && status.value?.hasChanges === true,
     disabled: isReadOnly.value || isModified.value || !formMeta.value.valid,
     clickHandler: async () => {
-      await publishGroup();
+      if (!(await publishWithConflictCheck())) {
+        return;
+      }
       notification.success(t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_SUCCESS"));
       setBaseline();
       notifyPagesChanged();
@@ -387,7 +433,6 @@ async function loadCultureNamesAsync() {
 async function handleSave() {
   const group = await saveGroup();
   setBaseline();
-  rememberPermalinkTarget();
   notifyPagesChanged();
 
   if (!param.value && group.id) {
@@ -403,7 +448,6 @@ async function openPage(id: string | undefined) {
 
 onMounted(async () => {
   await loadGroup();
-  rememberPermalinkTarget();
   if (options.value?.importData) {
     markReady();
   } else {
