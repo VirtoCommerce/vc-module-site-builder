@@ -38,7 +38,7 @@ public class DesignerRequestValidatorTests
     };
 
     [Theory]
-    [MemberData(nameof(InvalidSaves))]
+    [MemberData(nameof(InvalidSaves), DisableDiscoveryEnumeration = true)]
     public async Task DesignerSave_Invalid_IsRefused(string because, DesignerSaveRequest request)
     {
         var result = await RequestValidators.DesignerSave.ValidateAsync(request, TestContext.Current.CancellationToken);
@@ -47,7 +47,7 @@ public class DesignerRequestValidatorTests
     }
 
     [Theory]
-    [MemberData(nameof(ValidSaves))]
+    [MemberData(nameof(ValidSaves), DisableDiscoveryEnumeration = true)]
     public async Task DesignerSave_Valid_IsAccepted(string because, DesignerSaveRequest request)
     {
         var result = await RequestValidators.DesignerSave.ValidateAsync(request, TestContext.Current.CancellationToken);

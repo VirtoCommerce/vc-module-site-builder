@@ -37,6 +37,16 @@ public class FilePageDraftService(
         return SaveDraftInternalAsync(storeId, page, user, cancellationToken);
     }
 
+    public virtual Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, string expectedVersion, ClaimsPrincipal user,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        return expectedVersion == null
+            ? SaveDraftInternalAsync(storeId, page, user, cancellationToken)
+            : SaveDraftAtVersionAsync(storeId, page, expectedVersion.Trim(), user, cancellationToken);
+    }
+
     private async Task SaveDraftInternalAsync(string storeId, SiteBuilderContentFile page, ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         if (await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken))
@@ -47,16 +57,6 @@ public class FilePageDraftService(
         }
 
         await SaveBlobDraftAsync(storeId, page, cancellationToken);
-    }
-
-    public virtual Task SaveDraftAsync(string storeId, SiteBuilderContentFile page, string expectedVersion, ClaimsPrincipal user,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(page);
-
-        return expectedVersion == null
-            ? SaveDraftInternalAsync(storeId, page, user, cancellationToken)
-            : SaveDraftAtVersionAsync(storeId, page, expectedVersion.Trim(), user, cancellationToken);
     }
 
     private async Task SaveDraftAtVersionAsync(string storeId, SiteBuilderContentFile page, string expectedVersion, ClaimsPrincipal user,

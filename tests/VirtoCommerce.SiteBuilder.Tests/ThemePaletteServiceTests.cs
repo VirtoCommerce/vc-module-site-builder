@@ -9,6 +9,7 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 public class ThemePaletteServiceTests
 {
     private static readonly IList<PaletteContrastPair> DefaultPairs = new DefaultPairsPaletteService().Pairs;
+    private static readonly int[] Shades = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
 
     private readonly ThemePaletteService _service = new();
 
@@ -60,7 +61,7 @@ public class ThemePaletteServiceTests
     [InlineData("#808080")]
     public void FromHsl_ToHsl_RoundTrips(string value)
     {
-        PaletteColor.TryParse(value, out var color);
+        Assert.True(PaletteColor.TryParse(value, out var color));
         var (hue, saturation, lightness) = color.ToHsl();
 
         Assert.Equal(color, PaletteColor.FromHsl(hue, saturation, lightness));
@@ -127,11 +128,11 @@ public class ThemePaletteServiceTests
     {
         var result = _service.GeneratePalette(Request("#ffd700", null));
 
-        PaletteColor.TryParse(result.Light["color_primary_500"], out var primary);
+        Assert.True(PaletteColor.TryParse(result.Light["color_primary_500"], out var primary));
         Assert.True(ColorContrast.GetContrastRatio(primary, PaletteColor.White) >= 4.5);
 
-        var lightness = new[] { 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950 }
-            .Select(x => { PaletteColor.TryParse(result.Light[$"color_primary_{x}"], out var color); return color.ToHsl().Lightness; })
+        var lightness = Shades
+            .Select(x => { Assert.True(PaletteColor.TryParse(result.Light[$"color_primary_{x}"], out var color)); return color.ToHsl().Lightness; })
             .ToList();
         Assert.Equal(lightness.OrderDescending(), lightness);
     }
@@ -142,8 +143,8 @@ public class ThemePaletteServiceTests
         var result = _service.GeneratePalette(Request("#1b789b", null));
 
         Assert.Equal("#1b789b", result.Light["color_accent_500"]);
-        PaletteColor.TryParse(result.Light["color_secondary_500"], out var secondary);
-        PaletteColor.TryParse(result.Light["color_primary_500"], out var primary);
+        Assert.True(PaletteColor.TryParse(result.Light["color_secondary_500"], out var secondary));
+        Assert.True(PaletteColor.TryParse(result.Light["color_primary_500"], out var primary));
         Assert.True(secondary.ToHsl().Saturation <= 0.19);
         Assert.Equal(primary.ToHsl().Hue, secondary.ToHsl().Hue, 1d);
     }
@@ -153,7 +154,7 @@ public class ThemePaletteServiceTests
     {
         var result = _service.GeneratePalette(Request("#f99e24", "#1a237e"));
 
-        PaletteColor.TryParse(result.Dark["color_vc_text_solid_primary"], out var onOrange);
+        Assert.True(PaletteColor.TryParse(result.Dark["color_vc_text_solid_primary"], out var onOrange));
         Assert.True(ColorContrast.GetRelativeLuminance(onOrange) < 0.1);
         Assert.Equal("#ffffff", result.Dark["color_vc_text_solid_secondary"]);
     }
@@ -363,7 +364,7 @@ public class ThemePaletteServiceTests
     [InlineData("#ff00ff", 300)]
     public void ToHsl_EachChannelOnTop_ReturnsItsHue(string value, double hue)
     {
-        PaletteColor.TryParse(value, out var color);
+        Assert.True(PaletteColor.TryParse(value, out var color));
 
         var hsl = color.ToHsl();
 
@@ -419,7 +420,7 @@ public class ThemePaletteServiceTests
     }
 
     private static Dictionary<string, PaletteColor?> Colors(params (string Token, string Hex)[] colors) =>
-        colors.ToDictionary(x => x.Token, x => { PaletteColor.TryParse(x.Hex, out var color); return (PaletteColor?)color; });
+        colors.ToDictionary(x => x.Token, x => { Assert.True(PaletteColor.TryParse(x.Hex, out var color)); return (PaletteColor?)color; });
 
     private static PaletteContrastPair Pair(string text, string background, double minimumRatio)
     {

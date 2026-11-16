@@ -237,9 +237,7 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
             }
         }
 
-        [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-            Justification = "The parameters of CommitFileAsync and the comparison: a parameter object would set this commit apart from every other one here.")]
-        public virtual async Task<string> CommitFileIfUnchangedAsync(string repository, string path, string content, string branch, string message,
+        public virtual Task<string> CommitFileIfUnchangedAsync(string repository, string path, string content, string branch, string message,
             GitCommitAuthor author, Func<string, Task<bool>> isExpected, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(repository);
@@ -247,6 +245,14 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
             ArgumentException.ThrowIfNullOrWhiteSpace(branch);
             ArgumentNullException.ThrowIfNull(isExpected);
 
+            return CommitFileIfUnchangedInternalAsync(repository, path, content, branch, message, author, isExpected, cancellationToken);
+        }
+
+        [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+            Justification = "The parameters of CommitFileAsync and the comparison: a parameter object would set this commit apart from every other one here.")]
+        private async Task<string> CommitFileIfUnchangedInternalAsync(string repository, string path, string content, string branch, string message,
+            GitCommitAuthor author, Func<string, Task<bool>> isExpected, CancellationToken cancellationToken)
+        {
             var client = _httpClientFactory.CreateClient(HttpClientName);
             var escapedPath = EscapePath(path);
             var bytes = PageJson.Encoding.GetBytes(content ?? string.Empty);

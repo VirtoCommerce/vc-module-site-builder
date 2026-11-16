@@ -1142,6 +1142,9 @@ async function publishPage() {
   await publish(true, false, blocking.length > 0);
 }
 
+const publishConflict = (e: unknown) =>
+  e instanceof ApiError && e.status === 409 ? (JSON.parse(e.body || "{}") as { canRebase?: boolean; conflicts?: SiteBuilderPermalinkUsage[] }) : undefined;
+
 async function publish(live: boolean, rebase = false, unpublishConflicting = false) {
   try {
     await designer.publish(live, rebase, unpublishConflicting);
@@ -1149,7 +1152,7 @@ async function publish(live: boolean, rebase = false, unpublishConflicting = fal
     await reloadHistory();
   } catch (e) {
     // Git: a conflict means someone published another version meanwhile, and publishing over it is the editor's call.
-    const conflict = e instanceof ApiError && e.status === 409 ? (JSON.parse(e.body || "{}") as { canRebase?: boolean; conflicts?: SiteBuilderPermalinkUsage[] }) : undefined;
+    const conflict = publishConflict(e);
     if (live && !rebase && conflict?.canRebase) {
       if (await showConfirmation(t("SITE_BUILDER.DESIGNER.PUBLISH_CONFLICT"))) await publish(true, true);
       else notification.error(t("SITE_BUILDER.DESIGNER.NOTHING_PUBLISHED"));

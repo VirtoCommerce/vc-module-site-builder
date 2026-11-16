@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VirtoCommerce.SiteBuilder.Core;
@@ -18,6 +19,8 @@ using VirtoCommerce.StoreModule.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 public class MultilanguagePageService(
     Func<ISiteBuilderRepository> repositoryFactory,
     IPlatformMemoryCache platformMemoryCache,
@@ -158,20 +161,20 @@ public class MultilanguagePageService(
         return UpdateCheckedAsync(model);
     }
 
-    private async Task<MultilanguagePage> UpdateCheckedAsync(MultilanguagePage model)
-    {
-        await PrepareUpdateAsync(model);
-        await SaveChangesAsync([model]);
-
-        return model;
-    }
-
     public virtual Task<MultilanguagePage> UpdateAsync(MultilanguagePage model, bool requireUnpublished, string expectedVersion,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(model);
 
         return UpdateUnderConditionAsync(model, requireUnpublished, expectedVersion, cancellationToken);
+    }
+
+    private async Task<MultilanguagePage> UpdateCheckedAsync(MultilanguagePage model)
+    {
+        await PrepareUpdateAsync(model);
+        await SaveChangesAsync([model]);
+
+        return model;
     }
 
     private async Task<MultilanguagePage> UpdateUnderConditionAsync(MultilanguagePage model, bool requireUnpublished, string expectedVersion,
@@ -956,14 +959,11 @@ public class MultilanguagePageService(
         var root = await GetRequiredAsync(multilanguagePageId);
         var preview = CreatePreview();
 
-        foreach (var group in await GetLanguageVersionsAsync(root.Id))
+        foreach (var group in (await GetLanguageVersionsAsync(root.Id)).Where(x => GroupedPagePublishing.GetDraft(x) != null))
         {
-            if (GroupedPagePublishing.GetDraft(group) != null)
-            {
-                // the version a caller sends back to publish only the drafts it reviewed
-                var current = await groupedPageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken);
-                preview.AddPublishing(group, ModuleConstants.PageStatuses.Draft, ModuleConstants.PageStatuses.Published).ETag = current.ETag;
-            }
+            // the version a caller sends back to publish only the drafts it reviewed
+            var current = await groupedPageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken);
+            preview.AddPublishing(group, ModuleConstants.PageStatuses.Draft, ModuleConstants.PageStatuses.Published).ETag = current.ETag;
         }
 
         return preview;

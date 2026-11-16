@@ -158,12 +158,19 @@ public class GitHubContentProvisioner(
 
         if (!string.Equals(gitContentOwnership.GetStoreId(repositoryInfo.Description), storeId, StringComparison.Ordinal))
         {
-            logger.LogInformation("Store {StoreId} was deleted; repository {Repository} was not created for it and is left as it is.", storeId, repository);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("Store {StoreId} was deleted; repository {Repository} was not created for it and is left as it is.", storeId, repository);
+            }
+
             return;
         }
 
         await gitHubApiClient.UpdateRepositoryAsync(repository, new JObject { ["archived"] = true }, cancellationToken);
-        logger.LogInformation("Store {StoreId} was deleted; its repository {Repository} is archived.", storeId, repository);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("Store {StoreId} was deleted; its repository {Repository} is archived.", storeId, repository);
+        }
     }
 
     protected virtual async Task SetEnabledForStoreAsync(string storeId, bool enabled, CancellationToken cancellationToken)
@@ -210,7 +217,11 @@ public class GitHubContentProvisioner(
                    ?? throw new GitContentException($"GitHub reports \"{repository}\" exists but does not show it.");
         }
 
-        logger.LogInformation("Created repository {Repository} for store {StoreId}.", repository, storeId);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("Created repository {Repository} for store {StoreId}.", repository, storeId);
+        }
+
         return repositoryInfo;
     }
 

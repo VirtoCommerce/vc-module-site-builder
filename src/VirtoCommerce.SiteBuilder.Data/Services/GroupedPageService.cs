@@ -100,15 +100,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
                         await CheckSaveConditionAsync(repository, models.Single(), existingEntities, condition, ct);
                     }
                     await BeforeSaveChanges(models);
-
-                    // Load only the content explicitly supplied for update, so Patch changes the tracked
-                    // table-split dependent rather than inserting a second one for the same page.
-                    var contentPageIds = models.SelectMany(x => x.Pages ?? [])
-                        .Where(x => x.Content != null && !string.IsNullOrEmpty(x.Id)).Select(x => x.Id).ToArray();
-                    if (contentPageIds.Length > 0)
-                    {
-                        await repository.SiteBuilderContents.Where(x => contentPageIds.Contains(x.Id)).LoadAsync(ct);
-                    }
+                    await LoadSuppliedContentAsync(repository, models, ct);
 
                     ApplyEntityChanges(repository, models, existingEntities, primaryKeyMap, changedEntries, changedEntities, originalModels);
 
@@ -144,6 +136,19 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
 
             await AfterSaveChangesAsync(models, changedEntries);
             await PublishGroupedChangedEventAsync(groupedEventEntries);
+        }
+
+        // Load only the content explicitly supplied for update, so Patch changes the tracked
+        // table-split dependent rather than inserting a second one for the same page.
+        private static async Task LoadSuppliedContentAsync(
+            ISiteBuilderRepository repository, IList<GroupedSiteBuilderPage> models, CancellationToken cancellationToken)
+        {
+            var contentPageIds = models.SelectMany(x => x.Pages ?? [])
+                .Where(x => x.Content != null && !string.IsNullOrEmpty(x.Id)).Select(x => x.Id).ToArray();
+            if (contentPageIds.Length > 0)
+            {
+                await repository.SiteBuilderContents.Where(x => contentPageIds.Contains(x.Id)).LoadAsync(cancellationToken);
+            }
         }
 
         private Task PublishGroupedChangedEventAsync(List<GenericChangedEntry<GroupedSiteBuilderPage>> entries)

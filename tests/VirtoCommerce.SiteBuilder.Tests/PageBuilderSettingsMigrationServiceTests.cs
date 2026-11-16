@@ -236,9 +236,9 @@ public class PageBuilderSettingsMigrationServiceTests
                 Logger);
         }
 
-        public ISettingsManager SettingsManager { get; }
+        public SettingsManager SettingsManager { get; }
         public PagedStoreSearchService Stores { get; }
-        public IDataProtectionProvider Keys { get; } = new EphemeralDataProtectionProvider();
+        public EphemeralDataProtectionProvider Keys { get; } = new();
         public RecordingBackgroundJob Jobs { get; } = new();
         public RecordingLogger Logger { get; } = new();
         public PageBuilderSettingsMigrationService Service { get; }

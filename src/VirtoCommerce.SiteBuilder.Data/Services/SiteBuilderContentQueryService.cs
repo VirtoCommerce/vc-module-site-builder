@@ -314,10 +314,10 @@ public class SiteBuilderContentQueryService(
         var storageProvider = blobContentStorageProviderFactory.CreateProvider(GetContentBasePath(request.StoreId, request.ContentType, request.Theme));
         var files = await FindFilesAsync(storageProvider, request.Folder, request.Keyword, request.Pattern);
 
-        return SiteBuilderOperationResult.Success(ReadSearchItems(files, request.ContentType, storageProvider));
+        return SiteBuilderOperationResult.Success<IList<SiteBuilderFileSearchItem>>(ReadSearchItems(files, request.ContentType, storageProvider));
     }
 
-    private IList<SiteBuilderFileSearchItem> ReadSearchItems(IEnumerable<BlobEntry> files, string contentType, IBlobContentStorageProvider storageProvider)
+    private List<SiteBuilderFileSearchItem> ReadSearchItems(IEnumerable<BlobEntry> files, string contentType, IBlobContentStorageProvider storageProvider)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
         var items = new List<SiteBuilderFileSearchItem>();

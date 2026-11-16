@@ -62,7 +62,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Authorization
             return scopedStoreIds.Count > 0 && storeIds.All(x => x != null && scopedStoreIds.Contains(x));
         }
 
-        private static IList<string> GetStoreIds(object resource) => resource switch
+        private static List<string> GetStoreIds(object resource) => resource switch
         {
             Store store => [store.Id],
             IHasStoreId hasStoreId => [hasStoreId.StoreId],

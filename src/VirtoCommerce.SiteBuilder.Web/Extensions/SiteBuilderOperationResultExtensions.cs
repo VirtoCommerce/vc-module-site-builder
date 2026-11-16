@@ -16,15 +16,17 @@ public static class SiteBuilderOperationResultExtensions
         SiteBuilderOperationStatus.Succeeded => null,
         SiteBuilderOperationStatus.Forbidden => new ForbidResult(),
         SiteBuilderOperationStatus.NotFound => new NotFoundResult(),
-        SiteBuilderOperationStatus.Invalid => new BadRequestObjectResult(result.Errors == null
-            ? (object)new { error = result.Error }
-            : new { error = result.Error, errors = result.Errors }),
+        SiteBuilderOperationStatus.Invalid => ToBadRequest(result),
         SiteBuilderOperationStatus.Conflict => new ObjectResult(result.Error) { StatusCode = StatusCodes.Status412PreconditionFailed },
         SiteBuilderOperationStatus.VersionRequired => new ObjectResult(result.Error) { StatusCode = StatusCodes.Status428PreconditionRequired },
         SiteBuilderOperationStatus.ConcurrentChange => new ConflictObjectResult(new { error = result.Error }),
         SiteBuilderOperationStatus.PermalinkConflict => new ConflictObjectResult(new { error = result.Error }),
         _ => throw new ArgumentOutOfRangeException(nameof(result), result.Status, null),
     };
+
+    private static BadRequestObjectResult ToBadRequest(SiteBuilderOperationResult result) => new BadRequestObjectResult(result.Errors == null
+        ? (object)new { error = result.Error }
+        : new { error = result.Error, errors = result.Errors });
 
     /// <inheritdoc cref="ToPageRefusal"/>
     public static ActionResult ToPageActionResult<T>(this SiteBuilderOperationResult<T> result) =>

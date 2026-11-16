@@ -89,7 +89,7 @@ public class SiteBuilderPermalinkConflictTests
     };
 
     [Theory]
-    [MemberData(nameof(NotConflicting))]
+    [MemberData(nameof(NotConflicting), DisableDiscoveryEnumeration = true)]
     public void GetConflict_NotOfferedTogetherOrNotEquallySpecific_IsNone(string difference, Action<GroupedSiteBuilderPage> changeOther)
     {
         var page = Group(x =>
@@ -116,7 +116,7 @@ public class SiteBuilderPermalinkConflictTests
     };
 
     [Theory]
-    [MemberData(nameof(Covered))]
+    [MemberData(nameof(Covered), DisableDiscoveryEnumeration = true)]
     public void GetConflict_EquallySpecificAndCovered_IsCertain(string difference, Action<GroupedSiteBuilderPage> changeOther)
     {
         var page = Group(x =>
@@ -145,7 +145,7 @@ public class SiteBuilderPermalinkConflictTests
     };
 
     [Theory]
-    [MemberData(nameof(PartlyCovered))]
+    [MemberData(nameof(PartlyCovered), DisableDiscoveryEnumeration = true)]
     public void GetConflict_EquallySpecificAndPartlyCovered_IsPossible(string difference, Action<GroupedSiteBuilderPage> changeOther)
     {
         var page = Group(x =>
@@ -525,7 +525,7 @@ public class SiteBuilderPermalinkConflictTests
             x.OrganizationId = "org-b";
         }), CreatePublishConflictService(service));
 
-        var usage = Assert.Single(Assert.IsAssignableFrom<IList<SiteBuilderPermalinkUsage>>(Assert.IsType<OkObjectResult>(result.Result).Value));
+        var usage = Assert.Single(Assert.IsType<IList<SiteBuilderPermalinkUsage>>(Assert.IsType<OkObjectResult>(result.Result).Value, exactMatch: false));
         Assert.Equal("old", usage.GroupId);
         Assert.Equal(SiteBuilderPermalinkConflict.None, usage.Conflict);
         Assert.True(usage.CanUnpublish);
