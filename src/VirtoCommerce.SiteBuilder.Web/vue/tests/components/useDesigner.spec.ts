@@ -475,6 +475,40 @@ describe("useDesigner: publishing", () => {
     expect(platform.to("/api/site-builder/theme/publish")).toHaveLength(0);
   });
 
+  it("keeps the page, its undo steps and Publish when refused for another page at its permalink, and publishes once asked to unpublish that page", async () => {
+    pageStatus = { published: false, hasChanges: true };
+    await openDatabasePage();
+    designer.selection.value = { kind: "section", id: "hero-1" };
+    designer.setField("title", "Edited");
+    await designer.save();
+    const doc = JSON.stringify(designer.doc.value);
+    platform.on("POST", "/api/site-builder-pages/grouped/publishing/g1", (request: Request) => {
+      if (request.query.unpublishConflicting !== "true") {
+        return status(409, { error: "conflict", conflicts: [{ groupId: "g2", name: "Old about", conflict: "Certain", canUnpublish: true }] });
+      }
+      pageStatus = { published: true, hasChanges: false };
+      return "";
+    });
+
+    await expect(designer.publish(true)).rejects.toMatchObject({ status: 409 });
+
+    expect(designer.busy.value).toBeUndefined();
+    expect(JSON.stringify(designer.doc.value)).toBe(doc);
+    expect(designer.dirty.value).toBe(false);
+    expect(designer.canUndo.value).toBe(true);
+    expect(designer.canPublish.value).toBe(true);
+
+    await designer.publish(true, false, true);
+
+    expect(platform.to("/api/site-builder-pages/grouped/publishing/g1", "POST").map((x) => x.query)).toEqual([
+      { publish: "true" },
+      { publish: "true", unpublishConflicting: "true" },
+    ]);
+    expect(designer.status.value).toEqual({ published: true, hasChanges: false });
+    expect(designer.canPublish.value).toBe(false);
+    expect(designer.canUndo.value).toBe(true);
+  });
+
   it("has no Publish of its own for a template: it goes live with the theme", async () => {
     await openTemplate();
     const before = platform.requests.length;

@@ -683,11 +683,11 @@ export function useDesigner() {
     }
   }
 
-  /** In git, `rebase` publishes over someone else's version. */
-  async function publish(live: boolean, rebase = false) {
+  /** In git, `rebase` publishes over someone else's version; `unpublishConflicting` unpublishes the pages a database page replaces at its permalink. */
+  async function publish(live: boolean, rebase = false, unpublishConflicting = false) {
     if (busy.value || themeFileOpen.value) return;
     await whilePublishing(async () => {
-      if (groupId.value) await api.setPublished(groupId.value, live);
+      if (groupId.value) await api.setPublished(groupId.value, live, unpublishConflicting);
       else if (file.value) await api.setFilePublished(file.value, live, rebase);
     });
   }
