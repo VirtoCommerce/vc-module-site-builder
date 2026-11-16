@@ -50,6 +50,7 @@ vi.mock("../../src/modules/site-builder/composables/useSiteBuilderDetails", asyn
       saveGroup: vi.fn(),
       deleteGroup: vi.fn(),
       publishGroup: vi.fn(),
+      loadPermalinkUsages: vi.fn(async () => []),
       unpublishGroup: vi.fn(),
       openDraftDesigner: vi.fn(),
       downloadContent: vi.fn(),
@@ -67,9 +68,6 @@ vi.mock("../../src/modules/site-builder/composables/useStoreParams", async () =>
 });
 vi.mock("../../src/modules/site-builder/composables/useAiAgentContextWithStore", () => ({ default: vi.fn() }));
 vi.mock("../../src/modules/site-builder/composables/useSiteBuilderList", () => ({ notifyPagesChanged: vi.fn() }));
-vi.mock("../../src/modules/site-builder/composables/usePermalinkUsage", () => ({
-  usePermalinkUsage: () => ({ confirmPermalinkUsage: vi.fn(async () => true) }),
-}));
 vi.mock("../../src/modules/site-builder/components/pageStatus.vue", () => ({ default: defineComponent({ render: () => null }) }));
 vi.mock("../../src/modules/site-builder/components/pageAdvancedOptions.vue", () => ({ default: defineComponent({ render: () => null }) }));
 

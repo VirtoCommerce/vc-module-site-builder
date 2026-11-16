@@ -100,6 +100,9 @@
           "USER_GROUPS": "用户组",
           "ORGANIZATION": "组织"
         },
+        "WARNINGS": {
+          "PERMALINK_USED": "其他页面也在使用此永久链接：{pages}。如果它们面向其他访问者或时间段，这是允许的；发布时会检查冲突。"
+        },
         "VALIDATION": {
           "PERMALINK": "永久链接最多 2048 个字符，不能包含空格或不可见字符、字符 ? # & % \\ \" < > {'{'} {'}'} {'|'} ^ `、双斜杠以及 . 和 .. 路径段"
         },
@@ -134,6 +137,10 @@
           "MESSAGE": "您确定要归档 {count} 个选中的页面吗？",
           "ALL": "全部 {totalCount}"
         },
+        "PUBLISH_CONFLICT": "以下页面已以此永久链接向相同访问者发布：{pages}。是否取消发布它们并发布此页面？",
+        "PUBLISH_CONFLICT_HAS_CHANGES": "以下页面已以此永久链接向相同访问者发布：{pages}。它们有未发布的更改，请先发布或放弃这些更改。",
+        "PUBLISH_POSSIBLE_CONFLICT": "以下页面也以此永久链接面向部分相同的访问者或日期发布：{pages}。两者都适用时，将显示最后发布的页面。仍要发布吗？",
+        "PUBLISH_CONFLICT_CHANGED": "发布被拒绝：以下页面已以此永久链接向相同访问者发布：{pages}。请再次发布以解决冲突。",
         "UNPUBLISH_WITH_DRAFT": "无法取消发布包含更改的页面。",
         "DOWNLOAD_SUCCESS": "内容已成功保存到文件",
         "CLONE_SUCCESS": "页面已成功克隆",
@@ -208,6 +215,7 @@
       "ALERTS": {
         "PUBLISH_ALL_RESULT": "已发布：{processed}。已跳过（无草稿）：{skipped}。",
         "BATCH_FAILED": "失败：{failed}。请对这些语言重试。",
+        "BATCH_PERMALINK_CONFLICT": "未发布：{conflicted}。已有另一个页面以此永久链接向相同访问者发布。请逐个发布这些语言以替换它。",
         "ARCHIVE_ALL_RESULT": "已归档：{processed}。此前已归档：{skipped}。",
         "ARCHIVE_ALL": "要归档此页面的所有语言版本吗？",
         "DELETE": "要删除此多语言页面吗？它没有任何语言版本。",
