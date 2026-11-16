@@ -4,7 +4,7 @@
 Domain logic, platform integration, API patterns, and deployment context for the VirtoCommerce Site Builder module. Use this skill when working with platform communication, API integration, template/section editing logic, Vue shell, AngularJS admin, or .NET backend.
 
 ## Triggers
-- Working with API calls, HTTP client, config-driven endpoints
+- Working with API calls
 - Platform integration (postMessage, BroadcastChannel)
 - Template/section/block CRUD operations
 - Auth/token management
@@ -46,7 +46,7 @@ A **VirtoCommerce platform module** that provides site builder and theme editor 
 Templates identified by computed key: `type::groupId` or `type::path` (from URL query params).
 
 ### Control Types
-Dynamic form: `text`, `textarea`, `checkbox`, `select`, `color`, `range`, `image`, `images`, `files`, `markdown`, `richtext`, `calendar`, `object`, `array`, and more. Each maps to a component in `core/controls/`.
+Dynamic form: `text`, `textarea`, `checkbox`, `select`, `color`, `range`, `image`, `images`, `files`, `markdown`, `richtext`, `calendar`, `object`, `array`, and more. The designer renders them in `vue/src/modules/designer/components/Fields.vue`.
 
 ## C# Backend Architecture
 
@@ -63,7 +63,7 @@ Core ← Data.SqlServer / Data.MySql / Data.PostgreSql
 - `IContentStreamProvider` / `ContentStreamRepository` — Large content streaming
 
 ### API Controllers
-- `SiteBuilderController` — Main API: templates, sections, schemas, config
+- `SiteBuilderController` — Main API: templates, schemas, config
 - `SiteBuilderPageController` — Page CRUD, search, publish
 
 ### Events
@@ -85,62 +85,6 @@ Handlers in `Data/Handlers/` react to page save/delete to sync content.
 ## Page designer (Vue)
 
 The page designer is the full-screen `SiteBuilderDesigner` blade (`vue/src/modules/pages/SiteBuilderDesigner.vue`); its state, schema, document and preview code live in `vue/src/modules/designer/`. It edits database pages (param = page group id) and pages kept as files (query: storeId, path, type), with the git version history when the store keeps its pages in git. The preview is the storefront's `/designer-preview` page in an iframe, driven over postMessage (`designer/preview.ts`). The standalone app opens it from `/apps/site-builder-shell/?storeId=…&designGroup=…` or `&designPath=…&designType=…`, which is what the classic admin's page blade links to.
-
-### Platform Integration Architecture
-
-**Iframe Embedding:** The Angular SPA runs inside a `<iframe>` in the VC platform admin.
-
-**Communication channels:**
-1. `postMessage` — bidirectional with parent window and preview iframe
-2. `BroadcastChannel` (`vc-module-content-channel`) — with VC platform shell
-
-**EventsBusService** routes messages by `target` field:
-- `target: 'preview'` → preview iframe via `postMessage`
-- `target: 'platform'` → platform via `BroadcastPlatformService`
-
-### Auth Flow
-- JWT read from `ls.authenticationData` in localStorage (set by VC platform shell)
-- `RefreshTokenInterceptor` attaches `Authorization: Bearer` to all API requests
-- Silent token refresh via `/connect/token` before expiry, requests queued during refresh
-
-### Config-Driven HTTP
-
-**Config loading (`AppInitializator`):**
-1. Load `data/settings.json` (or another bundled `data/*.json` named by the `?configUrl=` query param)
-2. Optionally load overrides from `/api/site-builder/settings`
-3. Recursively resolve nested config
-4. Store in `AppConfig` singleton
-
-**Config interpolation:** Values support `{{token}}` syntax:
-- `location.*` — current URL parts
-- `config.*` — other config values
-- `settings.*` — loaded settings
-
-**BuilderHttpClient** evaluates `ServerRequestDescriptor`:
-```typescript
-interface ServerRequestDescriptor {
-    url: string;           // with {{token}} placeholders
-    method?: string;
-    body?: any;
-    resultPath?: string;   // jsonpath to extract from response
-    headers?: object;
-}
-```
-Features: LRU cache (100 items) for GET, fallback chains, jsonpath response mapping.
-
-### Key Config Keys
-| Key | Purpose |
-|---|---|
-| `templatesListUrl` | List templates |
-| `templateUrl` | Load single template |
-| `sectionsListUrl` | List available sections |
-| `saveTemplates` | Save template changes |
-| `settingsDataRequest` | Load theme settings data |
-| `settingsSchemaRequest` | Load theme settings schema |
-| `saveSettings` | Save theme settings |
-| `uploadAssetsRequest` | Upload images/files |
-| `publish` / `publishPages` | Publish changes |
-| `externalPreview` | External preview URL |
 
 ## Vue 3 Shell App
 

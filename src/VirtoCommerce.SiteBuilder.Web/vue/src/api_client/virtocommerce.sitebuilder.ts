@@ -1715,59 +1715,6 @@ export class SiteBuilderClient extends AuthApiBase {
      * @param theme (optional) 
      * @return OK
      */
-    getTemplates(storeId?: string | undefined, theme?: string | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/site-builder/templates?";
-        if (storeId === null)
-            throw new globalThis.Error("The parameter 'storeId' cannot be null.");
-        else if (storeId !== undefined)
-            url_ += "storeId=" + encodeURIComponent("" + storeId) + "&";
-        if (theme === null)
-            throw new globalThis.Error("The parameter 'theme' cannot be null.");
-        else if (theme !== undefined)
-            url_ += "theme=" + encodeURIComponent("" + theme) + "&";
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "GET",
-            headers: {
-            }
-        };
-
-        return this.transformOptions(options_).then(transformedOptions_ => {
-            return this.http.fetch(url_, transformedOptions_);
-        }).then((_response: Response) => {
-            return this.processGetTemplates(_response);
-        });
-    }
-
-    protected processGetTemplates(response: Response): Promise<void> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            return;
-            });
-        } else if (status === 401) {
-            return response.text().then((_responseText) => {
-            return throwException("Unauthorized", status, _responseText, _headers);
-            });
-        } else if (status === 403) {
-            return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<void>(null as any);
-    }
-
-    /**
-     * @param storeId (optional) 
-     * @param theme (optional) 
-     * @return OK
-     */
     getObjects(storeId?: string | undefined, theme?: string | undefined): Promise<void> {
         let url_ = this.baseUrl + "/api/site-builder/objects?";
         if (storeId === null)
@@ -1794,59 +1741,6 @@ export class SiteBuilderClient extends AuthApiBase {
     }
 
     protected processGetObjects(response: Response): Promise<void> {
-        const status = response.status;
-        let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
-        if (status === 200) {
-            return response.text().then((_responseText) => {
-            return;
-            });
-        } else if (status === 401) {
-            return response.text().then((_responseText) => {
-            return throwException("Unauthorized", status, _responseText, _headers);
-            });
-        } else if (status === 403) {
-            return response.text().then((_responseText) => {
-            return throwException("Forbidden", status, _responseText, _headers);
-            });
-        } else if (status !== 200 && status !== 204) {
-            return response.text().then((_responseText) => {
-            return throwException("An unexpected server error occurred.", status, _responseText, _headers);
-            });
-        }
-        return Promise.resolve<void>(null as any);
-    }
-
-    /**
-     * @param storeId (optional) 
-     * @param theme (optional) 
-     * @return OK
-     */
-    getSectionsSettings(storeId?: string | undefined, theme?: string | undefined): Promise<void> {
-        let url_ = this.baseUrl + "/api/site-builder/sections?";
-        if (storeId === null)
-            throw new globalThis.Error("The parameter 'storeId' cannot be null.");
-        else if (storeId !== undefined)
-            url_ += "storeId=" + encodeURIComponent("" + storeId) + "&";
-        if (theme === null)
-            throw new globalThis.Error("The parameter 'theme' cannot be null.");
-        else if (theme !== undefined)
-            url_ += "theme=" + encodeURIComponent("" + theme) + "&";
-        url_ = url_.replace(/[?&]$/, "");
-
-        let options_: RequestInit = {
-            method: "GET",
-            headers: {
-            }
-        };
-
-        return this.transformOptions(options_).then(transformedOptions_ => {
-            return this.http.fetch(url_, transformedOptions_);
-        }).then((_response: Response) => {
-            return this.processGetSectionsSettings(_response);
-        });
-    }
-
-    protected processGetSectionsSettings(response: Response): Promise<void> {
         const status = response.status;
         let _headers: any = {}; if (response.headers && response.headers.forEach) { response.headers.forEach((v: any, k: any) => _headers[k] = v); };
         if (status === 200) {

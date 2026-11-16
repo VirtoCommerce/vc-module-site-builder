@@ -11,7 +11,7 @@ const MARKDOWN: Field = { ...MIXED, resultType: "markdown" };
 const HTML: Field = { ...MIXED, resultType: "html" };
 
 const TEXT = "Every order ships from our own warehouse.\n\n- **Free delivery** on orders over $500\n- Net-30";
-// What the classic designer stored for the same text.
+// What Page Builder stored for the same text.
 const TEXT_HTML = "<p>Every order ships from our own warehouse.</p>\n<ul>\n<li><strong>Free delivery</strong> on orders over $500</li>\n<li>Net-30</li>\n</ul>\n";
 
 const mountField = (field: Field, value: unknown, translation?: Translating) =>
@@ -110,7 +110,7 @@ describe("a translatable markdown field", () => {
 });
 
 describe("markdown to HTML", () => {
-  it("follows the classic designer's converter: GitHub flavour, no line breaks, heading ids, links", () => {
+  it("follows Page Builder's converter: GitHub flavour, no line breaks, heading ids, links", () => {
     expect(markdownToHtml("# Hello World\n\n## Hello World\n\nline1\nline2 ~~gone~~ www.x.com <https://y.com>")).toBe(
       '<h1 id="hello-world">Hello World</h1>\n<h2 id="hello-world-1">Hello World</h2>\n' +
         '<p>line1\nline2 <del>gone</del> <a href="http://www.x.com">www.x.com</a> <a href="https://y.com">https://y.com</a></p>\n',

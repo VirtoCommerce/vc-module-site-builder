@@ -46,9 +46,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         private static readonly Dictionary<string, Func<SiteBuilderController, string, string, Task<ActionResult>>> ThemeActions = new()
         {
             ["settings"] = (c, store, theme) => c.GetSettings(store, theme),
-            ["templates"] = (c, store, theme) => c.GetTemplates(store, theme),
             ["objects"] = (c, store, theme) => c.GetObjects(store, theme),
-            ["sections"] = (c, store, theme) => c.GetSectionsSettings(store, theme),
             ["schemas"] = (c, store, theme) => c.GetSchemasCatalog(store, theme),
             ["schemas/{kind}/{key}"] = (c, store, theme) => c.GetSchemaByKey(store, theme, "sections", "text"),
             ["git/legacy-drafts"] = (c, store, theme) => c.GetLegacyDrafts(store, "pages", theme),

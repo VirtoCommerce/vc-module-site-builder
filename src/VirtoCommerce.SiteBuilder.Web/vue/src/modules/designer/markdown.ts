@@ -14,7 +14,7 @@ export interface MarkdownModel {
 export const resultTypeOf = (field: Field): MarkdownResult =>
   field.resultType === "markdown" || field.resultType === "html" ? field.resultType : "mixed";
 
-// Heading ids as the classic designer's converter gave them, so that links to a heading keep working.
+// Heading ids as Page Builder's converter gave them, so that links to a heading keep working.
 const slugOf = (text: string) =>
   text
     .toLowerCase()
@@ -55,7 +55,7 @@ function converter(html: boolean): MarkdownIt {
   return md;
 }
 
-// The classic designer kept raw HTML, scripts and javascript: links included. Raw HTML still passes, then everything
+// Page Builder kept raw HTML, scripts and javascript: links included. Raw HTML still passes, then everything
 // that can run script is stripped: the stored HTML reaches clients that may not sanitize it.
 const withHtml = converter(true);
 // Without a DOM there is nothing to sanitize with, so raw HTML is escaped instead of passing through.

@@ -365,7 +365,7 @@ describe("useDesigner: editing and saving", () => {
     pageStatus = { published: true, hasChanges: true };
     themeStatus = { publication: 3, drafts: ["sections/header-group.json", "config/template_rules.json", "config/brand.json", "config/settings_data.json"] };
     await openDatabasePage();
-    // The Angular designer's theme settings are not the Vue designer's to discard.
+    // The designer does not discard the theme settings.
     expect(designer.discardable.value).toEqual({ page: true, theme: ["rules", "header", "brand"] });
 
     await designer.discardDrafts({ page: true, theme: ["header", "footer"] });

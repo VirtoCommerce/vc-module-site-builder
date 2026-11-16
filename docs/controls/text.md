@@ -1,6 +1,6 @@
 # Text Control Descriptor
 
-This control provides a rich-text editor based on [ckeditor-angular](https://www.npmjs.com/package/ckeditor4-angular). It allows users to format text using a WYSIWYG interface.
+This control provides a rich-text editor. It allows users to format text using a WYSIWYG interface.
 
 | Property   | Type   | Description                           |
 | ---------- | ------ | ------------------------------------- |

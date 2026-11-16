@@ -60,30 +60,6 @@ public class SiteBuilderContentQueryService(
         return SiteBuilderOperationResult.Success(await GetSchemaFilesAsync(request.StoreId, request.Theme, request.Kind));
     }
 
-    public virtual Task<SiteBuilderOperationResult<string>> GetSectionSchemasAsync(SiteBuilderThemeQueryRequest request, ClaimsPrincipal user,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        return GetSectionSchemasInternalAsync(request, user, cancellationToken);
-    }
-
-    private async Task<SiteBuilderOperationResult<string>> GetSectionSchemasInternalAsync(SiteBuilderThemeQueryRequest request, ClaimsPrincipal user,
-        CancellationToken cancellationToken)
-    {
-        if (await CheckRequestAsync(ThemeRequest(request), request.BindingErrors, user, cancellationToken) is { } refused)
-        {
-            return refused.As<string>();
-        }
-
-        var sections = await GetSchemaFilesAsync(request.StoreId, request.Theme, Sections);
-        var blocks = await GetSchemaFilesAsync(request.StoreId, request.Theme, Blocks);
-        var objects = await GetSchemaFilesAsync(request.StoreId, request.Theme, Objects);
-        var shared = await GetSchemaFilesAsync(request.StoreId, request.Theme, Shared);
-
-        return SiteBuilderOperationResult.Success($"{{ \"{Sections}\": {sections}, \"{Blocks}\": {blocks}, \"{Objects}\": {objects}, \"{Shared}\": {shared} }}");
-    }
-
     public virtual Task<SiteBuilderOperationResult<string>> GetSchemaCatalogAsync(SiteBuilderThemeQueryRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
@@ -203,9 +179,6 @@ public class SiteBuilderContentQueryService(
             return SiteBuilderOperationResult.Success(result);
         }
 
-        // The builder overlays this response on top of its bundled data/settings.json, server wins.
-        // That is how a store on the git flow gets git urls for publishing without anyone editing the
-        // app's static config — and how a store that is not on it keeps the bytes it has always got.
         var settings = await ReadJsonBlobAsync(storageProvider, blobInfo.RelativeUrl);
         settings.Merge(GitBuilderSettings.GetDescriptors(), new JsonMergeSettings { MergeArrayHandling = MergeArrayHandling.Replace });
         result.Text = settings.ToString(Formatting.None);

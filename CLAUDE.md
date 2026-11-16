@@ -9,7 +9,6 @@ A **VirtoCommerce platform module** for site builder / theme editor functionalit
 | Sub-project | Stack | Location |
 |---|---|---|
 | C# backend | .NET 10, EF Core | `src/VirtoCommerce.SiteBuilder.*` |
-| Angular 21 designer (stores with New Site Builder off) | Angular 21, NgRx, Signals | `src/.../Apps/site-builder-designer/` |
 | Vue 3 UI (Admin Shell + standalone shell) | Vue 3, Vite, @vc-shell | `src/.../vue/` |
 | AngularJS admin | AngularJS (legacy) | `src/.../Web/Scripts/` |
 
@@ -28,17 +27,6 @@ dotnet test
 
 # Build specific project
 dotnet build src/VirtoCommerce.SiteBuilder.Web/
-```
-
-### Angular Designer
-
-All commands run from: `src/VirtoCommerce.SiteBuilder.Web/Apps/site-builder-designer/`
-
-```bash
-npm start                    # Dev server
-npm run build                # Full build (ngv-markdown → ngv-datepicker → themes → app)
-npm test                     # Tests
-npm run lint                 # ESLint
 ```
 
 ### Vue 3 Shell
@@ -76,36 +64,6 @@ Standard VirtoCommerce module pattern:
 - Event-driven architecture: `SiteBuilderPageChanging/Changed`, `GroupedPageChanging/Changed`
 - Content streaming via `ContentStreamRepository` / `IContentStreamProvider`
 - Authorization via `SiteBuilderAuthorizationHandler` + `SiteBuilderAuthorizationRequirement`
-
-### Angular 20 Designer App
-
-Lives entirely in `Apps/site-builder-designer/`. The SPA runs as an `<iframe>` inside the VirtoCommerce platform admin shell.
-
-**Module structure** (`src/app/modules/`):
-- **`core/`** — Services (HTTP, assets, clipboard, modal, notifications, event bus), UI controls, dialogs. Eagerly provided.
-- **`editor/`** — Page/template editing. Lazy-loaded at `/pages`. Has its own NgRx store (three-layer: data/domain/ui).
-- **`theme/`** — Theme editor. Lazy-loaded at `/themes`. Has its own NgRx store.
-- **`shared/`** — Components, dialogs, services, NgRx routing state. Shared across features.
-- **`integration/`** — Platform `postMessage`/`BroadcastChannel` integration. `AppInitializator` runs at startup via `APP_INITIALIZER`.
-- **`models/`** — Pure TypeScript model definitions.
-
-**Platform integration:**
-- Auth JWT read from `localStorage` (`ls.authenticationData`) — set by VC platform shell
-- Communicates with parent via `postMessage` and `BroadcastChannel` (`vc-module-content-channel`)
-- Preview iframe receives template data changes in real-time
-
-**Config system:**
-- Loads `data/settings.json` (or another bundled `data/*.json` named by `?configUrl=`)
-- Template syntax in values (evaluated by `appHelpers.template()` in `integration/helpers/utils.ts`):
-  - `{{path}}` — substitutes value by dot-path from context (`location.*`, `config.*`, `settings.*`)
-  - `{{=expr}}` — evaluates an expression, result is coerced to string (for use inside larger strings)
-  - `@{{expr}}` — evaluates an expression, returns raw result preserving type (array, object, number). Must be the entire string value. Use for POST body fields that need non-string types.
-  - Expressions are interpreted by `integration/helpers/safe-expression.ts`, not run as JS: no functions or callbacks, object literals, `new` or globals (see `docs/_template-syntax.md`, "Expression language"). Anything else evaluates to `null`.
-- `BuilderHttpClient` evaluates `ServerRequestDescriptor` objects with LRU cache + fallback chains
-
-**Internal libraries (`projects/`):**
-- **`ngv-datepicker`** — Custom datepicker with clock view. Has prebuilt Sass themes (compiled to `.dist-libs/`).
-- **`ngv-markdown`** — Markdown editor wrapping EasyMDE + Turndown (HTML→Markdown paste).
 
 ### Vue 3 Shell App
 
