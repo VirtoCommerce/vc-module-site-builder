@@ -60,6 +60,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     private McpToolHarness _harness;
     private (DesignerContentService Designer, ThemeDraftService Themes) _designer;
     private ThemeStorageFactory _themeStorage;
+    private readonly List<string> _seededPageIds = [];
 
     // The claim types the platform reads the user id from, as its startup sets them: a bulk tool stores the id for its job.
     static McpTestContext()
@@ -180,6 +181,7 @@ internal sealed class McpTestContext : IAsyncDisposable
         }
 
         PageStore.SeedGroup(group);
+        _seededPageIds.Add(id);
         foreach (var page in group.Pages)
         {
             PageStore.SeedContent(page.Id, page.Status == "Draft" ? content.Replace("Spring", "Summer", StringComparison.Ordinal) : content);
@@ -421,7 +423,19 @@ internal sealed class McpTestContext : IAsyncDisposable
             NullLogger<SiteBuilderPageContentService>.Instance);
 
         return TestServices.GroupedPageOperations(authorizationService, PageStore, contentService, pageService,
-            designerContentService: GetDesigner().Designer, contentHistory: SavedVersions);
+            designerContentService: GetDesigner().Designer, contentHistory: SavedVersions,
+            publishConflictService: new SiteBuilderPublishConflictService(PageStore, new SeededPageSearch(this), Stores, distributedLock: null));
+    }
+
+    // The seeded pages of the store searched; the permalink conflicts compare the permalinks themselves.
+    private sealed class SeededPageSearch(McpTestContext context) : IGroupedPageSearchService
+    {
+        public async Task<GroupedSiteBuilderPageSearchResult> SearchAsync(SiteBuilderPageSearchCriteria criteria, bool clone = true)
+        {
+            var groups = (await context.PageStore.GetAsync(context._seededPageIds)).Where(x => x.StoreId == criteria.StoreId).ToList();
+
+            return new GroupedSiteBuilderPageSearchResult { TotalCount = groups.Count, Results = groups.Skip(criteria.Skip).Take(criteria.Take).ToList() };
+        }
     }
 
     private (DesignerContentService Designer, ThemeDraftService Themes) GetDesigner()

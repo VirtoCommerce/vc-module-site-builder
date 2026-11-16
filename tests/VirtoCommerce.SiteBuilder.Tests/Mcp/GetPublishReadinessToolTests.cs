@@ -71,6 +71,20 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APageThatWouldReplaceAPublishedPage_IsBlocked_AndNamesIt()
+    {
+        _pages.ChangeGroup("new", x => x.Permalink = "/live");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "new" });
+
+        Assert.False(readiness.Ready);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "permalink-conflict");
+        Assert.Equal(McpFindingSeverities.Critical, finding.Severity);
+        Assert.Equal("page 'live' (Page live, en-US)", finding.Evidence);
+        Assert.Contains("unpublish_conflicting: true", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AnUnpublish_OfAPageWithADraft_IsBlockedByTheRule()
     {
         var readiness = await CheckAsync(Reader(), new { page_id = "edited", unpublish = true });

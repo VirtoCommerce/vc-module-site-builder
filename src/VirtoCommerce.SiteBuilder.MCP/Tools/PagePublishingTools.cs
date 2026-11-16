@@ -52,7 +52,9 @@ public class PagePublishingTools(
         "and the answer's shipment tells whether it merged, waits " +
         "for checks, or conflicts. A conflict publishes nothing: re-read the page and apply the change again, or, if the " +
         "user agrees to replace what changed on the published page, call again with rebase: true (a new dry run and approval). " +
-        "Returns what is (or would be) published.")]
+        "A database page is refused while other published pages serve its permalink to the same visitors, since it would replace " +
+        "them; the refusal names them: unpublish them first, or, if the user agrees to replace them, call again with " +
+        "unpublish_conflicting: true (a new dry run and approval). Returns what is (or would be) published.")]
     public async Task<SiteBuilderChange> PublishPage(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of a Landing Page or of a language version (search_site_pages), or the path of a page stored as a file " +
@@ -63,6 +65,9 @@ public class PagePublishingTools(
         [Description("With a page stored as a file: the store of the page.")] string store_id = null,
         [Description("With a page stored as a file in git, only after a publish conflicted and the user chose it: put the draft on " +
             "top of the published page, replacing what changed there since the draft began, then merge. Never retry with it on your own.")] bool rebase = false,
+        [Description("With page_id of a database page or with languages, only after a publish named the published pages it would replace " +
+            "and the user agreed to replace them: unpublish those pages with this publication. Its dry run lists them. Never retry with it " +
+            "on your own.")] bool unpublish_conflicting = false,
         [Description(ReviewedVersions.Description)] Dictionary<string, string> expected_versions = null,
         [Description(DraftOwnerDescription)] string draft_owner = null,
         [Description("true to return what would be published, without publishing it.")] bool dryRun = false,
@@ -71,6 +76,11 @@ public class PagePublishingTools(
         if (!string.IsNullOrEmpty(page_id) == !string.IsNullOrEmpty(multilanguage_page_id))
         {
             throw new McpException("Pass either page_id or multilanguage_page_id.");
+        }
+
+        if (unpublish_conflicting && (all_languages || PageLookup.IsFilePagePath(page_id)))
+        {
+            throw new McpException($"{PermalinkConflicts.Argument} goes with page_id of a database page or with languages.");
         }
 
         if (!string.IsNullOrEmpty(page_id))
@@ -83,7 +93,8 @@ public class PagePublishingTools(
             return PageLookup.IsFilePagePath(page_id)
                 ? await filePageShipping.ShipAsync(context.User,
                     new FilePageShipCall(store_id, page_id, Publish: true, rebase, draft_owner, expected_versions, dryRun), cancellationToken)
-                : await PublishGroupAsync(context.User, page_id, publish: true, EnsureNoRebase(rebase, expected_versions), dryRun, cancellationToken);
+                : await PublishGroupAsync(context.User, page_id, publish: true, EnsureNoRebase(rebase, expected_versions), unpublish_conflicting, dryRun,
+                    cancellationToken);
         }
 
         EnsureNoRebase(rebase, expected_versions);
@@ -96,7 +107,7 @@ public class PagePublishingTools(
 
         return all_languages
             ? await PublishAllLanguagesAsync(context.User, root, expected_versions, dryRun, cancellationToken)
-            : await PublishLanguagesAsync(context.User, root, languages, expected_versions, dryRun, cancellationToken);
+            : await PublishLanguagesAsync(context.User, root, languages, expected_versions, unpublish_conflicting, dryRun, cancellationToken);
     }
 
     [McpServerTool(Name = "unpublish_page", ReadOnly = false, Destructive = true, Idempotent = false)]
@@ -122,7 +133,7 @@ public class PagePublishingTools(
         return PageLookup.IsFilePagePath(page_id)
             ? filePageShipping.ShipAsync(context.User,
                 new FilePageShipCall(store_id, page_id, Publish: false, Rebase: false, draft_owner, expected_versions, dryRun), cancellationToken)
-            : PublishGroupAsync(context.User, page_id, publish: false, expected_versions, dryRun, cancellationToken);
+            : PublishGroupAsync(context.User, page_id, publish: false, expected_versions, unpublishConflicting: false, dryRun, cancellationToken);
     }
 
     // A call that names the versions it takes waits for a second person; one without them is a dry run or is refused.
@@ -140,7 +151,7 @@ public class PagePublishingTools(
 
     // The version of the draft a publish takes, or of the published page an unpublish takes.
     private async Task<SiteBuilderChange> PublishGroupAsync(ClaimsPrincipal user, string pageId, bool publish, IDictionary<string, string> expectedVersions,
-        bool dryRun, CancellationToken cancellationToken)
+        bool unpublishConflicting, bool dryRun, CancellationToken cancellationToken)
     {
         var group = await groupedPageService.LoadPageAsync(authorizationService, user, pageId);
         var change = new SiteBuilderChange
@@ -154,7 +165,7 @@ public class PagePublishingTools(
         };
 
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => RunPublishAsync(user, group.Id, publish, isDryRun, ReviewedVersions.Of(change, group.Id), cancellationToken),
+            isDryRun => RunPublishAsync(user, group.Id, publish, isDryRun, ReviewedVersions.Of(change, group.Id), unpublishConflicting, cancellationToken),
             x => EnsurePublished(x, group, publish),
             dryRun,
             checkAsync: x => PinAsync(change, x.Preview?.Objects, expectedVersions, dryRun));
@@ -187,6 +198,9 @@ public class PagePublishingTools(
                 MultilanguagePageBatchResult.NoDraftReason => $"{skipped.CultureName}: no draft, nothing to publish.",
                 MultilanguagePageBatchResult.ChangedReason => $"{skipped.CultureName}: its draft changed since it was reviewed, so it was not " +
                     "published. Call publish_page with dryRun again for it, show the user the change, and send the new expected_versions.",
+                MultilanguagePageBatchResult.PermalinkConflictReason => $"{skipped.CultureName}: another published page serves its permalink to " +
+                    $"the same visitors, so it was not published. Publish it alone, with languages: ['{skipped.CultureName}'], to see the page it " +
+                    "would replace and choose whether to replace it.",
                 _ => $"{skipped.CultureName}: publishing failed; the version is as it was. Try it again with languages: ['{skipped.CultureName}'].",
             });
         }
@@ -197,7 +211,7 @@ public class PagePublishingTools(
     // Every chosen version is checked before the first is published. The source language goes first, as in publish-all:
     // translations published with it are based on its new revision.
     private async Task<SiteBuilderChange> PublishLanguagesAsync(ClaimsPrincipal user, MultilanguagePage root, string[] languages,
-        IDictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
+        IDictionary<string, string> expectedVersions, bool unpublishConflicting, bool dryRun, CancellationToken cancellationToken)
     {
         var versions = (await multilanguagePageService.GetLanguagesAsync(root.Id, cancellationToken))
             .Where(x => x.Page != null)
@@ -220,7 +234,7 @@ public class PagePublishingTools(
         var drafts = new List<SiteBuilderObjectChange>();
         foreach (var group in groups)
         {
-            var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, expectedVersion: null, cancellationToken);
+            var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, expectedVersion: null, unpublishConflicting, cancellationToken);
             EnsurePublished(check, group, publish: true);
             change.AddChanges(check.Preview);
             drafts.AddRange(check.Preview?.Objects ?? []);
@@ -236,13 +250,17 @@ public class PagePublishingTools(
         var published = new List<string>();
         foreach (var group in groups)
         {
-            var result = await RunPublishAsync(user, group.Id, publish: true, isDryRun: false, ReviewedVersions.Of(change, group.Id), cancellationToken);
+            var result = await RunPublishAsync(user, group.Id, publish: true, isDryRun: false, ReviewedVersions.Of(change, group.Id), unpublishConflicting,
+                cancellationToken);
             if (!result.Succeeded)
             {
                 var done = published.Count == 0 ? "No version was published." : $"Published: {string.Join(", ", published)}.";
-                var reason = result.Status == SiteBuilderOperationStatus.Conflict
-                    ? "its draft changed since it was reviewed; call publish_page with dryRun again and send the new expected_versions"
-                    : result.Error ?? result.Status.ToString();
+                var reason = result.Status switch
+                {
+                    SiteBuilderOperationStatus.Conflict => "its draft changed since it was reviewed; call publish_page with dryRun again and send the new expected_versions",
+                    SiteBuilderOperationStatus.PermalinkConflict => PermalinkConflicts.Explain(result),
+                    _ => result.Error ?? result.Status.ToString(),
+                };
                 throw new McpException($"Publishing the {group.CultureName} version '{group.Id}' failed: {reason}. {done}");
             }
 
@@ -255,7 +273,7 @@ public class PagePublishingTools(
 
     // The write takes the version pinned: of the draft for a publish, of the published page for an unpublish.
     private Task<SiteBuilderOperationResult> RunPublishAsync(ClaimsPrincipal user, string groupId, bool publish, bool isDryRun, string expectedVersion,
-        CancellationToken cancellationToken)
+        bool unpublishConflicting, CancellationToken cancellationToken)
     {
         return groupedPageOperationService.PublishAsync(new GroupedPagePublishOperationRequest
         {
@@ -264,11 +282,14 @@ public class PagePublishingTools(
             SaveId = Guid.NewGuid().ToString("N"),
             ExpectedDraftVersion = publish ? expectedVersion : null,
             ExpectedPublishedVersion = publish ? null : expectedVersion,
+            UnpublishConflicting = unpublishConflicting,
             DryRun = isDryRun,
             ReportImpact = true,
         }, user, cancellationToken);
     }
 
+    // The pages a publish with unpublish_conflicting takes off come without a version: they are pinned by id, so a page
+    // that starts or stops conflicting after the review refuses the write instead of being unpublished unreviewed.
     private static Task PinAsync(SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts, IDictionary<string, string> expectedVersions, bool dryRun)
     {
         ReviewedVersions.Pin(change, (drafts ?? []).Select(x => new KeyValuePair<string, string>(x.ObjectId, x.ETag)), expectedVersions, dryRun);
@@ -285,6 +306,11 @@ public class PagePublishingTools(
                     ? "It is not published."
                     : "It has unpublished changes: publish them with publish_page or discard them with discard_draft first.";
             throw new McpException($"Page '{group.Id}' was not {(publish ? "published" : "unpublished")}. {hint}");
+        }
+
+        if (result.Status == SiteBuilderOperationStatus.PermalinkConflict)
+        {
+            throw new McpException($"Page '{group.Id}' was not published: {PermalinkConflicts.Explain(result)}.");
         }
 
         if (result.Status == SiteBuilderOperationStatus.Conflict)

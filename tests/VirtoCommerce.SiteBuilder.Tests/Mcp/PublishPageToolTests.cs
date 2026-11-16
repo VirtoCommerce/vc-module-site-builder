@@ -167,6 +167,72 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APublishThatWouldReplaceAPublishedPage_IsRefusedOnTheDryRun_AndNamesIt()
+    {
+        _pages.ChangeGroup("new", x => x.Permalink = "/live");
+
+        var result = await _context.CallAsync(Publisher(), "publish_page", new { page_id = "new", dryRun = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("page 'live' (Page live, en-US)", result.Error, StringComparison.Ordinal);
+        Assert.Contains("unpublish_page", result.Error, StringComparison.Ordinal);
+        Assert.Contains("unpublish_conflicting: true", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task APublishedPageWithADraft_IsNotReplaced_UntilItsDraftIsPublishedOrDiscarded()
+    {
+        _pages.ChangeGroup("new", x => x.Permalink = "/edited");
+
+        var result = await _context.CallAsync(Publisher(), "publish_page", new { page_id = "new", unpublish_conflicting = true, dryRun = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("publish or discard the draft of page 'edited'", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnApprovedPublishWithUnpublishConflicting_TakesTheReviewedPageOff()
+    {
+        _pages.ChangeGroup("new", x => x.Permalink = "/live");
+
+        var call = await _context.ReviewAsync(Publisher(), "publish_page", new Dictionary<string, object> { ["page_id"] = "new", ["unpublish_conflicting"] = true });
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Equal(["live", "new"], ((IDictionary<string, string>)call["expected_versions"]).Keys.Order());
+        Assert.Contains(result.EnsureSucceeded().Read<SiteBuilderChange>().Changes,
+            x => x.Field == "page 'live': status" && x.From?.ToString() == "Published" && x.To?.ToString() == "Draft");
+        Assert.Equal("Published", (await _pages.GetByIdAsync("new")).Status);
+        Assert.Equal("Draft", (await _pages.GetByIdAsync("live")).Status);
+    }
+
+    [Fact]
+    public async Task APageThatStartsConflictingAfterTheReview_IsNotUnpublished()
+    {
+        _pages.ChangeGroup("new", x => x.Permalink = "/live");
+        _context.SeedPage("live-2", StoreA, published: true, draft: false);
+        var call = await _context.ReviewAsync(Publisher(), "publish_page", new Dictionary<string, object> { ["page_id"] = "new", ["unpublish_conflicting"] = true });
+        _pages.ChangeGroup("live-2", x => x.Permalink = "/live");
+
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Equal("Draft", (await _pages.GetByIdAsync("new")).Status);
+        Assert.Equal("Published", (await _pages.GetByIdAsync("live")).Status);
+        Assert.Equal("Published", (await _pages.GetByIdAsync("live-2")).Status);
+    }
+
+    [Fact]
+    public async Task UnpublishConflicting_GoesWithAPageOrChosenLanguages()
+    {
+        var result = await _context.CallAsync(Publisher(), "publish_page",
+            new { multilanguage_page_id = "ml", all_languages = true, unpublish_conflicting = true, dryRun = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("unpublish_conflicting goes with", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task APageOfAnotherStore_IsForbidden()
     {
         var result = await _context.CallAsync(StoreAPublisher(), "publish_page",
@@ -209,12 +275,40 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ChosenLanguages_ThatWouldReplaceAPageWithADraft_NameIt()
+    {
+        SeedMultilanguagePage();
+        var operations = new Mock<IGroupedPageOperationService>();
+        operations
+            .Setup(x => x.PublishAsync(It.IsAny<GroupedPagePublishOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GroupedPagePublishOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun(CreatePageToolTests.Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true)
+                    .WithETag("reviewed"))
+                : SiteBuilderOperationResult.PermalinkConflict(new SiteBuilderPermalinkConflictResult
+                {
+                    Conflicts = [new SiteBuilderPermalinkUsage { GroupId = "old-fr", Name = "Old", CultureName = "fr-FR", CanUnpublish = false }],
+                }));
+        _context.GroupedPageOperations = operations.Object;
+
+        var call = await _context.ReviewAsync(Publisher(), "publish_page",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["languages"] = new[] { "fr-FR" }, ["unpublish_conflicting"] = true });
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("Publishing the fr-FR version 'ml-fr' failed", result.Error, StringComparison.Ordinal);
+        Assert.Contains("publish or discard the draft of page 'old-fr' (Old, fr-FR)", result.Error, StringComparison.Ordinal);
+        operations.Verify(x => x.PublishAsync(It.Is<GroupedPagePublishOperationRequest>(r => !r.UnpublishConflicting),
+            It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task AllLanguages_PublishesTheReviewedDrafts_AndReportsTheSkippedOnes()
     {
         var drafts = new List<(string Id, string ETag)> { ("ml-en", "v-en"), ("ml-fr", "v-fr") };
         SetUpPublishAll(drafts, [
             new MultilanguagePageBatchSkip { CultureName = "de-DE", Reason = MultilanguagePageBatchResult.NoDraftReason },
             new MultilanguagePageBatchSkip { CultureName = "fr-FR", Reason = MultilanguagePageBatchResult.ChangedReason },
+            new MultilanguagePageBatchSkip { CultureName = "es-ES", Reason = MultilanguagePageBatchResult.PermalinkConflictReason },
         ]);
         var arguments = new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["all_languages"] = true };
 
@@ -226,6 +320,8 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         var warnings = result.EnsureSucceeded().Read<SiteBuilderChange>().Warnings;
         Assert.Contains(warnings, x => x.StartsWith("de-DE: no draft", StringComparison.Ordinal));
         Assert.Contains(warnings, x => x.StartsWith("fr-FR: its draft changed since it was reviewed", StringComparison.Ordinal));
+        Assert.Contains(warnings, x => x.StartsWith("es-ES: another published page serves its permalink", StringComparison.Ordinal) &&
+            x.Contains("languages: ['es-ES']", StringComparison.Ordinal));
         _context.MultilanguagePageOperations.Verify(x => x.PublishAllAsync(
             It.Is<MultilanguagePagePublishAllOperationRequest>(r => !r.DryRun && r.ExpectedDraftVersions.Count == 2 &&
                 r.ExpectedDraftVersions["ml-en"] == "v-en" && r.ExpectedDraftVersions["ml-fr"] == "v-fr"),

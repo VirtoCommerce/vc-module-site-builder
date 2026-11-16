@@ -45,10 +45,10 @@ public class PublishReadinessTools(
         "who would see it. Pass page_id for a Landing Page or a language version (or a page stored as a file, with store_id), " +
         "multilanguage_page_id for every language version with a draft, or theme true with store_id for the theme's drafts. " +
         "The answer comes from the dry run of the publication itself: parts (each with its changes section by section and " +
-        "who changed it), findings (critical ones block the publication: no draft, a page document that is refused, a palette " +
-        "below WCAG 2.2 AA, no schema catalog; warnings: hidden page, ended dates, an address another page serves), affected " +
-        "(the audience) and the next step. Pass unpublish true to check taking a page off instead. Changes nothing. To publish, " +
-        "use publish_page or publish_theme.")]
+        "who changed it), findings (critical ones block the publication: no draft, a page document that is refused, published " +
+        "pages it would replace, a palette below WCAG 2.2 AA, no schema catalog; warnings: hidden page, ended dates, an address " +
+        "another page serves), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
+        "instead. Changes nothing. To publish, use publish_page or publish_theme.")]
     public async Task<PublishReadiness> GetPublishReadiness(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of a Landing Page or of a language version (search_site_pages), or the path of a page stored as a file " +
@@ -368,6 +368,12 @@ public class PublicationDryRuns(
             return false;
         }
 
+        if (check.Status == SiteBuilderOperationStatus.PermalinkConflict)
+        {
+            readiness.Findings.Add(PermalinkConflict(group, PermalinkConflicts.Of(check)));
+            return false;
+        }
+
         SiteBuilderChanges.EnsureSucceeded(check, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group));
         if (unpublish)
         {
@@ -466,6 +472,10 @@ public class PublicationDryRuns(
     private static McpFinding NoDraft(GroupedSiteBuilderPage group) =>
         Blocker("no-draft", $"Page '{group.Name}' has no draft, so publishing it would change nothing.", $"Page '{group.Id}' is {group.Status} without unpublished changes.",
             "Edit it with edit_page_draft first, or there is nothing to publish.", "content", group);
+
+    private static McpFinding PermalinkConflict(GroupedSiteBuilderPage group, IList<SiteBuilderPermalinkUsage> conflicts) =>
+        Blocker("permalink-conflict", $"Published pages serve the permalink '{group.Permalink}' to the same visitors, so publishing page '{group.Name}' " +
+            "would replace them.", PermalinkConflicts.Describe(conflicts), $"{PermalinkConflicts.Fix(conflicts)}.", "address", group);
 
     private static McpFinding UnpublishRefusal(GroupedSiteBuilderPage group)
     {
