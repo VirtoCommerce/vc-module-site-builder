@@ -596,9 +596,10 @@ import {
 } from "@vc-shell/framework";
 import { VcBlade, VcButton, VcDropdown, VcIcon, VcInput, VcPopup, VcTextarea } from "@vc-shell/framework/ui";
 import { fromClipboard, toClipboard } from "../designer/clipboard";
-import { SiteBuilderPageClient, type GroupedSiteBuilderPage } from "../../api_client/virtocommerce.sitebuilder";
+import { SiteBuilderPageClient, type GroupedSiteBuilderPage, type SiteBuilderPermalinkUsage } from "../../api_client/virtocommerce.sitebuilder";
 import VersionHistory from "../designer/components/VersionHistory.vue";
 import { notifyPagesChanged, useUrlParams } from "../site-builder/composables";
+import { canUnpublishAll, formatPageNames, getPublishConflicts } from "../site-builder/utilities/permalinkUsages";
 import AssetsLibraryContent from "../asset-library/components/AssetsLibraryContent.vue";
 import { PageAnchorsKey, PaletteTokensKey, PickAssetKey, StoreMenusKey, WhiteLabelingKey } from "../designer/types";
 import { pageAnchors } from "../designer/anchors";
@@ -1120,17 +1121,43 @@ async function publishTheme() {
   await reloadHistory();
 }
 
-async function publish(live: boolean, rebase = false) {
+const pageNames = (usages: SiteBuilderPermalinkUsage[]) =>
+  usages.map((x) => (x.cultureName ? `${formatPageNames([x])} (${x.cultureName})` : formatPageNames([x]))).join(", ");
+
+// False when the other pages stay published: the editor keeps them, or they have changes and cannot be unpublished.
+async function confirmUnpublishing(conflicts: SiteBuilderPermalinkUsage[]): Promise<boolean> {
+  const pages = pageNames(conflicts);
+  if (canUnpublishAll(conflicts)) return showConfirmation(t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_CONFLICT", { pages }));
+  notification.error(t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_CONFLICT_HAS_CHANGES", { pages }));
+  return false;
+}
+
+// A check that fails publishes all the same: the server refuses to replace another published page.
+async function publishPage() {
+  const page = designer.groupId.value ? group.value : undefined;
+  const usages = page?.permalink ? await getApiClient().then((client) => client.getPermalinkUsages(page)).catch(() => []) : [];
+  const { blocking, possible } = getPublishConflicts(usages);
+  if (blocking.length && !(await confirmUnpublishing(blocking))) return;
+  if (possible.length && !(await showConfirmation(t("SITE_BUILDER.PAGES.ALERTS.PUBLISH_POSSIBLE_CONFLICT", { pages: pageNames(possible) })))) return;
+  await publish(true, false, blocking.length > 0);
+}
+
+async function publish(live: boolean, rebase = false, unpublishConflicting = false) {
   try {
-    await designer.publish(live, rebase);
+    await designer.publish(live, rebase, unpublishConflicting);
     notifyPagesChanged();
     await reloadHistory();
   } catch (e) {
     // Git: a conflict means someone published another version meanwhile, and publishing over it is the editor's call.
-    const conflict = e instanceof ApiError && e.status === 409 ? (JSON.parse(e.body || "{}") as { canRebase?: boolean }) : undefined;
+    const conflict = e instanceof ApiError && e.status === 409 ? (JSON.parse(e.body || "{}") as { canRebase?: boolean; conflicts?: SiteBuilderPermalinkUsage[] }) : undefined;
     if (live && !rebase && conflict?.canRebase) {
       if (await showConfirmation(t("SITE_BUILDER.DESIGNER.PUBLISH_CONFLICT"))) await publish(true, true);
       else notification.error(t("SITE_BUILDER.DESIGNER.NOTHING_PUBLISHED"));
+      return;
+    }
+    // A database page: another page got published at its permalink for the same visitors after the check.
+    if (live && conflict?.conflicts?.length) {
+      if (await confirmUnpublishing(conflict.conflicts)) await publish(true, false, true);
       return;
     }
     notification.error(t("SITE_BUILDER.DESIGNER.PUBLISH_FAILED"));
@@ -1532,7 +1559,7 @@ const toolbar = computed<IBladeToolbar[]>(() => [
     icon: "lucide-upload",
     isVisible: publishShown.value.page,
     disabled: !designer.canPublish.value,
-    clickHandler: () => publish(true),
+    clickHandler: publishPage,
   },
   {
     id: "publish-theme",
