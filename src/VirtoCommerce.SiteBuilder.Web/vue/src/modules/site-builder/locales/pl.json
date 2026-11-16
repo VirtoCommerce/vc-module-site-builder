@@ -100,6 +100,9 @@
           "USER_GROUPS": "Grupy użytkowników",
           "ORGANIZATION": "Organizacja"
         },
+        "WARNINGS": {
+          "PERMALINK_USED": "Ten link stały jest używany przez inne strony: {pages}. Jest to dozwolone dla innych odwiedzających lub okresów; publikacja sprawdza konflikty."
+        },
         "VALIDATION": {
           "PERMALINK": "Link stały może mieć maksymalnie 2048 znaków i nie może zawierać spacji ani niewidocznych znaków, znaków ? # & % \\ \" < > {'{'} {'}'} {'|'} ^ `, podwójnych ukośników ani segmentów . i .."
         },
@@ -134,6 +137,10 @@
           "MESSAGE": "Czy na pewno chcesz zarchiwizować {count} wybranych stron?",
           "ALL": "wszystkie {totalCount}"
         },
+        "PUBLISH_CONFLICT": "Już opublikowane pod tym linkiem stałym dla tych samych odwiedzających: {pages}. Cofnąć ich publikację i opublikować tę stronę?",
+        "PUBLISH_CONFLICT_HAS_CHANGES": "Już opublikowane pod tym linkiem stałym dla tych samych odwiedzających: {pages}. Mają nieopublikowane zmiany; najpierw je opublikuj lub odrzuć.",
+        "PUBLISH_POSSIBLE_CONFLICT": "Opublikowane pod tym linkiem stałym również dla części tych samych odwiedzających lub dat: {pages}. Tam, gdzie obie strony mają zastosowanie, wyświetlana jest ostatnio opublikowana. Opublikować mimo to?",
+        "PUBLISH_CONFLICT_CHANGED": "Publikacja została odrzucona: te strony są już opublikowane pod tym linkiem stałym dla tych samych odwiedzających: {pages}. Opublikuj ponownie, aby rozwiązać konflikt.",
         "UNPUBLISH_WITH_DRAFT": "Nie można cofnąć publikacji strony, która ma zmiany.",
         "DOWNLOAD_SUCCESS": "Treść pomyślnie zapisana do pliku",
         "CLONE_SUCCESS": "Strona pomyślnie sklonowana",
@@ -208,6 +215,7 @@
       "ALERTS": {
         "PUBLISH_ALL_RESULT": "Opublikowano: {processed}. Pominięto (brak szkicu): {skipped}.",
         "BATCH_FAILED": "Niepowodzenie: {failed}. Spróbuj ponownie dla tych języków.",
+        "BATCH_PERMALINK_CONFLICT": "Nie opublikowano: {conflicted}. Pod tym linkiem stałym jest już opublikowana inna strona dla tych samych odwiedzających. Opublikuj te języki pojedynczo, aby ją zastąpić.",
         "ARCHIVE_ALL_RESULT": "Zarchiwizowano: {processed}. Już zarchiwizowane: {skipped}.",
         "ARCHIVE_ALL": "Zarchiwizować wszystkie wersje językowe tej strony?",
         "DELETE": "Usunąć tę stronę wielojęzyczną? Nie ma ona wersji językowych.",
