@@ -28,6 +28,7 @@ public class MultilanguagePageService(
     IStoreService storeService,
     ISiteBuilderPageService pageService,
     IDistributedLock distributedLock,
+    ISiteBuilderPublishConflictService publishConflictService,
     ILogger<MultilanguagePageService> logger)
     : CrudService<MultilanguagePage, MultilanguagePageEntity, MultilanguagePageChangingEvent, MultilanguagePageChangedEvent>(
         repositoryFactory, platformMemoryCache, eventPublisher),
@@ -839,7 +840,8 @@ public class MultilanguagePageService(
 
         foreach (var group in groups)
         {
-            var skipReason = await PublishVersionAsync(root, group, expectedDraftVersions, cancellationToken);
+            var skipReason = await publishConflictService.ExecuteExclusiveAsync(group,
+                () => PublishVersionAsync(root, group.Id, expectedDraftVersions, cancellationToken), cancellationToken);
             if (skipReason == null)
             {
                 result.ProcessedCultureNames.Add(group.CultureName);
@@ -874,14 +876,28 @@ public class MultilanguagePageService(
         }
     }
 
+    /// <summary>
+    /// Runs under the lock on the permalink of the version, so the version is reloaded: a single-page publish may have changed it meanwhile.
+    /// A version that would replace another published page is skipped: unpublishing that page is a choice the author makes when publishing
+    /// the version alone.
+    /// </summary>
     /// <returns>Why the version is skipped; <c>null</c> when it is published.</returns>
-    private async Task<string> PublishVersionAsync(MultilanguagePage root, GroupedSiteBuilderPage group, IDictionary<string, string> expectedDraftVersions,
+    private async Task<string> PublishVersionAsync(MultilanguagePage root, string groupId, IDictionary<string, string> expectedDraftVersions,
         CancellationToken cancellationToken)
     {
-        if (!GroupedPagePublishing.TryPublishDraft(group, out var obsoletePageIds))
+        var group = await groupedPageService.GetByIdAsync(groupId);
+        if (group == null || GroupedPagePublishing.GetDraft(group) == null)
         {
             return MultilanguagePageBatchResult.NoDraftReason;
         }
+
+        var (conflicts, _) = await publishConflictService.FindBlockingConflictsAsync(group);
+        if (conflicts.Count > 0)
+        {
+            return MultilanguagePageBatchResult.PermalinkConflictReason;
+        }
+
+        GroupedPagePublishing.TryPublishDraft(group, out var obsoletePageIds);
 
         try
         {

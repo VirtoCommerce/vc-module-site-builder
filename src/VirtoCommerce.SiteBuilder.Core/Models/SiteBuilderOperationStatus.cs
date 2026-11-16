@@ -15,4 +15,7 @@ public enum SiteBuilderOperationStatus
 
     /// <summary>A request running at the same time changed what this one relied on; what this one wrote is undone.</summary>
     ConcurrentChange,
+
+    /// <summary>Publishing would completely replace other published pages with the same permalink: nothing is written.</summary>
+    PermalinkConflict,
 }

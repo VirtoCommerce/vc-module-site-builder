@@ -86,7 +86,7 @@ public class PageControllerResponseTests
         var controller = PageController();
         controller.HttpContext.Request.Headers[ModuleConstants.Headers.SaveId] = "save-0001";
 
-        Assert.IsType<OkResult>(await controller.PublishGroup("g1", publish: true, Ct));
+        Assert.IsType<OkResult>(await controller.PublishGroup("g1", publish: true, cancellationToken: Ct));
 
         var request = Assert.IsType<GroupedPagePublishOperationRequest>(_operations.Request);
         Assert.Equal(("g1", true, "save-0001", false), (request.GroupId, request.Publish, request.SaveId, request.DryRun));
@@ -97,7 +97,7 @@ public class PageControllerResponseTests
     {
         _operations.Result = SiteBuilderOperationResult.NotFound();
 
-        Assert.IsType<NotFoundResult>(await PageController().PublishGroup("g1", publish: false, Ct));
+        Assert.IsType<NotFoundResult>(await PageController().PublishGroup("g1", publish: false, cancellationToken: Ct));
     }
 
     [Fact]

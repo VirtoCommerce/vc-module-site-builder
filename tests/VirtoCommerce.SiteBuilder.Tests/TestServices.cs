@@ -86,10 +86,13 @@ internal static class TestServices
         ISiteBuilderPageService pageService = null,
         ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator = null,
         IDesignerContentService designerContentService = null,
-        IContentHistory contentHistory = null) =>
+        IContentHistory contentHistory = null,
+        ISiteBuilderPublishConflictService publishConflictService = null) =>
         new(authorizationService, groupedPageService, pageService, pageContentService,
             sharedComponentPlacementValidator ?? new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService),
-            designerContentService ?? Designer(contentHistory ?? new NoContentHistory()), ContentGuard, contentHistory ?? new NoContentHistory());
+            designerContentService ?? Designer(contentHistory ?? new NoContentHistory()), ContentGuard, contentHistory ?? new NoContentHistory(),
+            publishConflictService ?? new SiteBuilderPublishConflictService(groupedPageService, new Fakes.FakeGroupedPageSearchService(), storeService: null,
+                distributedLock: null));
 
     public static ThemeOperationService ThemeOperations(IAuthorizationService authorizationService, IThemeSnapshotService themeSnapshots, IThemePublisher themePublisher,
         IContentHistory contentHistory = null, string storeId = "s1") =>

@@ -229,14 +229,55 @@ public class SiteBuilderPageController : Controller
         return NoContent();
     }
 
+    /// <summary>
+    /// Other pages of the store that use the permalink of the given page, and the conflict that publishing it creates
+    /// with each of them. The page is checked as sent, so changes that are not saved yet are taken into account.
+    /// </summary>
+    [HttpPost("grouped/permalink-usages")]
+    public async Task<ActionResult<IList<SiteBuilderPermalinkUsage>>> GetPermalinkUsages(
+        [FromBody] GroupedSiteBuilderPage model,
+        [FromServices] ISiteBuilderPublishConflictService publishConflictService)
+    {
+        if (model == null)
+        {
+            return BadRequest("The page is required.");
+        }
+
+        var authorizationResult = await authorizationService.AuthorizeAsync(User, model, new SiteBuilderAuthorizationRequirement());
+        if (!authorizationResult.Succeeded)
+        {
+            return Forbidden;
+        }
+
+        var usages = await publishConflictService.FindPermalinkUsagesAsync(model);
+
+        return Ok(usages);
+    }
+
+    /// <summary>
+    /// Publish or unpublish the page. Publishing is refused with 409 while it would completely replace another
+    /// published, equally specific page of the store with the same permalink (a Certain conflict); with
+    /// <paramref name="unpublishConflicting"/> those pages are unpublished in the same save instead. A Possible
+    /// conflict does not stop publishing: the page is published with 200 and the other page stays published.
+    /// Use grouped/permalink-usages to find both kinds before publishing.
+    /// </summary>
     [HttpPost]
     [Route("grouped/publishing/{groupId}")]
     [Authorize(ModuleConstants.Security.Permissions.Publish)]
-    public async Task<ActionResult> PublishGroup([FromRoute] string groupId, [FromQuery] bool publish, CancellationToken cancellationToken = default)
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(SiteBuilderPermalinkConflictResult), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> PublishGroup([FromRoute] string groupId, [FromQuery] bool publish,
+        [FromQuery] bool unpublishConflicting = false, CancellationToken cancellationToken = default)
     {
-        var request = new GroupedPagePublishOperationRequest { GroupId = groupId, Publish = publish, SaveId = Request.GetOrCreateSaveId() };
+        var request = new GroupedPagePublishOperationRequest { GroupId = groupId, Publish = publish, UnpublishConflicting = unpublishConflicting, SaveId = Request.GetOrCreateSaveId() };
 
-        return (await groupedPageOperationService.PublishAsync(request, User, cancellationToken)).ToPageRefusal() ?? Ok();
+        var result = await groupedPageOperationService.PublishAsync(request, User, cancellationToken);
+        if (result is SiteBuilderOperationResult<SiteBuilderPermalinkConflictResult> { Status: SiteBuilderOperationStatus.PermalinkConflict, Value: { } conflict })
+        {
+            return Conflict(conflict);
+        }
+
+        return result.ToPageRefusal() ?? Ok();
     }
 
     [HttpPost("grouped/{groupId}/discard")]

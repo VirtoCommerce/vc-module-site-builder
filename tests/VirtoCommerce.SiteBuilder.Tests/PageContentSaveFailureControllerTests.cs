@@ -151,7 +151,7 @@ public class PageContentSaveFailureControllerTests
         });
         _pages.SeedContent("d1", Restored);
 
-        Assert.IsType<OkResult>(await PageController().PublishGroup(GroupId, publish: true, TestContext.Current.CancellationToken));
+        Assert.IsType<OkResult>(await PageController().PublishGroup(GroupId, publish: true, cancellationToken: TestContext.Current.CancellationToken));
 
         var (_, record) = Assert.Single(_history.Records);
         Assert.Equal("Published", record.Description);
