@@ -17,7 +17,6 @@ using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Caching;
 using VirtoCommerce.Platform.Core.DistributedLock;
-using VirtoCommerce.Platform.Core.Settings;
 using VirtoCommerce.StoreModule.Core.Model;
 using VirtoCommerce.StoreModule.Core.Services;
 using Xunit;
@@ -33,7 +32,6 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     private const string Pointer = "default/snapshots/current.json";
 
     private readonly FakeBlobStorage _storage = new();
-    private readonly FakeSettingsManager _settings = new();
     private readonly TestPlatformMemoryCache _cache = new();
     private readonly InProcessDistributedLock _lock = new();
     private readonly TestThemeSnapshotService _snapshots;
@@ -50,23 +48,11 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
         _catalogs = new SchemaCatalogService(_storageFactory);
         _publisher = Publisher(new NoContentHistory());
         _snapshots = Snapshots(_cache);
-        _settings.Values[ModuleConstants.Settings.StoreLevelSettings.NewSiteBuilder.Name] = true;
     }
 
     private static System.Threading.CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public void Dispose() => _cache.Dispose();
-
-    [Fact]
-    public async Task GetPublishedAsync_NewSiteBuilderOff_ReturnsNull()
-    {
-        _settings.Values[ModuleConstants.Settings.StoreLevelSettings.NewSiteBuilder.Name] = false;
-        _storage.Files[Theme(Product)] = Template("product-info");
-
-        Assert.Null(await _snapshots.GetPublishedAsync(StoreId, "en-US", Ct));
-        Assert.Equal((ModuleConstants.Settings.StoreSettingsObjectType, StoreId), (_settings.AskedObjectType, _settings.AskedObjectId));
-        Assert.Empty(_storage.Written);
-    }
 
     [Fact]
     public async Task GetPublishedAsync_FirstRead_PublishesLiveThemeAndKeepsDrafts()
@@ -76,7 +62,6 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
 
         var snapshot = await _snapshots.GetPublishedAsync(StoreId, null, Ct);
 
-        Assert.Equal((ModuleConstants.Settings.StoreSettingsObjectType, StoreId), (_settings.AskedObjectType, _settings.AskedObjectId));
         Assert.Equal((1, "en-US"), (snapshot.Publication, snapshot.CultureName));
         Assert.Equal(["product-info"], Sections(snapshot, "product"));
         Assert.True(_storage.Files.ContainsKey(Theme(Product + "-draft")));
@@ -699,7 +684,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     public async Task GetPublishedAsync_CacheLifetimeZero_StillAnswers()
     {
         _storage.Files[Theme(Product)] = Template("product-info");
-        var snapshots = new TestThemeSnapshotService(_stores, _settings, _storageFactory, _publisher, _cache,
+        var snapshots = new TestThemeSnapshotService(_stores, _storageFactory, _publisher, _cache,
             Options.Create(new ThemeSnapshotOptions { CacheAbsoluteExpiration = TimeSpan.Zero }));
 
         Assert.NotNull(await snapshots.GetPublishedAsync(StoreId, null, Ct));
@@ -741,7 +726,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
             Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
 
     private TestThemeSnapshotService Snapshots(TestPlatformMemoryCache cache) =>
-        new(_stores, _settings, _storageFactory, _publisher, cache, Options.Create(new ThemeSnapshotOptions()));
+        new(_stores, _storageFactory, _publisher, cache, Options.Create(new ThemeSnapshotOptions()));
 
     private static string Theme(string path) => $"themes/{StoreId}/{path}";
 
@@ -759,12 +744,11 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
 
     private sealed class TestThemeSnapshotService(
         IStoreService storeService,
-        ISettingsManager settingsManager,
         IThemeStorageFactory themeStorageFactory,
         IThemePublisher themePublisher,
         IPlatformMemoryCache platformMemoryCache,
         IOptions<ThemeSnapshotOptions> options)
-        : ThemeSnapshotService(storeService, settingsManager, themeStorageFactory, themePublisher, platformMemoryCache, options)
+        : ThemeSnapshotService(storeService, themeStorageFactory, themePublisher, platformMemoryCache, options)
     {
         public string ResolveLanguagePublic(IList<string> languages, string defaultLanguage, string cultureName) =>
             ResolveLanguage(languages, defaultLanguage, cultureName);

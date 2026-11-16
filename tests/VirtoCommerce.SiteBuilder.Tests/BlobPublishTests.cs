@@ -236,7 +236,7 @@ public class BlobPublishTests
                 authorizationService: new FakeAuthorizationService(allowed),
                 contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
                 requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = "vccom" })), new SiteBuilderContentFileValidator()),
-                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null, null)),
+                designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null)),
             contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
             filePageDraftService: filePageDrafts,
             contentGuard: TestServices.ContentGuard,

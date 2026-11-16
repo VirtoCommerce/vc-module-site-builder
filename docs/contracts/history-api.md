@@ -163,8 +163,8 @@ interface DesignerSave {
   `X-SiteBuilder-Save` id, 8 to 64 letters, digits or `-` (a new one without it, or instead of one in another form), which
   `saveId` returns. A file page's history stays the git flow's.
 
-The per-file endpoints (`api/site-builder/save`, `grouped/{groupId}/content`) keep working for the Angular designer and
-agents; a call of `api/site-builder/save` is one version as well.
+The per-file endpoints (`api/site-builder/save`, `grouped/{groupId}/content`) keep working for agents; a call of
+`api/site-builder/save` is one version as well.
 
 ## Discard
 

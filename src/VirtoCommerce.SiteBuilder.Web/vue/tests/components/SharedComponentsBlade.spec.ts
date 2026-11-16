@@ -59,10 +59,6 @@ vi.mock("../../src/modules/site-builder/composables/usePageDesigner", () => ({
   useSharedComponentDesigner: () => calls.openShared,
 }));
 
-vi.mock("../../src/modules/site-builder/composables/useStoreParams", () => ({
-  default: () => ({ isNewSiteBuilder: async () => true }),
-}));
-
 beforeEach(() => {
   for (const fn of Object.values(calls)) fn.mockReset();
   calls.reload.mockResolvedValue(undefined);

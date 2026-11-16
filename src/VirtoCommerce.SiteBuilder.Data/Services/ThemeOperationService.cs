@@ -15,11 +15,9 @@ namespace VirtoCommerce.SiteBuilder.Data.Services;
 public class ThemeOperationService(
     IAuthorizationService authorizationService,
     IValidator<SiteBuilderStoreRequest> storeRequestValidator,
-    IThemeSnapshotService themeSnapshotService,
     IThemePublisher themePublisher,
     IContentHistory contentHistory) : IThemeOperationService
 {
-    private const string NotNewSiteBuilderError = "The store does not use the new Site Builder: its theme is not published with theme/publish.";
     private const string NoHistoryWarning = "The store keeps no content history, so who last changed the drafts is not known.";
 
     public virtual Task<SiteBuilderOperationResult<ThemePublicationPointer>> PublishAsync(ThemePublishOperationRequest request, ClaimsPrincipal user,
@@ -37,11 +35,6 @@ public class ThemeOperationService(
         if (await CheckRequestAsync(storeRequest, request.BindingErrors, user, cancellationToken) is { } refused)
         {
             return refused.As<ThemePublicationPointer>();
-        }
-
-        if (!await themeSnapshotService.IsNewSiteBuilderEnabledAsync(request.StoreId, cancellationToken))
-        {
-            return SiteBuilderOperationResult.Invalid(NotNewSiteBuilderError).As<ThemePublicationPointer>();
         }
 
         try

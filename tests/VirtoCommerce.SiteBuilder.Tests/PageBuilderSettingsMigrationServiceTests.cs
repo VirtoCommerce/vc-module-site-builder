@@ -37,8 +37,7 @@ public class PageBuilderSettingsMigrationServiceTests
         await using var setup = await Setup.CreateAsync("s1", "s2");
         await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.General.StoreUrl", SettingValueType.ShortText, "https://shop.example");
         await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.General.OzAgentUrl", SettingValueType.ShortText, "https://oz.example");
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, "s1");
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s2");
+        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s1");
         await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentRepository", SettingValueType.ShortText, "acme/site-s2", Store, "s2");
         await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.PreviewUserIds", SettingValueType.LongText, "u1,u2", Store, "s2");
 
@@ -47,13 +46,12 @@ public class PageBuilderSettingsMigrationServiceTests
         Assert.Equal("https://shop.example", await setup.GetAsync<string>(General.StoreUrl));
         Assert.Equal("https://oz.example", await setup.GetAsync<string>(General.OzAgentUrl));
         Assert.Equal("/designer-preview", await setup.GetAsync<string>(General.StorePreviewPath));
-        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s1"));
-        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s2"));
-        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s2"));
+        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s1"));
+        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s2"));
         Assert.Equal("acme/site-s2", await setup.GetAsync<string>(StoreLevelSettings.GitContentRepository, "s2"));
         Assert.Equal("u1,u2", await setup.GetAsync<string>(StoreLevelSettings.PreviewUserIds, "s2"));
         Assert.True(await setup.GetAsync<bool>(Migration.SettingsCopiedFromPageBuilder));
-        Assert.False(await setup.HasRowAsync(StoreLevelSettings.NewSiteBuilder.Name, Store, "s2"));
+        Assert.False(await setup.HasRowAsync(StoreLevelSettings.GitContentEnabled.Name, Store, "s2"));
     }
 
     [Fact]
@@ -62,26 +60,26 @@ public class PageBuilderSettingsMigrationServiceTests
         await using var setup = await Setup.CreateAsync("s1");
         await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.General.StoreUrl", SettingValueType.ShortText, "https://old.example");
         await setup.AddRowAsync(General.StoreUrl.Name, SettingValueType.ShortText, "https://new.example");
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, "s1");
+        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s1");
         // stored as its default: still a value the admin chose
-        await setup.AddRowAsync(StoreLevelSettings.NewSiteBuilder.Name, SettingValueType.Boolean, false, Store, "s1");
+        await setup.AddRowAsync(StoreLevelSettings.GitContentEnabled.Name, SettingValueType.Boolean, false, Store, "s1");
 
         await setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("https://new.example", await setup.GetAsync<string>(General.StoreUrl));
-        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s1"));
+        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s1"));
     }
 
     [Fact]
     public async Task CopySettingsAsync_ValueReadBeforeTheCopy_IsNotServedFromCache()
     {
         await using var setup = await Setup.CreateAsync("s1");
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, "s1");
-        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s1"));
+        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s1");
+        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s1"));
 
         await setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken);
 
-        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s1"));
+        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s1"));
     }
 
     [Fact]
@@ -89,11 +87,11 @@ public class PageBuilderSettingsMigrationServiceTests
     {
         await using var setup = await Setup.CreateAsync("s1");
         await setup.AddRowAsync(Migration.SettingsCopiedFromPageBuilder.Name, SettingValueType.Boolean, true);
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, "s1");
+        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s1");
 
         await setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken);
 
-        Assert.False(await setup.HasRowAsync(StoreLevelSettings.NewSiteBuilder.Name, Store, "s1"));
+        Assert.False(await setup.HasRowAsync(StoreLevelSettings.GitContentEnabled.Name, Store, "s1"));
         Assert.Empty(setup.Stores.Requests);
     }
 
@@ -101,15 +99,15 @@ public class PageBuilderSettingsMigrationServiceTests
     public async Task CopySettingsAsync_SecondRun_CopiesNothingAndLogsOnce()
     {
         await using var setup = await Setup.CreateAsync("s1");
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, "s1");
+        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s1");
         await setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken);
-        await setup.SetAsync(StoreLevelSettings.NewSiteBuilder, false, "s1");
+        await setup.SetAsync(StoreLevelSettings.GitContentEnabled, false, "s1");
 
         await setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken);
 
-        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s1"));
+        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s1"));
         var information = Assert.Single(setup.Logger.Entries, x => x.Level == LogLevel.Information);
-        Assert.Contains($"{StoreLevelSettings.NewSiteBuilder.Name}=1", information.Message);
+        Assert.Contains($"{StoreLevelSettings.GitContentEnabled.Name}=1", information.Message);
         Assert.Contains($"{General.StoreUrl.Name}=0", information.Message);
         Assert.DoesNotContain("True", information.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -119,27 +117,27 @@ public class PageBuilderSettingsMigrationServiceTests
     {
         await using var setup = await Setup.CreateAsync(Enumerable.Range(0, 60).Select(x => $"s{x:D2}").ToArray());
         await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.General.StoreUrl", SettingValueType.ShortText, "https://old.example");
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, "s00");
-        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, "s59");
+        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s00");
+        await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, "s59");
         setup.Stores.FailAtSkip = PageBuilderSettingsMigrationService.StorePageSize;
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken));
 
         Assert.False(await setup.GetAsync<bool>(Migration.SettingsCopiedFromPageBuilder));
-        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s00"));
-        Assert.False(await setup.HasRowAsync(StoreLevelSettings.NewSiteBuilder.Name, Store, "s59"));
+        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s00"));
+        Assert.False(await setup.HasRowAsync(StoreLevelSettings.GitContentEnabled.Name, Store, "s59"));
 
         // the admin changes Site Builder's values before the next start
         await setup.SetAsync(General.StoreUrl, "https://new.example");
-        await setup.SetAsync(StoreLevelSettings.NewSiteBuilder, false, "s00");
+        await setup.SetAsync(StoreLevelSettings.GitContentEnabled, false, "s00");
         setup.Stores.FailAtSkip = null;
 
         await setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken);
 
         Assert.True(await setup.GetAsync<bool>(Migration.SettingsCopiedFromPageBuilder));
         Assert.Equal("https://new.example", await setup.GetAsync<string>(General.StoreUrl));
-        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s00"));
-        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, "s59"));
+        Assert.False(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s00"));
+        Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, "s59"));
     }
 
     [Fact]
@@ -149,7 +147,7 @@ public class PageBuilderSettingsMigrationServiceTests
         await using var setup = await Setup.CreateAsync(storeIds);
         foreach (var storeId in storeIds)
         {
-            await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.NewPageBuilder", SettingValueType.Boolean, true, Store, storeId);
+            await setup.AddRowAsync("VirtoCommerce.PageBuilderModule.Store.GitContentEnabled", SettingValueType.Boolean, true, Store, storeId);
         }
 
         await setup.Service.CopySettingsAsync(TestContext.Current.CancellationToken);
@@ -158,7 +156,7 @@ public class PageBuilderSettingsMigrationServiceTests
         Assert.All(setup.Stores.Requests, x => Assert.Equal(PageBuilderSettingsMigrationService.StorePageSize, x.Take));
         foreach (var storeId in storeIds)
         {
-            Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.NewSiteBuilder, storeId));
+            Assert.True(await setup.GetAsync<bool>(StoreLevelSettings.GitContentEnabled, storeId));
         }
     }
 

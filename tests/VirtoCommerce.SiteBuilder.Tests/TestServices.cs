@@ -56,7 +56,6 @@ internal static class TestServices
         Fakes.FakeGroupedPageService pages = null,
         IEventPublisher events = null,
         IThemePublisher themePublisher = null,
-        IThemeSnapshotService themeSnapshots = null,
         ISchemaCatalogService catalogs = null)
     {
         var contentGuard = ContentGuard;
@@ -64,7 +63,7 @@ internal static class TestServices
             ? null
             : new GroupedPageContentWriter(pages, new Fakes.FakeSiteBuilderPageService(pages), events ?? new Fakes.NoopEventPublisher(), contentGuard);
 
-        return new DesignerContentService(themeDrafts, themePublisher, themeSnapshots, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
+        return new DesignerContentService(themeDrafts, themePublisher, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
             pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs());
     }
 
@@ -94,9 +93,9 @@ internal static class TestServices
             publishConflictService ?? new SiteBuilderPublishConflictService(groupedPageService, new Fakes.FakeGroupedPageSearchService(), storeService: null,
                 distributedLock: null));
 
-    public static ThemeOperationService ThemeOperations(IAuthorizationService authorizationService, IThemeSnapshotService themeSnapshots, IThemePublisher themePublisher,
+    public static ThemeOperationService ThemeOperations(IAuthorizationService authorizationService, IThemePublisher themePublisher,
         IContentHistory contentHistory = null, string storeId = "s1") =>
-        new(authorizationService, RequestValidators.Stores(storeId), themeSnapshots, themePublisher, contentHistory ?? new NoContentHistory());
+        new(authorizationService, RequestValidators.Stores(storeId), themePublisher, contentHistory ?? new NoContentHistory());
 
     public static ContentHistoryOperationService ContentHistoryOperations(IAuthorizationService authorizationService, IContentHistory contentHistory,
         IGroupedPageService groupedPageService, IDesignerContentService designerContentService, string storeId = "s1") =>

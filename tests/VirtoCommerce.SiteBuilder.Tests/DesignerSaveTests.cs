@@ -1235,7 +1235,7 @@ public class DesignerSaveTests
                 authorizationService: authorization,
                 contentPermissionService: TestServices.Permissions(authorization),
                 requestValidator: RequestValidators.Content("s1"),
-                designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(), null,
+                designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(),
                     new SchemaCatalogService(_themes)),
                 themeDraftService: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance),
                 groupedPageService: _pages,

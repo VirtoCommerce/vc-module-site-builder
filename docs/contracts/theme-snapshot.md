@@ -4,10 +4,8 @@ The storefront gets the published theme of a store in one anonymous GraphQL requ
 template rules, every template, the header and footer groups, the brand and the palette, with texts in one language.
 The storefront does not read theme files from `/cms-content`.
 
-The snapshot exists for stores with the store setting **New Site Builder** on. For any other store the request returns
-`null`, and the storefront renders its built-in templates. The first read of a store with the setting on publishes a
-first snapshot from the theme's live files; when they fail the shape check, there is none, and the read fails with the
-validation errors until a publication succeeds.
+The first read of a store publishes a first snapshot from the theme's live files; when they fail the shape check, there
+is none, and the read fails with the validation errors until a publication succeeds.
 
 ## Theme files
 
@@ -21,7 +19,7 @@ store's `DefaultThemeName` property, `default` when it is empty. Paths below are
 | `sections/header-group.json`, `sections/footer-group.json` | the header and footer groups |
 | `config/brand.json` | the logos and the favicon |
 | `config/palette.json`, `config/palette.dark.json` | the light and the dark palette |
-| `config/settings_data.json` | the theme settings of the Angular designer; see [Theme settings](#theme-settings) |
+| `config/settings_data.json` | the theme settings; see [Theme settings](#theme-settings) |
 | `snapshots/{publication}/{cultureName}.json` | a published snapshot in one language, never changed after it is written |
 | `snapshots/{publication}/publication.json` | the publication's record, `{ "defaultLanguage": "en-US" }`: the store default language it was written with |
 | `snapshots/current.json` | the pointer to the current publication: `{ "publication": 12 }` |
@@ -30,7 +28,7 @@ store's `DefaultThemeName` property, `default` when it is empty. Paths below are
 Every file except the snapshots and the catalogs has a draft next to it, `{file}-draft`. Only a publication writes
 `snapshots/` and only a catalog upload writes `catalogs/`: a save or a restore naming either is refused with 400.
 The designer and the agents write drafts only:
-on a store with New Site Builder on, the builder's save refuses a live write of a theme file (`draft=false`) with 400.
+the builder's save refuses a live write of a theme file (`draft=false`) with 400.
 The designer saves the page and the theme files it changed in one request, all or nothing
 ([Save](history-api.md#save)).
 When `config/brand.json` does not exist yet, the designer and a publication take the brand from the current settings
@@ -38,11 +36,11 @@ of `config/settings_data.json`: `logo_image`, `logo_inverted_image` and `favicon
 
 ### Theme settings
 
-The storefront built for the New Site Builder never reads the store theme's `config/settings_data.json`: it reads its
+The storefront built for Site Builder never reads the store theme's `config/settings_data.json`: it reads its
 bundled `config/settings_data.json` only, and takes the brand and the palette from `config/brand.json` and
-`config/palette*.json` through the snapshot. The Vue designer therefore does not edit `config/settings_data.json`: it
-neither shows, saves, discards nor restores it. The Angular designer and `api/site-builder/save` keep editing it for
-stores on the old designer, and a publication reads it only for the brand of a theme without `config/brand.json`.
+`config/palette*.json` through the snapshot. The designer therefore does not edit `config/settings_data.json`: it
+neither shows, saves, discards nor restores it. A publication reads it only for the brand of a theme without
+`config/brand.json`.
 
 ## Publishing
 
@@ -159,7 +157,7 @@ Site Builder adds the field to the xAPI schema: `/graphql` reaches the platform 
 | `menus` | the link lists the header and footer name, with their links |
 | `slug` | what is at `permalink`, see [Landing page](#landing-page); `null` without one |
 
-The field is `null` when the store has the New Site Builder setting off. A storage failure is a GraphQL error; the
+The field is `null` for an unknown store. A storage failure is a GraphQL error; the
 storefront then renders its built-in templates and asks again on the next navigation inside the site.
 
 The application uses the response only when `storeId` is the store `pageContext` resolved; otherwise it requests the
@@ -530,8 +528,8 @@ The catalog is the storefront's section, block, template and palette schemas, th
   places no shared component, and every value of a field with a closed set of values is one of them) and answers 400
   `{ error, errors }` when one does not fit or the hash is unknown; each error names the file, the item and the field.
   A publication records the hash in the snapshot; one that names none is refused. A designer Save with theme files
-  that names none is refused (400 `{ error }`); `api/site-builder/save` that names none is not checked (the Angular
-  designer). The first publication, from the live files, names none and checks the shape only; it finds the menus
+  that names none is refused (400 `{ error }`); `api/site-builder/save` that names none is not
+  checked. The first publication, from the live files, names none and checks the shape only; it finds the menus
   through the store's current catalog, when there is one.
 - The fields with a closed set of values, checked in sections and blocks and in the rows of their `list` and `object`
   fields: a `color-token` holds a token of the catalog's `paletteTokens` (light or dark; not checked when the catalog
@@ -565,9 +563,9 @@ All take `storeId` and check the store as the other Site Builder endpoints do.
 
 | Method and route | Permission | Returns |
 |---|---|---|
-| `POST api/site-builder/theme/publish?storeId&catalogHash` | `builder:publish` | `{ publication }`; 400 `{ error, errors }` when it names no catalog or the theme does not fit it; 400 `{ error }` on a store with New Site Builder off |
+| `POST api/site-builder/theme/publish?storeId&catalogHash` | `builder:publish` | `{ publication }`; 400 `{ error, errors }` when it names no catalog or the theme does not fit it |
 | `GET api/site-builder/theme/status?storeId` | `builder:read` | `{ publication, drafts, newDrafts }`: the current publication, left out before the first, the theme files with a draft by their path in the theme (`templates/product.json`, `config/template_rules.json`), and those of them with no live file, which a Discard keeps |
-| `POST api/site-builder/save?storeId&theme&draft&catalogHash`, the files as the body | `builder:update`; `builder:templates` or `builder:theme` by theme file | 200; 400 `{ error, errors }` when a theme file does not fit the catalog it names; 400 `{ error }` for a live theme write on a New Site Builder store, for a file under `snapshots/` or `catalogs/`, or for a file in `config/` other than `settings_data.json`, `template_rules.json`, `brand.json`, `palette.json` and `palette.dark.json`; a live write of a page needs `builder:publish` |
+| `POST api/site-builder/save?storeId&theme&draft&catalogHash`, the files as the body | `builder:update`; `builder:templates` or `builder:theme` by theme file | 200; 400 `{ error, errors }` when a theme file does not fit the catalog it names; 400 `{ error }` for a live theme write, for a file under `snapshots/` or `catalogs/`, or for a file in `config/` other than `settings_data.json`, `template_rules.json`, `brand.json`, `palette.json` and `palette.dark.json`; a live write of a page needs `builder:publish` |
 | `GET api/site-builder/designer/theme-file?storeId&path` | `builder:read` | `{ path, content?, eTag }`: a theme file as the designer edits it and its version, see [Save](history-api.md#save) |
 | `POST api/site-builder/designer/save?storeId&catalogHash` | see [Save](history-api.md#save) | the designer's Save: the page and the theme files as drafts, all or nothing, one version; 400 when theme files go without `catalogHash`; 412 when one was saved by someone else since it was read |
 | `POST api/site-builder/designer/discard?storeId` | see [Discard](history-api.md#discard) | the designer's Discard: the drafts of the page and the theme files go, all or nothing, one version |
