@@ -19,9 +19,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             { nameof(SiteBuilderController.GetTemplate), [] },
             { nameof(SiteBuilderController.GetSettings), [] },
-            { nameof(SiteBuilderController.GetTemplates), [] },
             { nameof(SiteBuilderController.GetObjects), [] },
-            { nameof(SiteBuilderController.GetSectionsSettings), [] },
             { nameof(SiteBuilderController.GetSchemasCatalog), [] },
             { nameof(SiteBuilderController.GetSchemaByKey), [] },
             { nameof(SiteBuilderController.Search), [] },

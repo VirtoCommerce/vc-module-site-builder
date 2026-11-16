@@ -22,6 +22,8 @@ It replaces Page Builder ([vc-module-pagebuilder](https://github.com/VirtoCommer
 
 ## Switching from Page Builder
 
+Site Builder needs a vc-frontend with the theme snapshot and preview protocol 2 ([VCST-6572](https://virtocommerce.atlassian.net/browse/VCST-6572)). A platform whose storefront is older stays on the Page Builder module.
+
 On its first start, Site Builder copies Page Builder's settings to its own names in a background job:
 
 * the global settings `StoreUrl`, `StorePreviewPath` and `OzAgentUrl`;
@@ -76,9 +78,7 @@ Grouped-page content POSTs now require a version. Deploy updated integrations to
 
 The existing `IGroupedPageService` and `IContentStreamRepository` contracts remain unchanged. `IGroupedPageContentService` is registered separately in DI: the default registration uses a capable grouped service or the built-in authoring implementation, so existing grouped-service decorators keep working. Replacements that change authoring persistence should register this capability too. Customize Shell settings saves by overriding `SaveGroupSettingsAsync`; they no longer dispatch through a `SaveChangesAsync` override. Existing repository decorators can use the original queries, locks and asset-index method; `ISiteBuilderContentIndexRepository` is optional. Shell settings updates read the current document inside the same write lock; visibility-only updates preserve its bytes and version and do not create a draft when published content already exists.
 
-Custom `builder_settings.json` descriptors replace the bundled descriptor as a whole. Theme overrides of grouped `templateUrl` and `saveGroupedPage` must retain `versioned: true` and `includeVersion=true` on their URLs. External unversioned backends keep their existing contract.
-
-Closing the AI panel or receiving its `RELOAD_BLADE` message checks the current server version without replacing the local document's token. A changed, clean page reloads; a changed, dirty page keeps its edits and asks the author to reconcile. Unchanged pages produce no warning, and busy pages are left alone. Older assistants without save notifications are checked when their panel closes. Copy retains its newest Draft/Published source rule and rejects archived-only groups; publish and legacy direct content service calls retain their existing contracts.
+Copy retains its newest Draft/Published source rule and rejects archived-only groups; publish and legacy direct content service calls retain their existing contracts.
 
 ## Getting started
 
@@ -188,23 +188,17 @@ Site Builder reads meta-data from theme. Developers can extend or customize site
 |   |      |   └── _sections.json // Global settings for sections.
 |   |      └── templates
 |   |          └── page.json      // Site Builder configuration for static pages.
-|   └── settings_schema.json      // Theme settings schema file. Site Builder uses it for Theme and Preset editor.
+|   └── settings_schema.json      // Theme settings schema file.
 |   └── settings_data.json        // Theme config file.
 ```
 
 ## Notes
 
-To enable the preview of your site within the Site Builder application, the site must allow itself to be displayed in an iframe. This can be achieved by setting the appropriate headers in your server configuration.
-
-Add the following headers to your server configuration:
+To enable the preview of your site within the Site Builder designer, the site must allow the admin to display it in an iframe. Add the following header to your server configuration:
 
 ```http
 Content-Security-Policy: "frame-ancestors 'self' https://localhost:5001;"
-Cross-Origin-Resource-Policy: "cross-origin"
-Cross-Origin-Embedder-Policy: "credentialless"
 ```
-
-These headers ensure that the site can be embedded in an iframe and handle cross-origin requests appropriately.
 
 ## Documentation
 

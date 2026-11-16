@@ -8,30 +8,15 @@ Skills are markdown files in `.claude/skills/` that provide Claude Code with pro
 
 | Skill | File | Purpose |
 |---|---|---|
-| **Angular Patterns** | `angular-patterns.md` | Component structure, NgRx store conventions, DI patterns, routing, forms, testing |
-| **Design System** | `design-system.md` | Styling stack (Tailwind + Material + SCSS), color palette, typography, UI components |
-| **Project-Specific** | `project-specific.md` | Domain model, platform integration, config-driven HTTP, schema-driven forms, deployment |
+| **Project-Specific** | `project-specific.md` | Domain model, platform integration, schema-driven forms, deployment |
 | **Schema Authoring** | `schema-authoring.md` | JSON schema authoring for sections, blocks, templates, shared settings, objects |
 | **Schema Descriptions** | `schema-descriptions.md` | Authoring the LLM-facing `description` field on SiteBuilder schemas so the Virto OZ agent can pick them by intent |
 | **AngularJS Legacy** | `angularjs-legacy.md` | Rules and architecture for the legacy AngularJS admin integration (`Web/Scripts/`) |
 
 ## When Each Skill is Used
 
-### angular-patterns.md
-- Creating new components, services, or modules
-- Adding or modifying NgRx store features (actions/effects/reducers/selectors)
-- Working with reactive forms or dynamic form system
-- Writing or fixing tests
-- Routing changes
-
-### design-system.md
-- Styling components (choosing Tailwind vs SCSS)
-- Using Material components
-- Referencing color tokens or typography variables
-- Layout and positioning decisions
-
 ### project-specific.md
-- Working with API integration or HttpClient
+- Working with API integration
 - Platform communication (postMessage, BroadcastChannel)
 - Template/section/block CRUD operations
 - Understanding business domain concepts

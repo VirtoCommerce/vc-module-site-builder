@@ -69,7 +69,6 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         // storage. PagesContentType is the default assumed when a caller sends no type at all.
         private const string PagesContentType = "pages";
         private const string JsonContentType = "application/json";
-        private const string SchemaKindTemplates = ModuleConstants.SchemaKinds.Templates;
         private const string SchemaKindObjects = ModuleConstants.SchemaKinds.Objects;
         // The blob name of a draft in the flow that came before git: the page's name with this appended.
         // Only the legacy-draft cleanup deals in these; everywhere else GitPageLocation strips the suffix.
@@ -125,30 +124,12 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         }
 
         [HttpGet]
-        [Route("templates")]
-        public async Task<ActionResult> GetTemplates(string storeId, string theme)
-        {
-            var result = await contentQueryService.GetSchemasAsync(SchemaQuery(storeId, theme, SchemaKindTemplates), User, HttpContext.RequestAborted);
-
-            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
-        }
-
-        [HttpGet]
         [Route("objects")]
         public async Task<ActionResult> GetObjects(string storeId, string theme)
         {
             var result = await contentQueryService.GetSchemasAsync(SchemaQuery(storeId, theme, SchemaKindObjects), User, HttpContext.RequestAborted);
 
             return result.Succeeded ? Ok(result.Value) : result.ToRefusal();
-        }
-
-        [HttpGet]
-        [Route("sections")]
-        public async Task<ActionResult> GetSectionsSettings(string storeId, string theme)
-        {
-            var result = await contentQueryService.GetSectionSchemasAsync(ThemeQuery(storeId, theme), User, HttpContext.RequestAborted);
-
-            return result.Succeeded ? Content(result.Value, JsonContentType) : result.ToRefusal();
         }
 
         [HttpGet]

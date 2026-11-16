@@ -97,7 +97,7 @@ Create a file like `shared/typography.json` with a `settings` array. Include it 
 
 ## Visibility Expressions
 
-`visibility` is an expression evaluated in component context. Returns `true` to show the field. It is not JavaScript: only the expression language in `docs/_template-syntax.md` ("Expression language") is supported — no functions or callbacks, object literals, `Math`, `typeof` or other globals. An unsupported expression evaluates to `null` and hides the field.
+`visibility` is an expression evaluated in component context. Returns `true` to show the field. It is not JavaScript: only the expression language in `docs/contracts/preview-protocol.md` ("Schemas") is supported — no functions or callbacks, object literals, `Math`, `typeof` or other globals. An unsupported expression evaluates to `null` and hides the field.
 
 Available context variables:
 - `this.item` — the current item's data (in a list element)
