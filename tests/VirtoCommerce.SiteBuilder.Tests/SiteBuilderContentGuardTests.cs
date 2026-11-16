@@ -31,6 +31,9 @@ public class SiteBuilderContentGuardTests
         }
         """);
 
+    private static readonly string[] UnknownTypeLinkPaths = ["cta.buttonLink", "slides[1].url", "backgroundImage", "logo_image", "permalink", "href[1]", "src.en-US"];
+    private static readonly string[] KnownTypeLinkPaths = ["link", "image", "buttons[0].url"];
+
     private readonly SiteBuilderContentGuard _guard = new();
 
     [Theory]
@@ -75,11 +78,10 @@ public class SiteBuilderContentGuardTests
         });
 
         Assert.Equal(
-            new[] { "cta.buttonLink", "slides[1].url", "backgroundImage", "logo_image", "permalink", "href[1]", "src.en-US" }
-                .Select(x => $"page: 'content[0].{x}' holds a {scheme}: URL, which runs script"),
+            UnknownTypeLinkPaths.Select(x => $"page: 'content[0].{x}' holds a {scheme}: URL, which runs script"),
             _guard.GuardPage(unknown, "page", catalog: null).Errors);
         Assert.Equal(
-            new[] { "link", "image", "buttons[0].url" }.Select(x => $"page: 'content[0].{x}' holds a {scheme}: URL, which runs script").Order(),
+            KnownTypeLinkPaths.Select(x => $"page: 'content[0].{x}' holds a {scheme}: URL, which runs script").Order(),
             _guard.GuardPage(known, "page", Catalog).Errors.Order());
     }
 

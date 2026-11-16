@@ -32,13 +32,13 @@ internal static class PlatformJson
             DateTimeZoneHandling = Settings.DateTimeZoneHandling,
             NullValueHandling = NullValueHandling.Include,
         };
-        return JsonConvert.SerializeObject(Assert.IsAssignableFrom<ObjectResult>(actionResult).Value, settings);
+        return JsonConvert.SerializeObject(Assert.IsType<ObjectResult>(actionResult, exactMatch: false).Value, settings);
     }
 
     public static string SerializeBody(object result)
     {
         var actionResult = result is IConvertToActionResult typed ? typed.Convert() : result;
-        return Serialize(Assert.IsAssignableFrom<ObjectResult>(actionResult).Value);
+        return Serialize(Assert.IsType<ObjectResult>(actionResult, exactMatch: false).Value);
     }
 
     public static JObject ParseBody(object result) => JObject.Parse(SerializeBody(result));

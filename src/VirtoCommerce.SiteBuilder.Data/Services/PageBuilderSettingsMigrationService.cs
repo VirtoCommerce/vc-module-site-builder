@@ -86,11 +86,14 @@ public class PageBuilderSettingsMigrationService(
         // Only after everything is copied: a failure before this point retries on the next start.
         await settingsManager.SetValueAsync(Migration.SettingsCopiedFromPageBuilder.Name, true);
 
-        logger.LogInformation("Copied Page Builder settings to Site Builder: {Counts}",
-            string.Join(", ", counts.Select(x => $"{x.Key}={x.Value}")));
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("Copied Page Builder settings to Site Builder: {Counts}",
+                string.Join(", ", counts.Select(x => $"{x.Key}={x.Value}")));
+        }
     }
 
-    private async Task CopyGlobalSettingsAsync(IDictionary<string, int> counts)
+    private async Task CopyGlobalSettingsAsync(Dictionary<string, int> counts)
     {
         var mappings = GlobalMappings.Append(AppConnectionMapping).ToList();
         var rows = await LoadRowsAsync(mappings, objectType: null, objectIds: null);

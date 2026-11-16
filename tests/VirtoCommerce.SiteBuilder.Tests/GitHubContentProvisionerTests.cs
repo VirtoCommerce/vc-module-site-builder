@@ -310,7 +310,7 @@ public class GitHubContentProvisionerTests
         Assert.Contains("HttpClient.Timeout", status.Error);
     }
 
-    private static GitHubContentProvisioner Provisioner(GitHubScript github, FakeSettingsManager settings = null, string repository = null,
+    private static NoWaitProvisioner Provisioner(GitHubScript github, FakeSettingsManager settings = null, string repository = null,
         Action<GitContentOptions> configure = null, FakeGitContentOwnership ownership = null, FakeStoreService stores = null)
     {
         var options = new GitContentOptions

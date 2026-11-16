@@ -480,7 +480,8 @@ public class GroupedPageOperationService(
         return group.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
     }
 
-    private static SiteBuilderOperationResult PermalinkConflict(IList<SiteBuilderPermalinkUsage> conflicts, bool hasUnpublishedChanges)
+    private static SiteBuilderOperationResult<SiteBuilderPermalinkConflictResult> PermalinkConflict(IList<SiteBuilderPermalinkUsage> conflicts,
+        bool hasUnpublishedChanges)
     {
         var names = string.Join(", ", conflicts.Select(x => $"'{x.Name}'"));
         var error = hasUnpublishedChanges

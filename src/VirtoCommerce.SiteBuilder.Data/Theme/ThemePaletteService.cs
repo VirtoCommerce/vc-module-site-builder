@@ -223,7 +223,8 @@ public class ThemePaletteService : IThemePaletteService
 
     protected virtual IDictionary<string, PaletteColor> GetBaseColors(ThemePaletteGenerationRequest request)
     {
-        PaletteColor.TryParse(request.Primary, out var primary);
+        // the request validator refuses a primary color that does not parse
+        _ = PaletteColor.TryParse(request.Primary, out var primary);
         var colors = GetFixedBaseColors();
         colors["primary"] = primary;
 

@@ -75,8 +75,10 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             }
 
             var withoutSlash = normalized[1..];
+#pragma warning disable CA1862 // IQueryable: the StringComparison overload does not translate to SQL
             return query.Where(x => x.Permalink != null &&
                 (x.Permalink.ToLower() == normalized || x.Permalink.ToLower() == withoutSlash));
+#pragma warning restore CA1862
         }
 
         protected virtual IQueryable<GroupedSiteBuilderPageEntity> ApplyStatusFilter(IQueryable<GroupedSiteBuilderPageEntity> query, SiteBuilderPageSearchCriteria criteria)
