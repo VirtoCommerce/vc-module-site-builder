@@ -99,44 +99,50 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "Kaupan URL, jossa on Site Builder -esikatselu",
+          "title": "Kaupan URL"
+        },
+        "StorePreviewPath": {
+          "description": "Suhteellinen polku sivun esikatseluun",
+          "title": "Esikatselupolku"
+        },
+        "OzAgentUrl": {
+          "title": "Virto OZ -agentin URL",
+          "description": "Site Builderiin upotetun Virto OZ -tekoälyagentin iframen URL. Jätä tyhjäksi poistaaksesi tekoälyavustajan käytöstä."
+        }
+      },
+      "Store": {
+        "GitContentEnabled": {
+          "title": "Julkaise sivut Gitin kautta",
+          "description": "Kun käytössä, sivun tallentaminen tekee commitin määritetyn sisältövaraston työhaaraan ja julkaiseminen avaa ja yhdistää pull requestin sen sijaan, että kirjoitettaisiin suoraan blob-tallennustilaan. Edellyttää palvelimella määritettyä Git-sisältöyhteyttä (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "Git-tietovarasto",
+          "description": "Olemassa oleva GitHub-tietovarasto (owner/name) tämän kaupan sivuille. Jätä tyhjäksi, jos haluat käyttää kaupan omaa tietovarastoa, jonka Site Builder luo määritettyyn organisaatioon."
+        },
+        "PreviewUserIds": {
+          "title": "Esikatselun käyttäjätunnukset",
+          "description": "Luettelo käyttäjätunnuksista esikatselun toisena käyttäjänä toimimista varten (yksi per rivi)"
+        },
+        "NewSiteBuilder": {
+          "title": "Uusi Site Builder",
+          "description": "Avaa kaupan sivut uudessa Site Builder -suunnittelutyökalussa, ja verkkokauppa näyttää siinä julkaistun teeman. Kun asetus ei ole käytössä, sivut avautuvat perinteisessä suunnittelutyökalussa ja verkkokauppa toimii kuten ennenkin."
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "Kaupan URL, jossa on Site Builder -esikatselu",
-            "title": "Kaupan URL"
-          },
-          "StorePreviewPath": {
-            "description": "Suhteellinen polku sivun esikatseluun",
-            "title": "Esikatselupolku"
-          },
-          "OzAgentUrl": {
-            "title": "Virto OZ -agentin URL",
-            "description": "Site Builderiin upotetun Virto OZ -tekoälyagentin iframen URL. Jätä tyhjäksi poistaaksesi tekoälyavustajan käytöstä."
-          }
-        },
-        "Store": {
-          "GitContentEnabled": {
-            "title": "Julkaise sivut Gitin kautta",
-            "description": "Kun käytössä, sivun tallentaminen tekee commitin määritetyn sisältövaraston työhaaraan ja julkaiseminen avaa ja yhdistää pull requestin sen sijaan, että kirjoitettaisiin suoraan blob-tallennustilaan. Edellyttää palvelimella määritettyä Git-sisältöyhteyttä (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "Git-tietovarasto",
-            "description": "Olemassa oleva GitHub-tietovarasto (owner/name) tämän kaupan sivuille. Jätä tyhjäksi, jos haluat käyttää kaupan omaa tietovarastoa, jonka Site Builder luo määritettyyn organisaatioon."
-          },
-          "PreviewUserIds": {
-            "title": "Esikatselun käyttäjätunnukset",
-            "description": "Luettelo käyttäjätunnuksista esikatselun toisena käyttäjänä toimimista varten (yksi per rivi)"
-          },
-          "NewSiteBuilder": {
-            "title": "Uusi Site Builder",
-            "description": "Avaa kaupan sivut uudessa Site Builder -suunnittelutyökalussa, ja verkkokauppa näyttää siinä julkaistun teeman. Kun asetus ei ole käytössä, sivut avautuvat perinteisessä suunnittelutyökalussa ja verkkokauppa toimii kuten ennenkin."
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "Metatietojen siirto sisällöstä valmis",
             "description": "Sisältökohteista Site Builder -sivuille tehdyt metatietojen siirrot on suoritettu onnistuneesti."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "Resurssiviitteiden hakemisto luotu",
+            "description": "Sivujen ja jaettujen komponenttien käyttämien resurssien hakemisto on luotu."
           }
         }
       }

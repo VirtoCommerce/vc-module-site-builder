@@ -51,7 +51,7 @@ These values can be combined to form URLs, populate request bodies, or define co
                     }
                 },
                 {
-                    "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StoreUrl",
+                    "url": "/api/platform/settings/SiteBuilder.General.StoreUrl",
                     "method": "GET",
                     "response": {
                         "result": "$.value",
@@ -64,7 +64,7 @@ These values can be combined to form URLs, populate request bodies, or define co
             "init": "requests",
             "requests": [
                 {
-                    "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                    "url": "/api/platform/settings/SiteBuilder.General.StorePreviewPath",
                     "method": "GET",
                     "cacheable": true,
                     "response": {
@@ -73,7 +73,7 @@ These values can be combined to form URLs, populate request bodies, or define co
                     }
                 },
                 {
-                    "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                    "url": "/api/platform/settings/SiteBuilder.General.StorePreviewPath",
                     "method": "GET",
                     "cacheable": true,
                     "response": {

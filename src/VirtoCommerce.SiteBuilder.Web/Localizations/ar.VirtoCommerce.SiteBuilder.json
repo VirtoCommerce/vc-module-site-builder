@@ -99,44 +99,50 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "عنوان URL للمتجر مع معالج المعاينة الخاص بـ Site Builder",
+          "title": "عنوان URL للمتجر"
+        },
+        "StorePreviewPath": {
+          "description": "المسار النسبي لصفحة المعاينة",
+          "title": "مسار معاينة المتجر"
+        },
+        "OzAgentUrl": {
+          "title": "عنوان URL لوكيل Virto OZ",
+          "description": "عنوان URL لإطار iframe الخاص بوكيل الذكاء الاصطناعي Virto OZ المضمَّن في Site Builder. اتركه فارغًا لتعطيل مساعد الذكاء الاصطناعي."
+        }
+      },
+      "Store": {
+        "PreviewUserIds": {
+          "title": "معرّفات مستخدمي المعاينة",
+          "description": "قائمة معرّفات المستخدمين لانتحال الهوية عند معاينة الصفحات (معرّف واحد في كل سطر)"
+        },
+        "GitContentEnabled": {
+          "title": "نشر الصفحات عبر Git",
+          "description": "عند التفعيل، يؤدي حفظ الصفحة إلى إيداعها في فرع عمل في مستودع المحتوى المُهيأ، ويفتح النشر طلب سحب ويدمجه، بدلًا من الكتابة مباشرة إلى تخزين blob. يتطلب ذلك تهيئة اتصال محتوى Git على الخادم (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "مستودع Git",
+          "description": "مستودع GitHub موجود (owner/name) لصفحات هذا المتجر. اتركه فارغًا لاستخدام مستودع المتجر الخاص، الذي ينشئه Site Builder في المؤسسة المُهيأة."
+        },
+        "NewSiteBuilder": {
+          "title": "Site Builder الجديد",
+          "description": "يفتح صفحات المتجر في مصمم Site Builder الجديد، وتعرض واجهة المتجر السمة المنشورة منه. عند إيقافه، تُفتح الصفحات في المصمم الكلاسيكي وتعمل واجهة المتجر كما كانت."
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "عنوان URL للمتجر مع معالج المعاينة الخاص بـ Site Builder",
-            "title": "عنوان URL للمتجر"
-          },
-          "StorePreviewPath": {
-            "description": "المسار النسبي لصفحة المعاينة",
-            "title": "مسار معاينة المتجر"
-          },
-          "OzAgentUrl": {
-            "title": "عنوان URL لوكيل Virto OZ",
-            "description": "عنوان URL لإطار iframe الخاص بوكيل الذكاء الاصطناعي Virto OZ المضمَّن في Site Builder. اتركه فارغًا لتعطيل مساعد الذكاء الاصطناعي."
-          }
-        },
-        "Store": {
-          "PreviewUserIds": {
-            "title": "معرّفات مستخدمي المعاينة",
-            "description": "قائمة معرّفات المستخدمين لانتحال الهوية عند معاينة الصفحات (معرّف واحد في كل سطر)"
-          },
-          "GitContentEnabled": {
-            "title": "نشر الصفحات عبر Git",
-            "description": "عند التفعيل، يؤدي حفظ الصفحة إلى إيداعها في فرع عمل في مستودع المحتوى المُهيأ، ويفتح النشر طلب سحب ويدمجه، بدلًا من الكتابة مباشرة إلى تخزين blob. يتطلب ذلك تهيئة اتصال محتوى Git على الخادم (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "مستودع Git",
-            "description": "مستودع GitHub موجود (owner/name) لصفحات هذا المتجر. اتركه فارغًا لاستخدام مستودع المتجر الخاص، الذي ينشئه Site Builder في المؤسسة المُهيأة."
-          },
-          "NewSiteBuilder": {
-            "title": "Site Builder الجديد",
-            "description": "يفتح صفحات المتجر في مصمم Site Builder الجديد، وتعرض واجهة المتجر السمة المنشورة منه. عند إيقافه، تُفتح الصفحات في المصمم الكلاسيكي وتعمل واجهة المتجر كما كانت."
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "اكتمل ترحيل البيانات الوصفية من المحتوى",
             "description": "اكتمل بنجاح ترحيل البيانات الوصفية من عناصر المحتوى إلى صفحات Site Builder."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "تم إنشاء فهرس مراجع الأصول",
+            "description": "تم إنشاء فهرس الأصول التي تستخدمها الصفحات والمكونات المشتركة."
           }
         }
       }

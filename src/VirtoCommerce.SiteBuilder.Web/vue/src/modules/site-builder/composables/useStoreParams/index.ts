@@ -7,7 +7,7 @@ interface IStoreItem {
   settings?: { name?: string; value?: unknown }[];
 }
 
-const newSiteBuilderSetting = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder";
+const newSiteBuilderSetting = "SiteBuilder.Store.NewSiteBuilder";
 
 export type StoreContextStatus = "idle" | "missing" | "loading" | "ready" | "notFound" | "error";
 

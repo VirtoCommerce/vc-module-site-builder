@@ -170,7 +170,7 @@ test("a search shows the answer's values by their dotted paths; a request's answ
 });
 
 test("the store lists the accounts to preview as, one id per line; the grant needs login on behalf", () => {
-  const store = { settings: [{ name: "VirtoCommerce.SiteBuilder.Store.PreviewUserIds", value: " u1\r\nu2\n\nu1\n" }] };
+  const store = { settings: [{ name: "SiteBuilder.Store.PreviewUserIds", value: " u1\r\nu2\n\nu1\n" }] };
   assert.deepEqual(previewUserIds(store), ["u1", "u2"]);
   assert.deepEqual(previewUserIds({ settings: [] }), []);
   assert.deepEqual(previewUserIds(undefined), []);

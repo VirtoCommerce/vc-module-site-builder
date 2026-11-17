@@ -53,9 +53,9 @@ export const KNOWN_EXPRESSIONS = knownForms([
     },
   ],
   [
-    "(function() { var s = (this.response.settings || []).find(function(x) { return x.name === 'VirtoCommerce.SiteBuilder.Store.PreviewUserIds' }); return s && s.value ? s.value.split('\\n').map(function(x) { return x.trim() }).filter(Boolean) : [] }).call(this)",
+    "(function() { var s = (this.response.settings || []).find(function(x) { return x.name === 'SiteBuilder.Store.PreviewUserIds' }); return s && s.value ? s.value.split('\\n').map(function(x) { return x.trim() }).filter(Boolean) : [] }).call(this)",
     context => {
-      const setting = (context.response.settings || []).find((x: any) => x.name === 'VirtoCommerce.SiteBuilder.Store.PreviewUserIds');
+      const setting = (context.response.settings || []).find((x: any) => x.name === 'SiteBuilder.Store.PreviewUserIds');
       return setting && setting.value
         ? String(setting.value).split('\n').map(x => x.trim()).filter(Boolean)
         : [];

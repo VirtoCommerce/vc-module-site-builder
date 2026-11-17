@@ -12,7 +12,7 @@
                 }
             },
             {
-                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StoreUrl",
+                "url": "/api/platform/settings/SiteBuilder.General.StoreUrl",
                 "method": "GET",
                 "response": {
                     "result": "$.value",
@@ -25,7 +25,7 @@
         "init": "requests",
         "requests": [
             {
-                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                "url": "/api/platform/settings/SiteBuilder.General.StorePreviewPath",
                 "method": "GET",
                 "cacheable": true,
                 "response": {
@@ -34,7 +34,7 @@
                 }
             },
             {
-                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                "url": "/api/platform/settings/SiteBuilder.General.StorePreviewPath",
                 "method": "GET",
                 "cacheable": true,
                 "response": {
@@ -188,7 +188,7 @@
       "method": "GET",
       "cacheable": true,
       "response": {
-        "selector": "(function() { var s = (this.response.settings || []).find(function(x) { return x.name === 'VirtoCommerce.SiteBuilder.Store.PreviewUserIds' }); return s && s.value ? s.value.split('\\n').map(function(x) { return x.trim() }).filter(Boolean) : [] }).call(this)",
+        "selector": "(function() { var s = (this.response.settings || []).find(function(x) { return x.name === 'SiteBuilder.Store.PreviewUserIds' }); return s && s.value ? s.value.split('\\n').map(function(x) { return x.trim() }).filter(Boolean) : [] }).call(this)",
         "isArray": true
       }
     },
@@ -218,7 +218,7 @@
       "init": "requests",
       "requests": [
         {
-          "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.OzAgentUrl",
+          "url": "/api/platform/settings/SiteBuilder.General.OzAgentUrl",
           "method": "GET",
           "cacheable": true,
           "response": {
@@ -227,7 +227,7 @@
           }
         },
         {
-          "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.OzAgentUrl",
+          "url": "/api/platform/settings/SiteBuilder.General.OzAgentUrl",
           "method": "GET",
           "cacheable": true,
           "response": {

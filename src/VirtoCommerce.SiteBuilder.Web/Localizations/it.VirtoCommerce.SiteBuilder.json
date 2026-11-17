@@ -99,44 +99,50 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "URL del negozio con gestore anteprima Site Builder",
+          "title": "URL del negozio"
+        },
+        "StorePreviewPath": {
+          "description": "Percorso relativo per l'anteprima della pagina",
+          "title": "Percorso di anteprima del negozio"
+        },
+        "OzAgentUrl": {
+          "title": "URL dell'agente Virto OZ",
+          "description": "URL dell'iframe dell'agente IA Virto OZ incorporato in Site Builder. Lasciare vuoto per disabilitare l'assistente IA."
+        }
+      },
+      "Store": {
+        "GitContentEnabled": {
+          "title": "Pubblica le pagine tramite Git",
+          "description": "Se abilitato, il salvataggio di una pagina crea un commit in un branch di lavoro del repository di contenuti configurato e la pubblicazione apre e unisce una pull request, invece di scrivere direttamente nell'archivio blob. Richiede una connessione ai contenuti Git configurata sul server (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "Repository Git",
+          "description": "Un repository GitHub esistente (owner/name) per le pagine di questo negozio. Lascia vuoto per usare il repository del negozio, che Site Builder crea nell'organizzazione configurata."
+        },
+        "PreviewUserIds": {
+          "title": "ID utente per anteprima",
+          "description": "Elenco degli ID utente per l'impersonificazione nell'anteprima (uno per riga)"
+        },
+        "NewSiteBuilder": {
+          "title": "Nuovo Site Builder",
+          "description": "Apre le pagine del negozio nel nuovo designer di Site Builder e la vetrina mostra il tema pubblicato da lì. Se disattivato, le pagine si aprono nel designer classico e la vetrina funziona come prima."
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "URL del negozio con gestore anteprima Site Builder",
-            "title": "URL del negozio"
-          },
-          "StorePreviewPath": {
-            "description": "Percorso relativo per l'anteprima della pagina",
-            "title": "Percorso di anteprima del negozio"
-          },
-          "OzAgentUrl": {
-            "title": "URL dell'agente Virto OZ",
-            "description": "URL dell'iframe dell'agente IA Virto OZ incorporato in Site Builder. Lasciare vuoto per disabilitare l'assistente IA."
-          }
-        },
-        "Store": {
-          "GitContentEnabled": {
-            "title": "Pubblica le pagine tramite Git",
-            "description": "Se abilitato, il salvataggio di una pagina crea un commit in un branch di lavoro del repository di contenuti configurato e la pubblicazione apre e unisce una pull request, invece di scrivere direttamente nell'archivio blob. Richiede una connessione ai contenuti Git configurata sul server (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "Repository Git",
-            "description": "Un repository GitHub esistente (owner/name) per le pagine di questo negozio. Lascia vuoto per usare il repository del negozio, che Site Builder crea nell'organizzazione configurata."
-          },
-          "PreviewUserIds": {
-            "title": "ID utente per anteprima",
-            "description": "Elenco degli ID utente per l'impersonificazione nell'anteprima (uno per riga)"
-          },
-          "NewSiteBuilder": {
-            "title": "Nuovo Site Builder",
-            "description": "Apre le pagine del negozio nel nuovo designer di Site Builder e la vetrina mostra il tema pubblicato da lì. Se disattivato, le pagine si aprono nel designer classico e la vetrina funziona come prima."
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "Migrazione dei metadati da contenuti completata",
             "description": "La migrazione dei metadati degli elementi di contenuto verso le pagine del generatore di pagine è stata completata con successo."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "Indice dei riferimenti alle risorse creato",
+            "description": "È stato creato l'indice delle risorse usate dalle pagine e dai componenti condivisi."
           }
         }
       }

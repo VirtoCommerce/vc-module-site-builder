@@ -68,7 +68,7 @@ function respondWithStore(newSiteBuilder: boolean) {
     json: async () => ({
       url: "https://example.com",
       languages: ["en-US"],
-      settings: [{ name: "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder", value: newSiteBuilder }],
+      settings: [{ name: "SiteBuilder.Store.NewSiteBuilder", value: newSiteBuilder }],
     }),
   }) as Response;
 }

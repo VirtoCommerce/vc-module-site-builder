@@ -183,14 +183,14 @@ namespace VirtoCommerce.SiteBuilder.Core
             {
                 public static SettingDescriptor StoreUrl { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.General.StoreUrl",
+                    Name = "SiteBuilder.General.StoreUrl",
                     GroupName = "CMS|General",
                     ValueType = SettingValueType.ShortText
                 };
 
                 public static SettingDescriptor StorePreviewPath { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                    Name = "SiteBuilder.General.StorePreviewPath",
                     ValueType = SettingValueType.ShortText,
                     GroupName = "CMS|General",
                     DefaultValue = "/designer-preview"
@@ -198,7 +198,7 @@ namespace VirtoCommerce.SiteBuilder.Core
 
                 public static SettingDescriptor OzAgentUrl { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.General.OzAgentUrl",
+                    Name = "SiteBuilder.General.OzAgentUrl",
                     GroupName = "CMS|General",
                     ValueType = SettingValueType.ShortText,
                     DefaultValue = "",
@@ -235,7 +235,7 @@ namespace VirtoCommerce.SiteBuilder.Core
 
                 public static SettingDescriptor SettingsCopiedFromPageBuilder { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.Migration.SettingsCopiedFromPageBuilder",
+                    Name = "SiteBuilder.Migration.SettingsCopiedFromPageBuilder",
                     GroupName = "CMS|Migration",
                     ValueType = SettingValueType.Boolean,
                     DefaultValue = false,
@@ -257,7 +257,7 @@ namespace VirtoCommerce.SiteBuilder.Core
             {
                 public static SettingDescriptor PreviewUserIds { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.Store.PreviewUserIds",
+                    Name = "SiteBuilder.Store.PreviewUserIds",
                     GroupName = "CMS|Site builder",
                     ValueType = SettingValueType.LongText,
                     DefaultValue = "",
@@ -273,7 +273,7 @@ namespace VirtoCommerce.SiteBuilder.Core
                 /// </summary>
                 public static SettingDescriptor GitContentEnabled { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.Store.GitContentEnabled",
+                    Name = "SiteBuilder.Store.GitContentEnabled",
                     GroupName = "CMS|Site builder",
                     ValueType = SettingValueType.Boolean,
                     DefaultValue = false,
@@ -281,7 +281,7 @@ namespace VirtoCommerce.SiteBuilder.Core
 
                 public static SettingDescriptor GitContentRepository { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.Store.GitContentRepository",
+                    Name = "SiteBuilder.Store.GitContentRepository",
                     GroupName = "CMS|Site builder",
                     ValueType = SettingValueType.ShortText,
                     DefaultValue = "",
@@ -290,7 +290,7 @@ namespace VirtoCommerce.SiteBuilder.Core
                 /// <summary>Public, so the storefront sees it in the store's module settings.</summary>
                 public static SettingDescriptor NewSiteBuilder { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder",
+                    Name = "SiteBuilder.Store.NewSiteBuilder",
                     GroupName = "CMS|Site builder",
                     ValueType = SettingValueType.Boolean,
                     DefaultValue = false,
@@ -314,7 +314,7 @@ namespace VirtoCommerce.SiteBuilder.Core
                 /// <summary>Encrypted with the data protection keys.</summary>
                 public static SettingDescriptor AppConnection { get; } = new()
                 {
-                    Name = "VirtoCommerce.SiteBuilder.GitHub.AppConnection",
+                    Name = "SiteBuilder.GitHub.AppConnection",
                     GroupName = "CMS|Site builder",
                     ValueType = SettingValueType.LongText,
                     DefaultValue = "",

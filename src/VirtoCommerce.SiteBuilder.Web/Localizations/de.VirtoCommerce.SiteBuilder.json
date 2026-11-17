@@ -99,44 +99,50 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "GeschäftsURL mit Site Builder Preview Handler",
+          "title": "GeschäftsURL"
+        },
+        "StorePreviewPath": {
+          "description": "Relativer Pfad für Vorschauseite",
+          "title": "Vorschau-Pfad des Geschäfts"
+        },
+        "OzAgentUrl": {
+          "title": "Virto OZ Agent-URL",
+          "description": "URL des in Site Builder eingebetteten Virto OZ AI-Agent-iFrames. Leer lassen, um den AI-Assistenten zu deaktivieren."
+        }
+      },
+      "Store": {
+        "GitContentEnabled": {
+          "title": "Seiten über Git veröffentlichen",
+          "description": "Wenn aktiviert, wird beim Speichern einer Seite ein Commit in einem Arbeitsbranch des konfigurierten Content-Repositorys erstellt, und beim Veröffentlichen wird ein Pull Request geöffnet und zusammengeführt — anstatt direkt in den Blob-Speicher zu schreiben. Erfordert eine auf dem Server konfigurierte Git-Content-Verbindung (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "Git-Repository",
+          "description": "Ein vorhandenes GitHub-Repository (owner/name) für die Seiten dieses Shops. Leer lassen, um das eigene Repository des Shops zu verwenden, das Site Builder in der konfigurierten Organisation anlegt."
+        },
+        "PreviewUserIds": {
+          "title": "Benutzer-IDs für Vorschau",
+          "description": "Liste der Benutzer-IDs für die Vorschau-Imitation (eine pro Zeile)"
+        },
+        "NewSiteBuilder": {
+          "title": "Neuer Site Builder",
+          "description": "Öffnet die Seiten des Stores im neuen Site-Builder-Designer, und die Storefront zeigt das dort veröffentlichte Theme. Wenn deaktiviert, öffnen sich die Seiten im klassischen Designer und die Storefront funktioniert wie bisher."
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "GeschäftsURL mit Site Builder Preview Handler",
-            "title": "GeschäftsURL"
-          },
-          "StorePreviewPath": {
-            "description": "Relativer Pfad für Vorschauseite",
-            "title": "Vorschau-Pfad des Geschäfts"
-          },
-          "OzAgentUrl": {
-            "title": "Virto OZ Agent-URL",
-            "description": "URL des in Site Builder eingebetteten Virto OZ AI-Agent-iFrames. Leer lassen, um den AI-Assistenten zu deaktivieren."
-          }
-        },
-        "Store": {
-          "GitContentEnabled": {
-            "title": "Seiten über Git veröffentlichen",
-            "description": "Wenn aktiviert, wird beim Speichern einer Seite ein Commit in einem Arbeitsbranch des konfigurierten Content-Repositorys erstellt, und beim Veröffentlichen wird ein Pull Request geöffnet und zusammengeführt — anstatt direkt in den Blob-Speicher zu schreiben. Erfordert eine auf dem Server konfigurierte Git-Content-Verbindung (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "Git-Repository",
-            "description": "Ein vorhandenes GitHub-Repository (owner/name) für die Seiten dieses Shops. Leer lassen, um das eigene Repository des Shops zu verwenden, das Site Builder in der konfigurierten Organisation anlegt."
-          },
-          "PreviewUserIds": {
-            "title": "Benutzer-IDs für Vorschau",
-            "description": "Liste der Benutzer-IDs für die Vorschau-Imitation (eine pro Zeile)"
-          },
-          "NewSiteBuilder": {
-            "title": "Neuer Site Builder",
-            "description": "Öffnet die Seiten des Stores im neuen Site-Builder-Designer, und die Storefront zeigt das dort veröffentlichte Theme. Wenn deaktiviert, öffnen sich die Seiten im klassischen Designer und die Storefront funktioniert wie bisher."
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "Migration der Metadaten aus Inhalten abgeschlossen",
             "description": "Die Migration der Metadaten von Inhaltsobjekten zu Seiten im Site Builder wurde erfolgreich durchgeführt."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "Index der Asset-Referenzen erstellt",
+            "description": "Der Index der Assets, die Seiten und gemeinsame Komponenten verwenden, wurde erstellt."
           }
         }
       }

@@ -5,7 +5,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 
 const source = readFileSync(resolve(__dirname, "../../Scripts/blades/pages/edit-page.js"), "utf8");
-const NEW_SITE_BUILDER = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder";
+const NEW_SITE_BUILDER = "SiteBuilder.Store.NewSiteBuilder";
 const ANGULAR_DESIGNER = "https://admin.test/Modules/$(VirtoCommerce.SiteBuilder)/Content/site-builder-designer/index.html";
 const NEW_DESIGNER = "https://admin.test/apps/site-builder-shell/";
 

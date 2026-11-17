@@ -21,7 +21,7 @@ Resolved settings are available in template expressions as `{{settings.*}}`. The
                 }
             },
             {
-                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StoreUrl",
+                "url": "/api/platform/settings/SiteBuilder.General.StoreUrl",
                 "method": "GET",
                 "response": {
                     "result": "$.value",
@@ -34,7 +34,7 @@ Resolved settings are available in template expressions as `{{settings.*}}`. The
         "init": "requests",
         "requests": [
             {
-                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                "url": "/api/platform/settings/SiteBuilder.General.StorePreviewPath",
                 "method": "GET",
                 "cacheable": true,
                 "response": {
@@ -43,7 +43,7 @@ Resolved settings are available in template expressions as `{{settings.*}}`. The
                 }
             },
             {
-                "url": "/api/platform/settings/VirtoCommerce.SiteBuilder.General.StorePreviewPath",
+                "url": "/api/platform/settings/SiteBuilder.General.StorePreviewPath",
                 "method": "GET",
                 "cacheable": true,
                 "response": {

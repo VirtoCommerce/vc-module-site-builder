@@ -18,7 +18,7 @@ vi.mock("@vc-shell/framework", async (importOriginal) => {
 
 const STORE = "B2B-store";
 const CONTEXT = { groupId: "g1", storeId: STORE };
-const SWITCH = "VirtoCommerce.SiteBuilder.Store.NewSiteBuilder";
+const SWITCH = "SiteBuilder.Store.NewSiteBuilder";
 
 function pageDesigner() {
   let open!: ReturnType<typeof usePageDesigner>;

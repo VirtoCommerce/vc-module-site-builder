@@ -196,7 +196,7 @@ at `url`; a content page shows on the designer's preview route, and its rules se
 
 `auth` carries the access token only, never a refresh token. The storefront keeps it in memory and sends it only to
 its own `/graphql` and `/api`. The designer offers the accounts of the store setting
-`VirtoCommerce.SiteBuilder.Store.PreviewUserIds` to an editor with `platform:security:loginOnBehalf`, gets the
+`SiteBuilder.Store.PreviewUserIds` to an editor with `platform:security:loginOnBehalf`, gets the
 token from the platform's `/connect/token` `impersonate` grant (without `offline_access`), and sends it again, renewed,
 before it expires.
 

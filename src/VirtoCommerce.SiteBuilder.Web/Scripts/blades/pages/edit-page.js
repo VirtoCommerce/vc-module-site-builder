@@ -28,7 +28,7 @@ angular.module('virtoCommerce.siteBuilderModule')
             // place under each, so it must never run on a guess.
             var flowResolved = false;
 
-            var newSiteBuilderSetting = 'VirtoCommerce.SiteBuilder.Store.NewSiteBuilder';
+            var newSiteBuilderSetting = 'SiteBuilder.Store.NewSiteBuilder';
             var designerReady = $q.resolve(false);
 
             blade.initialize = function () {
