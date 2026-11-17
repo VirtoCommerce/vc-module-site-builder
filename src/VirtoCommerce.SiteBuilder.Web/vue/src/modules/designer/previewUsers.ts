@@ -1,5 +1,5 @@
 export const IMPERSONATE_PERMISSION = "platform:security:loginOnBehalf";
-export const PREVIEW_USERS_SETTING = "VirtoCommerce.SiteBuilder.Store.PreviewUserIds";
+export const PREVIEW_USERS_SETTING = "SiteBuilder.Store.PreviewUserIds";
 
 export interface PreviewUser {
   id: string;

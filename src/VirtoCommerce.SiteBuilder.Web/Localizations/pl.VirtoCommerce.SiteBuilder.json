@@ -99,40 +99,46 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "URL sklepu z obsługą podglądu Site Builder",
+          "title": "URL sklepu"
+        },
+        "StorePreviewPath": {
+          "description": "Ścieżka względna do strony podglądu",
+          "title": "Ścieżka podglądu sklepu"
+        },
+        "OzAgentUrl": {
+          "title": "URL agenta Virto OZ",
+          "description": "Adres URL ramki iframe agenta AI Virto OZ osadzonego w Site Builder. Pozostaw puste, aby wyłączyć asystenta AI."
+        }
+      },
+      "Store": {
+        "GitContentEnabled": {
+          "title": "Publikuj strony przez Git",
+          "description": "Gdy włączone, zapisanie strony tworzy commit w gałęzi roboczej skonfigurowanego repozytorium treści, a publikowanie otwiera i scala pull request, zamiast zapisywać bezpośrednio do magazynu blob. Wymaga skonfigurowanego na serwerze połączenia z treścią Git (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "Repozytorium Git",
+          "description": "Istniejące repozytorium GitHub (owner/name) dla stron tego sklepu. Pozostaw puste, aby użyć własnego repozytorium sklepu, które Site Builder tworzy w skonfigurowanej organizacji."
+        },
+        "PreviewUserIds": {
+          "title": "ID użytkowników do podglądu",
+          "description": "Lista ID użytkowników do podszywania się podczas podglądu stron (jeden na wiersz)"
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "URL sklepu z obsługą podglądu Site Builder",
-            "title": "URL sklepu"
-          },
-          "StorePreviewPath": {
-            "description": "Ścieżka względna do strony podglądu",
-            "title": "Ścieżka podglądu sklepu"
-          },
-          "OzAgentUrl": {
-            "title": "URL agenta Virto OZ",
-            "description": "Adres URL ramki iframe agenta AI Virto OZ osadzonego w Site Builder. Pozostaw puste, aby wyłączyć asystenta AI."
-          }
-        },
-        "Store": {
-          "GitContentEnabled": {
-            "title": "Publikuj strony przez Git",
-            "description": "Gdy włączone, zapisanie strony tworzy commit w gałęzi roboczej skonfigurowanego repozytorium treści, a publikowanie otwiera i scala pull request, zamiast zapisywać bezpośrednio do magazynu blob. Wymaga skonfigurowanego na serwerze połączenia z treścią Git (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "Repozytorium Git",
-            "description": "Istniejące repozytorium GitHub (owner/name) dla stron tego sklepu. Pozostaw puste, aby użyć własnego repozytorium sklepu, które Site Builder tworzy w skonfigurowanej organizacji."
-          },
-          "PreviewUserIds": {
-            "title": "ID użytkowników do podglądu",
-            "description": "Lista ID użytkowników do podszywania się podczas podglądu stron (jeden na wiersz)"
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "Migracja metadanych z zawartości zakończona",
             "description": "Migracja metadanych z elementów zawartości do stron kreatora stron została pomyślnie zakończona."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "Indeks odwołań do zasobów utworzony",
+            "description": "Utworzono indeks zasobów używanych przez strony i komponenty współdzielone."
           }
         }
       }

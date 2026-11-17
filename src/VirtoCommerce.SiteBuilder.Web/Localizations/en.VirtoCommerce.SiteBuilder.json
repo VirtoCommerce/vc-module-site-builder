@@ -99,40 +99,46 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "Store URL with Site Builder preview handler",
+          "title": "Store URL"
+        },
+        "StorePreviewPath": {
+          "description": "Relative path for preview page",
+          "title": "Store preview path"
+        },
+        "OzAgentUrl": {
+          "title": "Virto OZ agent URL",
+          "description": "URL of the Virto OZ AI agent iframe embedded into Site Builder. Leave empty to disable the AI assistant."
+        }
+      },
+      "Store": {
+        "PreviewUserIds": {
+          "title": "Preview user IDs",
+          "description": "List of user IDs for page preview impersonation (one per line)"
+        },
+        "GitContentEnabled": {
+          "title": "Publish pages through Git",
+          "description": "When enabled, saving a page commits it to a work branch in the configured content repository and publishing opens and merges a pull request, instead of writing to blob storage directly. Requires the Git content connection to be configured on the server (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "Git repository",
+          "description": "An existing GitHub repository (owner/name) for this store's pages. Leave empty to use the store's own repository, which Site Builder creates in the configured organization."
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "Store URL with Site Builder preview handler",
-            "title": "Store URL"
-          },
-          "StorePreviewPath": {
-            "description": "Relative path for preview page",
-            "title": "Store preview path"
-          },
-          "OzAgentUrl": {
-            "title": "Virto OZ agent URL",
-            "description": "URL of the Virto OZ AI agent iframe embedded into Site Builder. Leave empty to disable the AI assistant."
-          }
-        },
-        "Store": {
-          "PreviewUserIds": {
-            "title": "Preview user IDs",
-            "description": "List of user IDs for page preview impersonation (one per line)"
-          },
-          "GitContentEnabled": {
-            "title": "Publish pages through Git",
-            "description": "When enabled, saving a page commits it to a work branch in the configured content repository and publishing opens and merges a pull request, instead of writing to blob storage directly. Requires the Git content connection to be configured on the server (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "Git repository",
-            "description": "An existing GitHub repository (owner/name) for this store's pages. Leave empty to use the store's own repository, which Site Builder creates in the configured organization."
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "Metadata migration from content completed",
             "description": "The metadata migration from content items to Site Builder pages has been completed successfully."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "Asset reference index built",
+            "description": "The index of the assets that pages and shared components use has been built."
           }
         }
       }

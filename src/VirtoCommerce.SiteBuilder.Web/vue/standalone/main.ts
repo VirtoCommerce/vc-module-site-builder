@@ -132,7 +132,7 @@ async function fetchOzAgentUrl(): Promise<string> {
       return "";
     }
     const response = await fetch(
-      "/api/platform/settings/VirtoCommerce.SiteBuilder.General.OzAgentUrl",
+      "/api/platform/settings/SiteBuilder.General.OzAgentUrl",
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!response.ok) {

@@ -99,40 +99,46 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "プレビュー用Site Builderハンドラー付きストアURL",
+          "title": "ストアURL"
+        },
+        "StorePreviewPath": {
+          "description": "プレビューページの相対パス",
+          "title": "ストアプレビューパス"
+        },
+        "OzAgentUrl": {
+          "title": "Virto OZ エージェント URL",
+          "description": "Site Builder に埋め込まれた Virto OZ AI エージェント iframe の URL。AI アシスタントを無効にする場合は空のままにしてください。"
+        }
+      },
+      "Store": {
+        "GitContentEnabled": {
+          "title": "Git経由でページを公開",
+          "description": "有効にすると、ページの保存時に設定されたコンテンツリポジトリの作業ブランチへコミットし、公開時にはBlobストレージへ直接書き込む代わりにプルリクエストを作成してマージします。サーバーでGitコンテンツ接続が設定されている必要があります（SiteBuilder:GitContent）。"
+        },
+        "GitContentRepository": {
+          "title": "Git リポジトリ",
+          "description": "このストアのページに使う既存の GitHub リポジトリ (owner/name)。空のままにすると、Site Builder が設定済みの組織に作成するストア専用のリポジトリを使用します。"
+        },
+        "PreviewUserIds": {
+          "title": "プレビュー用ユーザーID",
+          "description": "ページプレビューのなりすまし用ユーザーIDリスト（1行に1つ）"
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "プレビュー用Site Builderハンドラー付きストアURL",
-            "title": "ストアURL"
-          },
-          "StorePreviewPath": {
-            "description": "プレビューページの相対パス",
-            "title": "ストアプレビューパス"
-          },
-          "OzAgentUrl": {
-            "title": "Virto OZ エージェント URL",
-            "description": "Site Builder に埋め込まれた Virto OZ AI エージェント iframe の URL。AI アシスタントを無効にする場合は空のままにしてください。"
-          }
-        },
-        "Store": {
-          "GitContentEnabled": {
-            "title": "Git経由でページを公開",
-            "description": "有効にすると、ページの保存時に設定されたコンテンツリポジトリの作業ブランチへコミットし、公開時にはBlobストレージへ直接書き込む代わりにプルリクエストを作成してマージします。サーバーでGitコンテンツ接続が設定されている必要があります（SiteBuilder:GitContent）。"
-          },
-          "GitContentRepository": {
-            "title": "Git リポジトリ",
-            "description": "このストアのページに使う既存の GitHub リポジトリ (owner/name)。空のままにすると、Site Builder が設定済みの組織に作成するストア専用のリポジトリを使用します。"
-          },
-          "PreviewUserIds": {
-            "title": "プレビュー用ユーザーID",
-            "description": "ページプレビューのなりすまし用ユーザーIDリスト（1行に1つ）"
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "コンテンツからのメタデータ移行完了",
             "description": "コンテンツアイテムからページビルダーページへのメタデータ移行が正常に完了しました。"
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "アセット参照インデックスを作成済み",
+            "description": "ページと共有コンポーネントが使用するアセットのインデックスが作成されました。"
           }
         }
       }

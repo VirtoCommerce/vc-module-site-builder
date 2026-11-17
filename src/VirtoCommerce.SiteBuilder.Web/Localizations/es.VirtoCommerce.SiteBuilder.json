@@ -99,40 +99,46 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "URL de la tienda con gestor de vista previa del Site Builder",
+          "title": "URL de la tienda"
+        },
+        "StorePreviewPath": {
+          "description": "Ruta relativa para la vista previa",
+          "title": "Ruta de vista previa de la tienda"
+        },
+        "OzAgentUrl": {
+          "title": "URL del agente Virto OZ",
+          "description": "URL del iframe del agente de IA Virto OZ integrado en Site Builder. Dejar vacío para desactivar el asistente de IA."
+        }
+      },
+      "Store": {
+        "GitContentEnabled": {
+          "title": "Publicar páginas a través de Git",
+          "description": "Cuando está habilitado, al guardar una página se confirma (commit) en una rama de trabajo del repositorio de contenido configurado, y al publicar se abre y fusiona una pull request, en lugar de escribir directamente en el almacenamiento blob. Requiere que la conexión de contenido Git esté configurada en el servidor (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "Repositorio Git",
+          "description": "Un repositorio de GitHub existente (owner/name) para las páginas de esta tienda. Déjelo vacío para usar el repositorio propio de la tienda, que Site Builder crea en la organización configurada."
+        },
+        "PreviewUserIds": {
+          "title": "IDs de usuario para vista previa",
+          "description": "Lista de IDs de usuario para la suplantación en vista previa (uno por línea)"
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "URL de la tienda con gestor de vista previa del Site Builder",
-            "title": "URL de la tienda"
-          },
-          "StorePreviewPath": {
-            "description": "Ruta relativa para la vista previa",
-            "title": "Ruta de vista previa de la tienda"
-          },
-          "OzAgentUrl": {
-            "title": "URL del agente Virto OZ",
-            "description": "URL del iframe del agente de IA Virto OZ integrado en Site Builder. Dejar vacío para desactivar el asistente de IA."
-          }
-        },
-        "Store": {
-          "GitContentEnabled": {
-            "title": "Publicar páginas a través de Git",
-            "description": "Cuando está habilitado, al guardar una página se confirma (commit) en una rama de trabajo del repositorio de contenido configurado, y al publicar se abre y fusiona una pull request, en lugar de escribir directamente en el almacenamiento blob. Requiere que la conexión de contenido Git esté configurada en el servidor (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "Repositorio Git",
-            "description": "Un repositorio de GitHub existente (owner/name) para las páginas de esta tienda. Déjelo vacío para usar el repositorio propio de la tienda, que Site Builder crea en la organización configurada."
-          },
-          "PreviewUserIds": {
-            "title": "IDs de usuario para vista previa",
-            "description": "Lista de IDs de usuario para la suplantación en vista previa (uno por línea)"
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "Migración de metadatos desde el contenido completada",
             "description": "La migración de metadatos de elementos de contenido a páginas del generador de páginas se ha realizado con éxito."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "Índice de referencias de recursos creado",
+            "description": "Se ha creado el índice de los recursos que usan las páginas y los componentes compartidos."
           }
         }
       }
