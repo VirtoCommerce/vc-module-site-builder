@@ -60,7 +60,7 @@ Core ← Data.SqlServer / Data.MySql / Data.PostgreSql
 - `ISiteBuilderPageService` — CRUD for pages
 - `IGroupedPageService` — Grouped page management
 - `IPagesMigrationService` — Migration logic between formats
-- `IContentStreamProvider` / `ContentStreamRepository` — Large content streaming
+- `IContentStreamRepository` / `ContentStreamRepository` — Large content streaming
 
 ### API Controllers
 - `SiteBuilderController` — Main API: templates, sections, schemas, config

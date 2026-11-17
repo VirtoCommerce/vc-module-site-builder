@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using VirtoCommerce.SiteBuilder.Core.Events;
+using VirtoCommerce.SiteBuilder.Data.BackgroundJobs;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Events;
 using VirtoCommerce.Platform.Core.Jobs;
