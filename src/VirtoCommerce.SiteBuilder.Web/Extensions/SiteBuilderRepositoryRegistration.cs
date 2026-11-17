@@ -4,13 +4,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using VirtoCommerce.SiteBuilder.Data.MySql;
 using VirtoCommerce.SiteBuilder.Data.PostgreSql;
+using VirtoCommerce.SiteBuilder.Data.Repositories;
 using VirtoCommerce.SiteBuilder.Data.SqlServer;
 using VirtoCommerce.Platform.Core.Modularity;
 using VirtoCommerce.Platform.Data.MySql.Extensions;
 using VirtoCommerce.Platform.Data.PostgreSql.Extensions;
 using VirtoCommerce.Platform.Data.SqlServer.Extensions;
 
-namespace VirtoCommerce.SiteBuilder.Data.Repositories;
+namespace VirtoCommerce.SiteBuilder.Web.Extensions;
 
 internal static class SiteBuilderRepositoryRegistration
 {

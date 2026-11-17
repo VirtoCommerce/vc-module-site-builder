@@ -62,7 +62,7 @@ Standard VirtoCommerce module pattern:
 **Key C# patterns:**
 - `TreatWarningsAsErrors: true` — no suppressed warnings
 - Event-driven architecture: `SiteBuilderPageChanging/Changed`, `GroupedPageChanging/Changed`
-- Content streaming via `ContentStreamRepository` / `IContentStreamProvider`
+- Content streaming via `ContentStreamRepository` / `IContentStreamRepository`
 - Authorization via `SiteBuilderAuthorizationHandler` + `SiteBuilderAuthorizationRequirement`
 
 ### Vue 3 Shell App

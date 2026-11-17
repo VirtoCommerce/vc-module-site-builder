@@ -5,6 +5,7 @@ using GraphQL.MicrosoftDI;
 using GraphQL.Types;
 using GraphQL.Utilities;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using VirtoCommerce.Platform.Core.Modularity;
@@ -127,6 +128,7 @@ public class XapiSchemaTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IAuthorizationService>(new FakeAuthorizationService(allowed: false));
 
         _ = new GraphQLBuilder(services, builder =>
         {
@@ -147,7 +149,7 @@ public class XapiSchemaTests
     {
         protected override System.Collections.Generic.List<ISchemaBuilder> GetSchemaBuilders()
         {
-            return base.GetSchemaBuilders().Where(x => x is BuilderPageSchema or ThemeSnapshotSchema).ToList();
+            return base.GetSchemaBuilders().Where(x => x is BuilderPageSchema or GetThemeSnapshotQueryBuilder).ToList();
         }
     }
 }

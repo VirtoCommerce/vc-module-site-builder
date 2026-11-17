@@ -7,7 +7,7 @@ using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Events;
 using VirtoCommerce.Platform.Core.Jobs;
 
-namespace VirtoCommerce.SiteBuilder.Data.Handlers;
+namespace VirtoCommerce.SiteBuilder.Data.BackgroundJobs;
 
 public class SiteBuilderSharedComponentContentPropagationJobPayload
 {

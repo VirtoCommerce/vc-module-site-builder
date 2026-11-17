@@ -99,40 +99,46 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "带有Site Builder预览处理程序的商店URL",
+          "title": "商店URL"
+        },
+        "StorePreviewPath": {
+          "description": "预览页面的相对路径",
+          "title": "商店预览路径"
+        },
+        "OzAgentUrl": {
+          "title": "Virto OZ 代理 URL",
+          "description": "嵌入到 Site Builder 中的 Virto OZ AI 代理 iframe 的 URL。留空可禁用 AI 助手。"
+        }
+      },
+      "Store": {
+        "GitContentEnabled": {
+          "title": "通过 Git 发布页面",
+          "description": "启用后，保存页面时会将其提交到已配置内容仓库的工作分支，发布时会打开并合并拉取请求（pull request），而不是直接写入 blob 存储。需要在服务器上配置 Git 内容连接（SiteBuilder:GitContent）。"
+        },
+        "GitContentRepository": {
+          "title": "Git 仓库",
+          "description": "用于此商店页面的现有 GitHub 仓库 (owner/name)。留空则使用 Site Builder 在配置的组织中为该商店创建的专属仓库。"
+        },
+        "PreviewUserIds": {
+          "title": "预览用户ID",
+          "description": "用于页面预览模拟的用户ID列表（每行一个）"
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "带有Site Builder预览处理程序的商店URL",
-            "title": "商店URL"
-          },
-          "StorePreviewPath": {
-            "description": "预览页面的相对路径",
-            "title": "商店预览路径"
-          },
-          "OzAgentUrl": {
-            "title": "Virto OZ 代理 URL",
-            "description": "嵌入到 Site Builder 中的 Virto OZ AI 代理 iframe 的 URL。留空可禁用 AI 助手。"
-          }
-        },
-        "Store": {
-          "GitContentEnabled": {
-            "title": "通过 Git 发布页面",
-            "description": "启用后，保存页面时会将其提交到已配置内容仓库的工作分支，发布时会打开并合并拉取请求（pull request），而不是直接写入 blob 存储。需要在服务器上配置 Git 内容连接（SiteBuilder:GitContent）。"
-          },
-          "GitContentRepository": {
-            "title": "Git 仓库",
-            "description": "用于此商店页面的现有 GitHub 仓库 (owner/name)。留空则使用 Site Builder 在配置的组织中为该商店创建的专属仓库。"
-          },
-          "PreviewUserIds": {
-            "title": "预览用户ID",
-            "description": "用于页面预览模拟的用户ID列表（每行一个）"
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "迁移内容元数据完成",
             "description": "内容项的元数据迁移到页面构建器页面已成功完成。"
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "资源引用索引已构建",
+            "description": "页面和共享组件所使用资源的索引已构建。"
           }
         }
       }

@@ -99,40 +99,46 @@
     }
   },
   "settings": {
+    "SiteBuilder": {
+      "General": {
+        "StoreUrl": {
+          "description": "כתובת URL של החנות עם מטפל התצוגה המקדימה של Site Builder",
+          "title": "כתובת URL של החנות"
+        },
+        "StorePreviewPath": {
+          "description": "נתיב יחסי לדף התצוגה המקדימה",
+          "title": "נתיב התצוגה המקדימה בחנות"
+        },
+        "OzAgentUrl": {
+          "title": "כתובת URL של סוכן Virto OZ",
+          "description": "כתובת ה-URL של ה-iframe של סוכן ה-AI של Virto OZ המוטמע ב-Site Builder. יש להשאיר ריק כדי להשבית את עוזר ה-AI."
+        }
+      },
+      "Store": {
+        "PreviewUserIds": {
+          "title": "מזהי משתמשים לתצוגה מקדימה",
+          "description": "רשימת מזהי משתמשים להתחזות בתצוגה מקדימה של דפים (אחד בכל שורה)"
+        },
+        "GitContentEnabled": {
+          "title": "פרסום דפים דרך Git",
+          "description": "כאשר האפשרות מופעלת, שמירת דף מבצעת Commit שלו לענף עבודה במאגר התוכן שהוגדר, והפרסום פותח וממזג Pull Request, במקום לכתוב ישירות לאחסון Blob. נדרש להגדיר בשרת את החיבור לתוכן ב-Git (SiteBuilder:GitContent)."
+        },
+        "GitContentRepository": {
+          "title": "מאגר Git",
+          "description": "מאגר GitHub קיים (owner/name) לדפים של חנות זו. יש להשאיר ריק כדי להשתמש במאגר של החנות עצמה, ש-Site Builder יוצר בארגון שהוגדר."
+        }
+      }
+    },
     "VirtoCommerce": {
-      "SiteBuilder": {
-        "General": {
-          "StoreUrl": {
-            "description": "כתובת URL של החנות עם מטפל התצוגה המקדימה של Site Builder",
-            "title": "כתובת URL של החנות"
-          },
-          "StorePreviewPath": {
-            "description": "נתיב יחסי לדף התצוגה המקדימה",
-            "title": "נתיב התצוגה המקדימה בחנות"
-          },
-          "OzAgentUrl": {
-            "title": "כתובת URL של סוכן Virto OZ",
-            "description": "כתובת ה-URL של ה-iframe של סוכן ה-AI של Virto OZ המוטמע ב-Site Builder. יש להשאיר ריק כדי להשבית את עוזר ה-AI."
-          }
-        },
-        "Store": {
-          "PreviewUserIds": {
-            "title": "מזהי משתמשים לתצוגה מקדימה",
-            "description": "רשימת מזהי משתמשים להתחזות בתצוגה מקדימה של דפים (אחד בכל שורה)"
-          },
-          "GitContentEnabled": {
-            "title": "פרסום דפים דרך Git",
-            "description": "כאשר האפשרות מופעלת, שמירת דף מבצעת Commit שלו לענף עבודה במאגר התוכן שהוגדר, והפרסום פותח וממזג Pull Request, במקום לכתוב ישירות לאחסון Blob. נדרש להגדיר בשרת את החיבור לתוכן ב-Git (SiteBuilder:GitContent)."
-          },
-          "GitContentRepository": {
-            "title": "מאגר Git",
-            "description": "מאגר GitHub קיים (owner/name) לדפים של חנות זו. יש להשאיר ריק כדי להשתמש במאגר של החנות עצמה, ש-Site Builder יוצר בארגון שהוגדר."
-          }
-        },
+      "PageBuilderModule": {
         "Migration": {
           "MetadataFromContentMigrated": {
             "title": "העברת המטא-נתונים מהתוכן הושלמה",
             "description": "העברת המטא-נתונים מפריטי תוכן לדפי Site Builder הושלמה בהצלחה."
+          },
+          "AssetReferenceIndexMigrated": {
+            "title": "אינדקס הפניות הנכסים נבנה",
+            "description": "נבנה האינדקס של הנכסים שבהם משתמשים הדפים והרכיבים המשותפים."
           }
         }
       }

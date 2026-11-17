@@ -16,19 +16,19 @@ using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests;
 
-public class ThemeSnapshotSchemaTests : IDisposable
+public class GetThemeSnapshotQueryBuilderTests : IDisposable
 {
     private readonly List<ServiceProvider> _serviceProviders = [];
 
     [Fact]
     public void Build_AddsThemeSnapshot_WithOptionalDomainStoreIdCultureNameAndPermalink()
     {
-        var field = BuildField();
+        var (schema, field) = BuildField();
 
         Assert.Equal(typeof(ThemeSnapshotType), field.Type);
         Assert.Equal(
             [("domain", typeof(StringGraphType)), ("storeId", typeof(StringGraphType)), ("cultureName", typeof(StringGraphType)), ("permalink", typeof(StringGraphType))],
-            field.Arguments.Select(x => (x.Name, x.Type)));
+            field.Arguments.Select(x => (schema.NameConverter.NameForArgument(x.Name, schema.Query, field), x.Type)));
     }
 
     [Fact]
@@ -42,8 +42,13 @@ public class ThemeSnapshotSchemaTests : IDisposable
             .Callback<IRequest<ThemeSnapshotResult>, CancellationToken>((request, _) => query = (GetThemeSnapshotQuery)request)
             .ReturnsAsync(snapshot);
 
-        var result = await BuildField().Resolver.ResolveAsync(new ResolveFieldContext
+        var (schema, field) = BuildField();
+
+        var result = await field.Resolver.ResolveAsync(new ResolveFieldContext
         {
+            Schema = schema,
+            ParentType = schema.Query,
+            FieldDefinition = field,
             RequestServices = CreateServices(mediator.Object),
             Arguments = new Dictionary<string, ArgumentValue>
             {
@@ -72,12 +77,12 @@ public class ThemeSnapshotSchemaTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private static FieldType BuildField()
+    private static (Schema Schema, FieldType Field) BuildField()
     {
         var schema = new Schema { Query = new ObjectGraphType() };
-        new ThemeSnapshotSchema().Build(schema);
+        new GetThemeSnapshotQueryBuilder(new FakeAuthorizationService(allowed: false)).Build(schema);
 
-        return schema.Query.GetField("themeSnapshot");
+        return (schema, schema.Query.GetField("themeSnapshot"));
     }
 
     private ServiceProvider CreateServices(IMediator mediator)
