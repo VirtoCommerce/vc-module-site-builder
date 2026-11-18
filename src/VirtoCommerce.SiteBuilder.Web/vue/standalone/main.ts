@@ -147,6 +147,15 @@ async function fetchOzAgentUrl(): Promise<string> {
   }
 }
 
+// vc-shell trades messages with the assistant's frame only at the origins it is given.
+function originsOf(url: string): string[] {
+  try {
+    return [new URL(url).origin];
+  } catch {
+    return [];
+  }
+}
+
 async function startApp() {
   await bridgeLegacyAuthData();
 
@@ -167,6 +176,7 @@ async function startApp() {
       aiAgent: {
         config: {
           url: ozAgentUrl,
+          allowedOrigins: originsOf(ozAgentUrl),
         },
       },
     })

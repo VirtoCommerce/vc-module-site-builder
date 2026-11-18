@@ -144,6 +144,7 @@ const hotkeyOf = (modifiers: Record<string, boolean>): unknown =>
 export const hotkey = hotkeyOf({}) as Record<string, Record<string, { key: string; mod?: boolean }>>;
 export const BladeMaximizedKey = Symbol("BladeMaximized");
 export const BladeStackKey = Symbol("BladeStack");
+export const AiAgentServiceKey = Symbol("AiAgentService");
 
 export function resetVcShell() {
   for (const toast of pendingToasts) clearTimeout(toast);

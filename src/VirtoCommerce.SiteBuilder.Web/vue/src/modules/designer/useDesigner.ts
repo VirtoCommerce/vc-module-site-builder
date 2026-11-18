@@ -572,6 +572,16 @@ export function useDesigner() {
     }
   }
 
+  /** The open page keeps its version: edits made here still save against the one they started from, so a newer one refuses them. */
+  async function pageChangedOnServer(): Promise<boolean> {
+    const id = groupId.value;
+    const version = eTag.value;
+    if (!id || !version || busy.value || loadError.value) return false;
+    const current = (await api.loadPage(id)).eTag;
+    // An answer counts only for the page and version still open, with nothing under way since.
+    return !!current && current !== version && groupId.value === id && eTag.value === version && !busy.value;
+  }
+
   const themeStatus = ref<ThemeStatus>();
   const themeFileOpen = computed(() => file.value?.type === "themes");
   const discardable = computed<{ page: boolean; theme: ThemePart[] }>(() => ({
@@ -811,6 +821,7 @@ export function useDesigner() {
     removeChecked,
     saveCheckedAsShared,
     open,
+    pageChangedOnServer,
     save,
     publish,
     publishTheme,

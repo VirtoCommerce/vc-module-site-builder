@@ -78,6 +78,8 @@ Grouped-page content POSTs now require a version. Deploy updated integrations to
 
 The existing `IGroupedPageService` and `IContentStreamRepository` contracts remain unchanged. `IGroupedPageContentService` is registered separately in DI: the default registration uses a capable grouped service or the built-in authoring implementation, so existing grouped-service decorators keep working. Replacements that change authoring persistence should register this capability too. Customize Shell settings saves by overriding `SaveGroupSettingsAsync`; they no longer dispatch through a `SaveChangesAsync` override. Existing repository decorators can use the original queries, locks and asset-index method; `ISiteBuilderContentIndexRepository` is optional. Shell settings updates read the current document inside the same write lock; visibility-only updates preserve its bytes and version and do not create a draft when published content already exists.
 
+The Designer checks an open grouped page against the server when the AI assistant sends `RELOAD_BLADE` after saving it, and when the assistant's panel closes, for assistants that send no such message. The check reads the current version without replacing the one the local edits started from. A changed page without unsaved edits reloads, with its publish status and version history; a changed page with unsaved edits keeps them and tells the author the assistant changed it. An unchanged page shows no warning, and a page that is loading, saving, publishing or restoring is left alone.
+
 Copy retains its newest Draft/Published source rule and rejects archived-only groups; publish and legacy direct content service calls retain their existing contracts.
 
 ## Getting started
