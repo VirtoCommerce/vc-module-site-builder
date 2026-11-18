@@ -39,6 +39,16 @@ public static class AuthorizationServiceExtensions
             : $"Your {permission} permission does not cover store '{storeId}'.");
     }
 
+    // The store alone, as a tool checks it before anything it was asked about: the caller refuses a missing store first,
+    // since a permission granted in every store passes without one.
+    public static Task<bool> IsStoreAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId,
+        string permission = Read) =>
+        authorizationService.IsAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, permission);
+
+    public static Task EnsureStoreAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId,
+        string permission = Read) =>
+        authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId, permission);
+
     // The stores the permission reaches when the agent names none: null for every store. A role limited to some
     // stores reaches those, an account bound to a store reaches that store; each is checked with the requirement, so
     // the answer is what the designer would let the user open one by one.
@@ -64,7 +74,7 @@ public static class AuthorizationServiceExtensions
         var storeIds = new List<string>();
         foreach (var storeId in candidates.Where(x => !string.IsNullOrEmpty(x)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            if (await authorizationService.IsAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, permission))
+            if (await authorizationService.IsStoreAllowedAsync(user, storeId, permission))
             {
                 storeIds.Add(storeId);
             }
@@ -83,7 +93,7 @@ public static class AuthorizationServiceExtensions
             return await authorizationService.GetStoreIdsAsync(user, userManagerFactory, permission);
         }
 
-        return await authorizationService.IsAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, permission) ? [storeId] : [];
+        return await authorizationService.IsStoreAllowedAsync(user, storeId, permission) ? [storeId] : [];
     }
 
     private static async Task<string> GetBoundStoreIdAsync(ClaimsPrincipal user, Func<UserManager<ApplicationUser>> userManagerFactory)

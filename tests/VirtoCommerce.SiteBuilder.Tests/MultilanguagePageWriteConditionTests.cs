@@ -275,6 +275,22 @@ public class MultilanguagePageWriteConditionTests
     }
 
     [Fact]
+    public async Task ResetOverridesAsync_RootChangedRightBeforeAVersionsSave_IsRefusedUnderTheLock()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var request = await ReviewedResetAsync(fixture, root);
+        var roots = fixture.CreateRoots(new ConcurrentWriteContents(fixture.Groups,
+            () => Operations(fixture).UpdateAsync(Update(root, x => x.Permalink = "/team"), _user, Ct)));
+
+        var result = await Operations(fixture, roots).ResetOverridesAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        Assert.Equal("/over-ons", (await fixture.LoadGroupAsync(nl.Id)).Permalink);
+    }
+
+    [Fact]
     public async Task LinkAsync_AtTheReviewedVersions_IsLinked()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -298,6 +314,22 @@ public class MultilanguagePageWriteConditionTests
         await Operations(fixture).UpdateAsync(Update(root, x => x.Name = "Team"), _user, Ct);
 
         var result = await Operations(fixture).LinkAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        Assert.Null((await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
+    }
+
+    [Fact]
+    public async Task LinkAsync_RootChangedRightBeforeTheSaveOfTheLink_IsAConflictAndLinksNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var landing = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var request = await ReviewedLinkAsync(fixture, root, landing);
+        var roots = fixture.CreateRoots(new ConcurrentWriteContents(fixture.Groups,
+            () => Operations(fixture).UpdateAsync(Update(root, x => x.Visibility = false), _user, Ct)));
+
+        var result = await Operations(fixture, roots).LinkAsync(request, _user, Ct);
 
         Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
         Assert.Null((await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
@@ -407,6 +439,36 @@ public class MultilanguagePageWriteConditionTests
 
         Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
         Assert.Equal(before, (await fixture.LoadGroupAsync(nl.Id)).SourceRevisionDate);
+    }
+
+    [Fact]
+    public async Task MarkUpToDateAsync_ReviewedSourceRevisionWithinAMillisecond_IsMarkedAtTheStoredRevision()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var (en, nl) = await OutdatedTranslationAsync(fixture);
+        // a date sent through JSON may lose a fraction of a millisecond
+        var revision = (await ReviewedSourceRevisionAsync(fixture, nl.Id)).AddTicks(-TimeSpan.TicksPerMillisecond / 2);
+
+        var request = new MultilanguagePageMarkUpToDateOperationRequest { GroupId = nl.Id, ExpectedSourceRevisionDate = revision };
+        var result = await Operations(fixture).MarkUpToDateAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal((await fixture.LoadGroupAsync(en.Id)).SourceRevisionDate, (await fixture.LoadGroupAsync(nl.Id)).SourceRevisionDate);
+    }
+
+    [Fact]
+    public async Task MarkUpToDateAsync_DryRun_SourcePublishedAgainSinceTheReview_IsAConflict()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var (en, nl) = await OutdatedTranslationAsync(fixture);
+        var revision = await ReviewedSourceRevisionAsync(fixture, nl.Id);
+        await Task.Delay(20, Ct);
+        await fixture.PublishNewDraftAsync(en.Id, Content);
+
+        var request = new MultilanguagePageMarkUpToDateOperationRequest { GroupId = nl.Id, ExpectedSourceRevisionDate = revision, DryRun = true };
+        var result = await Operations(fixture).MarkUpToDateAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SourceRevisionChangedMessage), (result.Status, result.Error));
     }
 
     /// <summary>A translation published before its source was published again.</summary>

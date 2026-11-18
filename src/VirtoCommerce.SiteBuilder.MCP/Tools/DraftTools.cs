@@ -108,7 +108,7 @@ public class DraftTools(
             throw new McpException("Pass store_id and theme_file, the file with the theme folder such as 'default/config/palette.json'.");
         }
 
-        await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+        await authorizationService.EnsureStoreAllowedAsync(context.User, storeId);
 
         var path = themeFile.Trim().TrimStart('/');
         var pathInTheme = ThemeFileEdits.GetPathInTheme(path);

@@ -72,7 +72,7 @@ public class PreviewTools(
             throw new McpException("Pass store_id: templates and rules belong to a store's theme.");
         }
 
-        await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = store_id }, store_id);
+        await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
 
         if (!string.IsNullOrWhiteSpace(template_key))
         {

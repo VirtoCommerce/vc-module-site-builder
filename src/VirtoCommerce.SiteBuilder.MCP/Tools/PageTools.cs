@@ -45,6 +45,8 @@ public class PageTools(
     // versions than this is a scan; the agent narrows the period instead.
     private const int MaxChangedVersions = 1000;
 
+    private const int MaxModifiedDays = 365;
+
     [McpServerTool(Name = "search_site_pages", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
     [Description("Find pages of Site Builder. Returns one page of compact rows: a Landing Page is a row with its language; a " +
@@ -61,6 +63,7 @@ public class PageTools(
     public async Task<object> SearchSitePages(
         RequestContext<CallToolRequestParams> context,
         IMcpPageSizeResolver pageSizeResolver,
+        TimeProvider timeProvider,
         [Description("Store id. Omit it to search the database pages of every store you read; pages stored as files are listed per store.")] string store_id = null,
         [Description("Id of one page (a Landing Page, or a language version of a Multilanguage Page) to read with its " +
             "content, or the path of a page stored as a file with store_id. The other filters are ignored.")] string page_id = null,
@@ -72,8 +75,10 @@ public class PageTools(
         [Description("Pages stored as files of one folder: 'pages', 'blogs' or a folder inside them such as 'pages/landing'. " +
             "Its subfolders are not listed; without it, the pages right in 'pages' and 'blogs' are.")] string folder = null,
         [Description("Pages changed at or after this UTC time, ISO 8601. A change of a Shared Component on the page counts.")] DateTime? modified_since = null,
+        [Description("Pages changed in the last days up to now, 1 to 365: 7 for the last week. A recent period without computing " +
+            "a date; pass it or modified_since, not both.")] int? modified_days = null,
         [Description("Pages with a version last changed at or before this UTC time, ISO 8601: a page whose draft changed later " +
-            "still matches by its older published version. With modified_since: pages with a version changed in that period.")] DateTime? modified_before = null,
+            "still matches by its older published version. With modified_since or modified_days: pages with a version changed in that period.")] DateTime? modified_before = null,
         [Description("With page_id or section_type: 'draft' (default) for the content the designer edits, which is the " +
             "published one when the page has no unpublished changes, or 'published' for what the storefront shows.")] string version = SitePageFilters.DraftVersion,
         [Description("Only pages with a section of this type, for example 'hero-banner', in the version 'version' names " +
@@ -90,7 +95,7 @@ public class PageTools(
         if (!string.IsNullOrEmpty(store_id))
         {
             // The store first, so an answer about the arguments does not tell which stores exist.
-            await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = store_id }, store_id);
+            await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
         }
 
         if (!string.IsNullOrEmpty(page_id))
@@ -98,8 +103,9 @@ public class PageTools(
             return await GetPageAsync(context, store_id, page_id, version, cancellationToken);
         }
 
+        var modifiedSince = GetModifiedSince(modified_since, modified_days, timeProvider);
         var condition = ParseSectionCondition(section_type, setting_path, setting_equals, setting_contains, setting_language);
-        var sources = SitePageSources.Parse(page_type, folder, store_id, HasDatabaseFilters(status, language, modified_since, modified_before));
+        var sources = SitePageSources.Parse(page_type, folder, store_id, HasDatabaseFilters(status, language, modifiedSince, modified_before));
         var paging = await pageSizeResolver.GetPagingAsync(skip, take);
         if (!sources.Database)
         {
@@ -107,9 +113,9 @@ public class PageTools(
         }
 
         var criteria = await CreateCriteriaAsync(context.User, store_id, keyword, status, language, sources.DatabasePageType, paging);
-        if (modified_since != null || modified_before != null)
+        if (modifiedSince != null || modified_before != null)
         {
-            criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, criteria.StoreIds, PageLookup.ToUtc(modified_since), PageLookup.ToUtc(modified_before));
+            criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, criteria.StoreIds, modifiedSince, PageLookup.ToUtc(modified_before));
             if (criteria.ObjectIds.Count == 0)
             {
                 return NoPages(section_type, paging);
@@ -122,6 +128,28 @@ public class PageTools(
         }
 
         return await ListAsync(context.User, criteria, paging, sources, keyword, cancellationToken);
+    }
+
+    // In UTC. modified_days counts back from now, so the agent computes no date. The answer has no room for the window's
+    // was_capped, so a longer period is refused.
+    private static DateTime? GetModifiedSince(DateTime? modifiedSince, int? modifiedDays, TimeProvider timeProvider)
+    {
+        if (modifiedDays == null)
+        {
+            return PageLookup.ToUtc(modifiedSince);
+        }
+
+        if (modifiedSince != null)
+        {
+            throw new McpException("Pass modified_days or modified_since, not both.");
+        }
+
+        if (modifiedDays is < 1 or > MaxModifiedDays)
+        {
+            throw new McpException($"modified_days must be from 1 to {MaxModifiedDays}; for an older period pass modified_since.");
+        }
+
+        return McpTimeWindow.LastDays(modifiedDays, timeProvider, maxDays: MaxModifiedDays).From;
     }
 
     private static SiteBuilderSectionSettingCondition ParseSectionCondition(string sectionType, string settingPath, string settingEquals,
@@ -229,7 +257,7 @@ public class PageTools(
 
         if (versions.TotalCount > MaxChangedVersions)
         {
-            throw new McpException($"More than {MaxChangedVersions} page versions changed in that period. Narrow modified_since and modified_before.");
+            throw new McpException($"More than {MaxChangedVersions} page versions changed in that period. Narrow the period with modified_days, modified_since or modified_before.");
         }
 
         return versions.Results

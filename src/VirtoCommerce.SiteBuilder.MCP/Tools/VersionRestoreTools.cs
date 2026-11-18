@@ -66,7 +66,7 @@ public class VersionRestoreTools(
         var versionId = version_id.Trim();
 
         // The store first, as the operations check it, so an answer about the arguments does not tell which stores exist.
-        await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+        await authorizationService.EnsureStoreAllowedAsync(context.User, storeId);
 
         var themeFiles = (theme_files ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().TrimStart('/')).Distinct().ToList();
         if (PageLookup.IsFilePagePath(page_id))

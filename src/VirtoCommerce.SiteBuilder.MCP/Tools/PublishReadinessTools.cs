@@ -105,7 +105,7 @@ public class PublishReadinessTools(
             throw new McpException("Pass store_id: the theme belongs to a store.");
         }
 
-        await authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+        await authorizationService.EnsureStoreAllowedAsync(user, storeId);
         var pages = await pageListService.SearchAsync(new SiteBuilderPageSearchCriteria { StoreId = storeId, Take = 0 }, cancellationToken);
 
         var readiness = new PublishReadiness

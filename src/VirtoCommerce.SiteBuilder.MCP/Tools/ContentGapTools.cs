@@ -109,7 +109,7 @@ public class ContentGapTools(
     {
         if (!string.IsNullOrEmpty(criteria.StoreId))
         {
-            await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = criteria.StoreId }, criteria.StoreId);
+            await authorizationService.EnsureStoreAllowedAsync(context.User, criteria.StoreId);
             return;
         }
 

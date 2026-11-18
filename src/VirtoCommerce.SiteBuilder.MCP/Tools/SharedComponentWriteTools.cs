@@ -62,7 +62,7 @@ public class SharedComponentWriteTools(
         }
 
         var storeId = store_id.Trim();
-        await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderSharedComponentSearchCriteria { StoreId = storeId }, storeId, SharedComponentsRead);
+        await authorizationService.EnsureStoreAllowedAsync(context.User, storeId, SharedComponentsRead);
 
         var operations = new List<PageEditOperation>();
         if (!string.IsNullOrWhiteSpace(source_page_id))

@@ -120,7 +120,30 @@ public sealed class ListVersionsToolTests : IAsyncDisposable
         var result = await _context.CallAsync(StoreAReader(), Tool, new { store_id = StoreA, page_id = "b1" });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
+        Assert.Contains("is not a page of store", result.Error);
         _context.History.Verify(x => x.ListAsync(It.IsAny<string>(), It.IsAny<IList<HistoryItem>>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AnUnknownPage_IsNotFound()
+    {
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_id = "missing" });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("Page 'missing' was not found", result.Error);
+    }
+
+    [Fact]
+    public async Task ACursorOfAnotherHistory_IsRefused_WithHowToStartOver()
+    {
+        _context.History
+            .Setup(x => x.ListAsync(It.IsAny<string>(), It.IsAny<IList<HistoryItem>>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ArgumentException("The cursor is not one the history returned.", "cursor"));
+
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_id = "a1", cursor = "c9" });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("Call list_versions without cursor", result.Error);
     }
 
     [Fact]

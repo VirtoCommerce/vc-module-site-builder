@@ -38,7 +38,7 @@ public static class SiteBuilderPrompts
             Run my weekly content review{StoreClause(store_id)}.
 
             1. Call get_site_overview{ArgumentClause(store_id)}. Without a store, call it again with each store_id it lists for the full form.
-            2. Call search_site_pages{ArgumentClause(store_id)} with modified_since set to seven days ago.
+            2. Call search_site_pages{ArgumentClause(store_id)} with modified_days 7 for the pages changed this week.
             3. Call find_content_gaps{ArgumentClause(store_id)}; continue with next_skip until is_complete.
             4. For the three pages waiting for publication that changed last, call get_publish_readiness with page_id for a Landing row and multilanguage_page_id for a Multilanguage row.
 

@@ -16,4 +16,11 @@ public class GroupedPageSaveCondition
     public string SourceGroupId { get; set; }
 
     public DateTime? ExpectedSourceRevisionDate { get; set; }
+
+    /// <summary>
+    /// The version of the Multilanguage Page the group is a language version of, as <see cref="SiteBuilderContentVersion.CreateForMultilanguagePage"/>
+    /// makes it: the save takes the shared name and the overridden fields from it. It has no lock of its own, so it is read after the save has derived
+    /// them, right before the commit; <c>null</c> saves whatever it holds.
+    /// </summary>
+    public string ExpectedMultilanguagePageVersion { get; set; }
 }

@@ -8,7 +8,6 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
-using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
@@ -86,7 +85,7 @@ public class ThemeDraftTools(
             throw new McpException("Pass store_id: the theme belongs to a store.");
         }
 
-        await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = store_id }, store_id);
+        await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
 
         var name = part?.Trim().ToLowerInvariant();
         CheckArguments(name, operations, logo_url, secondary_logo_url, favicon_url, primary_color, secondary_color, light_colors, dark_colors);

@@ -214,7 +214,7 @@ public class SiteBuilderResources(
             throw new McpException("Name the store in the address: site-builder://stores/{store_id}/....");
         }
 
-        return authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+        return authorizationService.EnsureStoreAllowedAsync(user, storeId);
     }
 
     private static object NoCatalog(string storeId) => new

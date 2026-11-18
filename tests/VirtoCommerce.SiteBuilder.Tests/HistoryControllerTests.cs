@@ -127,6 +127,17 @@ public class HistoryControllerTests
     }
 
     [Fact]
+    public async Task GetHistory_CursorTheHistoryDidNotWrite_ReturnsBadRequestNamingIt()
+    {
+        var history = SiteHistories.Create(new GitHubScript(), new ThemeStorageFactory(_live.StoreService, _live, _live, _live), _pages);
+
+        var result = await Controller(history: history).GetHistory("s1", ["page:g1"], "bm90IGEgY3Vyc29y", cancellationToken: Ct);
+
+        Assert.Equal(ContentHistoryOperationService.UnknownCursorError,
+            PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result)).Value<string>("error"));
+    }
+
+    [Fact]
     public async Task GetHistory_GitHubFails_ThrowsGitContentException()
     {
         var github = new GitHubScript(("POST", "graphql", (_, _) => GitHubScript.Status(HttpStatusCode.BadGateway)));

@@ -322,7 +322,7 @@ public class TemplateTools(
             throw new McpException("Pass store_id: templates belong to a store's theme.");
         }
 
-        return authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+        return authorizationService.EnsureStoreAllowedAsync(user, storeId);
     }
 
     private static string ParsePageType(string pageType)

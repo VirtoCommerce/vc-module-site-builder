@@ -74,7 +74,7 @@ public class SiteOverviewTools(
         if (!string.IsNullOrWhiteSpace(store_id))
         {
             var storeId = store_id.Trim();
-            await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+            await authorizationService.EnsureStoreAllowedAsync(context.User, storeId);
             var store = await storeService.GetNoCloneAsync(storeId)
                 ?? throw new McpException($"Store '{storeId}' was not found. Call get_site_overview without store_id for your stores.");
 

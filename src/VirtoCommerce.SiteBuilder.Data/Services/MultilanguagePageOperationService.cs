@@ -213,10 +213,16 @@ public class MultilanguagePageOperationService(
         try
         {
             return await RunAsync(request.DryRun, request.ReportImpact,
-                () => multilanguagePageService.PreviewMarkUpToDateAsync(request.GroupId, cancellationToken),
+                () => request.ExpectedSourceRevisionDate == null
+                    ? multilanguagePageService.PreviewMarkUpToDateAsync(request.GroupId, cancellationToken)
+                    : multilanguagePageService.PreviewMarkUpToDateAsync(request.GroupId, request.ExpectedSourceRevisionDate, cancellationToken),
                 () => request.ExpectedSourceRevisionDate == null
                     ? multilanguagePageService.MarkUpToDateAsync(request.GroupId, cancellationToken)
                     : multilanguagePageService.MarkUpToDateAsync(request.GroupId, request.ExpectedSourceRevisionDate, cancellationToken));
+        }
+        catch (KeyNotFoundException)
+        {
+            return SiteBuilderOperationResult.NotFound().As<GroupedSiteBuilderPage>();
         }
         catch (InvalidOperationException ex)
         {

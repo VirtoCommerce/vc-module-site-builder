@@ -219,6 +219,45 @@ public sealed class SearchSitePagesToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheLastDays_AreCountedBackFromNow()
+    {
+        SiteBuilderPageSearchCriteria versionCriteria = null;
+        _context.PageVersionSearch
+            .Setup(x => x.SearchAsync(It.IsAny<SiteBuilderPageSearchCriteria>(), It.IsAny<bool>()))
+            .Callback((SiteBuilderPageSearchCriteria criteria, bool _) => versionCriteria = criteria)
+            .ReturnsAsync(new SiteBuilderPageSearchResult { TotalCount = 1, Results = [new SiteBuilderPage { Id = "v1", GroupId = "a3" }] });
+
+        var before = DateTime.UtcNow;
+        var page = await SearchAsync(Reader(), new { store_id = StoreA, modified_days = 7 });
+        var after = DateTime.UtcNow;
+
+        Assert.InRange(versionCriteria.ModifiedSince.GetValueOrDefault(), before.AddDays(-7), after.AddDays(-7));
+        Assert.Equal(DateTimeKind.Utc, versionCriteria.ModifiedSince.GetValueOrDefault().Kind);
+        Assert.Equal(["a3"], page.Items.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task TheLastDays_WithASinceDate_AreRefused()
+    {
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, modified_days = 7, modified_since = "2026-11-10T00:00:00Z" });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("not both", result.Error);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(366)]
+    public async Task LastDaysOutsideTheRange_AreRefused_ByTheirRange(int days)
+    {
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, modified_days = days });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("from 1 to 365", result.Error);
+        _context.PageVersionSearch.Verify(x => x.SearchAsync(It.IsAny<SiteBuilderPageSearchCriteria>(), It.IsAny<bool>()), Times.Never);
+    }
+
+    [Fact]
     public async Task APeriodWithoutChanges_FindsNothing()
     {
         _context.PageVersionSearch

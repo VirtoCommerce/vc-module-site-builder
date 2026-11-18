@@ -747,6 +747,30 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
                     throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
                 }
             }
+
+            if (condition.ExpectedMultilanguagePageVersion != null && !string.Equals(await GetRootVersionAsync(repository, group, existing, cancellationToken),
+                    condition.ExpectedMultilanguagePageVersion.Trim(), StringComparison.Ordinal))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
+            }
+        }
+
+        /// <summary>
+        /// The version of the Multilanguage Page the group is a language version of, the stored link winning as in SynchronizeLanguageVersionsAsync;
+        /// <c>null</c> without one. It is read after that derived the overrides from it, so a change before this read is caught.
+        /// </summary>
+        private static async Task<string> GetRootVersionAsync(ISiteBuilderRepository repository, GroupedSiteBuilderPage group,
+            GroupedSiteBuilderPageEntity existing, CancellationToken cancellationToken)
+        {
+            var rootId = existing != null ? existing.MultilanguagePageId : group.MultilanguagePageId;
+            if (string.IsNullOrEmpty(rootId))
+            {
+                return null;
+            }
+
+            var root = await repository.MultilanguagePages.AsNoTracking().FirstOrDefaultAsync(x => x.Id == rootId, cancellationToken);
+
+            return root == null ? null : SiteBuilderContentVersion.CreateForMultilanguagePage(root.ToModel(AbstractTypeFactory<MultilanguagePage>.TryCreateInstance()));
         }
 
         /// <summary>The rule a dry run tells it by: a published page one of whose settings changes.</summary>

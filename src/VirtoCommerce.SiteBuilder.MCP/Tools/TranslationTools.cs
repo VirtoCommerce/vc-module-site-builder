@@ -172,7 +172,7 @@ public class TranslationTools(
         string markProblem = null;
         if (problem == null && markUpToDate)
         {
-            markProblem = await translationSources.GetProblemAsync(group, page.SourceRevisionDate, cancellationToken);
+            markProblem = await translationSources.GetProblemAsync(user, group.Id, page.SourceRevisionDate, cancellationToken);
         }
 
         var label = $"page '{group.Name}' ({group.Id}, {group.CultureName})";

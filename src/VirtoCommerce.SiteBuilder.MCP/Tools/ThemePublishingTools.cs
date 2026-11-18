@@ -52,7 +52,7 @@ public class ThemePublishingTools(
             throw new McpException("Pass store_id: the theme belongs to a store.");
         }
 
-        await authorizationService.EnsureAllowedAsync(context.User, new SiteBuilderPageSearchCriteria { StoreId = store_id }, store_id);
+        await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
         var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, store_id, cancellationToken);
 
         var check = await themeOperationService.PublishAsync(new ThemePublishOperationRequest { StoreId = store_id, CatalogHash = catalogHash, DryRun = true },

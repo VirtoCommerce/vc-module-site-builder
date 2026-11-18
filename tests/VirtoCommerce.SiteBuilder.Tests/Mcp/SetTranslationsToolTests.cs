@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,25 +42,29 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         Seed("de", StoreA, "de-DE", Content.Replace("fr-FR", "de-DE"), multilanguagePageId: "ml1");
         Seed("b1", StoreB, "fr-FR", Content);
 
-        _context.MultilanguagePages
-            .Setup(x => x.GetLanguagesAsync("ml1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            [
-                new MultilanguagePageLanguage { CultureName = "en-US", IsDefault = true, Page = new GroupedSiteBuilderPage { Id = "en", SourceRevisionDate = _sourceRevision } },
-                new MultilanguagePageLanguage { CultureName = "fr-FR", Page = new GroupedSiteBuilderPage { Id = "fr" } },
-            ]);
-        // As the service compares the source revision under the lock of the save, which may be after the job read it.
-        _context.MultilanguagePages
-            .Setup(x => x.MarkUpToDateAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string id, DateTime? expected, CancellationToken _) =>
+        // As the designer's mark up to date answers: a dry run compares the source revision as it is, the write under the lock of its save,
+        // which may be after the job read it.
+        _context.MultilanguagePageOperations
+            .Setup(x => x.MarkUpToDateAsync(It.IsAny<MultilanguagePageMarkUpToDateOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageMarkUpToDateOperationRequest request, ClaimsPrincipal _, CancellationToken _) =>
             {
-                if (expected != (_sourceRevisionAtTheSave ?? _sourceRevision))
+                if (request.GroupId == "b1")
                 {
-                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
+                    return SiteBuilderOperationResult.Invalid("Page 'b1' is not a language version.").As<GroupedSiteBuilderPage>();
                 }
 
-                _marked.Add(id);
-                return new GroupedSiteBuilderPage { Id = id };
+                if (request.ExpectedSourceRevisionDate != (request.DryRun ? _sourceRevision : _sourceRevisionAtTheSave ?? _sourceRevision))
+                {
+                    return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.SourceRevisionChangedMessage).As<GroupedSiteBuilderPage>();
+                }
+
+                if (request.DryRun)
+                {
+                    return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(null);
+                }
+
+                _marked.Add(request.GroupId);
+                return SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = request.GroupId });
             });
     }
 
@@ -207,8 +212,34 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         Assert.Single(_context.SavedVersions.Records);
         Assert.Empty(_marked);
         Assert.Contains("not marked: fr (the source language version was published again after you read it)", run.FinalMessage);
-        _context.MultilanguagePages.Verify(x => x.MarkUpToDateAsync("fr", _published, It.IsAny<CancellationToken>()), Times.Once);
-        _context.MultilanguagePages.Verify(x => x.MarkUpToDateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task TheJob_MarksThroughTheDesignersMarkUpToDate_AsTheUser_AtTheSourceRevisionTheAgentRead()
+    {
+        var editor = Editor().ToPrincipal();
+        _context.JobUsers["editor"] = editor;
+        var payload = await QueueAsync(await FrenchAsync());
+
+        await _context.RunJobAsync<SetTranslationsJob, SetTranslationsJobPayload>(payload);
+
+        _context.MultilanguagePageOperations.Verify(x => x.MarkUpToDateAsync(
+            It.Is<MultilanguagePageMarkUpToDateOperationRequest>(r => r.GroupId == "fr" && r.ExpectedSourceRevisionDate == _published && !r.DryRun),
+            editor, It.IsAny<CancellationToken>()), Times.Once);
+        _context.MultilanguagePages.Verify(x => x.MarkUpToDateAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ADryRun_ShowsTheProblemTheDesignersMarkUpToDateTells()
+    {
+        _sourceRevision = _published.AddHours(2);
+
+        var preview = await CallAsync<TranslationPreview>(Editor(), new { translations = await FrenchAsync(), mark_up_to_date = true, dryRun = true });
+
+        Assert.Equal("the source language version was published again after you read it", Assert.Single(preview.Pages).NotMarkedUpToDate);
+        _context.MultilanguagePageOperations.Verify(x => x.MarkUpToDateAsync(
+            It.Is<MultilanguagePageMarkUpToDateOperationRequest>(r => r.GroupId == "fr" && r.ExpectedSourceRevisionDate == _published && r.DryRun),
+            It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

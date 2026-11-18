@@ -349,6 +349,21 @@ public class MultilanguagePageOperationServiceTests
     }
 
     [Fact]
+    public async Task MarkUpToDateAsync_TranslationGoneDuringTheWrite_IsNotFound()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons");
+        var roots = new Mock<IMultilanguagePageService>();
+        roots.Setup(x => x.MarkUpToDateAsync(nl.Id, It.IsAny<CancellationToken>())).ThrowsAsync(new KeyNotFoundException($"Page '{nl.Id}' not found."));
+        var operations = new MultilanguagePageOperationService(new FakeAuthorizationService(StoreId), roots.Object, fixture.Groups, fixture.StoreService);
+
+        var result = await operations.MarkUpToDateAsync(new MultilanguagePageMarkUpToDateOperationRequest { GroupId = nl.Id }, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.NotFound, result.Status);
+    }
+
+    [Fact]
     public async Task CloneAsync_DryRun_CopiesNothing()
     {
         await using var fixture = await Fixture.CreateAsync();

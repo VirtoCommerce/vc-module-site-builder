@@ -1,8 +1,6 @@
 using System.Security.Claims;
 using Microsoft.Extensions.Logging;
-using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Jobs;
-using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
@@ -47,7 +45,6 @@ public class SetTranslationsJobText
 public class SetTranslationsJob(
     SiteBuilderJobUsers jobUsers,
     PageDraftJobRunner runner,
-    IGroupedPageService groupedPageService,
     TranslationSources translationSources,
     ILogger<SetTranslationsJob> logger)
     : IBackgroundJobHandler<SetTranslationsJobPayload>
@@ -64,7 +61,7 @@ public class SetTranslationsJob(
             var result = await RunAsync(user, page, cancellationToken);
             if (payload.MarkUpToDate && result.Outcome is PageJobOutcome.Changed or PageJobOutcome.Unchanged)
             {
-                var problem = await MarkAsync(page, cancellationToken);
+                var problem = await translationSources.MarkUpToDateAsync(user, page.PageId, page.SourceRevisionDate, cancellationToken);
                 if (problem == null)
                 {
                     marked++;
@@ -109,17 +106,6 @@ public class SetTranslationsJob(
             logger.LogError(ex, "set_translations could not save page {PageId}", page.PageId);
             return new PageJobResult(PageJobOutcome.Failed, "an unexpected error; see the platform log");
         }
-    }
-
-    private async Task<string> MarkAsync(SetTranslationsJobPage page, CancellationToken cancellationToken)
-    {
-        var group = await groupedPageService.GetByIdAsync(page.PageId);
-        if (group == null)
-        {
-            return "the page was deleted";
-        }
-
-        return await translationSources.MarkUpToDateAsync(group, page.SourceRevisionDate, cancellationToken);
     }
 
     private static string Describe(PageJobTally tally, bool markUpToDate, int marked, List<string> notMarked)

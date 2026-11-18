@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Security.Claims;
-using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -14,6 +13,7 @@ using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
@@ -27,10 +27,7 @@ namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 [McpScope(McpScopes.Admin)]
 public class HistoryTools(
     IAuthorizationService authorizationService,
-    IContentHistory contentHistory,
-    IValidator<ContentHistoryRequest> requestValidator,
-    IGroupedPageService groupedPageService,
-    IContentPermissionService contentPermissionService,
+    IContentHistoryOperationService contentHistoryOperationService,
     ISiteBuilderContentQueryService contentQueryService,
     ILogger<HistoryTools> logger)
 {
@@ -63,53 +60,35 @@ public class HistoryTools(
                 cancellationToken);
         }
 
-        var request = new ContentHistoryRequest { StoreId = store_id, Cursor = cursor, Items = GetItems(page_id, theme_files) };
+        var items = GetItems(page_id, theme_files);
 
-        // The store first, then the request, then the page, as the designer does, so an answer does not tell which
-        // stores and pages exist.
-        await authorizationService.EnsureAllowedAsync(context.User, request, store_id);
+        // The store first, as the operation checks it, so an answer about the arguments does not tell which stores exist.
+        // A refusal of the operation is then about the page.
+        await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
 
-        if (request.Items.Count == 0)
+        if (items.Count == 0)
         {
             throw new McpException("Pass page_id, theme_files or both.");
         }
 
-        var validation = await requestValidator.ValidateAsync(request, cancellationToken);
-        if (!validation.IsValid)
+        var request = new ContentHistoryListOperationRequest
         {
-            throw new McpException(string.Join(" ", validation.Errors.Select(x => x.ErrorMessage).Distinct()));
-        }
+            StoreId = store_id,
+            Items = items,
+            Cursor = cursor,
+            Take = await pageSizeResolver.GetPageSizeAsync(take),
+        };
+        var result = await FilePages.RunAsync(logger, () => contentHistoryOperationService.ListAsync(request, context.User, cancellationToken));
 
-        if (!string.IsNullOrEmpty(page_id))
+        return result.Status switch
         {
-            await EnsurePageAsync(context.User, store_id, page_id);
-        }
-
-        var items = request.Items.Select(x => HistoryItem.TryParse(x, out var item) ? item : null).Where(x => x != null).ToList();
-        var pageSize = await pageSizeResolver.GetPageSizeAsync(take);
-
-        ContentVersionPage page;
-        try
-        {
-            page = await FilePages.RunAsync(logger, () => contentHistory.ListAsync(store_id, items, cursor, pageSize, cancellationToken));
-        }
-        catch (ArgumentException)
-        {
-            throw new McpException("The cursor does not belong to this history. Call list_versions without cursor.");
-        }
-
-        return ContentVersionsAnswer.From(store_id, page);
-    }
-
-    private async Task EnsurePageAsync(ClaimsPrincipal user, string storeId, string pageId)
-    {
-        var group = await groupedPageService.GetByIdAsync(pageId)
-            ?? throw new McpException($"Page '{pageId}' was not found. Call search_site_pages to find its id.");
-
-        if (!await contentPermissionService.CanAccessPageAsync(user, group, storeId))
-        {
-            throw new McpForbiddenException($"Page '{pageId}' is not a page of store '{storeId}' you can read.");
-        }
+            SiteBuilderOperationStatus.Succeeded => ContentVersionsAnswer.From(store_id, result.Value),
+            SiteBuilderOperationStatus.NotFound => throw new McpException($"Page '{page_id}' was not found. Call search_site_pages to find its id."),
+            SiteBuilderOperationStatus.Forbidden => throw new McpForbiddenException($"Page '{page_id}' is not a page of store '{store_id}' you can read."),
+            _ when result.Error == ContentHistoryOperationService.UnknownCursorError =>
+                throw new McpException("The cursor does not belong to this history. Call list_versions without cursor."),
+            _ => throw new McpException(result.Error),
+        };
     }
 
     private async Task<ContentVersionsAnswer> ListFilePageVersionsAsync(ClaimsPrincipal user, string storeId, string pageId, string[] themeFiles,

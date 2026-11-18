@@ -302,7 +302,10 @@ public class MultilanguagePageService(
             group.CultureName = cultureName;
             // The save takes the root name and marks whatever differs from the root as overridden, so the page keeps
             // serving the same permalink and settings. It also reindexes the page with its translation group.
-            await groupedPageContentService.SaveGroupSettingsAsync(group, cancellationToken);
+            await (condition?.ExpectedRootVersion == null
+                ? groupedPageContentService.SaveGroupSettingsAsync(group, cancellationToken)
+                : groupedPageContentService.SaveGroupSettingsAsync(group,
+                    new GroupedPageSaveCondition { ExpectedMultilanguagePageVersion = condition.ExpectedRootVersion }, cancellationToken));
         }
         catch
         {
@@ -433,11 +436,15 @@ public class MultilanguagePageService(
         var changedCultureNames = new List<string>();
         foreach (var (group, version) in resets)
         {
-            // compared again under the lock of the save
+            // compared again under the lock of the save, and the root after the save derived the overrides from it
             var expectedPageVersion = expectedPageVersions == null ? null : version;
-            await (requireUnpublished || expectedPageVersion != null
-                ? groupedPageContentService.SaveGroupSettingsAsync(group,
-                    new GroupedPageSaveCondition { RequireUnpublished = requireUnpublished, ExpectedSettingsVersion = expectedPageVersion }, cancellationToken)
+            await (requireUnpublished || expectedPageVersion != null || expectedVersion != null
+                ? groupedPageContentService.SaveGroupSettingsAsync(group, new GroupedPageSaveCondition
+                {
+                    RequireUnpublished = requireUnpublished,
+                    ExpectedSettingsVersion = expectedPageVersion,
+                    ExpectedMultilanguagePageVersion = expectedVersion,
+                }, cancellationToken)
                 : groupedPageContentService.SaveGroupSettingsAsync(group, cancellationToken));
             changedCultureNames.Add(group.CultureName);
         }
@@ -504,23 +511,23 @@ public class MultilanguagePageService(
             return await MarkUpToDateAsync(groupId, cancellationToken);
         }
 
-        var (group, source) = await PrepareMarkUpToDateAsync(groupId);
-        if (source.SourceRevisionDate != expectedSourceRevisionDate)
-        {
-            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
-        }
+        var (group, source) = await PrepareMarkUpToDateAsync(groupId, expectedSourceRevisionDate);
 
-        // read again under the lock of the save, which the source's next publication takes too
-        group.SourceRevisionDate = expectedSourceRevisionDate;
-        var condition = new GroupedPageSaveCondition { SourceGroupId = source.Id, ExpectedSourceRevisionDate = expectedSourceRevisionDate };
+        // the stored revision, read again under the lock of the save, which the source's next publication takes too
+        group.SourceRevisionDate = source.SourceRevisionDate;
+        var condition = new GroupedPageSaveCondition { SourceGroupId = source.Id, ExpectedSourceRevisionDate = source.SourceRevisionDate };
         await groupedPageContentService.SaveGroupAsync(group, condition, cancellationToken);
 
         return group;
     }
 
-    public virtual async Task<SiteBuilderChangePreview> PreviewMarkUpToDateAsync(string groupId, CancellationToken cancellationToken = default)
+    public virtual Task<SiteBuilderChangePreview> PreviewMarkUpToDateAsync(string groupId, CancellationToken cancellationToken = default) =>
+        PreviewMarkUpToDateAsync(groupId, expectedSourceRevisionDate: null, cancellationToken);
+
+    public virtual async Task<SiteBuilderChangePreview> PreviewMarkUpToDateAsync(string groupId, DateTime? expectedSourceRevisionDate,
+        CancellationToken cancellationToken = default)
     {
-        var (group, source) = await PrepareMarkUpToDateAsync(groupId);
+        var (group, source) = await PrepareMarkUpToDateAsync(groupId, expectedSourceRevisionDate);
 
         var marked = group.CloneTyped();
         marked.SourceRevisionDate = source.SourceRevisionDate;
@@ -531,7 +538,9 @@ public class MultilanguagePageService(
     }
 
     /// <returns>The translation, and the source language version whose publication it is to be based on.</returns>
-    private async Task<(GroupedSiteBuilderPage Group, GroupedSiteBuilderPage Source)> PrepareMarkUpToDateAsync(string groupId)
+    /// <exception cref="SiteBuilderContentConflictException">The source revision is not <paramref name="expectedSourceRevisionDate"/>.</exception>
+    private async Task<(GroupedSiteBuilderPage Group, GroupedSiteBuilderPage Source)> PrepareMarkUpToDateAsync(string groupId,
+        DateTime? expectedSourceRevisionDate = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
@@ -553,8 +562,21 @@ public class MultilanguagePageService(
             throw new InvalidOperationException($"The source language '{root.DefaultCultureName}' version has not been published yet.");
         }
 
+        if (expectedSourceRevisionDate != null && !IsSameRevision(source.SourceRevisionDate.Value, expectedSourceRevisionDate.Value))
+        {
+            throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
+        }
+
         return (group, source);
     }
+
+    // A revision a client sends back may have lost a fraction of a millisecond on its way through JSON; two publications are further apart.
+    private static bool IsSameRevision(DateTime stored, DateTime expected) =>
+        Math.Abs((ToUtc(stored) - ToUtc(expected)).TotalMilliseconds) < 1;
+
+    // Revisions are stored in UTC, whatever kind the database or the client gives them.
+    private static DateTime ToUtc(DateTime value) =>
+        value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
     public virtual async Task<MultilanguagePage> CloneAsync(string multilanguagePageId, CancellationToken cancellationToken = default)
     {

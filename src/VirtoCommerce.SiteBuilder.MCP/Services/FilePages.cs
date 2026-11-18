@@ -52,7 +52,7 @@ public static class FilePages
     public static async Task<FilePage> LoadAsync(IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId, string pageId)
     {
         var page = Parse(storeId, pageId);
-        await authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = page.StoreId }, page.StoreId);
+        await authorizationService.EnsureStoreAllowedAsync(user, page.StoreId);
 
         return page;
     }

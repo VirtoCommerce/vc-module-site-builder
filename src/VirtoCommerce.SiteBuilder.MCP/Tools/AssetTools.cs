@@ -50,9 +50,8 @@ public class AssetTools(
         var canReadSharedComponents = false;
         if (!string.IsNullOrEmpty(store_id))
         {
-            var store = new SiteBuilderAssetReferencesSearchCriteria { StoreId = store_id };
-            await authorizationService.EnsureAllowedAsync(context.User, store, store_id);
-            canReadSharedComponents = await authorizationService.IsAllowedAsync(context.User, store, SharedComponentsRead);
+            await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
+            canReadSharedComponents = await authorizationService.IsStoreAllowedAsync(context.User, store_id, SharedComponentsRead);
         }
 
         if (string.IsNullOrWhiteSpace(folder_url))

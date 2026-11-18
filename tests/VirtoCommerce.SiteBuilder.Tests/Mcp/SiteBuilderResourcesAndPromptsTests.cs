@@ -62,6 +62,17 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheWeeklyReview_AsksForTheLastSevenDays_SoTheAgentComputesNoDate()
+    {
+        var prompt = Prompts().Single(x => x.ProtocolPrompt.Name == "weekly_content_review");
+
+        var text = await GetPromptAsync(prompt, new Dictionary<string, JsonElement>());
+
+        Assert.Contains("2. Call search_site_pages with modified_days 7", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("modified_since", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheResources_FollowTheirPermissions()
     {
         Assert.Equal(["section_schema", "section_schemas", "template_rule_conditions"], VisibleResources(Reader()));

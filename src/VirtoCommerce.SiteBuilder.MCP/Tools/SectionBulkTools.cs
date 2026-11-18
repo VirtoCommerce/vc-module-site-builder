@@ -138,7 +138,7 @@ public class SectionBulkTools(
         if (!string.IsNullOrWhiteSpace(storeId))
         {
             storeId = storeId.Trim();
-            await authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
+            await authorizationService.EnsureStoreAllowedAsync(user, storeId);
             return [storeId];
         }
 
@@ -161,7 +161,7 @@ public class SectionBulkTools(
         var result = new List<string>();
         foreach (var storeId in storeIds)
         {
-            if (await authorizationService.IsAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, SharedComponentsRead))
+            if (await authorizationService.IsStoreAllowedAsync(user, storeId, SharedComponentsRead))
             {
                 result.Add(storeId);
             }
