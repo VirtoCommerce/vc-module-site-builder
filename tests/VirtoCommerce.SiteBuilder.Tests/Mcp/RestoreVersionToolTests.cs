@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,7 +9,7 @@ using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
-using VirtoCommerce.SiteBuilder.MCP;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;

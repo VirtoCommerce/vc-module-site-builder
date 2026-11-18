@@ -5,9 +5,9 @@ using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Jobs;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Extensions;
 
-public static class BulkJobs
+public static class McpJobDispatcherExtensions
 {
     // Without a background job engine the platform cannot run the job: the agent is told so in a sentence, and that
     // nothing was changed.

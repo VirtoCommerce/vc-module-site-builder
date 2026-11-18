@@ -10,7 +10,7 @@ using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The theme files the design tools read and save, through the designer's own read and save, so a draft written here
 // passes the checks, sanitizing and history of a draft the designer writes. Paths carry the theme folder, as the

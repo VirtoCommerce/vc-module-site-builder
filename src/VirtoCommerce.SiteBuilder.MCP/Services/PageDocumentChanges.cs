@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 public sealed record PageDocumentChange(string Field, string From, string To);
 

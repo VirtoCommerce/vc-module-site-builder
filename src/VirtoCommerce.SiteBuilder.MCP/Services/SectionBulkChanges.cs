@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The one change update_sections_bulk makes to every matching section, as the operations of edit_page_draft.
 public static class SectionBulkChanges
@@ -26,7 +26,7 @@ public static class SectionBulkChanges
 
         if (op != SetSectionSettings && (settings?.Count > 0 || language != null))
         {
-            throw new McpException($"{op} takes no settings and no settings_language.");
+            throw new McpException($"{op} takes no settings and no text_language.");
         }
 
         return op;

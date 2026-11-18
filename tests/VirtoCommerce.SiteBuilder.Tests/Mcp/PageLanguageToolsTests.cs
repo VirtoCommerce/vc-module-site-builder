@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Moq;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
-using VirtoCommerce.SiteBuilder.MCP;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.CreatePageToolTests;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -61,7 +61,7 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         var result = await _context.CallAsync(Editor(), "link_page_language", new { page_id = "landing", multilanguage_page_id = "ml-a" });
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, result.Outcome);
-        Assert.Contains(result.Read<SiteBuilderChange>().Changes, x => x.Field == "multilanguagePageId" && x.To?.ToString() == "ml-a");
+        Assert.Contains(result.Read<SiteBuilderChange>().Changes, x => x.Field == "multilanguage_page_id" && x.To?.ToString() == "ml-a");
         VerifyNoWrite();
     }
 

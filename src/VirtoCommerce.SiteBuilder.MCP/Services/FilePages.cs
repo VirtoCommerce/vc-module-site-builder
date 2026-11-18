@@ -7,8 +7,9 @@ using VirtoCommerce.MCP.Core;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // A page or a blog article kept as a file, in git or in blob storage: named by its content folder and its path in it, as
 // the designer opens it, so the name always holds a '/' and never looks like the id of a database page.

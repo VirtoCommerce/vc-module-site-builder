@@ -1,7 +1,7 @@
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // A translation is marked only while the source is still at the revision the agent read.
 public class TranslationSources(IMultilanguagePageService multilanguagePageService)

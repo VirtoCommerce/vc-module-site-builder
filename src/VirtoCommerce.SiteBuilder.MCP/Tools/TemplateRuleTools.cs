@@ -12,6 +12,8 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 

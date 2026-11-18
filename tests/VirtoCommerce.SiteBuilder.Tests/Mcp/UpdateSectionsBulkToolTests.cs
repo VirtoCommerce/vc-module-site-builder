@@ -119,7 +119,7 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
     [Fact]
     public async Task AStoreEditor_IsRefusedAnotherStore()
     {
-        var result = await _context.CallAsync(StoreAEditor(), Tool, new { store_ids = new[] { StoreB }, section_type = "hero-banner", change = "hide_section" });
+        var result = await _context.CallAsync(StoreAEditor(), Tool, new { store_id = StoreB, section_type = "hero-banner", change = "hide_section" });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
         Assert.Empty(_context.Jobs.Enqueued);
@@ -137,7 +137,7 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
         Seed("a4", StoreA, """{ "settings": {}, "content": [ { "id": "pl1", "type": "componentRef", "componentRef": "sc1" } ] }""");
         var user = McpTestUser.Create("components").WithPermissions(Permissions.Read, Permissions.Update, Permissions.SharedComponentsRead);
 
-        var preview = await CallAsync<SectionBulkPreview>(user, new { store_ids = new[] { StoreA }, section_type = "hero-banner", change = "hide_section", dryRun = true });
+        var preview = await CallAsync<SectionBulkPreview>(user, new { store_id = StoreA, section_type = "hero-banner", change = "hide_section", dryRun = true });
 
         Assert.Equal(1, preview.SharedComponentSectionCount);
         Assert.DoesNotContain("a4", preview.Pages.Select(x => x.PageId));

@@ -9,12 +9,12 @@ using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.StoreModule.Core.Security;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Extensions;
 
 // [McpPermission] only says that the user has the permission in some store. The tools narrow it to the stores the
 // permission covers with the requirement the controllers use, so an account bound to a store and a role limited to
 // some stores reach the same data here as in the designer.
-public static class SiteBuilderAccess
+public static class AuthorizationServiceExtensions
 {
     public static async Task<bool> IsAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         object resource, string permission = Read)

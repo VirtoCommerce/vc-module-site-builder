@@ -6,9 +6,10 @@ using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The pages and Shared Components the section operations read, as the user may read them: a page to copy sections
 // from in any store of the user, a Shared Component only of the store of the page being written.

@@ -105,12 +105,12 @@ public sealed class GetPreviewToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task AnUnknownTheme_IsRefused_NamingTheTheme()
+    public async Task AnUnknownVersion_IsRefused()
     {
-        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_type = "product", theme = "live" });
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_type = "product", version = "live" });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("theme must be 'draft' or 'published'", result.Error);
+        Assert.Contains("version must be 'draft' or 'published'", result.Error);
     }
 
     [Fact]

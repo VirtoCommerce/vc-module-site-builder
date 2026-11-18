@@ -96,10 +96,10 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     {
         var reader = McpTestUser.Create("components").WithPermissions(Permissions.Read, Permissions.SharedComponentsRead);
         var withoutRead = McpTestUser.Create("no-read").WithPermissions(Permissions.Read, Permissions.SharedComponentsCreate, Permissions.SharedComponentsUpdate);
-        string[] writes = ["create_shared_component", "revise_shared_component"];
+        string[] writes = ["create_shared_component", "change_shared_component"];
 
         Assert.Equal(["create_shared_component"], _context.Harness.GetVisibleToolNames(Creator()).Intersect(writes));
-        Assert.Equal(["revise_shared_component"], _context.Harness.GetVisibleToolNames(Reviser()).Intersect(writes));
+        Assert.Equal(["change_shared_component"], _context.Harness.GetVisibleToolNames(Reviser()).Intersect(writes));
         Assert.Empty(_context.Harness.GetVisibleToolNames(reader).Intersect(writes));
         Assert.Empty(_context.Harness.GetVisibleToolNames(withoutRead).Intersect(writes));
     }
@@ -146,7 +146,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task AContentChange_WaitsForApproval_AndListsThePagesItReaches()
     {
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", await ReviewAsync(Revise(SetText("Free returns"))));
+        var result = await _context.CallAsync(Reviser(), "change_shared_component", await ReviewAsync(Revise(SetText("Free returns"))));
 
         var change = result.Read<SharedComponentChange>();
         Assert.Equal(McpToolCallOutcome.PendingApproval, result.Outcome);
@@ -159,7 +159,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task AContentChangeWithoutTheReviewedVersions_IsRefused_AndNeverWaitsForApproval()
     {
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", Revise(SetText("Free returns")));
+        var result = await _context.CallAsync(Reviser(), "change_shared_component", Revise(SetText("Free returns")));
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("expected_versions", result.Error, StringComparison.Ordinal);
@@ -169,7 +169,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task AnApprovedContentChange_SavesTheContent()
     {
-        var change = (await _context.CallAsync(Reviser(), "revise_shared_component", await ReviewAsync(Revise(SetText("Free returns"))), Approved))
+        var change = (await _context.CallAsync(Reviser(), "change_shared_component", await ReviewAsync(Revise(SetText("Free returns"))), Approved))
             .EnsureSucceeded().Read<SharedComponentChange>();
 
         Assert.False(change.DryRun);
@@ -192,7 +192,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
         var call = await ReviewAsync(Revise(CopyFrom("promo")));
         _pages.SeedContent("promo-draft", SampleContent.Replace("Spring", "Autumn", StringComparison.Ordinal));
 
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", call, Approved);
+        var result = await _context.CallAsync(Reviser(), "change_shared_component", call, Approved);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
@@ -205,7 +205,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
         var call = await ReviewAsync(Revise(CopyFrom("promo")));
         _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
 
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", call, Approved);
+        var result = await _context.CallAsync(Reviser(), "change_shared_component", call, Approved);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
@@ -219,7 +219,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
         // a colleague's save lands while the call reads the pages the component stands on
         _onUsage = () => _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
 
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", call, Approved);
+        var result = await _context.CallAsync(Reviser(), "change_shared_component", call, Approved);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("Gift wrap", _contents["sc-a"], StringComparison.Ordinal);
@@ -228,7 +228,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task ARename_RunsAtOnce_WithoutApproval()
     {
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", new { shared_component_id = "sc-a", name = "Top bar" });
+        var result = await _context.CallAsync(Reviser(), "change_shared_component", new { shared_component_id = "sc-a", name = "Top bar" });
 
         var change = result.EnsureSucceeded().Read<SharedComponentChange>();
         Assert.False(change.DryRun);
@@ -242,7 +242,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     {
         var arguments = Revise(SetText("Free returns"));
         arguments["name"] = "Top bar";
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component", await ReviewAsync(arguments));
+        var result = await _context.CallAsync(Reviser(), "change_shared_component", await ReviewAsync(arguments));
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, result.Outcome);
         Assert.Empty(_renamed);
@@ -251,7 +251,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task AComponentOfAnotherStore_IsForbidden()
     {
-        var result = await _context.CallAsync(StoreAReviser(), "revise_shared_component", new { shared_component_id = "sc-b", name = "Top bar" });
+        var result = await _context.CallAsync(StoreAReviser(), "change_shared_component", new { shared_component_id = "sc-b", name = "Top bar" });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
         Assert.Empty(_renamed);
@@ -260,7 +260,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     [Fact]
     public async Task AComponent_HoldsNoOtherComponent()
     {
-        var result = await _context.CallAsync(Reviser(), "revise_shared_component",
+        var result = await _context.CallAsync(Reviser(), "change_shared_component",
             new { shared_component_id = "sc-a", operations = new[] { new { op = "place_shared_component", shared_component_id = "sc-a" } } }, Approved);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
@@ -273,14 +273,14 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     {
         var tool = _context.Harness.GetTool("update_sections_bulk");
 
-        Assert.Contains("revise_shared_component", tool.ProtocolTool.Description, StringComparison.Ordinal);
+        Assert.Contains("change_shared_component", tool.ProtocolTool.Description, StringComparison.Ordinal);
     }
 
     private static Dictionary<string, object> Revise(params object[] operations) =>
         new() { ["shared_component_id"] = "sc-a", ["operations"] = operations };
 
     private Task<Dictionary<string, object>> ReviewAsync(Dictionary<string, object> arguments) =>
-        _context.ReviewAsync(Reviser(), "revise_shared_component", arguments);
+        _context.ReviewAsync(Reviser(), "change_shared_component", arguments);
 
     private async Task<string> DraftVersionAsync(string pageId) =>
         (await _pages.LoadGroupContentAsync(await _pages.GetByIdAsync(pageId), cancellationToken: CancellationToken.None)).ETag;

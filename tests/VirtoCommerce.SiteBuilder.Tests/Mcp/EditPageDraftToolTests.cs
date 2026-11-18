@@ -8,7 +8,6 @@ using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
-using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;

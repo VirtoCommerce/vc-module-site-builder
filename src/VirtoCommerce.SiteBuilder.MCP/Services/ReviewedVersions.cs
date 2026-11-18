@@ -3,7 +3,7 @@ using ModelContextProtocol;
 using VirtoCommerce.MCP.Core.Models;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // A change whose write takes the versions its dry run answered.
 public interface IReviewedChange

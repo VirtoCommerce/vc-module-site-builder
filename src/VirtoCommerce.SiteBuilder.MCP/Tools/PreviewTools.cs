@@ -12,6 +12,8 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
@@ -49,7 +51,7 @@ public class PreviewTools(
         [Description("Store id; required with template_key and page_type.")] string store_id = null,
         [Description("A template of the store's theme, for example 'product.bicycles'.")] string template_key = null,
         [Description("product or category: the rules in order for product or category pages; conditions on catalog data are not evaluated.")] string page_type = null,
-        [Description("'published' (default) to calculate with the published rules and templates, 'draft' with the theme's drafts.")] string theme = null,
+        [Description("'published' (default) to calculate with the published rules and templates, 'draft' with the theme's drafts.")] string version = null,
         CancellationToken cancellationToken = default)
     {
         var named = new[] { page_id, template_key, page_type }.Count(x => !string.IsNullOrWhiteSpace(x));
@@ -58,12 +60,7 @@ public class PreviewTools(
             throw new McpException("Pass one of page_id, template_key and page_type.");
         }
 
-        var draftTheme = (theme ?? SitePageFilters.PublishedVersion).Trim().ToLowerInvariant() switch
-        {
-            SitePageFilters.DraftVersion => true,
-            SitePageFilters.PublishedVersion => false,
-            _ => throw new McpException("theme must be 'draft' or 'published'."),
-        };
+        var draftTheme = !SitePageFilters.ParseVersion((version ?? SitePageFilters.PublishedVersion).Trim());
 
         if (!string.IsNullOrWhiteSpace(page_id))
         {

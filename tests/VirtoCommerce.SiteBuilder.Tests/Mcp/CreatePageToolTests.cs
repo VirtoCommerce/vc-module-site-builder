@@ -8,7 +8,7 @@ using Moq;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
-using VirtoCommerce.SiteBuilder.MCP;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
 using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;

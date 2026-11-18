@@ -81,7 +81,7 @@ For the administrator, once:
    | `builder:publish` | `publish_page`, `unpublish_page` and `publish_theme`, as requests for approval |
    | `builder:templates` | With `builder:update`: `edit_template` and `edit_template_rules` |
    | `builder:theme` | With `builder:update`: `edit_theme_draft` |
-   | `builder:shared-components:read`, `:create`, `:update` | `search_shared_components`; with it, `create_shared_component` and `revise_shared_component` |
+   | `builder:shared-components:read`, `:create`, `:update` | `search_shared_components`; with it, `create_shared_component` and `change_shared_component` |
    | `platform:asset:read` | `search_assets` |
    | `platform:setting:read` | The store settings and user groups resources |
    | `customer:read` | The organizations resource, granted for every organization |
@@ -120,7 +120,7 @@ For each user: connect the agent to `https://<platform>/admin/mcp` with the clie
 | Design | `edit_theme_draft` | Header, footer, brand, and a palette generated from brand colors with a contrast check | `builder:update`, `builder:theme` | Dry run, version token |
 | Design | `publish_theme` | Publish every theme draft; refused below WCAG 2.2 AA contrast | `builder:publish` | Approval bound to the reviewed drafts |
 | Shared Components | `create_shared_component` | A new component, not placed anywhere yet | `builder:shared-components:create` | Dry run |
-| Shared Components | `revise_shared_component` | New content or name; the content changes everywhere the component is placed | `builder:shared-components:update` | Approval when the content changes |
+| Shared Components | `change_shared_component` | New content or name; the content changes everywhere the component is placed | `builder:shared-components:update` | Approval when the content changes |
 
 Bulk jobs are followed with the MCP module's `get_job_status`. Tool calls are audited by the MCP module, and **Agent tools** switches any of them off.
 

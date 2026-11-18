@@ -4,7 +4,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The page and section filters the page tools share, read from the agent's arguments.
 public static class SitePageFilters

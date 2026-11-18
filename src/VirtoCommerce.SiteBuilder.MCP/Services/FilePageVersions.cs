@@ -8,7 +8,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The versions of a page stored as a file in git, as the designer's history panel shows them: the unpublished commits
 // on draft branches first, then the published ones on the production branch. One answer of the history covers a page of

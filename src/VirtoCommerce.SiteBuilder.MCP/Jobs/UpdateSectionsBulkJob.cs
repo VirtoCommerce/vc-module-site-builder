@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using VirtoCommerce.Platform.Core.Jobs;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
 

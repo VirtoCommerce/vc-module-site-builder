@@ -6,7 +6,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The pages a list of search_site_pages takes: database pages, pages stored as files, or both. A page stored as a file
 // is listed by the folder it is in, as the designer's file tree shows it, and has no status, language or date in that

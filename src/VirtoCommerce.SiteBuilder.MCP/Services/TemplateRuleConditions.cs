@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // What a page of the database is to the template rules: as the storefront describes a page it shows.
 public sealed record PageRuleSubject(string Permalink, string Language, JsonObject Settings, string ObjectType);

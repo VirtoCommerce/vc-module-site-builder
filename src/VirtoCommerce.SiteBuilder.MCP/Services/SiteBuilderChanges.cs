@@ -7,7 +7,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // What a page write did or would do: the fields of each page it touches, "from → to", and whether customers see it.
 public sealed class SiteBuilderChange : McpChangePreview, IReviewedChange
@@ -164,11 +164,16 @@ public static class SiteBuilderChanges
                 }
                 else
                 {
-                    preview.AddChange(prefix + field.Name, field.From, field.To);
+                    preview.AddChange(prefix + FieldName(field.Name), field.From, field.To);
                 }
             }
         }
     }
+
+    // As the tools' arguments name the fields, not as the REST models do.
+    private static string FieldName(string name) => name is ChangePreview.CultureName or ChangePreview.DefaultCultureName
+        ? "language"
+        : JsonNamingPolicy.SnakeCaseLower.ConvertName(name);
 
     // An operation refused: a sentence the user can act on, never the internals.
     public static void EnsureSucceeded(SiteBuilderOperationResult result, string subject, string forbiddenMessage)

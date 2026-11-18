@@ -6,7 +6,7 @@ using VirtoCommerce.SiteBuilder.Data.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // What edit_page_draft reads from outside the page: another page, a Shared Component. Each checks the user's access.
 public interface IPageEditSources
@@ -240,7 +240,7 @@ public sealed class PageDocumentEditor
     private void SetSectionSettings(PageEditOperation operation)
     {
         var target = string.IsNullOrWhiteSpace(operation.BlockId)
-            ? EditableSection(operation.SectionId, "have its own settings; change the component with revise_shared_component or detach it")
+            ? EditableSection(operation.SectionId, "have its own settings; change the component with change_shared_component or detach it")
             : FindBlock(operation).Block;
 
         SetValues(target, operation.Settings, operation.Language, page: false);
@@ -526,7 +526,7 @@ public sealed class PageDocumentEditor
         if (PageOwnedSettings.Contains(key))
         {
             throw new EditException($"'{key}' follows the page's own name, address and language (or the component's name), which this tool does not " +
-                "change: change_page_settings changes those of a database page, revise_shared_component the name of a component.");
+                "change: change_page_settings changes those of a database page, change_shared_component the name of a component.");
         }
     }
 

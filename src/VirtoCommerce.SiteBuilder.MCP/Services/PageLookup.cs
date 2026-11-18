@@ -5,9 +5,10 @@ using VirtoCommerce.MCP.Core;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The page or multilanguage page a write names, found and checked against the stores of the user before the
 // operation runs. The operation checks the store again, as its endpoint does.

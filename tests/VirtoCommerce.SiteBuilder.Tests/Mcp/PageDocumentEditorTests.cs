@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using ModelContextProtocol;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.SiteBuilder.Data.Services;
-using VirtoCommerce.SiteBuilder.MCP;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
@@ -201,7 +201,7 @@ public sealed class PageDocumentEditorTests
     [Fact]
     public async Task SetSectionSettings_OfAPlacement_IsRefused()
     {
-        Assert.Contains("revise_shared_component", await RefusedAsync(Op("set_section_settings", sectionId: "promo", settings: new() { ["title"] = "x" })));
+        Assert.Contains("change_shared_component", await RefusedAsync(Op("set_section_settings", sectionId: "promo", settings: new() { ["title"] = "x" })));
     }
 
     [Fact]

@@ -7,7 +7,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // A publish or an unpublish of a page stored as a file, as publish_page and unpublish_page run it.
 public sealed record FilePageShipCall(string StoreId, string PageId, bool Publish, bool Rebase, string DraftOwner,

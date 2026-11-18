@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // One change of edit_page_draft. Which fields an operation reads is listed in the description of "op".
 public sealed class PageEditOperation

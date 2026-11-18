@@ -13,6 +13,7 @@ using VirtoCommerce.Platform.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;

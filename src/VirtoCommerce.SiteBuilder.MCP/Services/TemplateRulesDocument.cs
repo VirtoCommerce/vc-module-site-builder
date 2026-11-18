@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // The theme's template rules file (config/template_rules.json) as the designer reads and writes it (rules.ts): a list
 // of rules per page type, each { id, template, when?, disabled? }; the first enabled rule whose conditions all hold

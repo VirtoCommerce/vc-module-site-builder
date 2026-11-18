@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.Platform.Core.Jobs;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Jobs;
 using Xunit;
@@ -45,7 +46,7 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     [InlineData("change_page_settings")]
     [InlineData("discard_draft")]
     [InlineData("restore_version")]
-    [InlineData("revise_shared_component")]
+    [InlineData("change_shared_component")]
     [InlineData("publish_page")]
     [InlineData("unpublish_page")]
     [InlineData("publish_theme")]
@@ -78,9 +79,9 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     {
         string[] writes =
         [
-            "change_page_settings", "convert_page_to_multilanguage", "create_page", "create_shared_component", "discard_draft", "edit_page_draft",
-            "edit_template", "edit_template_rules", "edit_theme_draft", "link_page_language", "publish_page", "publish_theme", "reset_language_overrides",
-            "restore_version", "revise_shared_component", "set_translations", "unlink_page_language", "unpublish_page", "update_sections_bulk",
+            "change_page_settings", "change_shared_component", "convert_page_to_multilanguage", "create_page", "create_shared_component", "discard_draft",
+            "edit_page_draft", "edit_template", "edit_template_rules", "edit_theme_draft", "link_page_language", "publish_page", "publish_theme",
+            "reset_language_overrides", "restore_version", "set_translations", "unlink_page_language", "unpublish_page", "update_sections_bulk",
         ];
 
         var readOnly = _context.Harness.Tools.Where(x => x.ProtocolTool.Annotations?.ReadOnlyHint == true).Select(x => x.ProtocolTool.Name).ToList();

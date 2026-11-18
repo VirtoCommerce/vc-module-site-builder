@@ -10,10 +10,10 @@ using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.MCP.Core.Models;
-using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
@@ -91,7 +91,7 @@ public class PageDraftTools(
         var preview = new PageDraftEdit
         {
             Action = "edit_page_draft",
-            ObjectType = "page",
+            ObjectType = ChangePreview.Page,
             ObjectId = group.Id,
             ObjectName = group.Name,
             DryRun = dryRun,

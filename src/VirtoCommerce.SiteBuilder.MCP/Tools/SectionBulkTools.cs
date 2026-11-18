@@ -14,7 +14,9 @@ using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Jobs;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
@@ -45,12 +47,12 @@ public class SectionBulkTools(
         "up to 200 pages and shows the change on the first pages, with how many pages were scanned and matched. The real " +
         "call fixes the pages and their versions and starts a background job (follow it with get_job_status); a page " +
         "saved by someone after the call is skipped, not overwritten. Sections that a placed Shared Component brings are " +
-        "not changed: change the component itself with revise_shared_component. For one page use edit_page_draft.")]
+        "not changed: change the component itself with change_shared_component. For one page use edit_page_draft.")]
     public async Task<object> UpdateSectionsBulk(
         RequestContext<CallToolRequestParams> context,
         [Description("Type of the sections to change, for example 'hero-banner'.")] string section_type,
-        [Description("set_section_settings (with settings and optional settings_language), hide_section, show_section or remove_section.")] string change,
-        [Description("Store ids. Omit them for every store you edit pages of.")] string[] store_ids = null,
+        [Description("set_section_settings (with settings and optional text_language), hide_section, show_section or remove_section.")] string change,
+        [Description("Store id. Omit it for every store you edit pages of.")] string store_id = null,
         [Description("Text in the page name or address.")] string keyword = null,
         [Description("Draft, Published or Archived; several, comma-separated.")] string status = null,
         [Description("Language code, for example en-US: only the language versions in it.")] string language = null,
@@ -62,18 +64,18 @@ public class SectionBulkTools(
         [Description("With setting_path: compare only this language's text of a setting that holds a text per language.")] string setting_language = null,
         [Description("set_section_settings: the values to set, as in edit_page_draft: a key is a setting name or a " +
             "dotted path ('title', 'button.url', 'blocks.b1.text'); null removes the setting.")] Dictionary<string, JsonNode> settings = null,
-        [Description("set_section_settings: the language whose text the values set, for settings that hold a text per language.")] string settings_language = null,
+        [Description("set_section_settings: the language whose text the values set, for settings that hold a text per language.")] string text_language = null,
         [Description("true to scan and show the change without starting it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
-        var storeIds = await GetStoreIdsAsync(context.User, store_ids);
+        var storeIds = await GetStoreIdsAsync(context.User, store_id);
 
         if (string.IsNullOrWhiteSpace(section_type))
         {
             throw new McpException("Pass section_type: the type of the sections to change.");
         }
 
-        var op = SectionBulkChanges.Parse(change, settings, settings_language);
+        var op = SectionBulkChanges.Parse(change, settings, text_language);
         var scan = await sectionScanner.ScanPagesAsync(new SiteBuilderSectionScanCriteria
         {
             Pages = new SiteBuilderPageSearchCriteria
@@ -93,7 +95,7 @@ public class SectionBulkTools(
         if (!dryRun && !scan.IsComplete)
         {
             throw new McpException($"The filters select {scan.TotalPageCount} pages, more than the {MaxPages} one call changes. Narrow them " +
-                "with store_ids, language, status, page_type or keyword, and make the change part by part. Nothing was changed.");
+                "with store_id, language, status, page_type or keyword, and make the change part by part. Nothing was changed.");
         }
 
         var targets = scan.Pages
@@ -106,7 +108,7 @@ public class SectionBulkTools(
             .Where(x => x.SectionIds.Count > 0)
             .ToList();
 
-        var preview = await PreviewAsync(context.User, scan, targets, section_type.Trim(), op, settings, settings_language, dryRun, cancellationToken);
+        var preview = await PreviewAsync(context.User, scan, targets, section_type.Trim(), op, settings, text_language, dryRun, cancellationToken);
         if (dryRun || targets.Count == 0)
         {
             return preview;
@@ -118,7 +120,7 @@ public class SectionBulkTools(
             SectionType = section_type.Trim(),
             Change = op,
             SettingsJson = SectionBulkChanges.WriteSettings(settings),
-            SettingsLanguage = settings_language,
+            SettingsLanguage = text_language,
             Pages = targets,
         };
 
@@ -130,18 +132,14 @@ public class SectionBulkTools(
         }, "make the change page by page with edit_page_draft.");
     }
 
-    // The named stores, each checked first, so a refusal does not tell which stores exist; else every store the user reads.
-    private async Task<IList<string>> GetStoreIdsAsync(ClaimsPrincipal user, string[] storeIds)
+    // The named store, else every store the user reads.
+    private async Task<IList<string>> GetStoreIdsAsync(ClaimsPrincipal user, string storeId)
     {
-        var named = (storeIds ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        foreach (var storeId in named)
+        if (!string.IsNullOrWhiteSpace(storeId))
         {
+            storeId = storeId.Trim();
             await authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId);
-        }
-
-        if (named.Count > 0)
-        {
-            return named;
+            return [storeId];
         }
 
         var all = await authorizationService.GetStoreIdsAsync(user, userManagerFactory);
@@ -233,7 +231,7 @@ public class SectionBulkTools(
         {
             preview.AddWarning($"{componentSections} matching sections come from placed Shared Components and are not changed: " +
                 "a change of a component shows on every page it is placed on, so it is made to the component itself with " +
-                "revise_shared_component (search_site_pages with section_type lists their shared_component_id).");
+                "change_shared_component (search_site_pages with section_type lists their shared_component_id).");
         }
 
         if (targets.Count == 0)

@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // What an answer says when the store's content repository fails. The answer may go to a user with builder:read only,
 // while the exception's message can carry GitHub's own text, repository names and configuration keys: the answer says

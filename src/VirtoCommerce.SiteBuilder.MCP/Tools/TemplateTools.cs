@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -16,6 +15,8 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
@@ -420,7 +421,6 @@ public sealed class TemplateRow
     public IList<string> Rules { get; init; } = [];
 
     // With section_type: the matching sections.
-    [JsonPropertyName("sections")]
     public IList<SectionMatchRow> Sections { get; set; }
 
     public static TemplateRow From(ThemeTemplate template, TemplateRulesDocument rules) => new()

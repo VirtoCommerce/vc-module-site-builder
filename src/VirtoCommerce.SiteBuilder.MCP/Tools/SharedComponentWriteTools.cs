@@ -14,6 +14,8 @@ using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
+using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
@@ -43,7 +45,7 @@ public class SharedComponentWriteTools(
         "nobody sees it until it is placed with edit_page_draft (place_shared_component). Its content is the sections you " +
         "pass, or sections copied from a page (source_page_id, optionally section_ids), or both: the copied ones first. " +
         "Returns the new component's id and its sections. Call it with dryRun first to show the user the content. To change " +
-        "a component later, use revise_shared_component.")]
+        "a component later, use change_shared_component.")]
     public async Task<SharedComponentChange> CreateSharedComponent(
         RequestContext<CallToolRequestParams> context,
         [Description("Store id.")] string store_id,
@@ -119,7 +121,7 @@ public class SharedComponentWriteTools(
         return change;
     }
 
-    [McpServerTool(Name = "revise_shared_component", ReadOnly = false, Destructive = true, Idempotent = false)]
+    [McpServerTool(Name = "change_shared_component", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read, SharedComponentsRead)]
     [Authorize(SharedComponentsUpdate)]
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
@@ -132,7 +134,7 @@ public class SharedComponentWriteTools(
         "copy_sections_from copies from). Then call it with operations and those expected_versions unchanged: it waits for " +
         "approval, and is refused if the component or a copied page changed since. To change one page only, detach the " +
         "component there with edit_page_draft instead.")]
-    public async Task<SharedComponentChange> ReviseSharedComponent(
+    public async Task<SharedComponentChange> ChangeSharedComponent(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the component (search_shared_components).")] string shared_component_id,
         [Description("A new name. Omit it to keep the name.")] string name = null,
@@ -163,7 +165,7 @@ public class SharedComponentWriteTools(
 
         var change = new SharedComponentChange
         {
-            Action = "revise_shared_component",
+            Action = "change_shared_component",
             ObjectType = ChangePreview.SharedComponent,
             ObjectId = component.Id,
             ObjectName = component.Name,

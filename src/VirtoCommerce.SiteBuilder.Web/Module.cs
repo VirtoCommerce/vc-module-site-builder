@@ -36,7 +36,7 @@ using VirtoCommerce.SiteBuilder.Data.Search;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
-using VirtoCommerce.SiteBuilder.MCP;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.Web.Extensions;
 using VirtoCommerce.SiteBuilder.Xapi;
 using VirtoCommerce.SiteBuilder.Xapi.Extensions;

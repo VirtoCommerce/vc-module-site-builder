@@ -1,6 +1,6 @@
 using VirtoCommerce.SiteBuilder.Core.Models;
 
-namespace VirtoCommerce.SiteBuilder.MCP;
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 // What search_site_pages answers with section_type: the pages among the scanned rows that hold a matching section, and
 // how much was scanned. total_count counts the pages the page filters match, not the pages with the section.
