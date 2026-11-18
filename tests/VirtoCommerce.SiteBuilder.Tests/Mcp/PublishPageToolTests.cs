@@ -67,12 +67,13 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ADryRun_AnswersTheVersionOfTheDraft()
+    public async Task ADryRun_AnswersTheVersionOfTheDraft_AndOfItsSettings()
     {
         var review = (await _context.CallAsync(Publisher(), "publish_page", new { page_id = "new", dryRun = true })).EnsureSucceeded().Read<SiteBuilderChange>();
 
         Assert.True(review.DryRun);
         Assert.False(string.IsNullOrEmpty(Assert.Single(review.ExpectedVersions, x => x.Key == "new").Value));
+        Assert.Equal(SiteBuilderContentVersion.CreateForGroupSettings(await _pages.GetByIdAsync("new")), review.ExpectedVersions["settings:new"]);
         Assert.Null(review.DraftOwner);
     }
 
@@ -114,6 +115,21 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         Assert.Empty(_context.SavedVersions.Records);
     }
 
+    [Fact]
+    public async Task APageWhoseAudienceWidenedBetweenRequestAndApproval_IsNotPublished()
+    {
+        _pages.ChangeGroup("new", x => x.OrganizationId = "org-a");
+        var call = await _context.ReviewAsync(Publisher(), "publish_page", Page("new"));
+        _pages.ChangeGroup("new", x => x.OrganizationId = null);
+
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Equal("Draft", (await _pages.GetByIdAsync("new")).Status);
+        Assert.Empty(_context.SavedVersions.Records);
+    }
+
     [Theory]
     [InlineData("publish_page", true)]
     [InlineData("unpublish_page", false)]
@@ -128,11 +144,14 @@ public sealed class PublishPageToolTests : IAsyncDisposable
                 : SiteBuilderOperationResult.Success(affectsPublished: true));
         _context.GroupedPageOperations = operations.Object;
 
+        var settings = SiteBuilderContentVersion.CreateForGroupSettings(await _pages.GetByIdAsync("edited"));
+
         var call = await _context.ReviewAsync(Publisher(), tool, Page("edited"));
         (await _context.CallAsync(Approver(), tool, call, Approved)).EnsureSucceeded();
 
         operations.Verify(x => x.PublishAsync(It.Is<GroupedPagePublishOperationRequest>(r => !r.DryRun && r.Publish == publish &&
-            r.ExpectedDraftVersion == (publish ? "reviewed" : null) && r.ExpectedPublishedVersion == (publish ? null : "reviewed")),
+            r.ExpectedDraftVersion == (publish ? "reviewed" : null) && r.ExpectedPublishedVersion == (publish ? null : "reviewed") &&
+            r.ExpectedSettingsVersion == (publish ? settings : null)),
             It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -199,7 +218,7 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
 
         var versions = (IDictionary<string, string>)call["expected_versions"];
-        Assert.Equal(["live", "new"], versions.Keys.Order());
+        Assert.Equal(["live", "new", "settings:new"], versions.Keys.Order());
         Assert.False(string.IsNullOrEmpty(versions["live"]));
         Assert.Contains(result.EnsureSucceeded().Read<SiteBuilderChange>().Changes,
             x => x.Field == "page 'live': status" && x.From?.ToString() == "Published" && x.To?.ToString() == "Draft");
@@ -300,6 +319,45 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ChosenLanguages_WhoseSettingsChangedSinceTheReview_AreNotPublished()
+    {
+        SeedMultilanguagePage();
+        var call = await _context.ReviewAsync(Publisher(), "publish_page",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["languages"] = new[] { "en-US", "fr-FR" } });
+        _pages.ChangeGroup("ml-fr", x => x.UserGroups = "staff");
+
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Equal("Draft", (await _pages.GetByIdAsync("ml-en")).Status);
+        Assert.Equal("Draft", (await _pages.GetByIdAsync("ml-fr")).Status);
+    }
+
+    [Fact]
+    public async Task ChosenLanguages_SendTheReviewedSettingsOfEachVersionToTheOperation()
+    {
+        SeedMultilanguagePage();
+        var operations = new Mock<IGroupedPageOperationService>();
+        operations
+            .Setup(x => x.PublishAsync(It.IsAny<GroupedPagePublishOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GroupedPagePublishOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun(CreatePageToolTests.Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true)
+                    .WithETag("reviewed"))
+                : SiteBuilderOperationResult.Success(affectsPublished: true));
+        _context.GroupedPageOperations = operations.Object;
+        var settings = SiteBuilderContentVersion.CreateForGroupSettings(await _pages.GetByIdAsync("ml-fr"));
+
+        var call = await _context.ReviewAsync(Publisher(), "publish_page",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["languages"] = new[] { "fr-FR" } });
+        (await _context.CallAsync(Approver(), "publish_page", call, Approved)).EnsureSucceeded();
+
+        operations.Verify(x => x.PublishAsync(It.Is<GroupedPagePublishOperationRequest>(r => !r.DryRun && r.GroupId == "ml-fr" &&
+            r.ExpectedDraftVersion == "reviewed" && r.ExpectedSettingsVersion == settings),
+            It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ChosenLanguages_WithUnpublishConflicting_TakeTheReviewedPageOff()
     {
         SeedMultilanguagePage();
@@ -311,7 +369,7 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
 
         Assert.Contains("page 'live' (Page live, en-US)", refused.Error, StringComparison.Ordinal);
-        Assert.Equal(["live", "ml-fr"], ((IDictionary<string, string>)call["expected_versions"]).Keys.Order());
+        Assert.Equal(["live", "ml-fr", "settings:ml-fr"], ((IDictionary<string, string>)call["expected_versions"]).Keys.Order());
         result.EnsureSucceeded();
         Assert.Equal("Published", (await _pages.GetByIdAsync("ml-fr")).Status);
         Assert.Equal("Draft", (await _pages.GetByIdAsync("live")).Status);
@@ -425,6 +483,38 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
         VerifyPublishedAll(Times.Never());
+    }
+
+    [Fact]
+    public async Task AllLanguages_WithAVersionWhoseSettingsChangedAfterTheReview_PublishesNothing()
+    {
+        _context.SeedPage("ml-en", StoreA, published: false, draft: true);
+        SetUpPublishAll([("ml-en", "v-en")], []);
+        var call = await _context.ReviewAsync(Publisher(), "publish_page",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["all_languages"] = true });
+        _pages.ChangeGroup("ml-en", x => x.EndDate = new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Contains("settings:ml-en", ((IDictionary<string, string>)call["expected_versions"]).Keys);
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        VerifyPublishedAll(Times.Never());
+    }
+
+    [Fact]
+    public async Task AllLanguages_SendsTheOperationOnlyTheVersionsOfTheDrafts()
+    {
+        _context.SeedPage("ml-en", StoreA, published: false, draft: true);
+        SetUpPublishAll([("ml-en", "v-en")], []);
+        var call = await _context.ReviewAsync(Publisher(), "publish_page",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["all_languages"] = true });
+
+        (await _context.CallAsync(Approver(), "publish_page", call, Approved)).EnsureSucceeded();
+
+        _context.MultilanguagePageOperations.Verify(x => x.PublishAllAsync(
+            It.Is<MultilanguagePagePublishAllOperationRequest>(r => !r.DryRun && r.ExpectedDraftVersions.Count == 1 && r.ExpectedDraftVersions["ml-en"] == "v-en"),
+            It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

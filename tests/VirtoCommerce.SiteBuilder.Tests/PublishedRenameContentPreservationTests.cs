@@ -198,7 +198,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 return new(draft.Id, SiteBuilderContentVersion.Create(current, content)) { GroupedEventsPublished = groupedEventsPublished };
             }
 
-            public async Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag,
+            public async Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, string expectedSettingsVersion,
                 CancellationToken cancellationToken = default)
             {
                 var current = _groups.ContainsKey(group.Id ?? "") ? await LoadGroupContentAsync(group, draft, cancellationToken) : null;

@@ -21,8 +21,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Content shows on every page the component stands on, so a content change waits for approval. Its save takes no version:
-// the tool re-reads right before it, and a save in between is not seen.
+// Content shows on every page the component stands on, so a content change waits for approval. Its save takes the reviewed
+// version of the content and compares it under the component's write lock; the pages copied from are read again right before it.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentWriteTools(
@@ -207,7 +207,13 @@ public class SharedComponentWriteTools(
         if (content != null)
         {
             ReviewedVersions.EnsureUnchanged(change, await ReadVersionsAsync(component, change.ExpectedVersions.Keys, cancellationToken));
-            var result = await sharedComponentOperationService.SaveContentAsync(ContentRequest(component, content, isDryRun: false), context.User, cancellationToken);
+            var result = await sharedComponentOperationService.SaveContentAsync(
+                ContentRequest(component, content, isDryRun: false, ReviewedVersions.Of(change, ComponentKeyPrefix + component.Id)), context.User, cancellationToken);
+            if (result.Status == SiteBuilderOperationStatus.Conflict)
+            {
+                throw ReviewedVersions.Changed(change);
+            }
+
             EnsureSucceeded(result, subject, component.StoreId, SharedComponentsUpdate);
             change.AffectsPublished = result.AffectsPublished;
         }
@@ -241,7 +247,8 @@ public class SharedComponentWriteTools(
             return null;
         }
 
-        var check = await sharedComponentOperationService.SaveContentAsync(ContentRequest(component, content, isDryRun: true), user, cancellationToken);
+        var check = await sharedComponentOperationService.SaveContentAsync(ContentRequest(component, content, isDryRun: true, expectedContentVersion: null), user,
+            cancellationToken);
         EnsureSucceeded(check, $"Shared Component '{component.Id}'", component.StoreId, SharedComponentsUpdate);
         change.AddChanges(check.Preview);
         change.AffectsPublished = check.AffectsPublished;
@@ -317,8 +324,9 @@ public class SharedComponentWriteTools(
     private PageEditSources CreateSources(ClaimsPrincipal user, string storeId) =>
         new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, user, storeId);
 
-    private static SharedComponentContentSaveOperationRequest ContentRequest(SiteBuilderSharedComponent component, JObject content, bool isDryRun) =>
-        new() { Id = component.Id, Content = content, DryRun = isDryRun, ReportImpact = true };
+    private static SharedComponentContentSaveOperationRequest ContentRequest(SiteBuilderSharedComponent component, JObject content, bool isDryRun,
+        string expectedContentVersion) =>
+        new() { Id = component.Id, Content = content, DryRun = isDryRun, ReportImpact = true, ExpectedContentVersion = expectedContentVersion };
 
     private static SharedComponentUpdateOperationRequest RenameRequest(SiteBuilderSharedComponent component, string name, bool isDryRun) =>
         new() { Id = component.Id, Name = name, DryRun = isDryRun, ReportImpact = true };

@@ -584,7 +584,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             return await ReadContentAsync(repository, current, draft, cancellationToken);
         }
 
-        public virtual Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag,
+        public virtual Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, string expectedSettingsVersion,
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(group);
@@ -593,10 +593,17 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             {
                 // read under the lock of the save, so that the version compared is the one the save replaces
                 var entity = entities.SingleOrDefault();
-                var current = entity == null ? null : await ReadContentAsync(repository, ToModel(entity, null), draft, ct);
+                var stored = entity == null ? null : ToModel(entity, null);
+                var current = stored == null ? null : await ReadContentAsync(repository, stored, draft, ct);
                 if (!string.Equals(current?.ETag, expectedETag, StringComparison.Ordinal))
                 {
                     throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
+                }
+
+                if (expectedSettingsVersion != null &&
+                    !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(stored), expectedSettingsVersion, StringComparison.Ordinal))
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
                 }
                 return new PreparedSave(group);
             }, cancellationToken);

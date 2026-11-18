@@ -581,9 +581,30 @@ public class MultilanguagePageServiceTests
         Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
 
         await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() =>
-            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken));
+            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, expectedSettingsVersion: null, TestContext.Current.CancellationToken));
 
         Assert.Equal("Draft", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+    }
+
+    [Fact]
+    public async Task SaveGroupAtVersionAsync_SettingsChangedSinceTheyWereRead_WritesNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var group = await fixture.Groups.GetByIdAsync(en.Id);
+        var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
+        var settingsVersion = SiteBuilderContentVersion.CreateForGroupSettings(group);
+        var colleagues = await fixture.Groups.GetByIdAsync(en.Id);
+        colleagues.UserGroups = "vip";
+        await fixture.Groups.SaveGroupSettingsAsync(colleagues, TestContext.Current.CancellationToken);
+        Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
+
+        await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() =>
+            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, settingsVersion, TestContext.Current.CancellationToken));
+
+        var stored = await fixture.Groups.GetByIdAsync(en.Id);
+        Assert.Equal(("Draft", "vip"), (stored.Status, stored.UserGroups));
     }
 
     [Fact]
@@ -596,7 +617,7 @@ public class MultilanguagePageServiceTests
         var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
         Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
 
-        await fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken);
+        await fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, expectedSettingsVersion: null, TestContext.Current.CancellationToken);
 
         Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
     }

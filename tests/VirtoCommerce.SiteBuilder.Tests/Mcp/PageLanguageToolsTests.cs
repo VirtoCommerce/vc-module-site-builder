@@ -54,14 +54,57 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Link_WithoutUnpublishedOnly_WaitsForApproval_AndLinksNothing()
+    public async Task Link_WithoutUnpublishedOnly_TheReviewedChangeWaitsForApproval_AndLinksNothing()
     {
         SetUpLink(affectsPublished: false);
 
-        var result = await _context.CallAsync(Editor(), "link_page_language", new { page_id = "landing", multilanguage_page_id = "ml-a" });
+        var call = await _context.ReviewAsync(Editor(), "link_page_language", LinkArguments());
+        var result = await _context.CallAsync(Editor(), "link_page_language", call);
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, result.Outcome);
         Assert.Contains(result.Read<SiteBuilderChange>().Changes, x => x.Field == "multilanguage_page_id" && x.To?.ToString() == "ml-a");
+        var versions = (IDictionary<string, string>)call["expected_versions"];
+        Assert.Equal((2, "landing-v1", "ml-a-v1"), (versions.Count, versions["page:landing"], versions["multilanguage_page:ml-a"]));
+        VerifyNoWrite();
+    }
+
+    [Fact]
+    public async Task Link_WithoutUnpublishedOnly_ACallWithoutTheReviewedVersions_IsRefused_AndNeverWaitsForApproval()
+    {
+        SetUpLink(affectsPublished: true);
+
+        var result = await _context.CallAsync(Editor(), "link_page_language", LinkArguments());
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("expected_versions", result.Error);
+        VerifyNoWrite();
+    }
+
+    [Fact]
+    public async Task Link_Approved_IsWrittenAtTheReviewedVersions()
+    {
+        SetUpLink(affectsPublished: true);
+        var call = await _context.ReviewAsync(Editor(), "link_page_language", LinkArguments());
+
+        var result = await _context.CallAsync(Editor(), "link_page_language", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Succeeded, result.Outcome);
+        Operations.Verify(x => x.LinkAsync(It.Is<MultilanguagePageLinkOperationRequest>(r => !r.DryRun && !r.RequireUnpublished &&
+            r.ExpectedSettingsVersion == "landing-v1" && r.ExpectedMultilanguagePageVersion == "ml-a-v1"), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Link_Approved_AfterTheMultilanguagePageChanged_IsRefused_AndLinksNothing()
+    {
+        SetUpLink(affectsPublished: true);
+        var call = await _context.ReviewAsync(Editor(), "link_page_language", LinkArguments());
+        SetUpLink(affectsPublished: true, rootVersion: "ml-a-v2");
+
+        var result = await _context.CallAsync(Editor(), "link_page_language", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error);
         VerifyNoWrite();
     }
 
@@ -169,16 +212,35 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         Operations
             .Setup(x => x.UnlinkAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("multilanguagePageId", "ml-a", null, objectId: "version", affectsPublished: true))
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Versioned(Preview("multilanguagePageId", "ml-a", null, objectId: "version",
+                    affectsPublished: true), "version-v1"))
                 : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "version" }, affectsPublished: true));
 
-        var held = await _context.CallAsync(Editor(), "unlink_page_language", new { page_id = "version" });
-        var approved = await _context.CallAsync(Editor(), "unlink_page_language", new { page_id = "version" }, new McpToolCallOptions { AsApprovedChange = true });
+        var call = await _context.ReviewAsync(Editor(), "unlink_page_language", new Dictionary<string, object> { ["page_id"] = "version" });
+        var held = await _context.CallAsync(Editor(), "unlink_page_language", call);
+        var approved = await _context.CallAsync(Editor(), "unlink_page_language", call, Approved);
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, held.Outcome);
         Assert.True(approved.EnsureSucceeded().Read<SiteBuilderChange>().AffectsPublished);
-        Operations.Verify(x => x.UnlinkAsync(It.Is<MultilanguagePageVersionOperationRequest>(r => !r.DryRun && !r.RequireUnpublished), It.IsAny<ClaimsPrincipal>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+        Operations.Verify(x => x.UnlinkAsync(It.Is<MultilanguagePageVersionOperationRequest>(r => !r.DryRun && !r.RequireUnpublished &&
+            r.ExpectedSettingsVersion == "version-v1"), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Unlink_Approved_OfAVersionChangedRightBeforeTheWrite_IsRefused()
+    {
+        Operations
+            .Setup(x => x.UnlinkAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Versioned(Preview("multilanguagePageId", "ml-a", null, objectId: "version",
+                    affectsPublished: true), "version-v1"))
+                : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.SettingsChangedMessage).As<GroupedSiteBuilderPage>());
+        var call = await _context.ReviewAsync(Editor(), "unlink_page_language", new Dictionary<string, object> { ["page_id"] = "version" });
+
+        var result = await _context.CallAsync(Editor(), "unlink_page_language", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error);
     }
 
     [Fact]
@@ -205,7 +267,8 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
             .ReturnsAsync(SiteBuilderOperationResult.DryRun<IList<string>>(Preview("permalink", "/fr", "/ml-a", objectId: "fr", affectsPublished: true)));
 
         var unknown = await _context.CallAsync(Editor(), "reset_language_overrides", new { multilanguage_page_id = "ml-a", fields = new[] { "name" } });
-        var held = await _context.CallAsync(Editor(), "reset_language_overrides", new { multilanguage_page_id = "ml-a", fields = new[] { "permalink", "user_groups" } });
+        var held = await _context.CallAsync(Editor(), "reset_language_overrides", await _context.ReviewAsync(Editor(), "reset_language_overrides",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml-a", ["fields"] = new[] { "permalink", "user_groups" } }));
 
         Assert.Equal(McpToolCallOutcome.Failed, unknown.Outcome);
         Assert.Equal(McpToolCallOutcome.PendingApproval, held.Outcome);
@@ -213,16 +276,76 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         Assert.Contains(held.Read<SiteBuilderChange>().Changes, x => x.Field == "page 'fr': permalink");
     }
 
+    [Fact]
+    public async Task Reset_Approved_AfterTheMultilanguagePageChanged_IsRefused_AndResetsNothing()
+    {
+        // The published version overrides the groups, so the Multilanguage Page's own groups change at once while the reset waits.
+        SetUpReset(rootVersion: "ml-a-v1");
+        var call = await _context.ReviewAsync(Editor(), "reset_language_overrides",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml-a", ["fields"] = new[] { "user_groups" } });
+        SetUpReset(rootVersion: "ml-a-v2");
+
+        var result = await _context.CallAsync(Editor(), "reset_language_overrides", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error);
+        Operations.Verify(x => x.ResetOverridesAsync(It.Is<MultilanguagePageResetOverridesOperationRequest>(r => !r.DryRun), It.IsAny<ClaimsPrincipal>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Reset_Approved_IsWrittenAtTheReviewedVersions()
+    {
+        SetUpReset(rootVersion: "ml-a-v1");
+        var call = await _context.ReviewAsync(Editor(), "reset_language_overrides",
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml-a", ["fields"] = new[] { "user_groups" } });
+
+        var result = await _context.CallAsync(Editor(), "reset_language_overrides", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Succeeded, result.Outcome);
+        Operations.Verify(x => x.ResetOverridesAsync(It.Is<MultilanguagePageResetOverridesOperationRequest>(r => !r.DryRun &&
+            r.ExpectedMultilanguagePageVersion == "ml-a-v1" && r.ExpectedSettingsVersions.Count == 1 && r.ExpectedSettingsVersions["fr"] == "fr-v1"),
+            It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static Dictionary<string, object> LinkArguments() => new() { ["page_id"] = "landing", ["multilanguage_page_id"] = "ml-a" };
+
     // As the operation links: with RequireUnpublished, a page published by the time of the write is refused under its lock.
-    private void SetUpLink(bool affectsPublished, bool publishedAtTheWrite = false)
+    private void SetUpLink(bool affectsPublished, bool publishedAtTheWrite = false, string rootVersion = "ml-a-v1")
     {
         Operations
             .Setup(x => x.LinkAsync(It.IsAny<MultilanguagePageLinkOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageLinkOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("multilanguagePageId", null, "ml-a", objectId: "landing", affectsPublished: affectsPublished))
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(WithRoot(Versioned(Preview("multilanguagePageId", null, "ml-a", objectId: "landing",
+                    affectsPublished: affectsPublished), "landing-v1"), rootVersion))
                 : request.RequireUnpublished && publishedAtTheWrite
                     ? SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PublishedPageMessage).As<GroupedSiteBuilderPage>()
                     : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "landing" }, affectsPublished));
+    }
+
+    // A reset of the published French version's groups to those of ml-a, at the given version of ml-a.
+    private void SetUpReset(string rootVersion)
+    {
+        Operations
+            .Setup(x => x.ResetOverridesAsync(It.IsAny<MultilanguagePageResetOverridesOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageResetOverridesOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun<IList<string>>(WithRoot(Versioned(Preview("userGroups", "VIP", "Staff", objectId: "fr", affectsPublished: true),
+                    "fr-v1"), rootVersion))
+                : SiteBuilderOperationResult.Success<IList<string>>(["fr-FR"], affectsPublished: true));
+    }
+
+    // As the operation answers it: the version of the page it changes.
+    private static SiteBuilderChangePreview Versioned(SiteBuilderChangePreview preview, string version)
+    {
+        preview.Objects[0].ETag = version;
+        return preview;
+    }
+
+    // As the operation answers it: the Multilanguage Page whose values the page takes, unchanged, at its version.
+    private static SiteBuilderChangePreview WithRoot(SiteBuilderChangePreview preview, string version)
+    {
+        preview.Objects.Add(new SiteBuilderObjectChange { ObjectType = "multilanguage-page", ObjectId = "ml-a", ETag = version });
+        return preview;
     }
 
     private void VerifyNoWrite() =>

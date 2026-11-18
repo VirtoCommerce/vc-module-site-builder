@@ -27,6 +27,9 @@ public class PagePublishingTools(
     IMultilanguagePageOperationService multilanguagePageOperationService,
     FilePageShipping filePageShipping)
 {
+    // A key of expected_versions: the version of the settings of a database page the call publishes.
+    private const string SettingsKeyPrefix = "settings:";
+
     private const string DraftOwnerDescription = "With a page stored as a file in git: the user whose draft branch is shipped, as the dry run " +
         "answers it in draft_owner (your own when you omit it on the dry run). Send it back unchanged, so that the approver ships the " +
         "reviewed draft and not their own. Not used for other pages.";
@@ -38,8 +41,9 @@ public class PagePublishingTools(
     [Description("Publish the draft of a page, so customers see it; the draft replaces the published version. " +
         "First call it with dryRun: it shows what would be published and answers expected_versions (and, for a page stored as " +
         "a file in git, draft_owner). Then call it without dryRun and with those values unchanged: the publication waits for a " +
-        "second person's approval and publishes exactly the drafts that were reviewed; if one changes in between, it is refused " +
-        "and nothing is published. A call without expected_versions is refused. Pass page_id for a Landing " +
+        "second person's approval and publishes exactly the drafts that were reviewed, to the audience and between the dates they " +
+        "were reviewed with; if a draft or a database page's settings change in between, it is refused and nothing is published. " +
+        "A call without expected_versions is refused. Pass page_id for a Landing " +
         "Page or one language version, or multilanguage_page_id with languages (or all_languages) for language versions " +
         "of a Multilanguage Page. The page is shown to its audience between its start and end dates, which " +
         "change_page_settings sets. A page stored as a file is named by its path with store_id; in a store that keeps " +
@@ -170,12 +174,14 @@ public class PagePublishingTools(
         };
 
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => RunPublishAsync(user, group.Id, publish, isDryRun, ReviewedVersions.Of(change, group.Id),
-                unpublishConflicting && !isDryRun ? ReplacedVersions(change, change.ExpectedVersions.Keys.Where(x => x != group.Id)) : null, unpublishConflicting,
-                cancellationToken),
+            isDryRun => RunPublishAsync(user, group.Id, publish, isDryRun, isDryRun ? null : change,
+                unpublishConflicting && !isDryRun
+                    ? ReplacedVersions(change, change.ExpectedVersions.Keys.Where(x => x != group.Id && x != SettingsKey(group.Id)))
+                    : null,
+                unpublishConflicting, cancellationToken),
             x => EnsurePublished(x, group, publish),
             dryRun,
-            checkAsync: x => PinAsync(change, x.Preview?.Objects, expectedVersions, dryRun));
+            checkAsync: x => PinAsync(change, x.Preview?.Objects, publish ? [group.Id] : [], expectedVersions, dryRun));
 
         return change;
     }
@@ -190,7 +196,10 @@ public class PagePublishingTools(
             isDryRun => multilanguagePageOperationService.PublishAllAsync(new MultilanguagePagePublishAllOperationRequest
             {
                 MultilanguagePageId = root.Id,
-                ExpectedDraftVersions = isDryRun ? null : new Dictionary<string, string>(change.ExpectedVersions),
+                ExpectedDraftVersions = isDryRun ? null : new Dictionary<string, string>(change.ExpectedVersions.Where(x => !IsSettingsKey(x.Key))),
+                ExpectedSettingsVersions = isDryRun
+                    ? null
+                    : change.ExpectedVersions.Where(x => IsSettingsKey(x.Key)).ToDictionary(x => x.Key[SettingsKeyPrefix.Length..], x => x.Value),
                 DryRun = isDryRun,
                 ReportImpact = true,
             }, user, cancellationToken),
@@ -198,7 +207,7 @@ public class PagePublishingTools(
             dryRun,
             checkAsync: async x =>
             {
-                await PinAsync(change, x.Preview?.Objects, expectedVersions, dryRun);
+                await PinAsync(change, x.Preview?.Objects, x.Preview?.Objects.Select(y => y.ObjectId) ?? [], expectedVersions, dryRun);
                 if (dryRun)
                 {
                     await WarnOfSkippedVersionsAsync(user, change, x.Preview?.Objects ?? [], cancellationToken);
@@ -210,7 +219,7 @@ public class PagePublishingTools(
             change.AddWarning(skipped.Reason switch
             {
                 MultilanguagePageBatchResult.NoDraftReason => $"{skipped.CultureName}: no draft, nothing to publish.",
-                MultilanguagePageBatchResult.ChangedReason => $"{skipped.CultureName}: its draft changed since it was reviewed, so it was not " +
+                MultilanguagePageBatchResult.ChangedReason => $"{skipped.CultureName}: its draft changed since it was reviewed, or its settings did, so it was not " +
                     "published. Call publish_page with dryRun again for it, show the user the change, and send the new expected_versions.",
                 MultilanguagePageBatchResult.PermalinkConflictReason => $"{skipped.CultureName}: another published page serves its permalink to " +
                     $"the same visitors, so it was not published. Call publish_page with languages: ['{skipped.CultureName}'] and dryRun to see the " +
@@ -264,7 +273,7 @@ public class PagePublishingTools(
         var replaced = new Dictionary<string, List<string>>();
         foreach (var group in groups)
         {
-            var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, expectedVersion: null, expectedReplacedVersions: null,
+            var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, reviewed: null, expectedReplacedVersions: null,
                 unpublishConflicting, cancellationToken);
             EnsurePublished(check, group, publish: true);
             change.AddChanges(check.Preview);
@@ -273,7 +282,7 @@ public class PagePublishingTools(
         }
 
         change.AffectsPublished = true;
-        await PinAsync(change, drafts, expectedVersions, dryRun);
+        await PinAsync(change, drafts, groups.Select(x => x.Id), expectedVersions, dryRun);
         if (dryRun)
         {
             return change;
@@ -282,14 +291,14 @@ public class PagePublishingTools(
         var published = new List<string>();
         foreach (var group in groups)
         {
-            var result = await RunPublishAsync(user, group.Id, publish: true, isDryRun: false, ReviewedVersions.Of(change, group.Id),
+            var result = await RunPublishAsync(user, group.Id, publish: true, isDryRun: false, change,
                 unpublishConflicting ? ReplacedVersions(change, replaced[group.Id]) : null, unpublishConflicting, cancellationToken);
             if (!result.Succeeded)
             {
                 var done = published.Count == 0 ? "No version was published." : $"Published: {string.Join(", ", published)}.";
                 var reason = result.Status switch
                 {
-                    SiteBuilderOperationStatus.Conflict => "its draft changed since it was reviewed; call publish_page with dryRun again and send the new expected_versions",
+                    SiteBuilderOperationStatus.Conflict => "its draft or its settings changed since it was reviewed; call publish_page with dryRun again and send the new expected_versions",
                     SiteBuilderOperationStatus.PermalinkConflict => PermalinkConflicts.Explain(result),
                     _ => result.Error ?? result.Status.ToString(),
                 };
@@ -305,9 +314,11 @@ public class PagePublishingTools(
         return change;
     }
 
-    private Task<SiteBuilderOperationResult> RunPublishAsync(ClaimsPrincipal user, string groupId, bool publish, bool isDryRun, string expectedVersion,
+    // reviewed: the change whose pinned versions the operation compares under its lock; null compares none.
+    private Task<SiteBuilderOperationResult> RunPublishAsync(ClaimsPrincipal user, string groupId, bool publish, bool isDryRun, IReviewedChange reviewed,
         IDictionary<string, string> expectedReplacedVersions, bool unpublishConflicting, CancellationToken cancellationToken)
     {
+        var expectedVersion = reviewed == null ? null : ReviewedVersions.Of(reviewed, groupId);
         return groupedPageOperationService.PublishAsync(new GroupedPagePublishOperationRequest
         {
             GroupId = groupId,
@@ -315,6 +326,7 @@ public class PagePublishingTools(
             SaveId = Guid.NewGuid().ToString("N"),
             ExpectedDraftVersion = publish ? expectedVersion : null,
             ExpectedPublishedVersion = publish ? null : expectedVersion,
+            ExpectedSettingsVersion = publish && reviewed != null ? ReviewedVersions.Of(reviewed, SettingsKey(groupId)) : null,
             UnpublishConflicting = unpublishConflicting,
             ExpectedReplacedVersions = expectedReplacedVersions,
             DryRun = isDryRun,
@@ -326,11 +338,27 @@ public class PagePublishingTools(
     private static Dictionary<string, string> ReplacedVersions(SiteBuilderChange change, IEnumerable<string> pageIds) =>
         pageIds.ToDictionary(x => x, x => ReviewedVersions.Of(change, x));
 
-    private static Task PinAsync(SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts, IDictionary<string, string> expectedVersions, bool dryRun)
+    // The content of every draft published and of every page replaced, and the settings of every page published: who sees a page
+    // and when (organization, user groups, visibility, dates) are not in its content, and an unpublished page's settings change
+    // without approval.
+    private async Task PinAsync(SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts, IEnumerable<string> publishedIds,
+        IDictionary<string, string> expectedVersions, bool dryRun)
     {
-        ReviewedVersions.Pin(change, (drafts ?? []).Select(x => new KeyValuePair<string, string>(x.ObjectId, x.ETag)), expectedVersions, dryRun);
-        return Task.CompletedTask;
+        var versions = (drafts ?? []).Select(x => new KeyValuePair<string, string>(x.ObjectId, x.ETag)).ToList();
+        foreach (var id in publishedIds)
+        {
+            if (await groupedPageService.GetByIdAsync(id) is { } group)
+            {
+                versions.Add(new KeyValuePair<string, string>(SettingsKey(id), SiteBuilderContentVersion.CreateForGroupSettings(group)));
+            }
+        }
+
+        ReviewedVersions.Pin(change, versions, expectedVersions, dryRun);
     }
+
+    private static string SettingsKey(string pageId) => SettingsKeyPrefix + pageId;
+
+    private static bool IsSettingsKey(string key) => key.StartsWith(SettingsKeyPrefix, StringComparison.OrdinalIgnoreCase);
 
     private static void EnsurePublished(SiteBuilderOperationResult result, GroupedSiteBuilderPage group, bool publish)
     {

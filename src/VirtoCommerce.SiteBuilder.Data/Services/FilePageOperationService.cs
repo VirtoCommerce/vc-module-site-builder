@@ -126,7 +126,7 @@ public class FilePageOperationService(
     {
         var (storeId, type, path) = (request.StoreId, request.ContentType, request.Path);
         // before the rebase, which moves the branch itself
-        if (await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        if (await CheckDraftHeadAsync(location, request, cancellationToken) is { } moved)
         {
             return moved.As<FilePageShipment>();
         }
@@ -155,7 +155,7 @@ public class FilePageOperationService(
         await EnsureRepositoryReadableAsync(location.Repository, await GetBaseBranchAsync(cancellationToken), cancellationToken);
 
         // the draft reviewed is gone: a publish that only writes the live copy again is not what was approved
-        if (!request.DryRun && await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        if (!request.DryRun && await CheckDraftHeadAsync(location, request, cancellationToken) is { } moved)
         {
             return moved.As<FilePageShipment>();
         }
@@ -320,15 +320,21 @@ public class FilePageOperationService(
         }
 
         // before the deletion is committed, which moves the branch itself
-        if (await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        if (await CheckDraftHeadAsync(location, request, cancellationToken) is { } moved)
         {
             return moved.As<FilePageShipment>();
         }
 
+        if (request.ExpectedContentVersion != null &&
+            !string.Equals(SiteBuilderContentVersion.CreateForFileContent(published), request.ExpectedContentVersion.Trim(), StringComparison.Ordinal))
+        {
+            return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage).As<FilePageShipment>();
+        }
+
         var committed = await CommitUnpublishAsync(location, baseBranch, storeId, path, user, cancellationToken);
 
-        // the deletion committed on top of the commit approved, not whatever the branch holds once the checks pass
-        var pinnedHead = request.ExpectedDraftHead == null ? null : committed;
+        // the deletion committed on top of the commit approved, or on a branch cut for it, not whatever the branch holds once the checks pass
+        var pinnedHead = request.ExpectedDraftHead == null && !request.ExpectNoDraftBranch ? null : committed;
         var shipment = await ShipDraftAsync(location, GetPublishBranch(request, user), pinnedHead, $"unpublish {path} (store: {storeId})", path,
             canRebase: false, cancellationToken);
         if (shipment.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
@@ -385,7 +391,8 @@ public class FilePageOperationService(
         string published, CancellationToken cancellationToken)
     {
         var preview = CreatePreview();
-        var change = preview.AddObject(FilePage, path).AddField(Status, Published, Draft).AddField(Content, published, null);
+        var change = preview.AddObject(FilePage, path, SiteBuilderContentVersion.CreateForFileContent(published))
+            .AddField(Status, Published, Draft).AddField(Content, published, null);
         await AddDraftBranchAsync(change, location, cancellationToken);
         preview.Warnings.Add($"Deletes the page on the draft branch {location.Branch} and merges the draft branch into {baseBranch}.");
         preview.Warnings.Add(MergeOutcomeWarning);
@@ -876,7 +883,7 @@ public class FilePageOperationService(
             return SiteBuilderOperationResult.DryRun(await CreateDiscardGitDraftPreviewAsync(location, path, cancellationToken));
         }
 
-        if (await CheckDraftHeadAsync(location, request.ExpectedDraftHead, cancellationToken) is { } moved)
+        if (await CheckDraftHeadAsync(location, request, cancellationToken) is { } moved)
         {
             return moved;
         }
@@ -1164,12 +1171,16 @@ public class FilePageOperationService(
         }
     }
 
-    /// <summary>The draft branch has to be at the commit the caller reviewed; <c>null</c> takes it wherever it is.</summary>
-    /// <returns>The conflict when the branch has moved or is gone; <c>null</c> otherwise.</returns>
-    protected virtual async Task<SiteBuilderOperationResult> CheckDraftHeadAsync(GitPageFileLocation location, string expectedDraftHead,
+    /// <summary>
+    /// The draft branch has to be at the commit the caller reviewed, or still be missing when the caller reviewed none; neither named takes it
+    /// wherever it is.
+    /// </summary>
+    /// <returns>The conflict when the branch has moved, is gone or appeared; <c>null</c> otherwise.</returns>
+    protected virtual async Task<SiteBuilderOperationResult> CheckDraftHeadAsync(GitPageFileLocation location, FilePageDraftOperationRequest request,
         CancellationToken cancellationToken)
     {
-        if (expectedDraftHead == null)
+        var expectedDraftHead = request.ExpectedDraftHead?.Trim();
+        if (expectedDraftHead == null && !request.ExpectNoDraftBranch)
         {
             return null;
         }
@@ -1177,7 +1188,7 @@ public class FilePageOperationService(
         // GitHub merges a branch wherever it is when the merge runs, so this is read as late as the operation can
         var head = await gitContentRepository.GetBranchHeadShaAsync(location.Repository, location.Branch, cancellationToken);
 
-        return string.Equals(head, expectedDraftHead.Trim(), StringComparison.OrdinalIgnoreCase)
+        return string.Equals(head, expectedDraftHead, StringComparison.OrdinalIgnoreCase)
             ? null
             : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.DraftBranchMovedMessage);
     }

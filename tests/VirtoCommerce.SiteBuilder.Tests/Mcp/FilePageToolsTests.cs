@@ -395,6 +395,66 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task InGit_AnUnpublishReviewedWithNoDraftBranch_ShipsTheRequestersDeletionOfThePublishedPageReviewed()
+    {
+        SetUpGit();
+        _heads["approver"] = "approvers-head";
+
+        var call = await _context.ReviewAsync(Publisher(), "unpublish_page", FilePage());
+        (await _context.CallAsync(Approver(), "unpublish_page", call, Approved)).EnsureSucceeded();
+
+        var reviewed = (IDictionary<string, string>)call["expected_versions"];
+        Assert.Null(reviewed[PageId]);
+        Assert.Equal(FilePages.VersionOf(Published), reviewed[$"published:{PageId}"]);
+        Assert.Equal(["designer/publisher/spring"], _shipped);
+        _context.FilePageOperations.Verify(x => x.UnpublishAsync(It.Is<FilePageShipOperationRequest>(r => !r.DryRun && r.DraftOwner == "publisher" &&
+            r.ExpectedDraftHead == null && r.ExpectNoDraftBranch && r.ExpectedContentVersion == FilePages.VersionOf(Published)), It.IsAny<ClaimsPrincipal>(),
+            It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
+    public async Task InGit_ADraftBranchMadeAfterAnUnpublishWasReviewed_IsNotShipped()
+    {
+        SetUpGit();
+        var call = await _context.ReviewAsync(Publisher(), "unpublish_page", FilePage());
+        _heads["publisher"] = "saved-in-the-designer";
+
+        var result = await _context.CallAsync(Approver(), "unpublish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Empty(_shipped);
+    }
+
+    [Fact]
+    public async Task InGit_ADraftBranchTheOperationFindsMade_IsNotUnpublished()
+    {
+        SetUpGit(moveBeforeTheWrite: true);
+        var call = await _context.ReviewAsync(Publisher(), "unpublish_page", FilePage());
+
+        var result = await _context.CallAsync(Approver(), "unpublish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since it was reviewed", result.Error, StringComparison.Ordinal);
+        Assert.Empty(_shipped);
+    }
+
+    [Fact]
+    public async Task InGit_APublishedPageChangedSinceTheUnpublishWasReviewed_IsNotUnpublished()
+    {
+        SetUpGit();
+        _heads["publisher"] = "head-1";
+        var call = await _context.ReviewAsync(Publisher(), "unpublish_page", FilePage());
+        _publishedInGit = Published.Replace("Spring", "Autumn", StringComparison.Ordinal);
+
+        var result = await _context.CallAsync(Approver(), "unpublish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
+        Assert.Empty(_shipped);
+    }
+
+    [Fact]
     public async Task ADiscard_IsConfirmed_AndADeclinedOneDiscardsNothing()
     {
         SetUpBlobDiscard(DraftDiscardStatus.Discarded);
@@ -477,9 +537,11 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     private static Dictionary<string, object> Discard() => new() { ["kind"] = "page", ["page_id"] = PageId, ["store_id"] = StoreA };
 
     // Draft branches of the page by their owner, as git keeps them: a call reads the branch of its draft owner, else the
-    // caller's own, and its write ships that branch when it is at the head the call names.
+    // caller's own, and its write ships that branch when it is at the head the call names, or still missing when it names
+    // none; an unpublish also when the production branch still holds the page it was reviewed with.
     private readonly Dictionary<string, string> _heads = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _shipped = [];
+    private string _publishedInGit = Published;
 
     private void SetUpGit(bool moveBeforeTheWrite = false)
     {
@@ -490,9 +552,11 @@ public sealed class FilePageToolsTests : IAsyncDisposable
             if (request.DryRun)
             {
                 var preview = new SiteBuilderChangePreview { AffectsPublished = true };
-                if (_heads.TryGetValue(owner!, out var dryRunHead))
+                // a publish has nothing to ship without a draft branch; an unpublish cuts one for its deletion
+                if (_heads.TryGetValue(owner!, out var dryRunHead) || !publish)
                 {
-                    var change = preview.AddObject("file-page", Path).AddField("status", publish ? "Draft" : "Published", publish ? "Published" : "Draft");
+                    var change = preview.AddObject("file-page", Path, publish ? null : FilePages.VersionOf(_publishedInGit))
+                        .AddField("status", publish ? "Draft" : "Published", publish ? "Published" : "Draft");
                     (change.DraftBranch, change.DraftHead) = (branch, dryRunHead);
                 }
 
@@ -504,9 +568,14 @@ public sealed class FilePageToolsTests : IAsyncDisposable
                 _heads[owner!] = "moved";
             }
 
-            if (request.ExpectedDraftHead != null && _heads.GetValueOrDefault(owner!) != request.ExpectedDraftHead)
+            if ((request.ExpectedDraftHead != null || request.ExpectNoDraftBranch) && _heads.GetValueOrDefault(owner!) != request.ExpectedDraftHead)
             {
                 return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.DraftBranchMovedMessage).As<FilePageShipment>();
+            }
+
+            if (!publish && request.ExpectedContentVersion != null && request.ExpectedContentVersion != FilePages.VersionOf(_publishedInGit))
+            {
+                return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage).As<FilePageShipment>();
             }
 
             _shipped.Add(branch);

@@ -373,6 +373,12 @@ public class GroupedPageOperationService(
             return dryRun;
         }
 
+        if (request.ExpectedSettingsVersion != null &&
+            !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(groupedPage), request.ExpectedSettingsVersion.Trim(), StringComparison.Ordinal))
+        {
+            return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.SettingsChangedMessage);
+        }
+
         if (request.ExpectedReplacedVersions != null &&
             !await AreReplacedAsReviewedAsync(conflictingGroups, request.ExpectedReplacedVersions, cancellationToken))
         {
@@ -383,7 +389,8 @@ public class GroupedPageOperationService(
         var pagesToDelete = obsoletePageIds.ToList();
         pagesToDelete.AddRange(conflictingGroups.SelectMany(UnpublishConflictingGroup));
         var publishedPageId = groupedPage.Pages.Single(x => !obsoletePageIds.Contains(x.Id)).Id;
-        if (await SavePublishingAsync(groupedPage, conflictingGroups, pagesToDelete, draft: true, request.ExpectedDraftVersion, cancellationToken) is { } conflict)
+        if (await SavePublishingAsync(groupedPage, conflictingGroups, pagesToDelete, draft: true, request.ExpectedDraftVersion, request.ExpectedSettingsVersion,
+            cancellationToken) is { } conflict)
         {
             return conflict;
         }
@@ -421,7 +428,8 @@ public class GroupedPageOperationService(
         pageToUnpublish.Status = Draft;
         var pagesToDelete = groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
 
-        return await SavePublishingAsync(groupedPage, [], pagesToDelete, draft: false, request.ExpectedPublishedVersion, cancellationToken)
+        return await SavePublishingAsync(groupedPage, [], pagesToDelete, draft: false, request.ExpectedPublishedVersion, expectedSettingsVersion: null,
+            cancellationToken)
             ?? SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
 
@@ -432,7 +440,7 @@ public class GroupedPageOperationService(
     /// <param name="expectedVersion">The version the page has to be at, compared under the lock of the save; <c>null</c> saves it whatever it holds.</param>
     /// <returns>The conflict when the page is at another version, with nothing written; <c>null</c> when it is saved.</returns>
     private async Task<SiteBuilderOperationResult> SavePublishingAsync(GroupedSiteBuilderPage groupedPage, IList<GroupedSiteBuilderPage> unpublishedGroups,
-        List<string> pagesToDelete, bool draft, string expectedVersion, CancellationToken cancellationToken)
+        List<string> pagesToDelete, bool draft, string expectedVersion, string expectedSettingsVersion, CancellationToken cancellationToken)
     {
         if (expectedVersion == null)
         {
@@ -442,7 +450,7 @@ public class GroupedPageOperationService(
         {
             try
             {
-                await pageContentService.SaveGroupAtVersionAsync(groupedPage, draft, expectedVersion.Trim(), cancellationToken);
+                await pageContentService.SaveGroupAtVersionAsync(groupedPage, draft, expectedVersion.Trim(), expectedSettingsVersion?.Trim(), cancellationToken);
             }
             catch (SiteBuilderContentConflictException ex)
             {

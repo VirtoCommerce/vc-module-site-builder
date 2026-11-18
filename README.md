@@ -107,10 +107,10 @@ For each user: connect the agent to `https://<platform>/admin/mcp` with the clie
 | Content | `create_page` | A landing page with sections or as a copy, a missing language version, a copy of a Multilanguage Page | `builder:create` | Dry run |
 | Content | `edit_page_draft` | Sections, blocks, texts, SEO, layout and Shared Components of a draft | `builder:update` | Dry run, version token |
 | Content | `change_page_settings` | Name, language, address, audience and dates | `builder:update` | Approval; none with `unpublished_only` for a page never published |
-| Content | `convert_page_to_multilanguage` | A landing page becomes a Multilanguage Page | `builder:create`, `builder:update` | Approval; none with `unpublished_only` for a page never published |
-| Content | `link_page_language`, `unlink_page_language` | A page becomes a language version, or a landing page again | `builder:update` | Approval; none with `unpublished_only` for a page never published |
-| Content | `reset_language_overrides` | Language versions take the values of the Multilanguage Page again | `builder:update` | Approval; none with `unpublished_only` when no version is published |
-| Content | `publish_page`, `unpublish_page` | Publish a draft, or take a page off the storefront; in git the requester's draft branch is shipped | `builder:publish` | Approval bound to the reviewed versions and, in git, the draft owner |
+| Content | `convert_page_to_multilanguage` | A landing page becomes a Multilanguage Page | `builder:create`, `builder:update` | Approval bound to the reviewed versions; none with `unpublished_only` for a page never published |
+| Content | `link_page_language`, `unlink_page_language` | A page becomes a language version, or a landing page again | `builder:update` | Approval bound to the reviewed versions; none with `unpublished_only` for a page never published |
+| Content | `reset_language_overrides` | Language versions take the values of the Multilanguage Page again | `builder:update` | Approval bound to the reviewed versions; none with `unpublished_only` when no version is published |
+| Content | `publish_page`, `unpublish_page` | Publish a draft, or take a page off the storefront; in git the requester's draft branch is shipped | `builder:publish` | Approval bound to the reviewed versions (of a database page: its draft and its settings) and, in git, the draft owner |
 | Content | `restore_version` | A saved version of a page or of theme files becomes the draft | `builder:update` and the part's permission | Confirmation, expected versions |
 | Content | `discard_draft` | Drop the draft of a page or of a theme file | `builder:update` and the part's permission | Confirmation, expected versions |
 | Bulk | `set_translations` | Translations of many pages, bound to the source version | `builder:update` | Background job, dry run |
@@ -120,7 +120,7 @@ For each user: connect the agent to `https://<platform>/admin/mcp` with the clie
 | Design | `edit_theme_draft` | Header, footer, brand, and a palette generated from brand colors with a contrast check | `builder:update`, `builder:theme` | Dry run, version token |
 | Design | `publish_theme` | Publish every theme draft; refused below WCAG 2.2 AA contrast | `builder:publish` | Approval bound to the reviewed drafts |
 | Shared Components | `create_shared_component` | A new component, not placed anywhere yet | `builder:shared-components:create` | Dry run |
-| Shared Components | `change_shared_component` | New content or name; the content changes everywhere the component is placed | `builder:shared-components:update` | Approval when the content changes |
+| Shared Components | `change_shared_component` | New content or name; the content changes everywhere the component is placed | `builder:shared-components:update` | Approval bound to the reviewed content when the content changes |
 
 Bulk jobs are followed with the MCP module's `get_job_status`. Tool calls are audited by the MCP module, and **Agent tools** switches any of them off.
 

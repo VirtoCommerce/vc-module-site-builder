@@ -15,9 +15,11 @@ public sealed record FilePageShipCall(string StoreId, string PageId, bool Publis
 
 // The operation's dry run, then its write, bound to what the dry run showed. In git the draft is a branch of its
 // editor, named after the user, and an approved change runs as the approver: the dry run answers whose branch it ships
-// (draft_owner) and the commit it is at, and the write ships that commit from a publish branch of its own, so a commit
-// made to the draft branch afterwards is not merged with it. In blob storage there is one draft for every editor and no
-// lock over it: its version is the hash of the content, which the operation reads again right before its write.
+// (draft_owner) and the commit it is at, or that there is none, and the write ships that commit, or the deletion an
+// unpublish commits on it, from a publish branch of its own, so a commit made to the draft branch afterwards is not
+// merged with it; an unpublish also takes the published content it removes. In blob storage there is one draft for
+// every editor and no lock over it: its version is the hash of the content, which the operation reads again right
+// before its write.
 public class FilePageShipping(
     IAuthorizationService authorizationService,
     IFilePageOperationService filePageOperationService,
@@ -25,6 +27,9 @@ public class FilePageShipping(
     ILogger<FilePageShipping> logger)
 {
     public const string DraftOwnerArgument = "draft_owner";
+
+    // The key in expected_versions of the published content an unpublish in git removes; the page id's own is its draft head.
+    private const string PublishedKeyPrefix = "published:";
 
     // In git a conflict is an outcome, not a failure: the pull request may be open, so it is answered with the ways out,
     // and nothing is tried again.
@@ -65,7 +70,9 @@ public class FilePageShipping(
         var draftOwner = pinned == null ? owner : pinned.DraftOwner;
         var version = pinned == null ? null : ReviewedVersions.Of(pinned, page.PageId);
         var draftHead = inGit ? version : null;
-        var contentVersion = inGit ? null : version;
+        var publishedVersion = inGit && !call.Publish ? ReviewedVersions.Of(pinned, PublishedKeyPrefix + page.PageId) : null;
+        var contentVersion = inGit ? publishedVersion : version;
+        var noDraftBranch = inGit && draftHead == null;
 
         return call.Publish
             ? filePageOperationService.PublishAsync(new FilePagePublishOperationRequest
@@ -76,6 +83,7 @@ public class FilePageShipping(
                 Rebase = call.Rebase,
                 DraftOwner = draftOwner,
                 ExpectedDraftHead = draftHead,
+                ExpectNoDraftBranch = noDraftBranch,
                 ExpectedContentVersion = contentVersion,
                 DryRun = pinned == null,
                 ReportImpact = true,
@@ -87,20 +95,23 @@ public class FilePageShipping(
                 Path = page.Path,
                 DraftOwner = draftOwner,
                 ExpectedDraftHead = draftHead,
+                ExpectNoDraftBranch = noDraftBranch,
                 ExpectedContentVersion = contentVersion,
                 DryRun = pinned == null,
                 ReportImpact = true,
             }, user, cancellationToken);
     }
 
-    // In git the version is the commit the draft branch is at, and the call has to name whose branch it is, as the
-    // approver's own branch is another one; in blob storage it is the hash of the content the write takes: the draft (else
-    // what is published) for a publish, what is published for an unpublish, as the operation reads it.
+    // In git the version is the commit the draft branch is at, or none when there is no branch, and the call has to name
+    // whose branch it is, as the approver's own branch is another one; an unpublish also pins the published content it
+    // removes. In blob storage it is the hash of the content the write takes: the draft (else what is published) for a
+    // publish, what is published for an unpublish, as the operation reads it.
     private async Task PinAsync(ClaimsPrincipal user, FilePage page, FilePageShipCall call, SiteBuilderChange change, string owner,
         SiteBuilderOperationResult check, CancellationToken cancellationToken)
     {
         var item = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.FilePage);
         string version;
+        var published = new List<KeyValuePair<string, string>>();
         if (item?.DraftBranch != null)
         {
             if (call.ExpectedVersions != null && string.IsNullOrWhiteSpace(call.DraftOwner))
@@ -111,15 +122,25 @@ public class FilePageShipping(
 
             change.DraftOwner = owner;
             version = item.DraftHead;
-            change.AddWarning($"The write ships commit {version} of the draft branch {item.DraftBranch} from a publish branch of its own: " +
-                "commits made to the draft branch after this review are not published with it.");
+            if (call.Publish)
+            {
+                change.AddWarning($"The write ships commit {version} of the draft branch {item.DraftBranch} from a publish branch of its own: " +
+                    "commits made to the draft branch after this review are not published with it.");
+            }
+            else
+            {
+                published.Add(new KeyValuePair<string, string>(PublishedKeyPrefix + page.PageId, item.ETag));
+                change.AddWarning($"The write deletes the page on the draft branch {item.DraftBranch}" +
+                    (version == null ? ", which it cuts from what is published," : $" at commit {version}") +
+                    " and ships that deletion from a publish branch of its own: commits made to the draft branch after this review are not published with it.");
+            }
         }
         else
         {
             version = FilePages.VersionOf(await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: call.Publish, cancellationToken));
         }
 
-        ReviewedVersions.Pin(change, [new KeyValuePair<string, string>(page.PageId, version)], call.ExpectedVersions, call.DryRun);
+        ReviewedVersions.Pin(change, [new KeyValuePair<string, string>(page.PageId, version), .. published], call.ExpectedVersions, call.DryRun);
     }
 
     private static void AddShipment(SiteBuilderChange change, FilePageShipment shipment)

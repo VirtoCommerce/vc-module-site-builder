@@ -143,8 +143,9 @@ public class MultilanguagePageOperationService(
 
         return await RunForRootAsync(request, user,
             () => multilanguagePageService.PreviewLinkAsync(request.MultilanguagePageId, request.GroupId, cancellationToken),
-            () => request.RequireUnpublished
-                ? multilanguagePageService.LinkAsync(request.MultilanguagePageId, request.GroupId, requireUnpublished: true, cancellationToken)
+            () => request.RequireUnpublished || request.ExpectedMultilanguagePageVersion != null || request.ExpectedSettingsVersion != null
+                ? multilanguagePageService.LinkAsync(request.MultilanguagePageId, request.GroupId, request.RequireUnpublished, request.ExpectedMultilanguagePageVersion,
+                    request.ExpectedSettingsVersion, cancellationToken)
                 : multilanguagePageService.LinkAsync(request.MultilanguagePageId, request.GroupId, cancellationToken));
     }
 
@@ -168,8 +169,8 @@ public class MultilanguagePageOperationService(
         {
             return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewConvertAsync(request.GroupId, cancellationToken),
-                () => request.RequireUnpublished
-                    ? multilanguagePageService.ConvertAsync(request.GroupId, requireUnpublished: true, cancellationToken)
+                () => request.RequireUnpublished || request.ExpectedSettingsVersion != null
+                    ? multilanguagePageService.ConvertAsync(request.GroupId, request.RequireUnpublished, request.ExpectedSettingsVersion, cancellationToken)
                     : multilanguagePageService.ConvertAsync(request.GroupId, cancellationToken));
         }
         catch (InvalidOperationException ex)
@@ -243,7 +244,7 @@ public class MultilanguagePageOperationService(
             return refused.As<GroupedSiteBuilderPage>();
         }
 
-        if (!request.RequireUnpublished)
+        if (!request.RequireUnpublished && request.ExpectedSettingsVersion == null)
         {
             return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewUnlinkAsync(request.GroupId, cancellationToken),
@@ -254,7 +255,7 @@ public class MultilanguagePageOperationService(
         {
             return await RunAsync(request.DryRun, request.ReportImpact,
                 () => multilanguagePageService.PreviewUnlinkAsync(request.GroupId, cancellationToken),
-                () => multilanguagePageService.UnlinkAsync(request.GroupId, requireUnpublished: true, cancellationToken));
+                () => multilanguagePageService.UnlinkAsync(request.GroupId, request.RequireUnpublished, request.ExpectedSettingsVersion, cancellationToken));
         }
         catch (SiteBuilderContentConflictException ex)
         {
@@ -269,8 +270,9 @@ public class MultilanguagePageOperationService(
 
         return RunForRootAsync(request, user,
             () => multilanguagePageService.PreviewResetOverridesAsync(request.MultilanguagePageId, request.Fields, cancellationToken),
-            () => request.RequireUnpublished
-                ? multilanguagePageService.ResetOverridesAsync(request.MultilanguagePageId, request.Fields, requireUnpublished: true, cancellationToken)
+            () => request.RequireUnpublished || request.ExpectedMultilanguagePageVersion != null || request.ExpectedSettingsVersions != null
+                ? multilanguagePageService.ResetOverridesAsync(request.MultilanguagePageId, request.Fields, request.RequireUnpublished,
+                    request.ExpectedMultilanguagePageVersion, request.ExpectedSettingsVersions, cancellationToken)
                 : multilanguagePageService.ResetOverridesAsync(request.MultilanguagePageId, request.Fields, cancellationToken));
     }
 
@@ -291,9 +293,10 @@ public class MultilanguagePageOperationService(
 
         return RunForRootAsync(request, user,
             () => multilanguagePageService.PreviewPublishAllAsync(request.MultilanguagePageId, cancellationToken),
-            () => request.ExpectedDraftVersions == null
+            () => request.ExpectedDraftVersions == null && request.ExpectedSettingsVersions == null
                 ? multilanguagePageService.PublishAllAsync(request.MultilanguagePageId, cancellationToken)
-                : multilanguagePageService.PublishAllAsync(request.MultilanguagePageId, request.ExpectedDraftVersions, cancellationToken));
+                : multilanguagePageService.PublishAllAsync(request.MultilanguagePageId, request.ExpectedDraftVersions, request.ExpectedSettingsVersions,
+                    cancellationToken));
     }
 
     /// <summary>The root must exist and be in a store of the user; the write's expected failures become refusals.</summary>

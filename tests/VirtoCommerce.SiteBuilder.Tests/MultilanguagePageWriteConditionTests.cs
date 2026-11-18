@@ -213,6 +213,152 @@ public class MultilanguagePageWriteConditionTests
     }
 
     [Fact]
+    public async Task ResetOverridesAsync_AtTheReviewedVersions_IsReset()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        await fixture.PublishNewDraftAsync(nl.Id, content: null);
+
+        var result = await Operations(fixture).ResetOverridesAsync(await ReviewedResetAsync(fixture, root), _user, Ct);
+
+        Assert.Equal(["nl-NL"], result.Value);
+        Assert.Equal("/about-us", (await fixture.LoadGroupAsync(nl.Id)).Permalink);
+    }
+
+    [Fact]
+    public async Task ResetOverridesAsync_RootChangedSinceTheReview_IsAConflictAndResetsNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        await fixture.PublishNewDraftAsync(nl.Id, content: null);
+        var request = await ReviewedResetAsync(fixture, root);
+        // the published version overrides the permalink, so the root's own one changes at once
+        var moved = await Operations(fixture).UpdateAsync(Update(root, x => x.Permalink = "/team", requireUnpublished: true), _user, Ct);
+
+        var result = await Operations(fixture).ResetOverridesAsync(request, _user, Ct);
+
+        Assert.True(moved.Succeeded);
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        Assert.Equal("/over-ons", (await fixture.LoadGroupAsync(nl.Id)).Permalink);
+    }
+
+    [Fact]
+    public async Task ResetOverridesAsync_VersionAddedSinceTheReview_IsAConflictAndResetsNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var request = await ReviewedResetAsync(fixture, root);
+        var de = await fixture.CreateLanguageAsync(root, "de-DE", permalink: "/ueber-uns", draftContent: Content);
+
+        var result = await Operations(fixture).ResetOverridesAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal(("/over-ons", "/ueber-uns"), ((await fixture.LoadGroupAsync(nl.Id)).Permalink, (await fixture.LoadGroupAsync(de.Id)).Permalink));
+    }
+
+    [Fact]
+    public async Task ResetOverridesAsync_VersionChangedRightBeforeItsSave_IsRefusedUnderTheLock()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var request = await ReviewedResetAsync(fixture, root);
+        var roots = fixture.CreateRoots(new ConcurrentWriteContents(fixture.Groups, () => RestrictAsync(fixture, nl.Id)));
+
+        var result = await Operations(fixture, roots).ResetOverridesAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        Assert.Equal("/over-ons", (await fixture.LoadGroupAsync(nl.Id)).Permalink);
+    }
+
+    [Fact]
+    public async Task LinkAsync_AtTheReviewedVersions_IsLinked()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var landing = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        await fixture.PublishNewDraftAsync(landing.Id, content: null);
+
+        var result = await Operations(fixture).LinkAsync(await ReviewedLinkAsync(fixture, root, landing), _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(root.Id, (await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
+    }
+
+    [Fact]
+    public async Task LinkAsync_RootChangedSinceTheReview_IsAConflictAndLinksNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var landing = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var request = await ReviewedLinkAsync(fixture, root, landing);
+        await Operations(fixture).UpdateAsync(Update(root, x => x.Name = "Team"), _user, Ct);
+
+        var result = await Operations(fixture).LinkAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        Assert.Null((await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
+    }
+
+    [Fact]
+    public async Task LinkAsync_PageChangedSinceTheReview_IsAConflictAndLinksNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var landing = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var request = await ReviewedLinkAsync(fixture, root, landing);
+        await RestrictAsync(fixture, landing.Id);
+
+        var result = await Operations(fixture).LinkAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        Assert.Null((await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
+    }
+
+    [Fact]
+    public async Task UnlinkAsync_AtTheReviewedVersion_IsUnlinked_AndAfterAChange_IsAConflictThatKeepsTheLink()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var reviewedEn = await ReviewedVersionAsync(fixture, en.Id);
+        var reviewedNl = await ReviewedVersionAsync(fixture, nl.Id);
+        await RestrictAsync(fixture, nl.Id);
+
+        var unlinked = await Operations(fixture).UnlinkAsync(reviewedEn, _user, Ct);
+        var changed = await Operations(fixture).UnlinkAsync(reviewedNl, _user, Ct);
+
+        Assert.True(unlinked.Succeeded);
+        Assert.Null((await fixture.LoadGroupAsync(en.Id)).MultilanguagePageId);
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (changed.Status, changed.Error));
+        Assert.Equal(root.Id, (await fixture.LoadGroupAsync(nl.Id)).MultilanguagePageId);
+    }
+
+    [Fact]
+    public async Task ConvertAsync_AtTheReviewedVersion_IsConverted_AndAfterAChange_IsAConflictThatCreatesNoRoot()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var landing = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var other = await fixture.CreateLanguageAsync(null, "nl-NL", permalink: "/contact", draftContent: Content);
+        var reviewedLanding = await ReviewedVersionAsync(fixture, landing.Id, convert: true);
+        var reviewedOther = await ReviewedVersionAsync(fixture, other.Id, convert: true);
+        await RestrictAsync(fixture, other.Id);
+
+        var converted = await Operations(fixture).ConvertAsync(reviewedLanding, _user, Ct);
+        var changed = await Operations(fixture).ConvertAsync(reviewedOther, _user, Ct);
+
+        Assert.True(converted.Succeeded);
+        Assert.Equal(converted.Value.Id, (await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (changed.Status, changed.Error));
+        Assert.Single((await fixture.RootSearch.SearchAsync(new MultilanguagePageSearchCriteria { StoreId = StoreId })).Results);
+        Assert.Null((await fixture.LoadGroupAsync(other.Id)).MultilanguagePageId);
+    }
+
+    [Fact]
     public async Task MarkUpToDateAsync_AtTheReviewedSourceRevision_IsMarked()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -285,6 +431,59 @@ public class MultilanguagePageWriteConditionTests
         return DateTime.Parse(field.To, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }
 
+    /// <summary>The reset of the permalink of every version, at the versions its dry run tells.</summary>
+    private async Task<MultilanguagePageResetOverridesOperationRequest> ReviewedResetAsync(Fixture fixture, MultilanguagePage root)
+    {
+        var dryRun = await Operations(fixture).ResetOverridesAsync(
+            new MultilanguagePageResetOverridesOperationRequest { MultilanguagePageId = root.Id, Fields = ["permalink"], DryRun = true }, _user, Ct);
+
+        return new MultilanguagePageResetOverridesOperationRequest
+        {
+            MultilanguagePageId = root.Id,
+            Fields = ["permalink"],
+            ExpectedMultilanguagePageVersion = ETag(dryRun.Preview, ModuleConstants.ChangePreview.MultilanguagePage),
+            ExpectedSettingsVersions = dryRun.Preview.Objects
+                .Where(x => x.ObjectType == ModuleConstants.ChangePreview.Page)
+                .ToDictionary(x => x.ObjectId, x => x.ETag),
+        };
+    }
+
+    /// <summary>The link of the page to the root, at the versions its dry run tells.</summary>
+    private async Task<MultilanguagePageLinkOperationRequest> ReviewedLinkAsync(Fixture fixture, MultilanguagePage root, GroupedSiteBuilderPage page)
+    {
+        var dryRun = await Operations(fixture).LinkAsync(
+            new MultilanguagePageLinkOperationRequest { MultilanguagePageId = root.Id, GroupId = page.Id, DryRun = true }, _user, Ct);
+
+        return new MultilanguagePageLinkOperationRequest
+        {
+            MultilanguagePageId = root.Id,
+            GroupId = page.Id,
+            ExpectedMultilanguagePageVersion = ETag(dryRun.Preview, ModuleConstants.ChangePreview.MultilanguagePage),
+            ExpectedSettingsVersion = ETag(dryRun.Preview, ModuleConstants.ChangePreview.Page),
+        };
+    }
+
+    /// <summary>The unlink, or with <paramref name="convert"/> the convert, of the page at the version its dry run tells.</summary>
+    private async Task<MultilanguagePageVersionOperationRequest> ReviewedVersionAsync(Fixture fixture, string groupId, bool convert = false)
+    {
+        var request = new MultilanguagePageVersionOperationRequest { GroupId = groupId, DryRun = true };
+        var dryRun = convert
+            ? (await Operations(fixture).ConvertAsync(request, _user, Ct)).Preview
+            : (await Operations(fixture).UnlinkAsync(request, _user, Ct)).Preview;
+
+        return new MultilanguagePageVersionOperationRequest { GroupId = groupId, ExpectedSettingsVersion = ETag(dryRun, ModuleConstants.ChangePreview.Page) };
+    }
+
+    private static string ETag(SiteBuilderChangePreview preview, string objectType) => Assert.Single(preview.Objects, x => x.ObjectType == objectType).ETag;
+
+    /// <summary>Someone else shows the page to one customer group only.</summary>
+    private static async Task RestrictAsync(Fixture fixture, string groupId)
+    {
+        var group = await fixture.Groups.GetByIdAsync(groupId);
+        group.UserGroups = "vip";
+        await fixture.Groups.SaveChangesAsync([group]);
+    }
+
     private static MultilanguagePageSaveOperationRequest Update(MultilanguagePage root, Action<MultilanguagePage> change, bool requireUnpublished = false)
     {
         var model = new MultilanguagePage
@@ -315,8 +514,9 @@ public class MultilanguagePageWriteConditionTests
             CancellationToken cancellationToken = default) =>
             groups.SaveGroupContentAsync(authorizedGroup, content, expectedETag, cancellationToken);
 
-        public Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, CancellationToken cancellationToken = default) =>
-            groups.SaveGroupAtVersionAsync(group, draft, expectedETag, cancellationToken);
+        public Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, string expectedSettingsVersion,
+            CancellationToken cancellationToken = default) =>
+            groups.SaveGroupAtVersionAsync(group, draft, expectedETag, expectedSettingsVersion, cancellationToken);
 
         public Task SaveGroupSettingsAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken = default) =>
             groups.SaveGroupSettingsAsync(group, cancellationToken);

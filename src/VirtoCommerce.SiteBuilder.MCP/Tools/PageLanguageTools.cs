@@ -15,8 +15,9 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // The language links of Multilanguage Pages. A link decides which address and audience a published version is served
-// with, so a change that touches a published version waits for a second person (SiteBuilderChanges.NeedsApproval);
-// with unpublished_only a change of pages that were never published is made at once.
+// with, so a change that touches a published version waits for a second person, at the versions of the pages and of the
+// Multilanguage Page its dry run read (expected_versions); with unpublished_only a change of pages that were never
+// published is made at once.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageLanguageTools(
@@ -25,6 +26,13 @@ public class PageLanguageTools(
     IMultilanguagePageService multilanguagePageService,
     IMultilanguagePageOperationService multilanguagePageOperationService)
 {
+    private const string PageKeyPrefix = "page:";
+    private const string MultilanguagePageKeyPrefix = "multilanguage_page:";
+    private const string ExpectedVersionsDescription = "The expected_versions of the dry run, unchanged: the versions of the pages ('page:<id>') " +
+        "and of the Multilanguage Page ('multilanguage_page:<id>') the change was reviewed at. Required without dryRun unless unpublished_only is set.";
+    private const string ReviewedFlow = " First call it with dryRun: it shows the change and answers expected_versions. Then call it without dryRun " +
+        "and with those expected_versions: the change waits for approval and is refused if someone changed what it takes in between.";
+
     // The agent's names of MultilanguagePageInheritance.InheritableFields.
     private static readonly Dictionary<string, string> InheritableFields = new(StringComparer.Ordinal)
     {
@@ -36,7 +44,9 @@ public class PageLanguageTools(
         ["end_date"] = MultilanguagePageInheritance.EndDate,
     };
 
-    public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) => SiteBuilderChanges.NeedsApproval(arguments);
+    // Approval unless unpublished_only; without expected_versions the tool refuses the write itself.
+    public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
+        SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
     [McpServerTool(Name = "convert_page_to_multilanguage", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
@@ -45,12 +55,13 @@ public class PageLanguageTools(
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Turn a Landing Page into a Multilanguage Page: a new Multilanguage Page takes the page's name, address " +
         "and audience, and the page becomes its version in the page's language, served as before. Then add languages " +
-        "with create_page (kind 'language_version'). A published page needs approval; with unpublished_only a page with " +
-        "no published version is converted at once. Call it with dryRun first to show the change.")]
+        "with create_page (kind 'language_version'). A published page needs approval." + ReviewedFlow + " With unpublished_only " +
+        "a page with no published version is converted at once (expected_versions optional).")]
     public async Task<SiteBuilderChange> ConvertPageToMultilanguage(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the Landing Page (search_site_pages).")] string page_id,
         [Description(SiteBuilderChanges.UnpublishedOnlyDescription)] bool unpublished_only = false,
+        [Description(ExpectedVersionsDescription)] Dictionary<string, string> expected_versions = null,
         [Description("true to return the change without making it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
@@ -64,10 +75,12 @@ public class PageLanguageTools(
                 DryRun = isDryRun,
                 ReportImpact = true,
                 RequireUnpublished = unpublished_only,
+                ExpectedSettingsVersion = isDryRun ? null : ReviewedVersions.Of(change, PageKeyPrefix + group.Id),
             },
                 context.User, cancellationToken),
-            x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
-            dryRun, unpublished_only);
+            x => EnsureSucceeded(x, change, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
+            dryRun, unpublished_only,
+            checkAsync: x => Pin(change, x, expected_versions, dryRun, unpublished_only));
 
         change.MultilanguagePageId = result.Value?.Id;
         return change;
@@ -79,13 +92,14 @@ public class PageLanguageTools(
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Make an existing Landing Page the version of a Multilanguage Page in the page's language. The settings " +
         "in which the page differs from the Multilanguage Page stay as the page's own, so the page is served as before. " +
-        "A change touching a published page needs approval; with unpublished_only a change of pages with no published " +
-        "version is made at once. Call it with dryRun first to show the change.")]
+        "A change touching a published page needs approval." + ReviewedFlow + " With unpublished_only a change of pages with " +
+        "no published version is made at once (expected_versions optional).")]
     public async Task<SiteBuilderChange> LinkPageLanguage(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the Landing Page to link (search_site_pages).")] string page_id,
         [Description("Id of the Multilanguage Page to link it to.")] string multilanguage_page_id,
         [Description(SiteBuilderChanges.UnpublishedOnlyDescription)] bool unpublished_only = false,
+        [Description(ExpectedVersionsDescription)] Dictionary<string, string> expected_versions = null,
         [Description("true to return the change without making it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
@@ -102,9 +116,12 @@ public class PageLanguageTools(
                 DryRun = isDryRun,
                 ReportImpact = true,
                 RequireUnpublished = unpublished_only,
+                ExpectedMultilanguagePageVersion = isDryRun ? null : ReviewedVersions.Of(change, MultilanguagePageKeyPrefix + root.Id),
+                ExpectedSettingsVersion = isDryRun ? null : ReviewedVersions.Of(change, PageKeyPrefix + group.Id),
             }, context.User, cancellationToken),
-            x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", $"{PageLookup.ForbiddenPage(group)} {PageLookup.ForbiddenMultilanguagePage(root)}"),
-            dryRun, unpublished_only);
+            x => EnsureSucceeded(x, change, $"Page '{group.Id}'", $"{PageLookup.ForbiddenPage(group)} {PageLookup.ForbiddenMultilanguagePage(root)}"),
+            dryRun, unpublished_only,
+            checkAsync: x => Pin(change, x, expected_versions, dryRun, unpublished_only));
 
         return change;
     }
@@ -114,12 +131,13 @@ public class PageLanguageTools(
     [Authorize(Update)]
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Turn a language version of a Multilanguage Page back into a Landing Page with its current settings. A " +
-        "published version needs approval; with unpublished_only a version with no published page is unlinked at " +
-        "once. Call it with dryRun first to show the change.")]
+        "published version needs approval." + ReviewedFlow + " With unpublished_only a version with no published page is " +
+        "unlinked at once (expected_versions optional).")]
     public async Task<SiteBuilderChange> UnlinkPageLanguage(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the language version (search_site_pages).")] string page_id,
         [Description(SiteBuilderChanges.UnpublishedOnlyDescription)] bool unpublished_only = false,
+        [Description(ExpectedVersionsDescription)] Dictionary<string, string> expected_versions = null,
         [Description("true to return the change without making it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
@@ -137,10 +155,12 @@ public class PageLanguageTools(
                 DryRun = isDryRun,
                 ReportImpact = true,
                 RequireUnpublished = unpublished_only,
+                ExpectedSettingsVersion = isDryRun ? null : ReviewedVersions.Of(change, PageKeyPrefix + group.Id),
             },
                 context.User, cancellationToken),
-            x => SiteBuilderChanges.EnsureSucceeded(x, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
-            dryRun, unpublished_only);
+            x => EnsureSucceeded(x, change, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group)),
+            dryRun, unpublished_only,
+            checkAsync: x => Pin(change, x, expected_versions, dryRun, unpublished_only));
 
         return change;
     }
@@ -152,14 +172,15 @@ public class PageLanguageTools(
     [Authorize(Update)]
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Give every language version of a Multilanguage Page the Multilanguage Page's own value of the chosen " +
-        "settings, dropping the values the versions set for themselves. Changing published versions needs approval; " +
-        "with unpublished_only a change of versions with no published page is made at once. Returns each version's " +
-        "changes. Call it with dryRun first to show them.")]
+        "settings, dropping the values the versions set for themselves. Returns each version's changes. Changing published " +
+        "versions needs approval." + ReviewedFlow + " With unpublished_only a change of versions with no published page is " +
+        "made at once (expected_versions optional).")]
     public async Task<SiteBuilderChange> ResetLanguageOverrides(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the Multilanguage Page (search_site_pages).")] string multilanguage_page_id,
         [Description("Settings to reset: permalink, visible, user_groups, organization_id, start_date, end_date.")] string[] fields,
         [Description(SiteBuilderChanges.UnpublishedOnlyDescription)] bool unpublished_only = false,
+        [Description(ExpectedVersionsDescription)] Dictionary<string, string> expected_versions = null,
         [Description("true to return the changes without making them.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
@@ -188,9 +209,12 @@ public class PageLanguageTools(
                 DryRun = isDryRun,
                 ReportImpact = true,
                 RequireUnpublished = unpublished_only,
+                ExpectedMultilanguagePageVersion = isDryRun ? null : ReviewedVersions.Of(change, MultilanguagePageKeyPrefix + root.Id),
+                ExpectedSettingsVersions = isDryRun ? null : PageVersions(change),
             }, context.User, cancellationToken),
-            x => SiteBuilderChanges.EnsureSucceeded(x, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
-            dryRun, unpublished_only);
+            x => EnsureSucceeded(x, change, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
+            dryRun, unpublished_only,
+            checkAsync: x => Pin(change, x, expected_versions, dryRun, unpublished_only));
 
         if (!dryRun && result.Value?.Count > 0)
         {
@@ -198,6 +222,42 @@ public class PageLanguageTools(
         }
 
         return change;
+    }
+
+    // The versions of what the dry run read: the pages it changes and the Multilanguage Page whose values they take. A change
+    // waiting for approval names them; an unpublished_only one may take its own dry run's.
+    private static Task Pin(SiteBuilderChange change, SiteBuilderOperationResult check, IDictionary<string, string> expectedVersions, bool dryRun,
+        bool unpublishedOnly)
+    {
+        var current = (check.Preview?.Objects ?? [])
+            .Where(x => x.ObjectId != null)
+            .Select(x => new KeyValuePair<string, string>(
+                (x.ObjectType == ChangePreview.MultilanguagePage ? MultilanguagePageKeyPrefix : PageKeyPrefix) + x.ObjectId, x.ETag));
+        ReviewedVersions.Pin(change, current, expectedVersions, dryRun, optional: unpublishedOnly);
+
+        return Task.CompletedTask;
+    }
+
+    // The pinned versions of the pages, by page id.
+    private static Dictionary<string, string> PageVersions(SiteBuilderChange change) =>
+        (change.ExpectedVersions ?? new Dictionary<string, string>())
+            .Where(x => x.Key.StartsWith(PageKeyPrefix, StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(x => x.Key[PageKeyPrefix.Length..], x => x.Value, StringComparer.OrdinalIgnoreCase);
+
+    private static void EnsureSucceeded(SiteBuilderOperationResult result, SiteBuilderChange change, string subject, string forbiddenMessage)
+    {
+        if (result.Status == SiteBuilderOperationStatus.Conflict && result.Error == SiteBuilderContentConflictException.SettingsChangedMessage)
+        {
+            // A reset saves the language versions one by one, each under its own lock: those before one changed meanwhile keep the reset.
+            throw change.ObjectType == ChangePreview.MultilanguagePage
+                ? new McpException($"Multilanguage Page '{change.ObjectId}' or a language version the reset takes changed since the dry run that " +
+                    $"gave {ReviewedVersions.Argument}, so the reset was refused. If a version changed while the versions were being saved, those " +
+                    $"saved before it keep the reset. Call {change.Action} with dryRun again, show the user what it would do now, and send the new " +
+                    $"{ReviewedVersions.Argument}.")
+                : ReviewedVersions.Changed(change);
+        }
+
+        SiteBuilderChanges.EnsureSucceeded(result, subject, forbiddenMessage);
     }
 
     private static SiteBuilderChange NewPageChange(string action, GroupedSiteBuilderPage group) => new()

@@ -25,7 +25,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     private readonly List<string> _renamed = [];
     private readonly PublishedRenameContentPreservationTests.FakeGroupedPageService _pages;
     private SiteBuilderSharedComponent _created;
-    private Action _onUsage;
+    private Action _beforeSave;
 
     public SharedComponentWriteToolsTests()
     {
@@ -56,15 +56,20 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
             .Setup(x => x.TryLoadContentAsync(It.IsAny<SiteBuilderSharedComponent>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SiteBuilderSharedComponent component, CancellationToken _) => _contents.GetValueOrDefault(component.Id));
         _context.SharedComponentContents
-            .Setup(x => x.TrySaveContentAsync(It.IsAny<SiteBuilderSharedComponent>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((SiteBuilderSharedComponent component, string content, CancellationToken _) =>
+            .Setup(x => x.TrySaveContentAsync(It.IsAny<SiteBuilderSharedComponent>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SiteBuilderSharedComponent component, string content, string expectedVersion, CancellationToken _) =>
             {
+                _beforeSave?.Invoke();
+                if (expectedVersion != null && expectedVersion != SiteBuilderContentVersion.CreateForFileContent(_contents.GetValueOrDefault(component.Id)))
+                {
+                    throw new SiteBuilderContentConflictException();
+                }
+
                 _contents[component.Id] = content;
                 return true;
             });
         _context.SharedComponentUsages
             .Setup(x => x.GetUsageAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .Callback(() => _onUsage?.Invoke())
             .ReturnsAsync((IEnumerable<string> ids, string _, bool _, CancellationToken _) => ids.Select(id => new SiteBuilderSharedComponentUsage
             {
                 SharedComponentId = id,
@@ -216,12 +221,13 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     public async Task AComponentSavedRightBeforeTheWrite_IsNotOverwritten()
     {
         var call = await ReviewAsync(Revise(CopyFrom("promo")));
-        // a colleague's save lands while the call reads the pages the component stands on
-        _onUsage = () => _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
+        // a colleague's save lands after the call read the versions again, right before the write takes the component's lock
+        _beforeSave = () => _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
 
         var result = await _context.CallAsync(Reviser(), "change_shared_component", call, Approved);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error, StringComparison.Ordinal);
         Assert.Contains("Gift wrap", _contents["sc-a"], StringComparison.Ordinal);
     }
 

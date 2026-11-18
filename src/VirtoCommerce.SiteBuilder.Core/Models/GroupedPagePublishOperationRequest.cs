@@ -14,6 +14,12 @@ public class GroupedPagePublishOperationRequest : GroupedPageOperationRequest
     public string ExpectedDraftVersion { get; set; }
 
     /// <summary>
+    /// The version of the page's settings the caller reviewed, as <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> makes it: who sees the
+    /// page and when are not in its content, so the publish is refused once they are at another one. <c>null</c> publishes the page whatever its settings.
+    /// </summary>
+    public string ExpectedSettingsVersion { get; set; }
+
+    /// <summary>
     /// The version of the published page the caller reviewed, as the content read and a dry run answer it in <see cref="SiteBuilderObjectChange.ETag"/>:
     /// the unpublish is refused once the page is at another one. <c>null</c> unpublishes the page whatever it holds.
     /// </summary>
