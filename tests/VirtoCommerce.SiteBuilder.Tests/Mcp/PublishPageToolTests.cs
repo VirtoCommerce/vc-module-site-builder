@@ -386,6 +386,27 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AllLanguages_DryRun_WarnsOfAVersionItWouldSkip()
+    {
+        _context.SeedPage("ml-fr", StoreA, published: false, draft: true);
+        _pages.ChangeGroup("ml-fr", x =>
+        {
+            x.CultureName = "fr-FR";
+            x.Permalink = "/live";
+        });
+        _pages.ChangeGroup("live", x => x.CultureName = "fr-FR");
+        SetUpPublishAll([("ml-en", "v-en"), ("ml-fr", "v-fr")], []);
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", new { multilanguage_page_id = "ml", all_languages = true, dryRun = true }))
+            .EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(review.Warnings);
+        Assert.StartsWith("fr-FR: publishing every language skips this version", warning, StringComparison.Ordinal);
+        Assert.Contains("page 'live' (Page live, fr-FR)", warning, StringComparison.Ordinal);
+        Assert.Contains("languages: ['fr-FR']", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AllLanguages_WithALanguageVersionAddedAfterTheReview_PublishesNothing()
     {
         var drafts = new List<(string Id, string ETag)> { ("ml-en", "v-en") };

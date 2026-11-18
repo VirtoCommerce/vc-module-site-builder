@@ -393,23 +393,15 @@ public class PublicationDryRuns(
     public async Task<bool> CheckLanguageVersionAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
-        var check = await groupedPageOperationService.PublishAsync(new GroupedPagePublishOperationRequest
-        {
-            GroupId = group.Id,
-            Publish = true,
-            SaveId = Guid.NewGuid().ToString("N"),
-            DryRun = true,
-        }, user, cancellationToken);
-
-        if (check.Status != SiteBuilderOperationStatus.PermalinkConflict)
+        var conflicts = await groupedPageOperationService.FindPermalinkConflictsAsync(user, group.Id, cancellationToken);
+        if (conflicts.Count == 0)
         {
             return true;
         }
 
-        var conflicts = PermalinkConflicts.Of(check);
         readiness.Findings.Add(Warning("permalink-conflict", $"Publishing every language skips the {group.CultureName} version: published pages serve " +
             $"its permalink '{group.Permalink}' to the same visitors, and it would replace them.", PermalinkConflicts.Describe(conflicts),
-            $"Publish it on its own, with languages: ['{group.CultureName}']. {PermalinkConflicts.Fix(conflicts)}.", "address", group));
+            $"{PermalinkConflicts.FixSkippedVersion(group.CultureName, conflicts)}.", "address", group));
 
         return false;
     }

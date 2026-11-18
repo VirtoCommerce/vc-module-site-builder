@@ -7,6 +7,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
+using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -202,7 +203,14 @@ public class PagePublishingTools(
             }, user, cancellationToken),
             x => EnsureLanguagesPublished(x, change, root),
             dryRun,
-            checkAsync: x => PinAsync(change, x.Preview?.Objects, expectedVersions, dryRun));
+            checkAsync: async x =>
+            {
+                await PinAsync(change, x.Preview?.Objects, expectedVersions, dryRun);
+                if (dryRun)
+                {
+                    await WarnOfSkippedVersionsAsync(user, change, x.Preview?.Objects ?? [], cancellationToken);
+                }
+            });
 
         foreach (var skipped in result.Value?.Skipped ?? [])
         {
@@ -219,6 +227,21 @@ public class PagePublishingTools(
         }
 
         return change;
+    }
+
+    private async Task WarnOfSkippedVersionsAsync(ClaimsPrincipal user, SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts,
+        CancellationToken cancellationToken)
+    {
+        foreach (var draft in drafts)
+        {
+            var conflicts = await groupedPageOperationService.FindPermalinkConflictsAsync(user, draft.ObjectId, cancellationToken);
+            if (conflicts.Count > 0 && await groupedPageService.GetByIdAsync(draft.ObjectId) is { } group)
+            {
+                change.AddWarning($"{group.CultureName}: publishing every language skips this version, since published pages serve its permalink to " +
+                    $"the same visitors and it would replace them: {PermalinkConflicts.Describe(conflicts)}. " +
+                    $"{PermalinkConflicts.FixSkippedVersion(group.CultureName, conflicts)}.");
+            }
+        }
     }
 
     // Every chosen version is checked before the first is published. The source language goes first, as in publish-all:
