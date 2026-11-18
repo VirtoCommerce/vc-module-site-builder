@@ -2,10 +2,6 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
 
-// A publish refused because published pages serve the page's permalink to the same visitors, so that publishing would
-// replace them: the answer names them and the ways out. They are unpublished first, or with the publish itself when the
-// user agrees to replace them (unpublish_conflicting); a page with unpublished changes cannot be unpublished until its
-// draft is published or discarded.
 public static class PermalinkConflicts
 {
     public const string Argument = "unpublish_conflicting";

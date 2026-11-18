@@ -198,11 +198,27 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         var call = await _context.ReviewAsync(Publisher(), "publish_page", new Dictionary<string, object> { ["page_id"] = "new", ["unpublish_conflicting"] = true });
         var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
 
-        Assert.Equal(["live", "new"], ((IDictionary<string, string>)call["expected_versions"]).Keys.Order());
+        var versions = (IDictionary<string, string>)call["expected_versions"];
+        Assert.Equal(["live", "new"], versions.Keys.Order());
+        Assert.False(string.IsNullOrEmpty(versions["live"]));
         Assert.Contains(result.EnsureSucceeded().Read<SiteBuilderChange>().Changes,
             x => x.Field == "page 'live': status" && x.From?.ToString() == "Published" && x.To?.ToString() == "Draft");
         Assert.Equal("Published", (await _pages.GetByIdAsync("new")).Status);
         Assert.Equal("Draft", (await _pages.GetByIdAsync("live")).Status);
+    }
+
+    [Fact]
+    public async Task APageRepublishedAfterTheReview_IsNotUnpublished()
+    {
+        _pages.ChangeGroup("new", x => x.Permalink = "/live");
+        var call = await _context.ReviewAsync(Publisher(), "publish_page", new Dictionary<string, object> { ["page_id"] = "new", ["unpublish_conflicting"] = true });
+        _pages.SeedContent("live-published", SampleContent.Replace("Spring", "Autumn", StringComparison.Ordinal));
+
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Equal("Draft", (await _pages.GetByIdAsync("new")).Status);
+        Assert.Equal("Published", (await _pages.GetByIdAsync("live")).Status);
     }
 
     [Fact]
@@ -222,14 +238,23 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         Assert.Equal("Published", (await _pages.GetByIdAsync("live-2")).Status);
     }
 
-    [Fact]
-    public async Task UnpublishConflicting_GoesWithAPageOrChosenLanguages()
+    [Theory]
+    [InlineData("pages/about.page", null)]
+    [InlineData(null, "ml")]
+    public async Task UnpublishConflicting_GoesWithADatabasePageOrChosenLanguages(string pageId, string multilanguagePageId)
     {
-        var result = await _context.CallAsync(Publisher(), "publish_page",
-            new { multilanguage_page_id = "ml", all_languages = true, unpublish_conflicting = true, dryRun = true });
+        var result = await _context.CallAsync(Publisher(), "publish_page", new
+        {
+            page_id = pageId,
+            multilanguage_page_id = multilanguagePageId,
+            all_languages = multilanguagePageId != null,
+            store_id = StoreA,
+            unpublish_conflicting = true,
+            dryRun = true,
+        });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("unpublish_conflicting goes with", result.Error, StringComparison.Ordinal);
+        Assert.Contains("unpublish_conflicting goes with page_id of a database page or with languages", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -275,28 +300,60 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ChosenLanguages_ThatWouldReplaceAPageWithADraft_NameIt()
+    public async Task ChosenLanguages_WithUnpublishConflicting_TakeTheReviewedPageOff()
+    {
+        SeedMultilanguagePage();
+        _pages.ChangeGroup("ml-fr", x => x.Permalink = "/live");
+        var arguments = new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["languages"] = new[] { "fr-FR" } };
+
+        var refused = await _context.CallAsync(Publisher(), "publish_page", new Dictionary<string, object>(arguments) { ["dryRun"] = true });
+        var call = await _context.ReviewAsync(Publisher(), "publish_page", new Dictionary<string, object>(arguments) { ["unpublish_conflicting"] = true });
+        var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
+
+        Assert.Contains("page 'live' (Page live, en-US)", refused.Error, StringComparison.Ordinal);
+        Assert.Equal(["live", "ml-fr"], ((IDictionary<string, string>)call["expected_versions"]).Keys.Order());
+        result.EnsureSucceeded();
+        Assert.Equal("Published", (await _pages.GetByIdAsync("ml-fr")).Status);
+        Assert.Equal("Draft", (await _pages.GetByIdAsync("live")).Status);
+    }
+
+    [Fact]
+    public async Task ChosenLanguages_ThatFailOnAPageTheyWouldReplace_NameIt_AndWhatWasPublished()
     {
         SeedMultilanguagePage();
         var operations = new Mock<IGroupedPageOperationService>();
         operations
             .Setup(x => x.PublishAsync(It.IsAny<GroupedPagePublishOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((GroupedPagePublishOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun(CreatePageToolTests.Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true)
-                    .WithETag("reviewed"))
-                : SiteBuilderOperationResult.PermalinkConflict(new SiteBuilderPermalinkConflictResult
+            .ReturnsAsync((GroupedPagePublishOperationRequest request, ClaimsPrincipal _, CancellationToken _) =>
+            {
+                if (request.DryRun)
                 {
-                    Conflicts = [new SiteBuilderPermalinkUsage { GroupId = "old-fr", Name = "Old", CultureName = "fr-FR", CanUnpublish = false }],
-                }));
+                    var preview = CreatePageToolTests.Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true).WithETag("reviewed");
+                    if (request.GroupId == "ml-en")
+                    {
+                        preview.AddObject("page", "old-en", "old").AddField("status", "Published", "Draft");
+                    }
+
+                    return SiteBuilderOperationResult.DryRun(preview);
+                }
+
+                return request.GroupId == "ml-en"
+                    ? SiteBuilderOperationResult.Success(affectsPublished: true)
+                    : SiteBuilderOperationResult.PermalinkConflict(new SiteBuilderPermalinkConflictResult
+                    {
+                        Conflicts = [new SiteBuilderPermalinkUsage { GroupId = "old-fr", Name = "Old", CultureName = "fr-FR", CanUnpublish = false }],
+                    });
+            });
         _context.GroupedPageOperations = operations.Object;
 
         var call = await _context.ReviewAsync(Publisher(), "publish_page",
-            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["languages"] = new[] { "fr-FR" }, ["unpublish_conflicting"] = true });
+            new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["languages"] = new[] { "en-US", "fr-FR" }, ["unpublish_conflicting"] = true });
         var result = await _context.CallAsync(Approver(), "publish_page", call, Approved);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("Publishing the fr-FR version 'ml-fr' failed", result.Error, StringComparison.Ordinal);
         Assert.Contains("publish or discard the draft of page 'old-fr' (Old, fr-FR)", result.Error, StringComparison.Ordinal);
+        Assert.Contains("Published: en-US (and unpublished page 'old-en').", result.Error, StringComparison.Ordinal);
         operations.Verify(x => x.PublishAsync(It.Is<GroupedPagePublishOperationRequest>(r => !r.UnpublishConflicting),
             It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Never);
     }

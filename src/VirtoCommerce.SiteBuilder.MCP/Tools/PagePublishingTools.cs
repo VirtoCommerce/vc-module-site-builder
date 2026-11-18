@@ -78,11 +78,6 @@ public class PagePublishingTools(
             throw new McpException("Pass either page_id or multilanguage_page_id.");
         }
 
-        if (unpublish_conflicting && (all_languages || PageLookup.IsFilePagePath(page_id)))
-        {
-            throw new McpException($"{PermalinkConflicts.Argument} goes with page_id of a database page or with languages.");
-        }
-
         if (!string.IsNullOrEmpty(page_id))
         {
             if (languages?.Length > 0 || all_languages)
@@ -90,17 +85,27 @@ public class PagePublishingTools(
                 throw new McpException("languages and all_languages go with multilanguage_page_id; page_id is one page already.");
             }
 
-            return PageLookup.IsFilePagePath(page_id)
-                ? await filePageShipping.ShipAsync(context.User,
-                    new FilePageShipCall(store_id, page_id, Publish: true, rebase, draft_owner, expected_versions, dryRun), cancellationToken)
-                : await PublishGroupAsync(context.User, page_id, publish: true, EnsureNoRebase(rebase, expected_versions), unpublish_conflicting, dryRun,
-                    cancellationToken);
+            if (PageLookup.IsFilePagePath(page_id))
+            {
+                EnsureNoUnpublishConflicting(unpublish_conflicting, "publishing a page stored as a file does not check the permalinks of other pages");
+                return await filePageShipping.ShipAsync(context.User,
+                    new FilePageShipCall(store_id, page_id, Publish: true, rebase, draft_owner, expected_versions, dryRun), cancellationToken);
+            }
+
+            return await PublishGroupAsync(context.User, page_id, publish: true, EnsureNoRebase(rebase, expected_versions), unpublish_conflicting, dryRun,
+                cancellationToken);
         }
 
         EnsureNoRebase(rebase, expected_versions);
         if (all_languages == languages?.Length > 0)
         {
             throw new McpException("With multilanguage_page_id, pass either languages or all_languages: true.");
+        }
+
+        if (all_languages)
+        {
+            EnsureNoUnpublishConflicting(unpublish_conflicting, "publishing every language skips a version that would replace a published page; " +
+                "publish that version with languages");
         }
 
         var root = await multilanguagePageService.LoadMultilanguagePageAsync(authorizationService, context.User, multilanguage_page_id);
@@ -147,6 +152,14 @@ public class PagePublishingTools(
         }
 
         return expectedVersions;
+    }
+
+    private static void EnsureNoUnpublishConflicting(bool unpublishConflicting, string reason)
+    {
+        if (unpublishConflicting)
+        {
+            throw new McpException($"{PermalinkConflicts.Argument} goes with page_id of a database page or with languages: {reason}.");
+        }
     }
 
     // The version of the draft a publish takes, or of the published page an unpublish takes.
@@ -199,8 +212,8 @@ public class PagePublishingTools(
                 MultilanguagePageBatchResult.ChangedReason => $"{skipped.CultureName}: its draft changed since it was reviewed, so it was not " +
                     "published. Call publish_page with dryRun again for it, show the user the change, and send the new expected_versions.",
                 MultilanguagePageBatchResult.PermalinkConflictReason => $"{skipped.CultureName}: another published page serves its permalink to " +
-                    $"the same visitors, so it was not published. Publish it alone, with languages: ['{skipped.CultureName}'], to see the page it " +
-                    "would replace and choose whether to replace it.",
+                    $"the same visitors, so it was not published. Call publish_page with languages: ['{skipped.CultureName}'] and dryRun to see the " +
+                    "page it would replace, and let the user choose whether to replace it.",
                 _ => $"{skipped.CultureName}: publishing failed; the version is as it was. Try it again with languages: ['{skipped.CultureName}'].",
             });
         }
@@ -232,12 +245,14 @@ public class PagePublishingTools(
         var change = NewMultilanguageChange(root);
         change.DryRun = true;
         var drafts = new List<SiteBuilderObjectChange>();
+        var replaced = new Dictionary<string, string>();
         foreach (var group in groups)
         {
             var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, expectedVersion: null, unpublishConflicting, cancellationToken);
             EnsurePublished(check, group, publish: true);
             change.AddChanges(check.Preview);
             drafts.AddRange(check.Preview?.Objects ?? []);
+            replaced[group.Id] = string.Join(", ", check.Preview?.Objects.Where(x => x.ObjectId != group.Id).Select(x => $"page '{x.ObjectId}'") ?? []);
         }
 
         change.AffectsPublished = true;
@@ -264,7 +279,7 @@ public class PagePublishingTools(
                 throw new McpException($"Publishing the {group.CultureName} version '{group.Id}' failed: {reason}. {done}");
             }
 
-            published.Add(group.CultureName);
+            published.Add(string.IsNullOrEmpty(replaced[group.Id]) ? group.CultureName : $"{group.CultureName} (and unpublished {replaced[group.Id]})");
         }
 
         change.DryRun = false;
@@ -288,8 +303,6 @@ public class PagePublishingTools(
         }, user, cancellationToken);
     }
 
-    // The pages a publish with unpublish_conflicting takes off come without a version: they are pinned by id, so a page
-    // that starts or stops conflicting after the review refuses the write instead of being unpublished unreviewed.
     private static Task PinAsync(SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts, IDictionary<string, string> expectedVersions, bool dryRun)
     {
         ReviewedVersions.Pin(change, (drafts ?? []).Select(x => new KeyValuePair<string, string>(x.ObjectId, x.ETag)), expectedVersions, dryRun);

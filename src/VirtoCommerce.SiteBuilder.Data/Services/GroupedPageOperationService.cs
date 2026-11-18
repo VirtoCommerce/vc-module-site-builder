@@ -366,7 +366,8 @@ public class GroupedPageOperationService(
             var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
             foreach (var conflictingGroup in conflictingGroups)
             {
-                dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft);
+                var published = await pageContentService.LoadGroupContentAsync(conflictingGroup, draft: false, cancellationToken);
+                dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft).ETag = published.ETag;
             }
 
             return dryRun;

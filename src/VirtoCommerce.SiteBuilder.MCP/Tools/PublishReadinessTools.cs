@@ -47,7 +47,7 @@ public class PublishReadinessTools(
         "The answer comes from the dry run of the publication itself: parts (each with its changes section by section and " +
         "who changed it), findings (critical ones block the publication: no draft, a page document that is refused, published " +
         "pages it would replace, a palette below WCAG 2.2 AA, no schema catalog; warnings: hidden page, ended dates, an address " +
-        "another page serves), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
+        "another page serves, a language version that publishing every language skips), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
         "instead. Changes nothing. To publish, use publish_page or publish_theme.")]
     public async Task<PublishReadiness> GetPublishReadiness(
         RequestContext<CallToolRequestParams> context,
@@ -164,7 +164,7 @@ public class PublishReadinessTools(
         foreach (var groupId in await dryRuns.CheckMultilanguagePageAsync(user, root, readiness, cancellationToken))
         {
             var group = await groupedPageService.GetByIdAsync(groupId);
-            if (group != null)
+            if (group != null && await dryRuns.CheckLanguageVersionAsync(user, group, readiness, cancellationToken))
             {
                 readiness.Parts.Add(await ReadPagePartAsync(group, cancellationToken));
                 await AddPageFindingsAsync(group, readiness, cancellationToken);
@@ -387,6 +387,31 @@ public class PublicationDryRuns(
         }
 
         return true;
+    }
+
+    // true when publishing every language publishes the version: it skips one that would replace published pages.
+    public async Task<bool> CheckLanguageVersionAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, PublishReadiness readiness,
+        CancellationToken cancellationToken)
+    {
+        var check = await groupedPageOperationService.PublishAsync(new GroupedPagePublishOperationRequest
+        {
+            GroupId = group.Id,
+            Publish = true,
+            SaveId = Guid.NewGuid().ToString("N"),
+            DryRun = true,
+        }, user, cancellationToken);
+
+        if (check.Status != SiteBuilderOperationStatus.PermalinkConflict)
+        {
+            return true;
+        }
+
+        var conflicts = PermalinkConflicts.Of(check);
+        readiness.Findings.Add(Warning("permalink-conflict", $"Publishing every language skips the {group.CultureName} version: published pages serve " +
+            $"its permalink '{group.Permalink}' to the same visitors, and it would replace them.", PermalinkConflicts.Describe(conflicts),
+            $"Publish it on its own, with languages: ['{group.CultureName}']. {PermalinkConflicts.Fix(conflicts)}.", "address", group));
+
+        return false;
     }
 
     // The language versions the publication of every language would publish.

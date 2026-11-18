@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Moq;
@@ -8,6 +9,8 @@ using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -82,6 +85,38 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
         Assert.Equal(McpFindingSeverities.Critical, finding.Severity);
         Assert.Equal("page 'live' (Page live, en-US)", finding.Evidence);
         Assert.Contains("unpublish_conflicting: true", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AMultilanguagePage_WarnsOfAVersionThatPublishingEveryLanguageSkips()
+    {
+        _context.SeedPage("ml-en", StoreA, published: false, draft: true);
+        _context.SeedPage("ml-fr", StoreA, published: false, draft: true);
+        _pages.ChangeGroup("ml-fr", x =>
+        {
+            x.CultureName = "fr-FR";
+            x.Permalink = "/live";
+        });
+        _pages.ChangeGroup("live", x => x.CultureName = "fr-FR");
+        _context.AddMultilanguagePages(Root("ml", StoreA));
+        _context.MultilanguagePageOperations
+            .Setup(x => x.PublishAllAsync(It.IsAny<MultilanguagePagePublishAllOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var preview = new SiteBuilderChangePreview { AffectsPublished = true };
+                preview.AddObject("page", "ml-en", "v-en").AddField("status", "Draft", "Published");
+                preview.AddObject("page", "ml-fr", "v-fr").AddField("status", "Draft", "Published");
+                return SiteBuilderOperationResult.DryRun<MultilanguagePageBatchResult>(preview);
+            });
+
+        var readiness = await CheckAsync(Reader(), new { multilanguage_page_id = "ml" });
+
+        Assert.True(readiness.Ready);
+        Assert.Equal(["ml-en"], readiness.Parts.Select(x => x.ObjectId));
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "permalink-conflict");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Equal("page 'live' (Page live, fr-FR)", finding.Evidence);
+        Assert.Contains("languages: ['fr-FR']", finding.Fix, StringComparison.Ordinal);
     }
 
     [Fact]
