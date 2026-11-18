@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent, h } from "vue";
+import { defineComponent, h, ref } from "vue";
 import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import type { IBladeToolbar } from "@vc-shell/framework";
@@ -12,7 +12,8 @@ import VersionHistory from "../../src/modules/designer/components/VersionHistory
 import { pagesChanged, useUrlParams } from "../../src/modules/site-builder/composables";
 import { PickAssetKey } from "../../src/modules/designer/types";
 import { toClipboard } from "../../src/modules/designer/clipboard";
-import { BladeStackKey, blade, notification, popup } from "./support/vcShell";
+import type { Designer } from "../../src/modules/designer/useDesigner";
+import { AiAgentServiceKey, BladeStackKey, blade, notification, popup } from "./support/vcShell";
 import { fakePlatform, status, themeFileAnswer, type FakePlatform } from "./support/fakePlatform";
 
 const STORE = "B2B-store";
@@ -229,6 +230,125 @@ describe("telling open lists the page changed", () => {
 
     expect(platform.to("/api/site-builder/history/v7/restore", "POST")).toHaveLength(1);
     expect(pagesChanged.value).toBe(before + 1);
+  });
+});
+
+describe("a page the AI assistant saves", () => {
+  const CONTENT = `${GROUP}/content`;
+  const STATUS = "/api/site-builder-pages/grouped/publish-status/g1";
+  const SAVE = "/api/site-builder/designer/save";
+  const ASSISTANT_PAGE = { settings: { type: "settings" }, content: [{ id: "hero-1", type: "hero", title: "Spring sale" }] };
+  const NOTICE = "The AI assistant changed this page. Your unsaved edits are kept: copy what you need, then reopen the page to see its changes.";
+  let platform: FakePlatform;
+  let served: { content: string; eTag: string };
+  let agent: ReturnType<typeof fakeAgent>;
+
+  // As vc-shell's AI agent service: the panel's state, and the assistant's messages passed on to each listener.
+  function fakeAgent() {
+    const listeners = new Set<(message: { type: string }) => void>();
+    return {
+      isOpen: ref(true),
+      onMessage: (listener: (message: { type: string }) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      send: (type: string) => listeners.forEach((listener) => listener({ type })),
+    };
+  }
+
+  async function openPage() {
+    served = { content: JSON.stringify(PAGE), eTag: '"v1"' };
+    platform = fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
+      .on("GET", CONTENT, () => served)
+      .on("GET", STATUS, { published: true, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({}))
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: [] })
+      .on("POST", SAVE, { eTag: '"v3"' })
+      .install();
+    blade.param.value = "g1";
+    agent = fakeAgent();
+    const wrapper = shallowMount(SiteBuilderDesigner, {
+      global: { plugins: [await routerAt("/")], provide: { [AiAgentServiceKey]: agent }, stubs: { VcBlade: false } },
+    });
+    await flushPromises();
+    return (wrapper.vm as unknown as { designer: Designer }).designer;
+  }
+
+  const assistantSaves = () => (served = { content: JSON.stringify(ASSISTANT_PAGE), eTag: '"v2"' });
+  const heroTitle = (designer: Designer) => designer.doc.value.content.find((x) => x.id === "hero-1")?.title;
+  const edit = (designer: Designer) =>
+    (designer.doc.value = { ...designer.doc.value, content: designer.doc.value.content.map((x) => (x.id === "hero-1" ? { ...x, title: "Mine" } : x)) });
+  const savedVersion = () => (platform.to(SAVE, "POST").at(-1)?.body as { page?: { eTag?: string } }).page?.eTag;
+
+  it("reloads a page with no unsaved edits, with its version and publish status, once the assistant says it saved it", async () => {
+    const designer = await openPage();
+    const before = pagesChanged.value;
+    assistantSaves();
+
+    agent.send("RELOAD_BLADE");
+    await flushPromises();
+
+    expect(heroTitle(designer)).toBe("Spring sale");
+    expect(designer.dirty.value).toBe(false);
+    expect(platform.to(STATUS)).toHaveLength(2);
+    expect(pagesChanged.value).toBe(before + 1);
+    expect(notification.warning).not.toHaveBeenCalled();
+    edit(designer);
+    await designer.save();
+    expect(savedVersion()).toBe('"v2"');
+  });
+
+  it("keeps unsaved edits and the version they started from, and says the assistant changed the page", async () => {
+    const designer = await openPage();
+    edit(designer);
+    assistantSaves();
+
+    agent.send("RELOAD_BLADE");
+    await flushPromises();
+
+    expect(heroTitle(designer)).toBe("Mine");
+    expect(notification.warning).toHaveBeenCalledWith(NOTICE);
+    expect(platform.to(STATUS)).toHaveLength(1);
+    await designer.save();
+    expect(savedVersion()).toBe('"v1"');
+  });
+
+  it("does nothing when the page is as it was", async () => {
+    const designer = await openPage();
+
+    agent.send("RELOAD_BLADE");
+    await flushPromises();
+
+    expect(platform.to(CONTENT)).toHaveLength(2);
+    expect(platform.to(STATUS)).toHaveLength(1);
+    expect(heroTitle(designer)).toBe("Welcome");
+    expect(notification.warning).not.toHaveBeenCalled();
+  });
+
+  it("leaves a page alone while it is being saved", async () => {
+    const designer = await openPage();
+    assistantSaves();
+    designer.busy.value = "saving";
+
+    agent.send("RELOAD_BLADE");
+    await flushPromises();
+
+    expect(platform.to(CONTENT)).toHaveLength(1);
+    expect(heroTitle(designer)).toBe("Welcome");
+    expect(notification.warning).not.toHaveBeenCalled();
+  });
+
+  it("checks the page when the assistant's panel closes, for an assistant that does not say when it saved", async () => {
+    const designer = await openPage();
+    assistantSaves();
+
+    agent.isOpen.value = false;
+    await flushPromises();
+
+    expect(heroTitle(designer)).toBe("Spring sale");
+    expect(platform.to(STATUS)).toHaveLength(2);
   });
 });
 

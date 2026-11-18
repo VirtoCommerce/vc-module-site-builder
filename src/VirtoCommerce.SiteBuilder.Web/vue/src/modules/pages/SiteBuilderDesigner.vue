@@ -580,6 +580,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { debounce } from "lodash-es";
 import {
+  AiAgentServiceKey,
   BladeMaximizedKey,
   BladeStackKey,
   hotkey,
@@ -1417,6 +1418,26 @@ async function reopen() {
   await (file ? designer.open(file) : designer.open({ groupId: designer.groupId.value!, storeId: designer.storeId.value! }));
   endVersionPreview();
   await versionHistory.value?.reload();
+}
+
+async function checkAssistantSave() {
+  if (!(await designer.pageChangedOnServer().catch(() => false))) return;
+  notifyPagesChanged();
+  if (designer.dirty.value) notification.warning(t("SITE_BUILDER.DESIGNER.ASSISTANT_CHANGED"));
+  else await reopen().catch(() => undefined);
+}
+
+// The assistant says when it saved the page; one that does not is checked once its panel closes.
+const aiAgent = inject(AiAgentServiceKey, null);
+if (aiAgent) {
+  // vc-shell passes on every message type the assistant sends, not only those its types name.
+  const stopListening = aiAgent.onMessage((message) => {
+    if ((message.type as string) === "RELOAD_BLADE") void checkAssistantSave();
+  });
+  onBeforeUnmount(stopListening);
+  watch(aiAgent.isOpen, (open, wasOpen) => {
+    if (wasOpen && !open) void checkAssistantSave();
+  });
 }
 
 async function restoreVersion(version: HistoryVersion) {
