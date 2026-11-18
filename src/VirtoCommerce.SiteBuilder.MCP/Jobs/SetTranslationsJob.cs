@@ -7,12 +7,11 @@ namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
 
 public class SetTranslationsJobPayload
 {
-    // The user who called set_translations; the job runs as them.
+    // The job runs as this user.
     public string UserId { get; set; }
 
     public bool MarkUpToDate { get; set; }
 
-    // One save per page, at the version the agent read.
     public IList<SetTranslationsJobPage> Pages { get; set; } = [];
 }
 
@@ -22,7 +21,7 @@ public class SetTranslationsJobPage : ISiteBuilderJobPage
 
     public string VersionToken { get; set; }
 
-    // The source publication the agent translated from.
+    // The translation is marked up to date only while the source is still this publication.
     public DateTime? SourceRevisionDate { get; set; }
 
     public IList<SetTranslationsJobText> Texts { get; set; } = [];
@@ -40,8 +39,6 @@ public class SetTranslationsJobText
     public string Text { get; set; }
 }
 
-// Saves the agent's translations page by page as the user who asked for them, and marks a translation up to date only
-// while the source is still the publication it was translated from.
 public class SetTranslationsJob(
     SiteBuilderJobUsers jobUsers,
     PageDraftJobRunner runner,

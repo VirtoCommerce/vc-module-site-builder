@@ -755,10 +755,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             }
         }
 
-        /// <summary>
-        /// The version of the Multilanguage Page the group is a language version of, the stored link winning as in SynchronizeLanguageVersionsAsync;
-        /// <c>null</c> without one. It is read after that derived the overrides from it, so a change before this read is caught.
-        /// </summary>
+        /// <summary>The stored link wins, as where the save derives the overrides, so this is the root they were derived from.</summary>
         private static async Task<string> GetRootVersionAsync(ISiteBuilderRepository repository, GroupedSiteBuilderPage group,
             GroupedSiteBuilderPageEntity existing, CancellationToken cancellationToken)
         {

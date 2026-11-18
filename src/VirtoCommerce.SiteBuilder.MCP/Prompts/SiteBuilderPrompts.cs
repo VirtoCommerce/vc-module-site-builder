@@ -6,9 +6,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Prompts;
 
-// The routines of the content author, the site designer and the person who reviews their changes, offered by MCP
-// clients as slash commands. They only say what to do; the tools decide what the user may see and change. A prompt has
-// no check of its own, so [McpPermission] hides them from a user who cannot read Site Builder.
+// Prompts have no checks of their own: the tools enforce access, and the permission only hides the prompts from users
+// who cannot read Site Builder.
 [McpServerPromptType]
 [McpScope(McpScopes.Admin)]
 [McpPermission(Read)]

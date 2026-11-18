@@ -22,9 +22,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// What a publication would put live and what keeps it from going live, read from the dry runs of the operations that
-// publish: the same checks refuse here as in publish_page and publish_theme, and nothing is written. Who changed each
-// part comes from the versions the store keeps; who sees it, from the page's settings.
+// Read from the dry runs of the publishing operations themselves, so the same checks refuse here as in a publication.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PublishReadinessTools(
@@ -40,7 +38,6 @@ public class PublishReadinessTools(
     private const string PublishAction = "publish";
     private const string UnpublishAction = "unpublish";
 
-    // Versions read back to find who changed a page since it was last published.
     private const int HistoryVersions = 20;
 
     [McpServerTool(Name = "get_publish_readiness", ReadOnly = true, Destructive = false, Idempotent = true)]
@@ -201,8 +198,6 @@ public class PublishReadinessTools(
         return readiness;
     }
 
-    // The draft against what is published, section by section, with who saved the draft and, where the store keeps
-    // history, everyone who saved the page since its last publication.
     private async Task<PublishPart> ReadPagePartAsync(GroupedSiteBuilderPage group, PublishReadiness readiness, CancellationToken cancellationToken)
     {
         var draft = GroupedPagePublishing.GetDraft(group) ?? new SiteBuilderPage();
@@ -270,8 +265,6 @@ public class PublishReadinessTools(
         }
     }
 
-    // What keeps a published page from being seen as the author expects: the page's own settings, and another page
-    // that serves the same address in the language.
     private async Task AddPageFindingsAsync(GroupedSiteBuilderPage group, PublishReadiness readiness, CancellationToken cancellationToken)
     {
         foreach (var finding in PageAudience.GetFindings(group, DateTime.UtcNow))
@@ -306,7 +299,6 @@ public class PublishReadinessTools(
     }
 }
 
-// The dry runs of the operations that publish, read into a readiness: the parts they list and their refusals as findings.
 public class PublicationDryRuns(
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
@@ -359,7 +351,6 @@ public class PublicationDryRuns(
         }
     }
 
-    // true when the dry run succeeded.
     public async Task<bool> CheckPageAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, bool unpublish, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
@@ -399,7 +390,7 @@ public class PublicationDryRuns(
         return true;
     }
 
-    // true when publishing every language publishes the version: it skips one that would replace published pages.
+    // Publishing every language skips a version that would replace published pages.
     public async Task<bool> CheckLanguageVersionAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
@@ -416,7 +407,6 @@ public class PublicationDryRuns(
         return false;
     }
 
-    // The language versions the publication of every language would publish.
     public async Task<IList<string>> CheckMultilanguagePageAsync(ClaimsPrincipal user, MultilanguagePage root, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
@@ -555,7 +545,6 @@ public class PublicationDryRuns(
     };
 }
 
-// Who sees a page of the database once it is published, and the settings that hide it from them.
 public static class PageAudience
 {
     public static string Describe(GroupedSiteBuilderPage group)
@@ -608,10 +597,8 @@ public static class PageAudience
 
 public sealed class PublishReadiness
 {
-    // page, multilanguage_page, file_page or theme.
     public string Target { get; init; }
 
-    // publish or unpublish.
     public string Action { get; init; }
 
     public string ObjectId { get; init; }
@@ -620,20 +607,15 @@ public sealed class PublishReadiness
 
     public string StoreId { get; init; }
 
-    // No critical finding: the publication would go through.
     public bool Ready => !Findings.Any(x => x.Severity == McpFindingSeverities.Critical);
 
-    // What would go live, each part with its changes and who made them.
     public IList<PublishPart> Parts { get; init; } = [];
 
-    // Critical ones block the publication; warnings and notes do not.
     public IList<McpFinding> Findings { get; set; } = [];
 
-    // Who would see the change.
     public string Affected { get; set; }
 
-    // You hold builder:publish in every store, as publish_page and publish_theme require; the publication still waits
-    // for a second person's approval.
+    // The permission the publishing tools require; a publication still waits for a second person's approval.
     public bool YouCanPublish { get; set; }
 
     public string NextStep { get; init; }
@@ -649,7 +631,6 @@ public sealed class PublishPart
 
     public string Language { get; init; }
 
-    // Who changed it since it was last published, as the store records it; empty where nobody is recorded.
     public IList<string> ChangedBy { get; init; } = [];
 
     public DateTime? ChangedDate { get; init; }
@@ -675,7 +656,7 @@ public sealed class PublishPart
         return part;
     }
 
-    // What is published against what would be, section by section; everything is new for a page never published.
+    // A page never published is compared with an empty document, so everything reads as new.
     public static IList<PartChange> Compare(string published, string draft)
     {
         var after = PageDocumentEditor.Read(draft);

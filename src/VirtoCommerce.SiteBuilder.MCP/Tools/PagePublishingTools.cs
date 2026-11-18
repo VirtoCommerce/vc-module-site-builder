@@ -16,7 +16,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Publishing changes what customers see: the write waits for approval and takes exactly the versions its dry run answered (ReviewedVersions).
+// Publishing changes what customers see, so the write waits for approval and takes exactly the versions its dry run answered.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PagePublishingTools(
@@ -27,7 +27,6 @@ public class PagePublishingTools(
     IMultilanguagePageOperationService multilanguagePageOperationService,
     FilePageShipping filePageShipping)
 {
-    // A key of expected_versions: the version of the settings of a database page the call publishes.
     private const string SettingsKeyPrefix = "settings:";
 
     private const string DraftOwnerDescription = "With a page stored as a file in git: the user whose draft branch is shipped, as the dry run " +
@@ -140,7 +139,7 @@ public class PagePublishingTools(
             : PublishGroupAsync(context.User, page_id, publish: false, expected_versions, unpublishConflicting: false, dryRun, cancellationToken);
     }
 
-    // A call that names the versions it takes waits for a second person; one without them is a dry run or is refused.
+    // A call without expected_versions is a dry run or is refused, so there is nothing to approve.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) => ReviewedVersions.AreGiven(arguments);
 
     private static void EnsureNoRebase(bool rebase)
@@ -186,8 +185,6 @@ public class PagePublishingTools(
         return change;
     }
 
-    // The draft of every language version that has one, at the version reviewed: a version whose draft appeared, went or
-    // changed since refuses the whole publication.
     private async Task<SiteBuilderChange> PublishAllLanguagesAsync(ClaimsPrincipal user, MultilanguagePage root, IDictionary<string, string> expectedVersions,
         bool dryRun, CancellationToken cancellationToken)
     {
@@ -246,8 +243,7 @@ public class PagePublishingTools(
         }
     }
 
-    // Every chosen version is checked before the first is published. The source language goes first, as in publish-all:
-    // translations published with it are based on its new revision.
+    // The source language goes first, so translations published with it are based on its new revision.
     private async Task<SiteBuilderChange> PublishLanguagesAsync(ClaimsPrincipal user, MultilanguagePage root, string[] languages,
         IDictionary<string, string> expectedVersions, bool unpublishConflicting, bool dryRun, CancellationToken cancellationToken)
     {
@@ -314,7 +310,6 @@ public class PagePublishingTools(
         return change;
     }
 
-    // reviewed: the change whose pinned versions the operation compares under its lock; null compares none.
     private Task<SiteBuilderOperationResult> RunPublishAsync(ClaimsPrincipal user, string groupId, bool publish, bool isDryRun, IReviewedChange reviewed,
         IDictionary<string, string> expectedReplacedVersions, bool unpublishConflicting, CancellationToken cancellationToken)
     {
@@ -334,12 +329,11 @@ public class PagePublishingTools(
         }, user, cancellationToken);
     }
 
-    // The published pages the publish replaces, at their pinned versions: the write is refused once others would be unpublished.
+    // Pinned so the write is refused once it would unpublish other pages than those reviewed.
     private static Dictionary<string, string> ReplacedVersions(SiteBuilderChange change, IEnumerable<string> pageIds) =>
         pageIds.ToDictionary(x => x, x => ReviewedVersions.Of(change, x));
 
-    // The content of every draft published and of every page replaced, and the settings of every page published: who sees a page
-    // and when (organization, user groups, visibility, dates) are not in its content, and an unpublished page's settings change
+    // Settings are pinned too: who sees a page and when are not in its content, and an unpublished page's settings change
     // without approval.
     private async Task PinAsync(SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts, IEnumerable<string> publishedIds,
         IDictionary<string, string> expectedVersions, bool dryRun)

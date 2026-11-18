@@ -18,8 +18,8 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// Pages stored as files are listed by the module's own file search over the blob storage of the test, and their versions
-// come from the git history the content query service reads; the database pages are what the pages list answers.
+// File pages are listed by the module's real file search over the test's blob storage and take their versions from the
+// mocked git history; database pages come from the mocked pages list.
 public sealed class FilePageListAndHistoryToolTests : IAsyncDisposable
 {
     private const string SearchTool = "search_site_pages";
@@ -145,7 +145,6 @@ public sealed class FilePageListAndHistoryToolTests : IAsyncDisposable
         Assert.Null(third.NextCursor);
     }
 
-    // The message names the repository and carries GitHub's own text; a reader gets a sentence by the kind of failure.
     [Theory]
     [InlineData(GitContentFailureKind.NotConfigured, GitContentFailures.NotConfigured)]
     [InlineData(GitContentFailureKind.Unreachable, GitContentFailures.Unreachable)]
@@ -233,8 +232,6 @@ public sealed class FilePageListAndHistoryToolTests : IAsyncDisposable
 
     private void UseGitHistory(GitPageHistory history) => UseGitHistory(_ => history);
 
-    // The history of the page's file by the branch cursor it is asked with; the user's own draft branch is the one
-    // named after them.
     private void UseGitHistory(Func<string, GitPageHistory> history)
     {
         _context.GitFlow = true;

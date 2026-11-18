@@ -18,7 +18,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Images and files of the asset library, and where a store's pages use them.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class AssetTools(
@@ -26,7 +25,6 @@ public class AssetTools(
     ISiteBuilderAssetSearchService assetSearchService,
     ISiteBuilderAssetReferenceService assetReferenceService)
 {
-    // Pages named per asset; the count covers them all.
     private const int MaxPagesPerAsset = 10;
 
     [McpServerTool(Name = "search_assets", ReadOnly = true, Destructive = false, Idempotent = true)]
@@ -72,7 +70,7 @@ public class AssetTools(
             ? null
             : await GetReferencesAsync(store_id, result.Results, canReadSharedComponents, cancellationToken);
 
-        // The service turns a skip past the end into the last page; the page says which rows it holds.
+        // The service clamps a skip past the end to the last page, so the paging reports the skip it used.
         return McpPage<AssetRow>.Create(
             result.Results.Select(x => AssetRow.From(x, references)),
             result.TotalCount,
@@ -110,10 +108,8 @@ public sealed class AssetRow
 
     public string Name { get; init; }
 
-    // Pass it as folder_url to open a folder.
     public string Url { get; init; }
 
-    // folder or blob.
     public string Type { get; init; }
 
     public string ContentType { get; init; }
@@ -122,7 +118,7 @@ public sealed class AssetRow
 
     public DateTime? ModifiedDate { get; init; }
 
-    // With store_id, for files: where the store uses the file.
+    // Null for folders and when the call names no store.
     public AssetReferencesRow References { get; init; }
 
     public static string GetUrl(BlobEntry entry) => string.IsNullOrEmpty(entry.RelativeUrl) ? entry.Url : entry.RelativeUrl;
@@ -150,7 +146,7 @@ public sealed class AssetRow
 
 public sealed class AssetReferencesRow
 {
-    // Pages and Shared Components together, including those not listed below.
+    // Includes pages and Shared Components that are not listed below.
     public int Count { get; init; }
 
     public int PageCount { get; init; }
@@ -164,8 +160,7 @@ public sealed class AssetReferencesRow
 
     public static AssetReferencesRow From(SiteBuilderAssetReference reference, bool canReadSharedComponents, int maxPages)
     {
-        // The total stays, as in the designer, so a file in use never reads as unused; the components themselves
-        // need their own permission.
+        // The total counts Shared Components even without their permission, so a file in use never reads as unused.
         return new AssetReferencesRow
         {
             Count = reference.ReferencesCount,

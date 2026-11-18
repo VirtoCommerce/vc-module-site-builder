@@ -11,8 +11,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The pages and Shared Components the section operations read, as the user may read them: a page to copy sections
-// from in any store of the user, a Shared Component only of the store of the page being written.
 public sealed class PageEditSources(
     IAuthorizationService authorizationService,
     IGroupedPageService groupedPageService,
@@ -24,8 +22,7 @@ public sealed class PageEditSources(
 {
     private readonly Dictionary<string, string> _pageVersions = new(StringComparer.OrdinalIgnoreCase);
 
-    // The pages sections were copied from, with the version of the content copied: a write that has to take exactly
-    // what was reviewed pins them.
+    // A write that must take exactly what was reviewed pins these versions.
     public IReadOnlyDictionary<string, string> PageVersions => _pageVersions;
 
     public async Task<JsonArray> GetPageSectionsAsync(string pageId, CancellationToken cancellationToken)

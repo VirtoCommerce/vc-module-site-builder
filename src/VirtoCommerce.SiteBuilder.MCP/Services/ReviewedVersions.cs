@@ -5,16 +5,13 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// A change whose write takes the versions its dry run answered.
 public interface IReviewedChange
 {
     IDictionary<string, string> ExpectedVersions { get; set; }
 }
 
-// A publish, unpublish or discard takes exactly what its dry run showed. An approved change runs again as the approver,
-// and a confirmed one may run after a colleague saved: the dry run answers the versions of what the write takes
-// (expected_versions), the call sends them back, and the write is refused once they moved. The operation compares them
-// again as late as it can, under its lock where it has one.
+// An approved change runs again as the approver and a confirmed one may run after a colleague saved, so the write takes
+// only the versions its dry run answered; the operation compares them again as late as it can.
 public static class ReviewedVersions
 {
     public const string Argument = "expected_versions";
@@ -22,16 +19,14 @@ public static class ReviewedVersions
     public const string Description = "The expected_versions of the dry run, unchanged: the versions of what the call takes, by page " +
         "or file. Required without dryRun, so that exactly what was reviewed is changed.";
 
-    // The condition of [McpRequiresApproval]: a call that names the versions it takes waits for a second person; a call
-    // without them is a dry run or is refused by the tool, so nothing is published without approval either way.
+    // Only a call that names its versions waits for approval; one without them is a dry run or is refused, so nothing
+    // ships unapproved either way.
     public static bool AreGiven(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments != null &&
         arguments.TryGetValue(Argument, out var value) &&
         value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined);
 
-    // The versions of what the write takes now go into the answer; those the call names must be them. A dry run without
-    // them only answers them; a write without them is refused before anything is written, unless they are optional: a
-    // write that needs no approval may take the versions of its own dry run.
+    // Optional only for a write that needs no approval: it may take the versions of its own dry run.
     public static void Pin<T>(T change, IEnumerable<KeyValuePair<string, string>> current, IDictionary<string, string> expected, bool dryRun,
         bool optional = false)
         where T : McpChangePreview, IReviewedChange
@@ -55,11 +50,9 @@ public static class ReviewedVersions
         }
     }
 
-    // The version the call named for one item, which the operation compares again.
     public static string Of(IReviewedChange change, string key) =>
         change.ExpectedVersions != null && change.ExpectedVersions.TryGetValue(key, out var version) ? version : null;
 
-    // The versions the write is about to take, read again as close to it as the storage allows, must still be those it pinned.
     public static void EnsureUnchanged<T>(T change, IEnumerable<KeyValuePair<string, string>> current)
         where T : McpChangePreview, IReviewedChange
     {

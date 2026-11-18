@@ -34,8 +34,7 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
             .Ignore(McpConventionRules.Safeguard, "update_sections_bulk", DraftOnly + " A background job saves the pages, after a dry run of the first ones."));
     }
 
-    // Clients ask the user before a destructive call: every tool that can remove or overwrite content says so, and only
-    // the tools that add something say they do not.
+    // Clients ask the user before a destructive call.
     [Theory]
     [InlineData("edit_page_draft")]
     [InlineData("update_sections_bulk")]

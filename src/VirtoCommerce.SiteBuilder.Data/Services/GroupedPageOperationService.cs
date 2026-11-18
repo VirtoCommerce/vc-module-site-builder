@@ -481,7 +481,6 @@ public class GroupedPageOperationService(
         return conflictingGroups.Count > 0 ? await authorizationService.CheckStoreOperationAsync(user, conflictingGroups) : null;
     }
 
-    /// <returns><c>true</c> when the pages the publish unpublishes are those reviewed: none changed, none added and none gone.</returns>
     private async Task<bool> AreReplacedAsReviewedAsync(IList<GroupedSiteBuilderPage> conflictingGroups, IDictionary<string, string> expectedVersions,
         CancellationToken cancellationToken)
     {

@@ -30,9 +30,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// "Start here": what a store's site holds and where it stands, read from the services the designer's lists, the theme
-// panel and the history use. Every number says what it counts, and a part that cannot be read says why instead of
-// showing zero.
+// Read from the services the designer uses, so the numbers match what users see there; a part that cannot be read says
+// why instead of showing zero.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SiteOverviewTools(
@@ -47,7 +46,7 @@ public class SiteOverviewTools(
     ISiteBuilderPublishStatusQueryService publishStatusQueryService,
     ILogger<SiteOverviewTools> logger)
 {
-    // A store's overview reads a few dozen counts and files; more stores than this in one call are paged.
+    // Each store's overview reads a few dozen counts and files, so one call covers only a few stores.
     private const int MaxStores = 10;
 
     private const int ListedRows = 5;
@@ -94,8 +93,7 @@ public class SiteOverviewTools(
         return McpPage<StoreOverview>.Create(rows, totalCount, paging);
     }
 
-    // The stores the user reads pages of, as search_site_pages resolves them: every store for a permission granted in
-    // every store, else the stores of the scope or of the account.
+    // A null id list means the permission covers every store.
     private async Task<(IList<Store> Stores, int TotalCount)> GetStoresAsync(ClaimsPrincipal user, McpPaging paging)
     {
         var storeIds = await authorizationService.GetStoreIdsAsync(user, userManagerFactory);
@@ -175,8 +173,7 @@ public class SiteOverviewTools(
         return counts;
     }
 
-    // Multilanguage Pages whose language has no version, or a translation behind its source: the filters of the
-    // designer's pages list.
+    // The designer's translation filters, so the numbers match its pages list.
     private async Task<IList<LanguageCoverage>> ReadCoverageAsync(Store store, CancellationToken cancellationToken)
     {
         var coverage = new List<LanguageCoverage>();
@@ -289,8 +286,6 @@ public class SiteOverviewTools(
     }
 }
 
-// The theme's state as the designer's theme panel shows it: the publication, the templates and their drafts, the rules,
-// and the header, footer, brand and palette files.
 public class SiteThemeStates(
     ISiteBuilderContentQueryService contentQueryService,
     IDesignerOperationService designerOperationService,
@@ -407,29 +402,26 @@ public sealed class StoreOverview
 
     public IList<string> Languages { get; init; } = [];
 
-    // The store's time zone: start and end dates of pages are stored in UTC.
+    // Page start and end dates are stored in UTC.
     public string TimeZone { get; init; }
 
     public PageCounts Pages { get; init; }
 
-    // Full form: the pages with a draft, most recently changed first; get_publish_readiness tells what each would publish.
+    // Null in the short form.
     public IList<PageChangeRow> WaitingForPublication { get; set; }
 
-    // Full form: the pages changed last, with who changed them.
+    // Null in the short form.
     public IList<PageChangeRow> RecentChanges { get; set; }
 
-    // Full form: per store language, the Multilanguage Pages that miss it or whose translation is outdated.
+    // Null in the short form.
     public IList<LanguageCoverage> LanguageCoverage { get; set; }
 
     public ThemeOverview Theme { get; init; }
 
-    // A version history of database pages and theme files, kept in the store's GitHub repository.
     public FeatureState History { get; init; }
 
-    // The section schemas the storefront sent: theme files are checked against them.
     public FeatureState SchemaCatalog { get; init; }
 
-    // git or blob: how pages stored as files go live.
     public FeatureState Publishing { get; init; }
 
     public IList<string> Notes { get; init; } =
@@ -447,19 +439,15 @@ public sealed class PageCounts
 
     public int MultilanguagePages { get; init; }
 
-    // Pages with a draft: never published, or changed since their publication. They wait for publish_page.
     public int WithDrafts { get; init; }
 
-    // Published and inside their start and end dates: what customers see now.
     public int LiveNow { get; init; }
 
-    // Published with a start date still ahead.
     public int Scheduled { get; init; }
 
-    // Archived, or past their end date.
     public int EndedOrArchived { get; init; }
 
-    // Full form: rows with a version in the language.
+    // Empty in the short form.
     public IList<LanguageCount> ByLanguage { get; init; } = [];
 }
 
@@ -474,17 +462,14 @@ public sealed class LanguageCoverage
 {
     public string Language { get; init; }
 
-    // Multilanguage Pages without a version in the language.
     public int Missing { get; init; }
 
-    // Multilanguage Pages whose version in the language is behind its source language's publication.
     public int Outdated { get; init; }
 }
 
 public sealed class PageChangeRow
 {
-    // A Landing Page's id, or a Multilanguage Page's id (type tells which): get_publish_readiness takes the latter as
-    // multilanguage_page_id.
+    // A Landing Page's or a Multilanguage Page's id; Type tells which.
     public string Id { get; init; }
 
     public string Type { get; init; }
@@ -517,23 +502,21 @@ public sealed class ThemeOverview
 {
     public bool Available { get; init; }
 
-    // The number of the live publication; null when the theme was never published.
+    // Null when the theme was never published.
     public int? Publication { get; init; }
 
-    // Theme files with unpublished changes, every part counted.
     public int DraftFiles { get; init; }
 
     public int Templates { get; init; }
 
     public IList<string> TemplatesWithDrafts { get; init; } = [];
 
-    // Templates that exist only as a draft: customers get them with the next publication.
     public IList<string> UnpublishedTemplates { get; init; } = [];
 
-    // Full form.
+    // Null in the short form.
     public RulesOverview Rules { get; set; }
 
-    // Full form: header, footer, brand, palette and dark palette.
+    // Null in the short form.
     public IList<ThemePartState> Parts { get; set; }
 
     public string Note { get; init; }
@@ -543,15 +526,13 @@ public sealed class ThemeOverview
 
 public sealed class RulesOverview
 {
-    // Rules of every page type, as the designer edits them (the draft, else the live file).
+    // Counted in the draft when there is one, as the designer edits them.
     public int Rules { get; init; }
 
     public int Disabled { get; init; }
 
-    // Page types with rules of the theme's own.
     public IList<string> OwnRulesFor { get; init; } = [];
 
-    // Page types that use the storefront's default rules.
     public IList<string> StorefrontDefaultsFor { get; init; } = [];
 
     public bool HasDraft { get; init; }
@@ -561,10 +542,8 @@ public sealed class ThemePartState
 {
     public string Part { get; init; }
 
-    // The file in the theme folder.
     public string File { get; init; }
 
-    // draft (unpublished changes), draft_never_published, published, or storefront_default (the theme has no such file).
     public string State { get; init; }
 }
 
@@ -574,6 +553,5 @@ public sealed class FeatureState
 
     public string State { get; init; }
 
-    // What it means, or why it is not available.
     public string Note { get; init; }
 }

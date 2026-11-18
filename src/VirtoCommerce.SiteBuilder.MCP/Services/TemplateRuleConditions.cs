@@ -4,12 +4,10 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// What a page of the database is to the template rules: as the storefront describes a page it shows.
 public sealed record PageRuleSubject(string Permalink, string Language, JsonObject Settings, string ObjectType);
 
-// The conditions of template rules the storefront has built in: which page types each applies to and what its value
-// looks like. Mirrors the storefront's templates/conditions.ts; the server has no twin. Conditions of storefront plugins
-// ("loyalty.tier") are kept, not checked.
+// Mirrors the storefront's built-in conditions, which have no server twin, so the two change together; conditions of
+// storefront plugins are kept unchecked.
 public static class TemplateRuleConditions
 {
     public const string PagesObjectType = "Pages";
@@ -26,7 +24,6 @@ public static class TemplateRuleConditions
         ["setting"] = (["page"], "{ \"name\": page setting, \"equals\": value }"),
     };
 
-    // Every built-in condition with the page types it applies to and the shape of its value, as the rules panel offers them.
     public static IEnumerable<(string Name, IReadOnlyList<string> PageTypes, string Shape)> All =>
         BuiltIn.Select(x => (x.Key, (IReadOnlyList<string>)x.Value.PageTypes, x.Value.Shape));
 
@@ -35,7 +32,6 @@ public static class TemplateRuleConditions
     public static string Vocabulary(string pageType) =>
         string.Join("; ", BuiltIn.Where(x => x.Value.PageTypes.Contains(pageType)).Select(x => $"{x.Key}: {x.Value.Shape}"));
 
-    // The value as the rules file keeps it, or the refusal. A list of category ids may come as a comma-separated text.
     public static JsonNode Normalize(string name, string pageType, JsonNode value, out string error)
     {
         error = null;
@@ -72,8 +68,7 @@ public static class TemplateRuleConditions
         return result;
     }
 
-    // true or false where the server holds what the condition reads; null where only the storefront can tell. The
-    // subject is a page of the database; a product or category is not loaded.
+    // Null where only the storefront can tell: a plugin condition, or catalog data of a product or category, which is not loaded.
     public static bool? Evaluate(string name, JsonNode value, string pageType, PageRuleSubject subject, out string notEvaluated)
     {
         notEvaluated = null;
@@ -110,7 +105,7 @@ public static class TemplateRuleConditions
         }
     }
 
-    // As the storefront's matchesPath: slashes around both are ignored, * is any characters, case is ignored.
+    // Mirrors the storefront's path matching.
     public static bool MatchesPath(string permalink, string glob)
     {
         if (permalink == null)

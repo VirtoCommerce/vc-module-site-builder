@@ -6,14 +6,13 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
 
-// A page of a bulk job, named in its report.
 public interface ISiteBuilderJobPage
 {
     string PageId { get; }
 }
 
-// The user a job of a bulk tool runs as: the one who called the tool, as a sign-in would give them now, with the
-// roles and permissions they have when each page is changed rather than when the job was queued.
+// The caller's principal is built afresh, so a job acts with the access they have when each page is changed, not when
+// the job was queued.
 public class SiteBuilderJobUsers(
     Func<UserManager<ApplicationUser>> userManagerFactory,
     IUserClaimsPrincipalFactory<ApplicationUser> claimsPrincipalFactory,
@@ -21,7 +20,6 @@ public class SiteBuilderJobUsers(
 {
     public const string AccountGone = "the account that started the job no longer exists or is locked out";
 
-    // Null when the account no longer exists or is locked out.
     public virtual async Task<ClaimsPrincipal> CreateAsync(string userId)
     {
         if (string.IsNullOrEmpty(userId))
@@ -39,8 +37,8 @@ public class SiteBuilderJobUsers(
         return await claimsPrincipalFactory.CreateAsync(account);
     }
 
-    // Why the user may not change any page now, or null. The tools require builder:update granted in every store, as
-    // the designer's save does; the store of each page is checked page by page.
+    // The update permission must be granted in every store, as the designer's save requires; each page's store is
+    // checked when that page is saved.
     public static string GetRefusal(ClaimsPrincipal user)
     {
         if (user == null)
@@ -51,9 +49,7 @@ public class SiteBuilderJobUsers(
         return user.GetMcpPermissionGrant(Update)?.IsGlobal == true ? null : "the account no longer has builder:update";
     }
 
-    // Runs the pages of a job in order. Before each page the account is read again and its principal built afresh, so a
-    // role or permission taken away since the call refuses the next page, and an account deleted or locked out stops the
-    // job there: that page is refused and the rest are not reached. Returns why the job stopped early, or null.
+    // A deleted or locked-out account stops the job; a revoked permission refuses only the pages it reaches.
     public virtual async Task<string> RunPagesAsync<TPage>(string userId, IList<TPage> pages, PageJobTally tally,
         Func<ClaimsPrincipal, TPage, Task<PageJobResult>> runPage, Func<int, Task> reportProgress, CancellationToken cancellationToken)
         where TPage : ISiteBuilderJobPage
@@ -82,7 +78,6 @@ public class SiteBuilderJobUsers(
         return null;
     }
 
-    // The last message of a job that stopped early: why, how far it got, and what it did until then.
     public static string DescribeStop(string stopReason, int total, PageJobTally tally, string summary) =>
         $"Stopped after {tally.Total} of {total} pages: {stopReason}; {total - tally.Total} pages were not reached. {summary}";
 

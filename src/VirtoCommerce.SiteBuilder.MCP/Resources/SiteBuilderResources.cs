@@ -32,9 +32,7 @@ using CustomerSettings = VirtoCommerce.CustomerModule.Core.ModuleConstants.Setti
 
 namespace VirtoCommerce.SiteBuilder.MCP.Resources;
 
-// Reference data the agent reads before it writes: the schemas the storefront sent, the conditions template rules take,
-// a store's languages and publication flow, and the user groups and organizations a page's audience names. Each is
-// read with the permissions the designer's own lists need, and in the stores the user reads.
+// Each resource asks for the permissions the designer's own lists need.
 [McpServerResourceType]
 [McpScope(McpScopes.Admin)]
 public class SiteBuilderResources(
@@ -146,7 +144,6 @@ public class SiteBuilderResources(
         });
     }
 
-    // git or blob, or why it is not known.
     private async Task<(string Flow, string Note)> ReadFlowAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
     {
         SiteBuilderOperationResult<PagePublishStatus> result;

@@ -9,8 +9,7 @@ namespace VirtoCommerce.SiteBuilder.MCP.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    // The toolset and what its bulk tools run: registered only when the MCP module is installed, as nothing else
-    // queues these jobs.
+    // Registered only when the MCP module is installed: nothing else queues these jobs.
     public static IServiceCollection AddSiteBuilderMcp(this IServiceCollection services)
     {
         services.AddMcpCapabilities<McpAssemblyMarker>();

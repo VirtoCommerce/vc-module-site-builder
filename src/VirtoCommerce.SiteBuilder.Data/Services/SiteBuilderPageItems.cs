@@ -5,9 +5,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
-// The sections and blocks of a page document as the designer keeps them: each has an id and a type, a section may
-// hold blocks, a section of the theme's header or footer carries __group, and a Shared Component is placed with
-// { id, type: "componentRef", componentRef } and nothing else.
+// Follows the designer's rules for sections and blocks, so that items read or written here look the same to it.
+// A Shared Component placement holds its id, type and reference and nothing else.
 public static partial class SiteBuilderPageItems
 {
     public const string IdKey = "id";
@@ -38,7 +37,7 @@ public static partial class SiteBuilderPageItems
 
     public static JsonArray GetBlocks(JsonObject item) => item[BlocksKey] as JsonArray;
 
-    // How the agent and the approver read an item: its type and id, or the component a placement shows.
+    // For the messages the agent and the approver read.
     public static string Describe(JsonObject item) => IsPlacement(item)
         ? $"Shared Component '{GetComponentId(item)}' (placement '{GetId(item)}')"
         : $"{GetItemType(item) ?? "untyped"} '{GetId(item)}'";
@@ -71,13 +70,13 @@ public static partial class SiteBuilderPageItems
         }
     }
 
-    // The designer's newId: the type's letters and digits and a random suffix.
+    // The designer's id format.
     public static string NewId(string type, ISet<string> used) =>
         Unique(Slug(type) + RandomNumberGenerator.GetString(IdCharacters, IdSuffixLength), used);
 
     public static string NewPlacementId(ISet<string> used) => NewId(SharedComponents.ReferenceType, used);
 
-    // A copy with new ids for the item and its blocks, as the designer's copyItem; a placement gets a new id only.
+    // Copies as the designer does, so a copy made here looks like one made there.
     public static JsonObject Copy(JsonObject item, ISet<string> used)
     {
         var copy = (JsonObject)item.DeepClone();
@@ -126,8 +125,7 @@ public static partial class SiteBuilderPageItems
 
     public static bool IsLanguageCode(string value) => value != null && LanguagePattern().IsMatch(value);
 
-    // The designer's rule (translatable.ts): an object whose keys are language codes, one with a subtag, and whose
-    // values are texts; a row such as { "sku": "X1" } is not one.
+    // The designer's rule. A key with a subtag is required, or a row such as { "sku": "X1" } would pass for texts per language.
     public static bool IsTranslations(JsonNode node)
     {
         return node is JsonObject value && value.Count > 0

@@ -11,9 +11,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Extensions;
 
-// [McpPermission] only says that the user has the permission in some store. The tools narrow it to the stores the
-// permission covers with the requirement the controllers use, so an account bound to a store and a role limited to
-// some stores reach the same data here as in the designer.
+// The tool-level permission check only proves the permission in some store; these narrow it with the controllers'
+// requirement, so store-bound accounts and store-limited roles reach the same data as in the designer.
 public static class AuthorizationServiceExtensions
 {
     public static async Task<bool> IsAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
@@ -24,8 +23,7 @@ public static class AuthorizationServiceExtensions
         return result.Succeeded;
     }
 
-    // The store of the resource (a criteria with StoreId, a page, a component); without a store only a permission
-    // granted in every store passes.
+    // Without a store only a permission granted in every store passes, hence the hint to pass one.
     public static async Task EnsureAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         object resource, string storeId, string permission = Read)
     {
@@ -39,8 +37,7 @@ public static class AuthorizationServiceExtensions
             : $"Your {permission} permission does not cover store '{storeId}'.");
     }
 
-    // The store alone, as a tool checks it before anything it was asked about: the caller refuses a missing store first,
-    // since a permission granted in every store passes without one.
+    // Callers refuse a missing store first: without one, a permission granted in every store passes.
     public static Task<bool> IsStoreAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId,
         string permission = Read) =>
         authorizationService.IsAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, permission);
@@ -49,9 +46,8 @@ public static class AuthorizationServiceExtensions
         string permission = Read) =>
         authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId, permission);
 
-    // The stores the permission reaches when the agent names none: null for every store. A role limited to some
-    // stores reaches those, an account bound to a store reaches that store; each is checked with the requirement, so
-    // the answer is what the designer would let the user open one by one.
+    // Null means every store. Each candidate is re-checked with the requirement, so the list matches what the
+    // designer would let the user open.
     public static async Task<IList<string>> GetStoreIdsAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         Func<UserManager<ApplicationUser>> userManagerFactory, string permission = Read)
     {
@@ -83,8 +79,7 @@ public static class AuthorizationServiceExtensions
         return storeIds;
     }
 
-    // The named store when the permission covers it, else the stores GetStoreIdsAsync finds: null for every store. A scan
-    // leaves out what the user may not open.
+    // A scan silently leaves out stores the user may not open; null means every store.
     public static async Task<IList<string>> GetStoreIdsAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         Func<UserManager<ApplicationUser>> userManagerFactory, string storeId, string permission)
     {

@@ -452,8 +452,6 @@ public class MultilanguagePageService(
         return changedCultureNames;
     }
 
-    /// <summary>The versions the reset changes must be those reviewed: none changed, none added and none gone.</summary>
-    /// <exception cref="SiteBuilderContentConflictException">They are not.</exception>
     private static void CheckResetVersions(IList<(GroupedSiteBuilderPage Group, string Version)> resets, IDictionary<string, string> expectedPageVersions)
     {
         if (resets.Count != expectedPageVersions.Count ||
@@ -513,7 +511,7 @@ public class MultilanguagePageService(
 
         var (group, source) = await PrepareMarkUpToDateAsync(groupId, expectedSourceRevisionDate);
 
-        // the stored revision, read again under the lock of the save, which the source's next publication takes too
+        // the stored revision, as the save compares it exactly under its lock, which the source's next publication takes too
         group.SourceRevisionDate = source.SourceRevisionDate;
         var condition = new GroupedPageSaveCondition { SourceGroupId = source.Id, ExpectedSourceRevisionDate = source.SourceRevisionDate };
         await groupedPageContentService.SaveGroupAsync(group, condition, cancellationToken);
@@ -538,7 +536,6 @@ public class MultilanguagePageService(
     }
 
     /// <returns>The translation, and the source language version whose publication it is to be based on.</returns>
-    /// <exception cref="SiteBuilderContentConflictException">The source revision is not <paramref name="expectedSourceRevisionDate"/>.</exception>
     private async Task<(GroupedSiteBuilderPage Group, GroupedSiteBuilderPage Source)> PrepareMarkUpToDateAsync(string groupId,
         DateTime? expectedSourceRevisionDate = null)
     {
@@ -937,7 +934,7 @@ public class MultilanguagePageService(
     }
 
     /// <summary>
-    /// The drafts, and the settings they go live with, must be those reviewed: none changed, none added and none gone, as each one goes live.
+    /// The drafts, and the settings they go live with, must be those reviewed: none changed, none added and none gone.
     /// A <c>null</c> set is not compared.
     /// </summary>
     /// <exception cref="SiteBuilderContentConflictException">They are not.</exception>
@@ -1158,8 +1155,6 @@ public class MultilanguagePageService(
         return await groupedPageSearchService.SearchAllAsync(criteria);
     }
 
-    /// <param name="condition">What must hold, as read under the lock of the write; <c>null</c> writes whatever the page holds.</param>
-    /// <exception cref="SiteBuilderContentConflictException">It does not hold: nothing is written.</exception>
     private async Task SetMultilanguagePageIdAsync(string groupId, string multilanguagePageId, LinkCondition condition, CancellationToken cancellationToken)
     {
         // A regular grouped save never patches the link (see GroupedSiteBuilderPageEntity.Patch), so it is written here,
@@ -1211,6 +1206,6 @@ public class MultilanguagePageService(
         }
     }
 
-    /// <summary>What a link or an unlink requires of the page, and a link of its root; the versions are trimmed.</summary>
+    /// <summary>The versions come trimmed: the check compares them as they are.</summary>
     private sealed record LinkCondition(bool RequireUnpublished, string ExpectedPageVersion, string ExpectedRootVersion);
 }

@@ -21,10 +21,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// What is missing on the pages of the stores the user reads: languages a Multilanguage Page lacks or whose translation
-// is behind, and pages without an SEO title or description. The pages are read one by one, a page of the pages list per
-// call, and the answer says how far it got. The checks that need data Site Builder does not hold are named as not checked,
-// with the reason, rather than reported as clean.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class ContentGapTools(
@@ -149,7 +145,6 @@ public class ContentGapTools(
         }
     }
 
-    // A Landing Page or the language versions of a Multilanguage Page, in the language when one is named.
     private static IEnumerable<GroupedSiteBuilderPage> PagesOf(SiteBuilderPageListItem row, string language)
     {
         if (row.Page != null)
@@ -216,7 +211,6 @@ public class ContentGapTools(
         }
     }
 
-    // A text, or a text per language: the page's language counts, else any language.
     private static bool HasText(JsonNode node, string language)
     {
         if (node is JsonValue value)
@@ -256,22 +250,19 @@ public sealed class ContentGapReport
 {
     public IList<McpFinding> Findings { get; set; } = [];
 
-    // Pages of the pages list the filters match: a Landing Page, or a Multilanguage Page with all its languages.
+    // A Multilanguage Page counts once, with all its languages.
     public int TotalCount { get; set; }
 
-    // Pages read in this call.
     public int ScannedCount { get; set; }
 
     public int Skip { get; set; }
 
-    // Pass it as skip to read the next pages; null when every page was read.
     public int? NextSkip { get; set; }
 
     public bool IsComplete => NextSkip == null;
 
     public string Coverage { get; set; }
 
-    // The findings of the pages read from skip on, and how far the reading got.
     public void Complete(IEnumerable<McpFinding> findings, int skip, int scanned, int totalCount)
     {
         Findings = findings.OrderBySeverity();
@@ -283,7 +274,7 @@ public sealed class ContentGapReport
         Coverage = $"Read pages {skip + 1}–{skip + scanned} of {totalCount}{next}";
     }
 
-    // Kinds of gaps this tool does not check, with the reason.
+    // Named with the reason, so a check that cannot run does not read as clean.
     public IList<ContentGapCheck> NotChecked { get; init; } = [];
 }
 

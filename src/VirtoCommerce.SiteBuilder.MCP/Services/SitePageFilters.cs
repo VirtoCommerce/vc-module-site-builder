@@ -6,7 +6,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The page and section filters the page tools share, read from the agent's arguments.
 public static class SitePageFilters
 {
     public const string DraftVersion = "draft";
@@ -41,7 +40,6 @@ public static class SitePageFilters
             ?? throw new McpException($"Page type '{pageType}' is unknown. Use {string.Join(" or ", known)}.");
     }
 
-    // true for the published version.
     public static bool ParseVersion(string version) => (version ?? DraftVersion).ToLowerInvariant() switch
     {
         DraftVersion => false,
@@ -49,7 +47,6 @@ public static class SitePageFilters
         _ => throw new McpException("version must be 'draft' or 'published'."),
     };
 
-    // Null without a path; one of equals and contains goes with it.
     public static SiteBuilderSectionSettingCondition ParseCondition(string path, string equals, string contains, string language)
     {
         if (string.IsNullOrWhiteSpace(path))

@@ -11,13 +11,10 @@ using VirtoCommerce.SiteBuilder.MCP.Extensions;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// A page or a blog article kept as a file, in git or in blob storage: named by its content folder and its path in it, as
-// the designer opens it, so the name always holds a '/' and never looks like the id of a database page.
 public sealed record FilePage(string StoreId, string ContentType, string Path)
 {
     public string PageId => $"{ContentType}/{Path}";
 
-    // The key of the page in expected_versions of restore_version.
     public string VersionKey => $"page:{PageId}";
 }
 
@@ -57,8 +54,7 @@ public static class FilePages
         return page;
     }
 
-    // The page as the designer edits it (the user's draft, else what is published), or what is published; null when
-    // there is no such page.
+    // A draft read falls back to what is published, as the designer opens the page.
     public static async Task<string> ReadAsync(ISiteBuilderContentQueryService contentQueryService, ILogger logger, ClaimsPrincipal user, FilePage page,
         bool draft, CancellationToken cancellationToken)
     {
@@ -88,14 +84,14 @@ public static class FilePages
         await ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken)
         ?? throw new McpException($"Page '{page.PageId}' was not found in store '{page.StoreId}'. Check the folder and path the designer shows for it.");
 
-    // A file page keeps no version of its own: its token is the hash of the content as read, the one the operations
-    // compare at their write, so an edit, a restore or a publish of content that changed since is refused.
+    // A file page has no version of its own; the operations compare this content hash at their write, so a change made
+    // since the read is refused.
     public static string VersionOf(string content) => SiteBuilderContentVersion.CreateForFileContent(content);
 
     public static string Forbidden(FilePage page, string verb) =>
         $"You may not {verb} page '{page.PageId}': it needs builder:read in store '{page.StoreId}'.";
 
-    // Git failing is not an outcome of the operations but an exception, whose message is for an administrator.
+    // Git failures arrive as exceptions with messages meant for an administrator, so the agent gets a generic description.
     public static async Task<T> RunAsync<T>(ILogger logger, Func<Task<T>> operation)
     {
         try
@@ -138,15 +134,11 @@ public static class FilePages
     }
 }
 
-// Where a publish or an unpublish of a page stored as a file stands: in blob storage it is done at once; in git it is a
-// pull request that merged, waits for checks, or conflicts.
 public sealed class FilePageShipmentRow
 {
-    // In blob storage done; in git merged, pending, awaiting_merge, already_published or conflict.
     [JsonPropertyName("state")]
     public string State { get; init; }
 
-    // git or blob.
     [JsonPropertyName("flow")]
     public string Flow { get; init; }
 
@@ -156,7 +148,7 @@ public sealed class FilePageShipmentRow
     [JsonPropertyName("pull_request_url")]
     public string PullRequestUrl { get; init; }
 
-    // A conflicting publish has a way out: publishing again with rebase, which needs a new approval.
+    // Publishing again with rebase is the way out of a conflict; it needs a new approval.
     [JsonPropertyName("can_rebase")]
     public bool CanRebase { get; init; }
 

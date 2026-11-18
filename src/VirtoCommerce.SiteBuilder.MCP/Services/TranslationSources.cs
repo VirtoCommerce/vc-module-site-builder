@@ -4,16 +4,15 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// A translation is marked only while the source is still at the revision the agent read, through the designer's own mark up to date.
+// A translation is marked only while the source is still at the revision the agent read.
 public class TranslationSources(IMultilanguagePageOperationService multilanguagePageOperations)
 {
     public const string SourcePublishedAgain = "the source language version was published again after you read it";
 
-    // Why the translation cannot be marked, or null.
     public virtual Task<string> GetProblemAsync(ClaimsPrincipal user, string pageId, DateTime? sourceRevisionDate, CancellationToken cancellationToken) =>
         MarkAsync(user, pageId, sourceRevisionDate, dryRun: true, cancellationToken);
 
-    // Marks the translation at the source revision the agent read, as the user; why it was not marked, or null.
+    // Returns why it was not marked, or null.
     public virtual Task<string> MarkUpToDateAsync(ClaimsPrincipal user, string pageId, DateTime? sourceRevisionDate, CancellationToken cancellationToken) =>
         MarkAsync(user, pageId, sourceRevisionDate, dryRun: false, cancellationToken);
 

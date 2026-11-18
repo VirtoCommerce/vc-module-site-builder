@@ -411,7 +411,6 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Empty(publisher.Merges);
         }
 
-        /// <summary>The deletion committed on the branch cut for it is what ships, not a save of the page made while the merge waits.</summary>
         [Fact]
         public async Task UnpublishOperation_ReviewedWithNoDraftBranch_ShipsTheDeletionItCommits_NotACommitMadeWhileTheMergeWaits()
         {

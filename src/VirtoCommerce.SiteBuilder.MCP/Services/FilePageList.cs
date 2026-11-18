@@ -8,9 +8,8 @@ using VirtoCommerce.SiteBuilder.MCP.Tools;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The pages a list of search_site_pages takes: database pages, pages stored as files, or both. A page stored as a file
-// is listed by the folder it is in, as the designer's file tree shows it, and has no status, language or date in that
-// list, so a filter on them leaves the files out; asked for explicitly, the files refuse such a filter instead.
+// Pages stored as files have no status, language or date in a list, so such a filter leaves them out, or is refused
+// when files are asked for explicitly.
 public sealed record SitePageSources(bool Database, bool Files, string DatabasePageType, string Folder)
 {
     public const string FileType = "File";
@@ -25,7 +24,6 @@ public sealed record SitePageSources(bool Database, bool Files, string DatabaseP
 
         var databasePageType = SitePageFilters.ParsePageType(pageType);
 
-        // Without a filter only database pages have, the list of one store holds its pages stored as files too.
         var withFiles = databasePageType == null && !string.IsNullOrEmpty(storeId) && !databaseFilters;
 
         return new SitePageSources(Database: true, withFiles, databasePageType, Folder: null);
@@ -58,8 +56,7 @@ public static class FilePageList
     private const string Pages = "pages";
     private const string Blogs = "blogs";
 
-    // The pages stored as files in the folder, its subfolders left out, as the designer lists one folder; without a
-    // folder, those right in the pages and the blogs folders. keyword keeps the pages whose name, address or path holds it.
+    // Subfolders are left out, as the designer lists one folder at a time.
     public static async Task<IList<SitePageRow>> ListAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user,
         string storeId, string folder, string keyword, CancellationToken cancellationToken)
     {
@@ -93,7 +90,6 @@ public static class FilePageList
         }
     }
 
-    // 'pages', 'blogs' or a folder inside one of them, as page_id names a page: the content folder and the path in it.
     private static IList<(string ContentType, string Path)> ParseFolders(string folder)
     {
         if (string.IsNullOrWhiteSpace(folder))

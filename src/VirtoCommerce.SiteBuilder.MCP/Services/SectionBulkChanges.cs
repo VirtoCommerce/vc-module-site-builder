@@ -4,7 +4,6 @@ using ModelContextProtocol;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The one change update_sections_bulk makes to every matching section, as the operations of edit_page_draft.
 public static class SectionBulkChanges
 {
     public const string SetSectionSettings = "set_section_settings";

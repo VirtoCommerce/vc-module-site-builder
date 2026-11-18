@@ -280,7 +280,6 @@ public class MultilanguagePageOperationServiceTests
         Assert.Equal(ModuleConstants.PageStatuses.Draft, (await fixture.Groups.GetByIdAsync(dutch.Id)).Status);
     }
 
-    /// <summary>The publish of every draft a dry run lists, at the version it tells, with the settings it goes live with.</summary>
     private async Task<MultilanguagePagePublishAllOperationRequest> ReviewedAsync(Fixture fixture, MultilanguagePage root)
     {
         var dryRun = await Operations(fixture).PublishAllAsync(new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = root.Id, DryRun = true }, _user, Ct);

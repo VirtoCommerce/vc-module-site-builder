@@ -9,17 +9,12 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// A publish or an unpublish of a page stored as a file, as publish_page and unpublish_page run it.
 public sealed record FilePageShipCall(string StoreId, string PageId, bool Publish, bool Rebase, string DraftOwner,
     IDictionary<string, string> ExpectedVersions, bool DryRun);
 
-// The operation's dry run, then its write, bound to what the dry run showed. In git the draft is a branch of its
-// editor, named after the user, and an approved change runs as the approver: the dry run answers whose branch it ships
-// (draft_owner) and the commit it is at, or that there is none, and the write ships that commit, or the deletion an
-// unpublish commits on it, from a publish branch of its own, so a commit made to the draft branch afterwards is not
-// merged with it; an unpublish also takes the published content it removes. In blob storage there is one draft for
-// every editor and no lock over it: its version is the hash of the content, which the operation reads again right
-// before its write.
+// The write is bound to what the dry run showed. In git each editor drafts on their own branch and an approved change
+// runs as the approver, so the dry run pins whose branch and which commit, and the write ships it from a branch of its
+// own so later draft commits stay out. Blob storage has one unlocked draft, pinned by the hash of its content.
 public class FilePageShipping(
     IAuthorizationService authorizationService,
     IFilePageOperationService filePageOperationService,
@@ -28,11 +23,11 @@ public class FilePageShipping(
 {
     public const string DraftOwnerArgument = "draft_owner";
 
-    // The key in expected_versions of the published content an unpublish in git removes; the page id's own is its draft head.
+    // Pins the published content an unpublish in git removes, next to the draft head pinned under the page id.
     private const string PublishedKeyPrefix = "published:";
 
-    // In git a conflict is an outcome, not a failure: the pull request may be open, so it is answered with the ways out,
-    // and nothing is tried again.
+    // A git conflict is answered as an outcome with the ways out, since the pull request may already be open; nothing
+    // is retried.
     public async Task<SiteBuilderChange> ShipAsync(ClaimsPrincipal user, FilePageShipCall call, CancellationToken cancellationToken)
     {
         var page = await FilePages.LoadAsync(authorizationService, user, call.StoreId, call.PageId);
@@ -61,8 +56,6 @@ public class FilePageShipping(
         return change;
     }
 
-    // The write ships the commit the dry run pinned in git, or the content version it pinned in blob storage; a dry run
-    // reads the branch of the draft owner.
     private Task<SiteBuilderOperationResult<FilePageShipment>> RunAsync(ClaimsPrincipal user, FilePage page, FilePageShipCall call, SiteBuilderChange pinned,
         string owner, CancellationToken cancellationToken)
     {
@@ -102,10 +95,6 @@ public class FilePageShipping(
             }, user, cancellationToken);
     }
 
-    // In git the version is the commit the draft branch is at, or none when there is no branch, and the call has to name
-    // whose branch it is, as the approver's own branch is another one; an unpublish also pins the published content it
-    // removes. In blob storage it is the hash of the content the write takes: the draft (else what is published) for a
-    // publish, what is published for an unpublish, as the operation reads it.
     private async Task PinAsync(ClaimsPrincipal user, FilePage page, FilePageShipCall call, SiteBuilderChange change, string owner,
         SiteBuilderOperationResult check, CancellationToken cancellationToken)
     {

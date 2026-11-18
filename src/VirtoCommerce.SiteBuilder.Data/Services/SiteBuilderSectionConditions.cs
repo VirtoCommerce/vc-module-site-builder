@@ -4,8 +4,7 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
-// Matches a section of a document against a type and a condition on its settings, as SiteBuilderSectionSettingCondition
-// describes it. The settings of a section are its own keys, as the designer stores them.
+// A section's settings are its own keys, as the designer stores them, so a path starts at the section itself.
 public static class SiteBuilderSectionConditions
 {
     public const string AnyItem = "*";
@@ -69,7 +68,6 @@ public static class SiteBuilderSectionConditions
         };
     }
 
-    // An item of a list by its id, else by its 0-based index.
     private static JsonNode FindItem(JsonArray list, string segment)
     {
         var byId = list.OfType<JsonObject>().FirstOrDefault(x => GetId(x) == segment);

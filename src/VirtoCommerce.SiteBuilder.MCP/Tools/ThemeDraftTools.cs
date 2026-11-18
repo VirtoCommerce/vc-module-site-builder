@@ -19,10 +19,8 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The theme's look as the designer edits it: the header and footer (their section groups), the brand's logos and the
-// palette, light and dark. Each goes in a draft that customers see with the theme's publication. A palette below the
-// WCAG 2.2 AA contrast can be saved, as in the designer, but the publication refuses it, so a change shows the failing
-// pairs at once.
+// Every part goes to a draft that customers see only with the theme's publication. A palette below the contrast minimum
+// saves, as in the designer, but cannot be published, so a change reports the failing pairs at once.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class ThemeDraftTools(
@@ -43,7 +41,6 @@ public class ThemeDraftTools(
 
     private const int MaxOperations = 100;
 
-    // The brand fields and the logos of settings_data.json a theme without a brand file shows (the designer's themeLook.ts).
     private static readonly (string Field, string SettingsKey)[] BrandFields =
     [
         ("logoUrl", "logo_image"),
@@ -104,7 +101,7 @@ public class ThemeDraftTools(
             _ => throw new McpException("part must be header, footer, brand or palette."),
         };
 
-        // null: nothing to save, the part was only read.
+        // Null when the call only reads the part.
         if (edits == null)
         {
             change.DryRun = true;
@@ -124,7 +121,7 @@ public class ThemeDraftTools(
         var current = await ThemeFiles.ReadAsync(designerOperationService, request.User, request.StoreId, path, request.CancellationToken);
         Describe(change, path, group == HeaderPart ? "The header" : "The footer", current);
 
-        // A theme without the file still has a header and a footer, which start empty, as the designer saves them.
+        // A theme without the file still has an empty header and footer, as the designer saves them.
         var content = current.Content ?? new JsonObject { ["type"] = group, ["name"] = group == HeaderPart ? "Header" : "Footer", ["content"] = new JsonArray() }.ToJsonString();
         var editor = PageDocumentEditor.Read(content, PageDocumentKind.SectionGroup)
             ?? throw new McpException($"The {group} of store '{request.StoreId}' is not a section group, so it cannot be edited here. Open it in the designer.");
@@ -185,7 +182,7 @@ public class ThemeDraftTools(
         return [new ThemeFileEdit(path, current, brand.ToJsonString(PageDocumentEditor.WriteOptions))];
     }
 
-    // The brand file; a theme without one shows the logos of its settings, which the first brand edit carries over.
+    // A theme without a brand file shows the logos of its settings; they are carried over so the first brand edit keeps them.
     private async Task<JsonObject> ReadBrandAsync(PartRequest request, ThemeFileContent current)
     {
         if (ParseObject(current.Content) is { } file)
@@ -304,7 +301,7 @@ public class ThemeDraftTools(
         }
     }
 
-    // As the publication checks it: light colors are needed for any check, and the storefront then gets both schemes.
+    // Mirrors the publication's check, so the failures listed are the ones that would block it.
     private void CheckContrast(Dictionary<string, string> light, Dictionary<string, string> dark, ThemePaletteTokens tokens, ThemeFileChange change)
     {
         if (light.Count == 0)
@@ -380,7 +377,7 @@ public class ThemeDraftTools(
     private static JsonObject ToJson(Dictionary<string, string> colors) =>
         new(colors.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => KeyValuePair.Create(x.Key, (JsonNode)x.Value)));
 
-    // The settings a theme's settings_data.json holds now: its current preset's, or the current object itself.
+    // The current settings are either a named preset's or held inline.
     private static JsonObject CurrentSettings(JsonObject data)
     {
         if (data == null)

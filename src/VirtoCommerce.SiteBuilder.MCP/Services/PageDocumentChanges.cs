@@ -5,8 +5,6 @@ namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 public sealed record PageDocumentChange(string Field, string From, string To);
 
-// What an edit changes in a page, section by section, for the agent and the approver to read: sections added,
-// removed, moved and hidden, and each setting that changed with its old and new value.
 public static class PageDocumentChanges
 {
     private const int MaxValueLength = 300;
@@ -91,7 +89,7 @@ public static class PageDocumentChanges
     private static List<JsonObject> Items(JsonArray items) =>
         items?.OfType<JsonObject>().Where(x => !string.IsNullOrEmpty(GetId(x))).ToList() ?? [];
 
-    // Every value by its dotted path; a list is one value, as the designer's settings panel edits it.
+    // A list is one value, as the designer's settings panel edits it.
     private static Dictionary<string, JsonNode> Flatten(JsonObject item, string[] skippedKeys)
     {
         var values = new Dictionary<string, JsonNode>(StringComparer.Ordinal);

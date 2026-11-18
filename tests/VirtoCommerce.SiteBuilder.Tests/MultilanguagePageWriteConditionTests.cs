@@ -493,7 +493,6 @@ public class MultilanguagePageWriteConditionTests
         return DateTime.Parse(field.To, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }
 
-    /// <summary>The reset of the permalink of every version, at the versions its dry run tells.</summary>
     private async Task<MultilanguagePageResetOverridesOperationRequest> ReviewedResetAsync(Fixture fixture, MultilanguagePage root)
     {
         var dryRun = await Operations(fixture).ResetOverridesAsync(
@@ -510,7 +509,6 @@ public class MultilanguagePageWriteConditionTests
         };
     }
 
-    /// <summary>The link of the page to the root, at the versions its dry run tells.</summary>
     private async Task<MultilanguagePageLinkOperationRequest> ReviewedLinkAsync(Fixture fixture, MultilanguagePage root, GroupedSiteBuilderPage page)
     {
         var dryRun = await Operations(fixture).LinkAsync(
@@ -525,7 +523,6 @@ public class MultilanguagePageWriteConditionTests
         };
     }
 
-    /// <summary>The unlink, or with <paramref name="convert"/> the convert, of the page at the version its dry run tells.</summary>
     private async Task<MultilanguagePageVersionOperationRequest> ReviewedVersionAsync(Fixture fixture, string groupId, bool convert = false)
     {
         var request = new MultilanguagePageVersionOperationRequest { GroupId = groupId, DryRun = true };

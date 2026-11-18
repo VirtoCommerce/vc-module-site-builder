@@ -9,7 +9,6 @@ public class SiteBuilderSectionScanResult
     /// <summary>Rows of the pages list the filter matches.</summary>
     public int TotalPageCount { get; set; }
 
-    /// <summary>The first scanned row.</summary>
     public int Skip { get; set; }
 
     public int ScannedPageCount { get; set; }
@@ -23,7 +22,7 @@ public class SiteBuilderSectionScanResult
     /// <summary>The Skip that scans the next rows; null after the last row.</summary>
     public int? NextSkip => Skip + ScannedPageCount < TotalPageCount ? Skip + ScannedPageCount : null;
 
-    /// <summary>Language versions with at least one matching section.</summary>
+    /// <summary>Language versions with a matching section or a placed Shared Component that could not be read.</summary>
     public IList<SiteBuilderSectionScanPage> Pages { get; set; } = [];
 
     /// <summary>Language versions that were in the scanned rows but could not be read.</summary>

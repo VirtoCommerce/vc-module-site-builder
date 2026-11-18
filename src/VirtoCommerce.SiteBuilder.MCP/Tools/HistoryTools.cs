@@ -20,9 +20,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Saved versions of a page or a theme file, from the store's git history. A store keeps history only when its content
-// is in a repository Site Builder set up; the answer says so when it does not. A page stored as a file has a history of
-// its own, the commits of its file, when the store keeps such pages in git.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class HistoryTools(
@@ -62,8 +59,7 @@ public class HistoryTools(
 
         var items = GetItems(page_id, theme_files);
 
-        // The store first, as the operation checks it, so an answer about the arguments does not tell which stores exist.
-        // A refusal of the operation is then about the page.
+        // The store first, so an answer about the arguments does not tell which stores exist; a refusal after it is about the page.
         await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
 
         if (items.Count == 0)
@@ -121,17 +117,14 @@ public sealed class ContentVersionsAnswer
 {
     public string StoreId { get; init; }
 
-    // enabled, setup_required or unavailable.
     public string History { get; init; }
 
     public bool HistoryAvailable { get; init; }
 
-    // Why there is no history, when there is none.
     public string Note { get; init; }
 
     public IList<ContentVersionRow> Versions { get; init; }
 
-    // Pass it as cursor for older versions; null on the last page.
     public string NextCursor { get; init; }
 
     public bool HasMore => NextCursor != null;
@@ -151,7 +144,6 @@ public sealed class ContentVersionsAnswer
         };
     }
 
-    // The state of a store's history as the tools name it, with why there is none.
     public static (string History, string Note) Describe(string storeId, ContentHistoryStatus status) => status switch
     {
         ContentHistoryStatus.Enabled => ("enabled", null),
@@ -172,16 +164,14 @@ public sealed class ContentVersionRow
 
     public string Description { get; init; }
 
-    // The version holds what is live for every item it changed.
     public bool Published { get; init; }
 
-    // page:{id} and theme:{path} of the items the version changed.
     public IList<string> Items { get; init; }
 
-    // A page stored as a file in git: the version is on your own draft branch.
+    // Pages stored as files only: the commit is on your own draft branch.
     public bool? Mine { get; init; }
 
-    // A page stored as a file in git: a commit that changed far more than this page, such as an import.
+    // Pages stored as files only: the commit changed far more than this page, such as an import.
     public bool? Bulk { get; init; }
 
     public static ContentVersionRow From(ContentVersion version)
@@ -197,7 +187,6 @@ public sealed class ContentVersionRow
         };
     }
 
-    // A commit of a page stored as a file: its id is what restore_version takes as version_id.
     public static ContentVersionRow From(PageVersion version, FilePage page) => new()
     {
         VersionId = version.Sha,

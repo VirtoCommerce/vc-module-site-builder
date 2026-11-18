@@ -16,7 +16,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A change of a published page waits for approval; the write re-reads the page and applies only the named settings, at the reviewed settings version.
+// The write re-reads the page and applies only the named settings, so values it does not name are not overwritten with stale ones.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageSettingsTools(
@@ -35,7 +35,7 @@ public class PageSettingsTools(
 
     private static readonly string[] ClearableFields = [UserGroupsField, OrganizationField, StartDateField, EndDateField];
 
-    // Approval unless unpublished_only; without expected_versions the tool refuses the write itself.
+    // Without expected_versions the tool refuses the write itself, so there is nothing to approve.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
@@ -160,8 +160,7 @@ public class PageSettingsTools(
         return change;
     }
 
-    // The version of the settings the dry run read: the write takes them only at it. A change waiting for approval
-    // names it; an unpublished_only one may take its own dry run's.
+    // A change that needs no approval may take the version of its own dry run.
     private static Task Pin(SettingsCall call, SiteBuilderChange change, SiteBuilderOperationResult check)
     {
         var version = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == change.ObjectType && x.ObjectId == change.ObjectId)?.ETag;
@@ -214,7 +213,6 @@ public class PageSettingsTools(
             }
         }
 
-        // A copy of the page with the settings the call names, and every other value as the page holds it.
         public GroupedSiteBuilderPage ApplyTo(GroupedSiteBuilderPage page)
         {
             var model = page.CloneTyped();
@@ -245,7 +243,7 @@ public class PageSettingsTools(
             return model;
         }
 
-        // Stored as one comma-separated text, as the page editor writes it.
+        // One comma-separated text, as the page editor writes it.
         private string GetUserGroups(string current) =>
             Clear.Contains(UserGroupsField) ? null : UserGroups == null ? current : string.Join(",", UserGroups.Select(x => x.Trim()).Where(x => x.Length > 0));
 

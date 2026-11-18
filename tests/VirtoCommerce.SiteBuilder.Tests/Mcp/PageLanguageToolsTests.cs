@@ -304,7 +304,6 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
 
     private static Dictionary<string, object> LinkArguments() => new() { ["page_id"] = "landing", ["multilanguage_page_id"] = "ml-a" };
 
-    // As the operation links: with RequireUnpublished, a page published by the time of the write is refused under its lock.
     private void SetUpLink(bool affectsPublished, bool publishedAtTheWrite = false, string rootVersion = "ml-a-v1")
     {
         Operations
@@ -317,7 +316,6 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
                     : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "landing" }, affectsPublished));
     }
 
-    // A reset of the published French version's groups to those of ml-a, at the given version of ml-a.
     private void SetUpReset(string rootVersion)
     {
         Operations
@@ -328,7 +326,7 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
                 : SiteBuilderOperationResult.Success<IList<string>>(["fr-FR"], affectsPublished: true));
     }
 
-    // As the operation answers it: the Multilanguage Page whose values the page takes, unchanged, at its version.
+    // The operation lists the Multilanguage Page unchanged, only for its version.
     private static SiteBuilderChangePreview WithRoot(SiteBuilderChangePreview preview, string version)
     {
         preview.Objects.Add(new SiteBuilderObjectChange { ObjectType = "multilanguage-page", ObjectId = "ml-a", ETag = version });

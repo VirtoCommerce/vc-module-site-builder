@@ -16,8 +16,8 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// Pages stored as files: read and edited through the designer's own read and save over the blob storage of the test,
-// published, unpublished and discarded through the file page operations, whose git work is their own tests' business.
+// File pages are read and saved through the real designer over the test's blob storage; the file page operations are
+// mocked because their git work has its own tests.
 public sealed class FilePageToolsTests : IAsyncDisposable
 {
     private const string Path = "landing/spring.page";
@@ -532,9 +532,6 @@ public sealed class FilePageToolsTests : IAsyncDisposable
 
     private static Dictionary<string, object> Discard() => new() { ["kind"] = "page", ["page_id"] = PageId, ["store_id"] = StoreA };
 
-    // Draft branches of the page by their owner, as git keeps them: a call reads the branch of its draft owner, else the
-    // caller's own, and its write ships that branch when it is at the head the call names, or still missing when it names
-    // none; an unpublish also when the production branch still holds the page it was reviewed with.
     private readonly Dictionary<string, string> _heads = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _shipped = [];
     private string _publishedInGit = Published;
@@ -633,7 +630,6 @@ public sealed class FilePageToolsTests : IAsyncDisposable
         _context.FilePageOperations.Verify(x => x.PublishAsync(It.Is<FilePagePublishOperationRequest>(r => !r.DryRun), It.IsAny<ClaimsPrincipal>(),
             It.IsAny<CancellationToken>()), times);
 
-    // The version of the blob draft the discard's dry run answers.
     private string _blobDraftVersion = "draft-v1";
 
     private void SetUpBlobDiscard(DraftDiscardStatus status)

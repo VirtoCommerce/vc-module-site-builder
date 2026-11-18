@@ -12,9 +12,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The theme files the design tools read and save, through the designer's own read and save, so a draft written here
-// passes the checks, sanitizing and history of a draft the designer writes. Paths carry the theme folder, as the
-// designer names them ("default/templates/product.json").
+// Reads and saves go through the designer's own, so a draft written here gets the same checks, sanitizing and history;
+// paths carry the theme folder, as the designer names them.
 public static class ThemeFiles
 {
     public const string CatalogHashKey = "hash";
@@ -25,8 +24,8 @@ public static class ThemeFiles
 
     public static string GetTemplateFile(string templateKey) => ThemeStorage.GetTemplateFile(templateKey);
 
-    // The schema catalog the store's storefront sent last: theme files are saved and published against it, as the
-    // designer saves against the catalog its preview sent. Null when the storefront has sent none.
+    // Theme files are saved and published against the catalog the storefront sent last, as the designer saves against
+    // the one its preview sent.
     public static async Task<JsonObject> GetCatalogAsync(ISchemaCatalogService schemaCatalogService, string storeId, CancellationToken cancellationToken)
     {
         var catalog = await schemaCatalogService.GetAsync(storeId, hash: null, cancellationToken);
@@ -58,7 +57,6 @@ public static class ThemeFiles
         new($"The storefront of store '{storeId}' has not sent its schema catalog yet, so theme files cannot be checked and nothing was " +
             "saved. Open the store once in the designer (its preview sends the catalog), then repeat the call.");
 
-    // The palette tokens the storefront announced with its catalog, light and dark.
     public static ThemePaletteTokens GetPaletteTokens(JsonObject catalog)
     {
         var tokens = new ThemePaletteTokens();
@@ -71,7 +69,7 @@ public static class ThemeFiles
         return tokens;
     }
 
-    // The file as the designer edits it: its draft, else what is live; Content is null for a file that does not exist.
+    // The draft, else what is live, as the designer edits it; Content is null for a missing file.
     public static async Task<ThemeFileContent> ReadAsync(IDesignerOperationService designerOperationService, ClaimsPrincipal user, string storeId,
         string path, CancellationToken cancellationToken)
     {
@@ -87,7 +85,6 @@ public static class ThemeFiles
         }
     }
 
-    // The live file, which the published theme holds; null when the theme has none.
     public static async Task<string> ReadLiveAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user, string storeId,
         string path, CancellationToken cancellationToken)
     {
@@ -121,7 +118,6 @@ public static class ThemeFiles
         }
     }
 
-    // A dry run checks and sanitizes the files as a save does and writes nothing.
     public static Task<SiteBuilderOperationResult<DesignerSaveResult>> SaveAsync(IDesignerOperationService designerOperationService, ClaimsPrincipal user,
         string storeId, string catalogHash, IList<DesignerSaveFile> files, bool dryRun, CancellationToken cancellationToken) =>
         designerOperationService.SaveAsync(new DesignerSaveOperationRequest
@@ -133,8 +129,7 @@ public static class ThemeFiles
             DryRun = dryRun,
         }, user, cancellationToken);
 
-    // A refused save as a sentence the user can act on. The permission of a file is checked by the save: templates and
-    // rules need builder:templates, the other theme files builder:theme.
+    // The save checks the file's own permission; the caller names it only for the refusal.
     public static void EnsureSaved(SiteBuilderOperationResult result, string subject, string permission, string storeId, string readAgain)
     {
         switch (result.Status)

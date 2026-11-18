@@ -6,7 +6,7 @@ namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
 
 public class UpdateSectionsBulkJobPayload
 {
-    // The user who called update_sections_bulk; the job runs as them.
+    // The job runs as this user.
     public string UserId { get; set; }
 
     public string SectionType { get; set; }
@@ -17,7 +17,7 @@ public class UpdateSectionsBulkJobPayload
 
     public string SettingsLanguage { get; set; }
 
-    // Fixed when the tool was called: the pages, their sections and the version each was read at.
+    // Fixed at call time, so the job never reaches pages or sections the agent did not see.
     public IList<UpdateSectionsBulkJobPage> Pages { get; set; } = [];
 }
 
@@ -30,8 +30,6 @@ public class UpdateSectionsBulkJobPage : ISiteBuilderJobPage
     public IList<string> SectionIds { get; set; } = [];
 }
 
-// Applies the change of update_sections_bulk page by page as the user who asked for it: their account and access are
-// read again for every page, and a page saved by someone since the call is skipped, not overwritten.
 public class UpdateSectionsBulkJob(
     SiteBuilderJobUsers jobUsers,
     PageDraftJobRunner runner,

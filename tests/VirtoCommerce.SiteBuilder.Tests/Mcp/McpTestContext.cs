@@ -41,8 +41,7 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// The Site Builder toolset served by the MCP test harness: the module's real store authorization (the handler and its
-// requirement), over services the test fills in.
+// The module's real store authorization over services the tests fill in.
 internal sealed class McpTestContext : IAsyncDisposable
 {
     public const string StoreA = "store-a";
@@ -51,14 +50,14 @@ internal sealed class McpTestContext : IAsyncDisposable
     public const string StoreScope = nameof(StoreSelectedScope);
     public const string AssetRead = "platform:asset:read";
 
-    // The store every user of the test is bound to, if any. The handler finds the user by the id claim, whose types
-    // the platform sets at startup, so here every lookup answers the same account.
+    // The handler reads the store binding from the user account it looks up, not from the principal, so one binding
+    // covers every user of a test.
     private string _boundStoreId;
     private McpToolHarness _harness;
     private (DesignerContentService Designer, ThemeDraftService Themes) _designer;
     private ThemeStorageFactory _themeStorage;
 
-    // The claim types the platform reads the user id from, as its startup sets them: a bulk tool stores the id for its job.
+    // The platform sets these at startup; without them the handler and the bulk tools find no user id.
     static McpTestContext()
     {
         ClaimsPrincipalExtensions.UserIdClaimTypes = ["sub", ClaimTypes.NameIdentifier];
@@ -80,19 +79,15 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Mock<IUserNameResolver> UserNames { get; } = new();
     public RecordingJobDispatcher Jobs { get; } = new();
 
-    // The accounts a job runs as, by user id, as a sign-in would give them when the job runs.
     public Dictionary<string, ClaimsPrincipal> JobUsers { get; } = new(StringComparer.Ordinal);
 
-    // Accounts the user store no longer finds, and accounts locked out until a time ahead.
     public HashSet<string> DeletedUsers { get; } = new(StringComparer.Ordinal);
     public HashSet<string> LockedOutUsers { get; } = new(StringComparer.Ordinal);
 
-    // Pages with their content, saved through the designer's own save; null unless a test calls UsePageStore.
     public Fakes.FakeGroupedPageService PageStore { get; private set; }
 
     public RecordingContentHistory SavedVersions { get; } = new();
 
-    // The theme files of every store, as "themes/{storeId}/{theme}/{path}", drafts with "-draft".
     public FakeBlobStorage Blobs { get; } = new();
 
     public FakeStoreService Stores { get; } = new(
@@ -102,28 +97,26 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public Mock<ISiteBuilderPreviewQueryService> Previews { get; } = new();
 
-    // The writes of pages stored as files: git is the operation service's own business, tested with it.
+    // Mocked: the git work of these operations has its own tests.
     public Mock<IFilePageOperationService> FilePageOperations { get; } = new();
 
     public Mock<ISiteBuilderPublishStatusQueryService> PublishStatuses { get; } = new();
 
-    // The stores keep their pages stored as files in git: the history of such a page is read from GitHistory. Reads and
-    // writes of the pages themselves stay in the blob storage of the test, so a test that sets it only lists versions.
+    // Turns git on for the content queries only: file page reads and writes stay in the test's blob storage, so it serves
+    // version listing only.
     public bool GitFlow { get; set; }
 
     public Mock<IGitContentHistory> GitHistory { get; } = new();
 
-    // Every store, for a user who reads all of them: the overview pages through the stores the store search finds.
     public Mock<IStoreSearchService> StoreSearch { get; } = new();
 
     public Mock<ISettingsManager> Settings { get; } = new();
 
     public Mock<IMemberSearchService> Members { get; } = new();
 
-    // The page writes the tools run; without one, the module's operation service over the page store.
     public IGroupedPageOperationService GroupedPageOperations { get; set; }
 
-    // Runs right before a designer save that writes, after the dry runs of the call: a change made here is a concurrent one.
+    // A change made here lands between the call's dry runs and its write, as a concurrent one.
     public Action BeforeDesignerWrite { get; set; }
 
     public McpToolHarness Harness => _harness ??= McpToolHarness.Create(services => services.AddSiteBuilderMcp(), Register, scope: null);
@@ -131,11 +124,10 @@ internal sealed class McpTestContext : IAsyncDisposable
     public static McpTestUser Reader(string name = "reader") =>
         McpTestUser.Create(name).WithPermissions(Permissions.Read);
 
-    // builder:read in store A only, through a role's store scope.
     public static McpTestUser StoreAReader(string name = "store-a-reader") =>
         McpTestUser.Create(name).WithScopedPermission(Permissions.Read, StoreScope, StoreA);
 
-    // builder:update is granted in every store, as the designer's save requires; builder:read may be limited to a store.
+    // The designer's save checks the update permission globally, so only the read permission is ever store-scoped.
     public static McpTestUser Editor(string name = "editor") =>
         McpTestUser.Create(name).WithPermissions(Permissions.Read, Permissions.Update);
 
@@ -148,7 +140,6 @@ internal sealed class McpTestContext : IAsyncDisposable
     public static McpTestUser StoreAPublisher() =>
         McpTestUser.Create("store-a-publisher").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Publish);
 
-    // An account bound to store A: global permissions still reach store A only.
     public McpTestUser StoreBoundReader(string name = "bound-reader")
     {
         BindAccountsTo(StoreA);
@@ -157,7 +148,6 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public void BindAccountsTo(string storeId) => _boundStoreId = storeId;
 
-    // The pages the read and edit tools load and the designer's save writes, instead of the mocked page services.
     public Fakes.FakeGroupedPageService UsePageStore()
     {
         PageStore = new Fakes.FakeGroupedPageService();
@@ -166,7 +156,6 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _harness?.DisposeAsync() ?? ValueTask.CompletedTask;
 
-    // A page of the page store with a published version, a draft, or both, each holding the content.
     public GroupedSiteBuilderPage SeedPage(string id, string storeId, bool published, bool draft, string content = SampleContent)
     {
         var group = new GroupedSiteBuilderPage
@@ -198,7 +187,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         return group;
     }
 
-    // A page of the page store with a draft only, holding the content.
     public GroupedSiteBuilderPage SeedDraft(string id, string storeId, string content, string language = "en-US", string multilanguagePageId = null,
         DateTime? sourceRevision = null)
     {
@@ -218,7 +206,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         return group;
     }
 
-    // The content of a page of the page store as the designer loads it: the draft if there is one, with its version.
     public async Task<SiteBuilderContentSnapshot> LoadDraftAsync(string id) =>
         await PageStore.LoadGroupContentAsync(await PageStore.GetByIdAsync(id), cancellationToken: Xunit.TestContext.Current.CancellationToken);
 
@@ -226,7 +213,6 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public async Task<string> DraftVersionAsync(string id) => (await LoadDraftAsync(id)).ETag;
 
-    // The dry run of an operation that changes one field of one object, at the version given.
     public static SiteBuilderChangePreview Preview(string field, string from, string to, string objectType = "page", string objectId = null,
         bool affectsPublished = false, string eTag = null) => new()
         {
@@ -245,7 +231,6 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public const string SampleContent = """{ "settings": { "name": "Home" }, "content": [ { "id": "hero", "type": "hero-banner", "title": "Spring" } ] }""";
 
-    // The rows the pages list answers, filtered by store and paged, as the list service does.
     public void ListPages(Func<IEnumerable<SiteBuilderPageListItem>> rows)
     {
         PageList
@@ -275,8 +260,7 @@ internal sealed class McpTestContext : IAsyncDisposable
         Page = page,
     };
 
-    // Runs a job of a bulk tool as the job engine would, with the services the module registers.
-    // onReport runs after each report of progress, as between two pages.
+    // onReport runs after each progress report, so a test can change content between two pages of the job.
     public async Task<RecordingJobContext> RunJobAsync<THandler, TPayload>(TPayload payload, Action<int> onReport = null)
         where THandler : class, VirtoCommerce.Platform.Core.Jobs.IBackgroundJobHandler<TPayload>
         where TPayload : class
@@ -293,8 +277,7 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public static readonly McpToolCallOptions Approved = new() { AsApprovedChange = true };
 
-    // The call a user makes after reviewing its dry run: the arguments with the expected_versions and draft_owner the
-    // dry run answered, as the change stored for approval holds them.
+    // Builds the call as the change stored for approval holds it: the arguments plus what their dry run answered.
     public async Task<Dictionary<string, object>> ReviewAsync(McpTestUser user, string tool, Dictionary<string, object> arguments)
     {
         var review = (await CallAsync(user, tool, new Dictionary<string, object>(arguments) { ["dryRun"] = true })).EnsureSucceeded().Read<SiteBuilderChange>();
@@ -307,7 +290,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         return call;
     }
 
-    // The groups and the language versions the multilanguage page service finds.
     public void AddMultilanguagePages(params MultilanguagePage[] roots)
     {
         MultilanguagePages
@@ -325,7 +307,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         Visibility = true,
     };
 
-    // The groups the page service finds.
     public void AddGroups(params GroupedSiteBuilderPage[] groups)
     {
         GroupedPages
@@ -351,7 +332,7 @@ internal sealed class McpTestContext : IAsyncDisposable
         var pageSize = new Mock<IMcpPageSizeResolver>();
         pageSize.Setup(x => x.GetPageSizeAsync(It.IsAny<int?>())).ReturnsAsync((int? take) => Math.Clamp(take ?? 20, 1, 50));
 
-        // The platform's permission policies, which the module's services ask by name: granted globally, or to an administrator.
+        // The platform's permission policies, which the module's services ask for by name.
         services.AddAuthorizationCore(options =>
         {
             foreach (var permission in Permissions.AllPermissions)
@@ -405,7 +386,6 @@ internal sealed class McpTestContext : IAsyncDisposable
             SharedComponentContents.Object,
             ThemeStorage));
 
-        // The theme as the designer and the publication keep it, in the blob storage of the test.
         services
             .AddSingleton<IThemeStorageFactory>(ThemeStorage)
             .AddSingleton<ISchemaCatalogService>(new SchemaCatalogService(ThemeStorage))
@@ -428,7 +408,6 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton(principals.Object)
             .AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
 
-        // The stores, settings and members the overview and the resources read.
         services
             .AddSingleton<IStoreService>(Stores)
             .AddSingleton(StoreSearch.Object)
@@ -436,7 +415,6 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton(Members.Object);
     }
 
-    // The designer's save as the module wires it, over the page store; theme files live in a blob storage of the test.
     private DesignerOperationService CreateDesignerOperations(IAuthorizationService authorizationService)
     {
         var (designer, themes) = GetDesigner();
@@ -451,13 +429,11 @@ internal sealed class McpTestContext : IAsyncDisposable
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService));
     }
 
-    // The history's restore as the module wires it, over the page store and the designer; the versions come from History.
     private ContentHistoryOperationService CreateHistoryOperations(IAuthorizationService authorizationService) =>
         new(authorizationService, History.Object, PageStore ?? GroupedPages.Object, GetDesigner().Designer, TestServices.Permissions(authorizationService),
             new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService),
             RequestValidators.Stores(StoreA, StoreB, StoreC), RequestValidators.History(StoreA, StoreB, StoreC), RequestValidators.Restore(StoreA, StoreB, StoreC));
 
-    // The page group writes as the module wires them, over the page store.
     private GroupedPageOperationService CreateGroupedPageOperations(IAuthorizationService authorizationService)
     {
         var pageService = new Fakes.FakeSiteBuilderPageService(PageStore);
@@ -492,7 +468,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         new(ThemeStorage, new ThemeSnapshotBuilder(), new ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
             Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService());
 
-    // The schema catalog a storefront preview sends: the section types the theme may hold, and its palette tokens.
     public Task SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null)
     {
         var catalog = new Newtonsoft.Json.Linq.JObject
@@ -513,8 +488,6 @@ internal sealed class McpTestContext : IAsyncDisposable
     public static readonly string[] ThemeSections =
         ["product-info", "product-reviews", "category-listing", "page-content", "site-header", "site-footer", "announcement-bar", "text"];
 
-    // A store's theme as a storefront preview leaves it: the catalog with the storefront's palette tokens, and a live
-    // product template.
     public async Task SeedThemeAsync(string storeId)
     {
         var tokens = new Newtonsoft.Json.Linq.JObject
@@ -526,14 +499,12 @@ internal sealed class McpTestContext : IAsyncDisposable
         SeedThemeFile(storeId, "templates/product.json", ProductTemplate);
     }
 
-    // A theme file of the store's default theme: its live copy, or its draft.
     public void SeedThemeFile(string storeId, string pathInTheme, string content, bool draft = false) =>
         Blobs.Files[ThemeFileKey(storeId, pathInTheme, draft)] = content;
 
     public string ReadThemeFile(string storeId, string pathInTheme, bool draft = false) =>
         Blobs.Files.GetValueOrDefault(ThemeFileKey(storeId, pathInTheme, draft));
 
-    // A page stored as a file in the store's blob storage: what is published, or the draft next to it.
     public void SeedFilePage(string storeId, string path, string content, bool draft = false) =>
         Blobs.Files[FilePageKey(storeId, path, draft)] = content;
 
@@ -585,7 +556,7 @@ internal sealed class McpTestContext : IAsyncDisposable
         return new UserManager<ApplicationUser>(store.Object, null, null, null, null, null, null, null, null);
     }
 
-    // The store scope as the platform registers it, so the handler reads the scoped claims of McpTestUser.
+    // Registered as the platform does at startup, so the handler can read store-scoped permission claims.
     private static void RegisterPermissionScopes()
     {
         AbstractTypeFactory<PermissionScope>.RegisterType<StoreSelectedScope>();
@@ -601,7 +572,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     }
 }
 
-// The job engine of the tests: records what a bulk tool queues, or fails as a platform without background jobs does.
+// A set failure stands for a platform without background jobs.
 internal sealed class RecordingJobDispatcher : IMcpJobDispatcher
 {
     public List<(Type Handler, object Payload, McpJobRequest Request)> Enqueued { get; } = [];

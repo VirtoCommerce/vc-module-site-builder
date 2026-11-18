@@ -19,9 +19,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The content author's edits of a page's draft: what customers see changes only when the draft is published, so the
-// edit needs no second person. A page stored as a file has no version of its own; its version token is the hash of its
-// content, which the save compares with the draft it replaces.
+// Customers see a draft only once it is published, so an edit needs no approval. A page stored as a file has no version
+// of its own, so its version token is a hash of its content.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageDraftTools(
@@ -118,7 +117,7 @@ public class PageDraftTools(
 
         EnsureSaved(result, group);
 
-        // The dry run answers the content as it would be stored, sanitized; a save stores what was sent, sanitized the same way.
+        // The dry run answers the sanitized content; a save sanitizes what was sent the same way.
         var saved = dryRun ? ReadPreviewContent(result.Preview, page_id, current.ETag) : editor;
         foreach (var change in PageDocumentChanges.Compare(before, saved))
         {
@@ -224,8 +223,7 @@ public class PageDraftTools(
         return preview;
     }
 
-    // The page's own template is a page template the theme has, as a draft or published, or one of the storefront's own:
-    // the storefront ignores a key it cannot find, which would leave the page on the rules without anyone noticing.
+    // The storefront ignores a template key it cannot find, which would silently leave the page on the template rules.
     private async Task<IList<string>> CheckTemplatesAsync(PageEditOperation[] operations, ClaimsPrincipal user, string storeId,
         CancellationToken cancellationToken)
     {
@@ -302,7 +300,7 @@ public class PageDraftTools(
         FilePages.EnsureSucceeded(result, page, "edit");
     }
 
-    // A dry run does not refuse a stale version (the save checks it under its lock); it answers the current one instead.
+    // A dry run does not refuse a stale version, only the save does under its lock, so compare the version it answers.
     private static PageDocumentEditor ReadPreviewContent(SiteBuilderChangePreview preview, string pageId, string versionToken)
     {
         var page = preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.Page);
@@ -343,11 +341,9 @@ public class PageDraftTools(
 
 public sealed class PageDraftEdit : McpChangePreview
 {
-    // The version to pass to the next edit: the saved one, or the current one after a dry run.
     [JsonPropertyName("version_token")]
     public string VersionToken { get; set; }
 
-    // The page's sections after the edit, in order.
     [JsonPropertyName("sections")]
     public IList<SectionRow> Sections { get; set; } = [];
 }

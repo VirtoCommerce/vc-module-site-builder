@@ -66,8 +66,7 @@ public class SiteBuilderSectionScanner(
         return result;
     }
 
-    // A Landing Page is its own version; a Multilanguage Page is scanned language by language, only those the
-    // language, status and id filters name, since the list keeps a Multilanguage Page when any of its versions matches.
+    // The list keeps a Multilanguage Page when any of its versions matches, so the version filters apply again here.
     protected virtual IEnumerable<GroupedSiteBuilderPage> GetVersions(SiteBuilderPageListItem row, SiteBuilderPageSearchCriteria criteria)
     {
         if (row.Page != null)
@@ -85,7 +84,7 @@ public class SiteBuilderSectionScanner(
             .Where(x => criteria.ObjectIds is not { Count: > 0 } || criteria.ObjectIds.Contains(x.Id));
     }
 
-    // The grouped pages filter in memory: Archived when every version is archived, any other status when one is in it.
+    // The status rule of the grouped pages search, applied in memory.
     protected static bool HasStatus(GroupedSiteBuilderPage page, string[] statuses)
     {
         var pages = page.Pages ?? [];
@@ -142,7 +141,7 @@ public class SiteBuilderSectionScanner(
                 continue;
             }
 
-            // A page of the older shape cannot hold a placement (SiteBuilderSharedComponentReferenceMatcher reads none).
+            // A page of the older shape holds no Shared Component placement.
             if (!document.IsLegacyShape && IsPlacement(section))
             {
                 await ScanPlacementAsync(page, section, position, criteria, components, match, cancellationToken);
@@ -191,7 +190,6 @@ public class SiteBuilderSectionScanner(
         }
     }
 
-    // Null when the component is not one of the page's store, its store is not opened, or its content cannot be read.
     protected virtual async Task<SiteBuilderPageDocument> LoadComponentAsync(string storeId, string componentId, IList<string> storeIds,
         CancellationToken cancellationToken)
     {

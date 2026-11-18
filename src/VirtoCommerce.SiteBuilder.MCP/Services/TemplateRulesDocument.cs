@@ -5,10 +5,7 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The theme's template rules file (config/template_rules.json) as the designer reads and writes it (rules.ts): a list
-// of rules per page type, each { id, template, when?, disabled? }; the first enabled rule whose conditions all hold
-// picks the template. A page type without its own list uses the storefront's default rules. What the file holds that
-// the designer does not know is kept as it is.
+// Reads and writes the rules file as the designer does; what the file holds that the designer does not know is kept as it is.
 public sealed class TemplateRulesDocument
 {
     public const int Version = 2;
@@ -25,11 +22,9 @@ public sealed class TemplateRulesDocument
         Unreadable = unreadable;
     }
 
-    // Rules the designer and the storefront cannot read (no template, or conditions that are not an object): they are
-    // left out, as the designer leaves them out when it saves.
+    // Rules neither the designer nor the storefront can read are dropped, as the designer drops them when it saves.
     public int Unreadable { get; }
 
-    // Null when the file holds something other than an object; an empty or missing file has no rules of its own.
     public static TemplateRulesDocument Read(string content)
     {
         JsonObject file;
@@ -78,10 +73,10 @@ public sealed class TemplateRulesDocument
         return new TemplateRulesDocument(rest, lists, unreadable);
     }
 
-    // The type has a list in the file; without one the storefront uses its default rules.
+    // Without its own list a page type gets the storefront's default rules.
     public bool HasOwnRules(string pageType) => _lists.ContainsKey(pageType);
 
-    // The rules of the type in order: its own, or a copy of the defaults, which become its own once changed.
+    // Without its own list, a copy of the defaults, which becomes the type's own once set.
     public List<JsonObject> RulesOf(string pageType)
     {
         if (_lists.TryGetValue(pageType, out var own))
@@ -96,7 +91,7 @@ public sealed class TemplateRulesDocument
 
     public IEnumerable<string> AllIds() => PageTypes.SelectMany(type => RulesOf(type).Select(GetId));
 
-    // In the designer's order: version, conditions (every condition name the rules use), the lists, then the rest.
+    // In the designer's key order.
     public string Write()
     {
         var conditions = _lists.Values

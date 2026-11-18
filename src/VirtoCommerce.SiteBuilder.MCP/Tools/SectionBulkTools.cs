@@ -21,8 +21,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// One change of a section on every page that has it: a banner replaced on all landing pages. Only drafts change, so no
-// second person checks it; the pages are fixed when the tool is called and changed by a background job.
+// Only drafts change, so no second person approves the change.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SectionBulkTools(
@@ -32,8 +31,7 @@ public class SectionBulkTools(
     IMcpJobDispatcher jobDispatcher,
     Func<UserManager<ApplicationUser>> userManagerFactory)
 {
-    // A dry run reads this many pages; a real run reads every page of the filters, at most this many, so that the set
-    // it fixes is the whole set.
+    // A real run must fix the whole filtered set, not a sample, so it scans further than a preview.
     private const int MaxPreviewScan = 200;
     private const int MaxPages = 1000;
     private const int MaxPreviewPages = 10;
@@ -132,7 +130,6 @@ public class SectionBulkTools(
         }, "make the change page by page with edit_page_draft.");
     }
 
-    // The named store, else every store the user reads.
     private async Task<IList<string>> GetStoreIdsAsync(ClaimsPrincipal user, string storeId)
     {
         if (!string.IsNullOrWhiteSpace(storeId))
@@ -247,7 +244,6 @@ public class SectionBulkTools(
 
 public sealed class SectionBulkPreview : McpChangePreview
 {
-    // Pages the filters select, and how many of them were scanned.
     [JsonPropertyName("total_page_count")]
     public int TotalPageCount { get; set; }
 
@@ -260,7 +256,6 @@ public sealed class SectionBulkPreview : McpChangePreview
     [JsonPropertyName("coverage")]
     public string Coverage { get; set; }
 
-    // Language versions with a section of their own to change, and those sections.
     [JsonPropertyName("target_page_count")]
     public int TargetPageCount { get; set; }
 
@@ -270,7 +265,6 @@ public sealed class SectionBulkPreview : McpChangePreview
     [JsonPropertyName("shared_component_section_count")]
     public int SharedComponentSectionCount { get; set; }
 
-    // The first pages, with the sections the change applies to.
     [JsonPropertyName("pages")]
     public IList<SectionBulkPageRow> Pages { get; set; } = [];
 }
@@ -292,7 +286,6 @@ public sealed class SectionBulkPageRow
     [JsonPropertyName("section_ids")]
     public IList<string> SectionIds { get; init; } = [];
 
-    // Why the change would not apply to this page.
     [JsonPropertyName("problem")]
     public string Problem { get; init; }
 }

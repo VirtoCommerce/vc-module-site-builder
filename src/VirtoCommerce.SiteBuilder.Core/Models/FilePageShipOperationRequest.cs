@@ -10,10 +10,10 @@ public class FilePageShipOperationRequest : FilePageDraftOperationRequest
     public string DraftOwner { get; set; }
 
     /// <summary>
-    /// The version of the content the caller reviewed, as <see cref="SiteBuilderContentVersion.CreateForFileContent"/> makes it of what the page reads
-    /// and a dry run answers it in <see cref="SiteBuilderObjectChange.ETag"/>: in blob storage, for a publish, the draft, else what is published; for an
-    /// unpublish, what is published, in git too, where it is what the production branch holds before the deletion is committed. It is read again right
-    /// before the write, and the write is refused when it differs. A publish in git does not read it. <c>null</c> takes the page as it is.
+    /// The version of the content the caller reviewed (<see cref="SiteBuilderContentVersion.CreateForFileContent"/>), as a dry run answers it in
+    /// <see cref="SiteBuilderObjectChange.ETag"/>: for a publish in blob storage, the draft, else what is published; for an unpublish, what is
+    /// published. It is read again right before the write, which is refused when it differs. A publish in git does not check it.
+    /// <c>null</c> takes the page as it is.
     /// </summary>
     public string ExpectedContentVersion { get; set; }
 }

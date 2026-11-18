@@ -41,7 +41,6 @@ public sealed class SearchAssetsToolTests : IAsyncDisposable
                 Results = _entries.Skip(criteria.Skip).Take(criteria.Take).ToList(),
             });
 
-        // image-1 stands on a page and in a Shared Component of the store.
         _context.AssetReferences
             .Setup(x => x.SearchReferencesAsync(It.IsAny<SiteBuilderAssetReferencesSearchCriteria>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SiteBuilderAssetReferencesSearchCriteria criteria, CancellationToken _) =>

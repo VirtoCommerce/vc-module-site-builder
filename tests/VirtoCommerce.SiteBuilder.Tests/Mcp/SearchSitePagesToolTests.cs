@@ -28,7 +28,6 @@ public sealed class SearchSitePagesToolTests : IAsyncDisposable
         _groups.AddRange(Enumerable.Range(1, 2).Select(x => Group($"b{x}", StoreB)));
         _context.AddGroups([.. _groups]);
 
-        // The pages list as the service answers it: the store, the page ids and the page of rows.
         _context.PageList
             .Setup(x => x.SearchAsync(It.IsAny<SiteBuilderPageSearchCriteria>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SiteBuilderPageSearchCriteria criteria, CancellationToken _) =>

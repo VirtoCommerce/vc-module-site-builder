@@ -30,8 +30,6 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// The resources and prompts as the MCP module serves them: a user sees those whose [McpPermission] and [Authorize] they hold, and a
-// resource is read with its address.
 public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
 {
     private const string SettingQuery = PlatformConstants.Security.Permissions.SettingQuery;
@@ -195,8 +193,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
             .Order(StringComparer.Ordinal)
             .ToList();
 
-    // As the MCP module lists prompts and resources: every [McpPermission] permission, in some store or in all; and, as
-    // the SDK's authorization filters with the platform's policies, every [Authorize] permission granted in full.
+    // Mirrors how the MCP module and the SDK's authorization filter show a primitive: [McpPermission] granted in some
+    // store or globally, [Authorize] only globally.
     private static bool HasPermissions(ClaimsPrincipal user, IMcpServerPrimitive primitive) =>
         primitive.Metadata.OfType<McpPermissionAttribute>().SelectMany(x => x.Permissions).All(x => user.GetMcpPermissionGrant(x) != null) &&
         primitive.Metadata.OfType<IAuthorizeData>().All(x => string.IsNullOrEmpty(x.Policy) || user.GetMcpPermissionGrant(x.Policy)?.IsGlobal == true);

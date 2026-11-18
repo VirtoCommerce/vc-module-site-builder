@@ -20,7 +20,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A restore overwrites drafts: the user confirms it, and the write takes only the draft versions its dry run answered (a git file page: by content hash).
+// A restore overwrites drafts, so the user confirms it and the write takes only the draft versions its dry run answered.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class VersionRestoreTools(
@@ -30,7 +30,7 @@ public class VersionRestoreTools(
     IFilePageOperationService filePageOperationService,
     ILogger<VersionRestoreTools> logger)
 {
-    // A commit is named by at least its short form, as the history of a page stored as a file shows it.
+    // The history shows commits in their short form, so that is the shortest name accepted.
     private const int MinCommitLength = 7;
 
     [McpServerTool(Name = "restore_version", ReadOnly = false, Destructive = true, Idempotent = false)]
@@ -65,7 +65,7 @@ public class VersionRestoreTools(
         var storeId = store_id.Trim();
         var versionId = version_id.Trim();
 
-        // The store first, as the operations check it, so an answer about the arguments does not tell which stores exist.
+        // The store is checked first, so an answer about the other arguments does not reveal which stores exist.
         await authorizationService.EnsureStoreAllowedAsync(context.User, storeId);
 
         var themeFiles = (theme_files ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().TrimStart('/')).Distinct().ToList();
@@ -194,7 +194,6 @@ public class VersionRestoreTools(
             x => x.Value?.Trim(),
             StringComparer.Ordinal);
 
-    // The drafts' content against the version's, section by section for pages and templates, by value for the other files.
     private static void AddContentChanges(VersionRestore answer, string prefix, SiteBuilderObjectChange item)
     {
         var content = item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
@@ -289,15 +288,15 @@ public sealed class VersionRestore : McpChangePreview, IReviewedChange
     [JsonPropertyName("version_id")]
     public string VersionId { get; set; }
 
-    // A page stored as a file.
+    // Null unless the page is stored as a file.
     [JsonPropertyName("page_id")]
     public string PageId { get; set; }
 
-    // The versions of the drafts now, by item: pass them unchanged to restore.
+    // Sent back unchanged, they let the restore overwrite only these drafts.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    // A page stored as a file in git: the commit on your draft branch that holds the restored version.
+    // Null except after a page stored as a file is restored.
     [JsonPropertyName("commit")]
     public string Commit { get; set; }
 }

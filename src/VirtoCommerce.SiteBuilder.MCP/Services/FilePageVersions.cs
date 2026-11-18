@@ -10,10 +10,8 @@ using VirtoCommerce.SiteBuilder.MCP.Tools;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The versions of a page stored as a file in git, as the designer's history panel shows them: the unpublished commits
-// on draft branches first, then the published ones on the production branch. One answer of the history covers a page of
-// branches; its cursor reads the next page of branches, which lists the production branch again. The tool's cursor
-// holds both the branch cursor and how far into that answer the agent has read.
+// The history pages by branches rather than by versions, so the tool's cursor carries both the branch cursor and the
+// offset into that answer.
 public static class FilePageVersions
 {
     private const string CursorPrefix = "file:";
@@ -72,7 +70,7 @@ public static class FilePageVersions
         return history.Truncated && !string.IsNullOrEmpty(history.EndCursor) ? Cursor(0, history.EndCursor) : null;
     }
 
-    // In blob storage a save overwrites the page in place, so there is nothing to list and nothing to restore.
+    // Not found means blob storage, where a save overwrites the page and keeps no versions.
     private static ContentVersionsAnswer NoHistory(FilePage page) => new()
     {
         StoreId = page.StoreId,

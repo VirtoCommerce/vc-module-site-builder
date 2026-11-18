@@ -14,30 +14,24 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// What a write of theme drafts did or would do: the changes of each file, read the way the designer shows them
-// (sections of a template, header or footer; rules; colors and logos), and the versions to pass to the next edit.
 public sealed class ThemeFileChange : McpChangePreview
 {
     [JsonPropertyName("store_id")]
     public string StoreId { get; set; }
 
-    // The draft's version after the write, or the current one after a dry run, by the path of each file.
     [JsonPropertyName("version_tokens")]
     public IDictionary<string, string> VersionTokens { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    // A template's, a header's or a footer's sections after the edit, in order.
     [JsonPropertyName("sections")]
     public IList<SectionRow> Sections { get; set; }
 
-    // The rules after the edit, in the order the storefront tries them.
     [JsonPropertyName("rules")]
     public IList<TemplateRuleRow> Rules { get; set; }
 
-    // The brand's fields, or the palette's light and dark colors, after the edit.
     [JsonPropertyName("values")]
     public JsonObject Values { get; set; }
 
-    // Pairs of palette colors below the contrast WCAG 2.2 AA asks for: the theme is not published with them.
+    // The theme is not published while any of these remain.
     [JsonPropertyName("contrast_failures")]
     public IList<ContrastFailureRow> ContrastFailures { get; set; }
 }
@@ -46,8 +40,7 @@ public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string
 
 public static class ThemeFileEdits
 {
-    // Saves the edits that change something as drafts in one save, or checks them with the save's dry run. The changes
-    // are those of the content as stored: on a dry run the sanitized content the save would write.
+    // The diff is of the content as stored: on a dry run, the sanitized content the save would write.
     public static async Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
         string storeId, string catalogHash, IList<ThemeFileEdit> edits, bool dryRun, string permission, string readAgain,
         CancellationToken cancellationToken)
@@ -90,8 +83,6 @@ public static class ThemeFileEdits
         change.AddWarning("Customers see this change only after the theme is published (publish_theme), which a second person approves.");
     }
 
-    // The changes of a theme file, by its kind: sections for a template, the header and the footer; rules for the rules
-    // file; values by their path for the palette, the brand and the others.
     public static IList<PageDocumentChange> Compare(string path, string before, string after)
     {
         var file = GetPathInTheme(path);
@@ -240,20 +231,19 @@ public sealed class TemplateRuleRow
 {
     public string Id { get; init; }
 
-    // product, category or page.
     public string PageType { get; init; }
 
-    // The place among the rules of its page type, from 0: the storefront tries them in this order.
+    // The storefront tries the rules in this order.
     public int Position { get; init; }
 
     public string Template { get; init; }
 
     public bool Disabled { get; init; }
 
-    // The conditions, all of which must hold, by name.
+    // All of them must hold.
     public JsonObject When { get; init; }
 
-    // The page type has no rules of its own: these are the storefront's default rules, which the first change makes its own.
+    // The storefront's defaults; the first change makes them the page type's own.
     public bool IsDefault { get; init; }
 
     public static IList<TemplateRuleRow> From(TemplateRulesDocument rules) =>
@@ -282,7 +272,6 @@ public sealed class TemplateRuleRow
 
 public sealed class ContrastFailureRow
 {
-    // light or dark.
     public string Scheme { get; init; }
 
     public string Pair { get; init; }

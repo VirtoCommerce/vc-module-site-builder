@@ -333,7 +333,7 @@ public class FilePageOperationService(
 
         var committed = await CommitUnpublishAsync(location, baseBranch, storeId, path, user, cancellationToken);
 
-        // the deletion committed on top of the commit approved, or on a branch cut for it, not whatever the branch holds once the checks pass
+        // pinned to the deletion, so a commit made to the branch while the merge waits for the checks is not shipped with it
         var pinnedHead = request.ExpectedDraftHead == null && !request.ExpectNoDraftBranch ? null : committed;
         var shipment = await ShipDraftAsync(location, GetPublishBranch(request, user), pinnedHead, $"unpublish {path} (store: {storeId})", path,
             canRebase: false, cancellationToken);

@@ -34,7 +34,6 @@ public sealed class GetSiteOverviewToolTests : IAsyncDisposable
         _rows.Add(new SiteBuilderPageListItem { Type = "Multilanguage", Id = "root", Name = "Root", MultilanguagePage = Root("root", StoreA) });
         _rows.Add(LandingRow(Group("b-page", StoreB)));
 
-        // The pages list as its filters answer: store, page type, lifecycle (drafts) and translation status.
         _context.PageList
             .Setup(x => x.SearchAsync(It.IsAny<SiteBuilderPageSearchCriteria>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((SiteBuilderPageSearchCriteria criteria, CancellationToken _) =>

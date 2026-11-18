@@ -9,8 +9,6 @@ namespace VirtoCommerce.SiteBuilder.MCP.Extensions;
 
 public static class McpJobDispatcherExtensions
 {
-    // Without a background job engine the platform cannot run the job: the agent is told so in a sentence, and that
-    // nothing was changed.
     public static async Task<McpJobHandle> EnqueueAsync<THandler>(this IMcpJobDispatcher jobDispatcher, RequestContext<CallToolRequestParams> context,
         object payload, McpJobRequest request, string alternative)
         where THandler : class

@@ -15,8 +15,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// New pages, always as drafts: nothing a customer sees changes until a page is published, so creating one needs no
-// second person. Each kind goes through the operation of its endpoint, with its checks and its dry run.
+// A new page is a draft, so customers see nothing until it is published and creating one needs no approval.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageCreateTools(
@@ -123,7 +122,7 @@ public class PageCreateTools(
             await editor.ApplyAsync(sections, sources, cancellationToken);
         }
 
-        // The name, address and language the content carries are the page's own, as a new page gets them.
+        // Content copied from another page still carries that page's name, address and language.
         page.Content = SiteBuilderContentSettings.Synchronize(editor.Write(),
             new GroupedSiteBuilderPage { Name = page.Name, Permalink = page.Permalink, CultureName = page.CultureName });
 

@@ -17,8 +17,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Shared Components of a store: sections kept once and placed on many pages. What a user sees follows the designer:
-// the components with builder:shared-components:read in the store, the pages they stand on with builder:read there too.
+// Access follows the designer: reading a component and reading the pages it stands on are separate permissions.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentTools(
@@ -26,8 +25,7 @@ public class SharedComponentTools(
     ISiteBuilderSharedComponentOperationService sharedComponentOperationService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService)
 {
-    // A component placed on every page of a large site would make the answer as long as the site; the usage service
-    // reads every page anyway, so the rest is paged here with skip.
+    // Caps the answer for a component placed on every page of a large site; the usage list arrives whole, so it is paged in memory.
     public const int MaxUsagePages = 50;
 
     [McpServerTool(Name = "search_shared_components", ReadOnly = true, Destructive = false, Idempotent = true)]
@@ -74,7 +72,7 @@ public class SharedComponentTools(
     private async Task<SharedComponentDetails> GetSharedComponentAsync(RequestContext<CallToolRequestParams> context, string storeId,
         string sharedComponentId, UsagePaging paging, CancellationToken cancellationToken)
     {
-        // A component of a store the user may not read is refused like a missing one, so the refusal names no store.
+        // Refused like a missing component, so the answer does not reveal which store it belongs to.
         var result = await sharedComponentOperationService.GetAsync(new SharedComponentOperationRequest { Id = sharedComponentId }, context.User, cancellationToken);
         var component = result.Succeeded ? result.Value : null;
         if (component == null || !storeId.EqualsIgnoreCase(component.StoreId))
@@ -82,7 +80,7 @@ public class SharedComponentTools(
             throw new McpException($"Shared Component '{sharedComponentId}' was not found in store '{storeId}'. Call search_shared_components to find its id.");
         }
 
-        // The operation lists the pages only with builder:read; this tells "not allowed" from "no pages".
+        // The operation omits pages the user may not read; this tells "not allowed" from "no pages".
         var canReadPages = await authorizationService.IsAllowedAsync(context.User, component);
         var content = SiteBuilderPageDocument.Read(await sharedComponentContentService.TryLoadContentAsync(component, cancellationToken));
 
@@ -98,7 +96,6 @@ public sealed class SharedComponentRow
 
     public string StoreId { get; init; }
 
-    // Placements on pages, drafts and published versions together.
     public int UsageCount { get; init; }
 
     public DateTime? ModifiedDate { get; init; }
@@ -119,7 +116,6 @@ public sealed class SharedComponentRow
     }
 }
 
-// The pages of one component the answer lists: from skip, at most MaxUsagePages.
 public sealed record UsagePaging(int? Skip, int? Take)
 {
     public int From => Math.Max(Skip ?? 0, 0);
@@ -137,13 +133,11 @@ public sealed class SharedComponentDetails
 
     public int UsageCount { get; init; }
 
-    // Null when the user may not read the store's pages; else one page of them.
+    // Null when the user may not read the store's pages.
     public IList<SiteBuilderSharedComponentUsagePage> UsagePages { get; init; }
 
-    // Every page the component stands on, listed or not.
     public int? UsagePageCount { get; init; }
 
-    // The skip of the next pages, or null when UsagePages holds the last ones.
     public int? UsagePagesNextSkip { get; init; }
 
     public string UsagePagesNote { get; init; }
@@ -160,7 +154,6 @@ public sealed class SharedComponentDetails
 
     public JsonArray Sections { get; init; }
 
-    // usagePaging is null when the user may not read the store's pages.
     public static SharedComponentDetails From(SiteBuilderSharedComponent component, UsagePaging usagePaging, SiteBuilderPageDocument content)
     {
         var pages = component.UsagePages ?? [];

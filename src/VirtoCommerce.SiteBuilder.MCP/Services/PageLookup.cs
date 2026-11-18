@@ -10,12 +10,10 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The page or multilanguage page a write names, found and checked against the stores of the user before the
-// operation runs. The operation checks the store again, as its endpoint does.
+// The operation checks the store again, as its endpoint does.
 public static class PageLookup
 {
-    // A page kept as a file is named by its path in the store, as the designer opens it; the id of a database page never
-    // holds a '/'.
+    // A page kept as a file is named by its path, as the designer opens it; a database page id never holds a '/'.
     public static bool IsFilePagePath(string pageId) => pageId?.Contains('/') == true;
 
     public static async Task<GroupedSiteBuilderPage> LoadPageAsync(this IGroupedPageService groupedPageService, IAuthorizationService authorizationService,

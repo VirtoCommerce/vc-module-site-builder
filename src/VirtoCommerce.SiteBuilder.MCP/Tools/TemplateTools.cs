@@ -22,9 +22,8 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The designer's templates of a store's theme: what there is, which rules give each its pages, and edits of a template's
-// draft. A template draft reaches customers only with the theme's publication, so an edit needs no second person; the
-// save is the designer's own, with its checks (the catalog, the main section) and history.
+// A template draft reaches customers only with the theme's publication, so an edit needs no second person; the save is
+// the designer's own, with its checks and history.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class TemplateTools(
@@ -238,8 +237,7 @@ public class TemplateTools(
             ?? throw new McpException($"Template '{key}' is not a template document, so it cannot be edited here. Open it in the designer.");
     }
 
-    // A copy of a template of the same type, as the designer starts one, without the copy's version and with the type's
-    // main section; without copy_of the template starts with its main section only.
+    // As the designer starts a template: a copy drops its source's version, and the type's main section is always there.
     private async Task<PageDocumentEditor> CreateAsync(ClaimsPrincipal user, string storeId, string key, string type, IList<ThemeTemplate> templates,
         string copyOf, CancellationToken cancellationToken)
     {
@@ -337,11 +335,9 @@ public class TemplateTools(
     }
 }
 
-// The templates and rules of a store's theme as the design tools read them.
 public static class ThemeTemplates
 {
-    // The storefront's own templates, which it has whatever the theme holds: the default of each type, and the B2C
-    // product template that its default product rule gives.
+    // The storefront has these whatever the theme holds, so a rule may pick them without a theme file.
     public static readonly string[] BuiltIn = ["product", "product.b2c", "category", "page"];
 
     public static async Task<IList<ThemeTemplate>> ListAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user, string storeId,
@@ -357,7 +353,7 @@ public static class ThemeTemplates
         };
     }
 
-    // The rules as the designer edits them: the draft, else the live file.
+    // The draft, else the live file, as the designer edits them.
     public static async Task<(TemplateRulesDocument Rules, ThemeFileContent File)> ReadRulesAsync(IDesignerOperationService designerOperationService,
         IThemeStorageFactory themeStorageFactory, ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
     {
@@ -386,18 +382,16 @@ public sealed class TemplateSearch
 
     public bool HasMore => NextSkip != null;
 
-    // The rules as the designer edits them (the draft, else what is published), in the order the storefront tries them.
     public IList<TemplateRuleRow> Rules { get; init; } = [];
 
-    // Pass it to edit_template_rules.
     public string RulesVersionToken { get; init; }
 
     public bool RulesHaveDraft { get; init; }
 
-    // With template_key: the template itself.
+    // Null without template_key.
     public TemplateDetails Template { get; set; }
 
-    // With section_type: templates that could not be read as template documents.
+    // Null without section_type.
     public IList<string> UnreadTemplateKeys { get; set; }
 
     public IList<string> Notes { get; set; } = [];
@@ -409,18 +403,15 @@ public sealed class TemplateRow
 
     public string PageType { get; init; }
 
-    // The type's default template, which a page gets when no rule picks another.
     public bool IsDefault { get; init; }
 
     public bool Published { get; init; }
 
-    // Unpublished changes; with published false the draft is the template's only copy.
     public bool HasDraft { get; init; }
 
-    // The rules that give the template its pages, as "id" or "id (disabled)".
     public IList<string> Rules { get; init; } = [];
 
-    // With section_type: the matching sections.
+    // Null without section_type.
     public IList<SectionMatchRow> Sections { get; set; }
 
     public static TemplateRow From(ThemeTemplate template, TemplateRulesDocument rules) => new()
@@ -441,23 +432,21 @@ public sealed class TemplateDetails
 {
     public string Key { get; init; }
 
-    // The file with the theme folder, as list_versions and discard_draft take it.
     public string Path { get; init; }
 
-    // draft or published: the version the content below is of.
     public string Version { get; init; }
 
-    // Pass it to edit_template; only for the draft.
+    // Null for the published version: only the draft is edited.
     public string VersionToken { get; init; }
 
     public JsonObject Settings { get; init; }
 
     public JsonArray Sections { get; init; }
 
-    // The section that shows what the template's pages are about; it cannot be removed or hidden.
+    // It cannot be removed or hidden, so the agent needs to know which section it is.
     public string MainSection { get; init; }
 
-    // Shown, Hidden or Missing (the storefront then adds it itself).
+    // Missing is not an error: the storefront then adds the section itself.
     public string MainSectionState { get; init; }
 
     public string Note { get; init; }

@@ -8,7 +8,7 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// What edit_page_draft reads from outside the page: another page, a Shared Component. Each checks the user's access.
+// Each read checks the user's access.
 public interface IPageEditSources
 {
     Task<JsonArray> GetPageSectionsAsync(string pageId, CancellationToken cancellationToken);
@@ -19,10 +19,8 @@ public interface IPageEditSources
     Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken);
 }
 
-// What a document is: a database page, a page stored as a file, a template of the theme, the theme's header or footer,
-// or a Shared Component. Each holds sections as a page does, but only a database page holds a Shared Component: the
-// storefront resolves placements on database pages, and the save of a page stored as a file does not check them. A
-// group has no settings of its own.
+// Only a database page may hold a Shared Component: the storefront resolves placements on database pages only, and the
+// save of a page stored as a file does not check them.
 public enum PageDocumentKind
 {
     Page,
@@ -32,14 +30,11 @@ public enum PageDocumentKind
     SharedComponent,
 }
 
-// Applies the operations of edit_page_draft to a page document: new items and copies get new ids, a placed Shared
-// Component is never hidden or edited in place. Templates and the header and footer take the same operations.
 public sealed class PageDocumentEditor
 {
     public static readonly JsonSerializerOptions WriteOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    // Kept in step with the page's name, address and language (SiteBuilderContentSettings), which are changed with
-    // the page itself rather than with its content.
+    // These mirror the page's own name, address and language, which change with the page rather than with its content.
     private static readonly string[] PageOwnedSettings = ["name", "permalink", "cultureName", TypeKey];
     private static readonly string[] ItemOwnedKeys = [IdKey, TypeKey, GroupKey, SharedComponents.ReferenceProperty];
 
@@ -63,10 +58,10 @@ public sealed class PageDocumentEditor
 
     public bool IsLegacyShape { get; }
 
-    // The language of the page; a text in it may set a setting that holds one text for every language.
+    // A text in this language may set a setting that holds one text for every language.
     public string PageLanguage { get; set; }
 
-    // Null when the content is not a page document. A page without content starts empty, as in the designer.
+    // A page without content starts empty, as in the designer.
     public static PageDocumentEditor Read(string content) => Read(content, PageDocumentKind.Page);
 
     public static PageDocumentEditor Read(string content, PageDocumentKind kind)
@@ -85,7 +80,6 @@ public sealed class PageDocumentEditor
         return new PageDocumentEditor(document.IsLegacyShape ? null : (JsonObject)JsonNode.Parse(content), document, kind);
     }
 
-    // What the document is called in a refusal, and where the agent reads its section ids.
     private string Noun => _kind switch
     {
         PageDocumentKind.Template => "template",
@@ -104,7 +98,7 @@ public sealed class PageDocumentEditor
         _ => "Read the page with search_site_pages (page_id) for its section ids.",
     };
 
-    // Whose settings are the page's own: the name, address and language follow the page, or the component's name.
+    // Kinds whose page-owned settings are refused, as they follow the page (or the component) itself.
     private bool HasPageSettings => _kind is PageDocumentKind.Page or PageDocumentKind.FilePage or PageDocumentKind.SharedComponent;
 
     // In the shape it was read in, so a page stored the older way stays readable by what reads it that way.
@@ -334,7 +328,6 @@ public sealed class PageDocumentEditor
         Insert(Sections, placement, operation, PageEnd(), sectionList: true);
     }
 
-    // The component's sections take the placement's place as the page's own copies; the component stays as it is.
     private async Task DetachSharedComponentAsync(PageEditOperation operation, IPageEditSources sources, CancellationToken cancellationToken)
     {
         var placement = FindSection(operation.SectionId);
@@ -414,7 +407,7 @@ public sealed class PageDocumentEditor
         return (blocks, block);
     }
 
-    // The designer's pageEnd: before the footer when the document holds the theme's sections too.
+    // Mirrors the designer: new sections go before the footer when the document holds the theme's sections too.
     private int PageEnd()
     {
         var footer = Sections.Select((x, i) => (x, i)).FirstOrDefault(x => x.x is JsonObject item && GetString(item[GroupKey]) == "footer");
@@ -679,7 +672,6 @@ public sealed class PageDocumentEditor
         return index < 0 ? null : list[index];
     }
 
-    // An item of a list by its id, else by its 0-based index.
     private static int FindListIndex(JsonArray list, string segment)
     {
         for (var i = 0; i < list.Count; i++)

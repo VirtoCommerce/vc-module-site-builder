@@ -14,10 +14,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The language links of Multilanguage Pages. A link decides which address and audience a published version is served
-// with, so a change that touches a published version waits for a second person, at the versions of the pages and of the
-// Multilanguage Page its dry run read (expected_versions); with unpublished_only a change of pages that were never
-// published is made at once.
+// A language link decides which address and audience a published version is served with, so changing one waits for approval.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageLanguageTools(
@@ -33,7 +30,6 @@ public class PageLanguageTools(
     private const string ReviewedFlow = " First call it with dryRun: it shows the change and answers expected_versions. Then call it without dryRun " +
         "and with those expected_versions: the change waits for approval and is refused if someone changed what it takes in between.";
 
-    // The agent's names of MultilanguagePageInheritance.InheritableFields.
     private static readonly Dictionary<string, string> InheritableFields = new(StringComparer.Ordinal)
     {
         ["permalink"] = MultilanguagePageInheritance.Permalink,
@@ -44,7 +40,7 @@ public class PageLanguageTools(
         ["end_date"] = MultilanguagePageInheritance.EndDate,
     };
 
-    // Approval unless unpublished_only; without expected_versions the tool refuses the write itself.
+    // Without expected_versions the tool refuses the write itself, so there is nothing to approve.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
@@ -165,8 +161,7 @@ public class PageLanguageTools(
         return change;
     }
 
-    // Not a background job: the operation saves the versions in one call, one save per version, and a page has a version per
-    // store language only.
+    // Not a background job: one save per language version, and a page has at most one per store language.
     [McpServerTool(Name = "reset_language_overrides", ReadOnly = false, Destructive = true, Idempotent = true)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -224,8 +219,7 @@ public class PageLanguageTools(
         return change;
     }
 
-    // The versions of what the dry run read: the pages it changes and the Multilanguage Page whose values they take. A change
-    // waiting for approval names them; an unpublished_only one may take its own dry run's.
+    // A change that needs no approval may take the versions of its own dry run.
     private static Task Pin(SiteBuilderChange change, SiteBuilderOperationResult check, IDictionary<string, string> expectedVersions, bool dryRun,
         bool unpublishedOnly)
     {
@@ -238,7 +232,6 @@ public class PageLanguageTools(
         return Task.CompletedTask;
     }
 
-    // The pinned versions of the pages, by page id.
     private static Dictionary<string, string> PageVersions(SiteBuilderChange change) =>
         (change.ExpectedVersions ?? new Dictionary<string, string>())
             .Where(x => x.Key.StartsWith(PageKeyPrefix, StringComparison.OrdinalIgnoreCase))

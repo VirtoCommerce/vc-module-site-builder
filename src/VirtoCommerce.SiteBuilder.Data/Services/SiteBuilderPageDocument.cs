@@ -3,20 +3,17 @@ using System.Text.Json.Nodes;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
-// The settings and the sections of a stored page, template or Shared Component document. Pages are stored as
-// { settings, content: [...] }, older ones as [settings, ...sections]; both are read into the first shape, with an id
-// on every section and block (see SiteBuilderPageItems.AssignMissingIds), so that whoever reads a version and whoever
-// edits the same version name its sections alike.
+// Both stored shapes are read into one, with an id on every section and block, so that whoever reads a version and
+// whoever edits the same version name its sections alike.
 public sealed class SiteBuilderPageDocument
 {
     public JsonObject Settings { get; init; }
 
     public JsonArray Sections { get; init; }
 
-    // Stored as [settings, ...sections]: the store indexes no Shared Component placed in such a page.
+    // No Shared Component placed in a page of the older shape is indexed.
     public bool IsLegacyShape { get; init; }
 
-    // Null when there is no document, or it is not JSON of either shape.
     public static SiteBuilderPageDocument Read(string content)
     {
         if (string.IsNullOrWhiteSpace(content))

@@ -6,7 +6,6 @@
     <NoWarn>1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <!-- The tools, prompts and resources; the MCP module serves them on its admin scope. -->
     <PackageReference Include="VirtoCommerce.MCP.Core" Version="3.1001.0" />
   </ItemGroup>
   <ItemGroup>

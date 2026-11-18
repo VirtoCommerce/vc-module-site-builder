@@ -540,7 +540,6 @@ public sealed class PublishPageToolTests : IAsyncDisposable
             ]);
     }
 
-    // The publication of every language version: its dry run lists the drafts there are now, each with its version.
     private void SetUpPublishAll(List<(string Id, string ETag)> drafts, List<MultilanguagePageBatchSkip> skipped, bool conflict = false)
     {
         _context.AddMultilanguagePages(Root("ml", StoreA));

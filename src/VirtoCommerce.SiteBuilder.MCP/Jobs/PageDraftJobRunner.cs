@@ -21,8 +21,8 @@ public enum PageJobOutcome
 
 public sealed record PageJobResult(PageJobOutcome Outcome, string Reason = null, IList<PageDocumentChange> Changes = null, string VersionToken = null);
 
-// One page of a bulk tool: the edit applied to the draft the tool saw, saved through the designer's own save as the
-// user. A page that changed since the tool read it is skipped rather than overwritten.
+// Saves through the designer's own save as the user, so a bulk edit gets the same checks; a page changed since the
+// tool read it is skipped so another edit is never overwritten.
 public class PageDraftJobRunner(
     IAuthorizationService authorizationService,
     IGroupedPageService groupedPageService,
@@ -120,7 +120,6 @@ public class PageDraftJobRunner(
     }
 }
 
-// The outcome of every page of a job, and the job's final message: done, skipped, refused and failed, with the pages.
 public sealed class PageJobTally
 {
     private const int MaxNamedPages = 10;

@@ -20,9 +20,8 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Where the storefront shows a page or a template, and which template the theme's rules give a page, product pages or
-// category pages. The template is a calculation on the server from the rules file, not the storefront's rendering: the server
-// evaluates only the conditions whose data it holds and says which it did not.
+// The server repeats the storefront's template choice but holds the data of only some rule conditions, so an answer may be
+// undecided.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PreviewTools(
@@ -101,7 +100,7 @@ public class PreviewTools(
         var link = await previewQueryService.GetGroupedPagePreviewAsync(new GroupedPageQueryRequest { GroupId = group.Id }, user, cancellationToken);
         SetLink(answer, link, "The storefront's preview of the page's draft.");
 
-        // What customers see: the published version's settings, or the draft's for a page never published.
+        // Customers see the published version's settings; a page never published has only its draft.
         var published = group.Pages.Any(x => x.Status == PageStatuses.Published);
         SiteBuilderContentSnapshot snapshot;
         try
@@ -151,9 +150,7 @@ public class PreviewTools(
         return answer;
     }
 
-    // The storefront's choice (its templates/rules.ts): the page's own template when it names one of its type that
-    // exists, else the first enabled rule of the type whose template exists and whose conditions all hold, else the
-    // type's default template. A rule with a condition the server cannot evaluate may or may not pick its template.
+    // Mirrors how the storefront picks a template; keep the two in step.
     private async Task<TemplateChoice> ChooseAsync(ClaimsPrincipal user, string storeId, string pageType, PageRuleSubject subject, string ownTemplate,
         bool draftTheme, CancellationToken cancellationToken)
     {
@@ -280,13 +277,13 @@ public sealed class PreviewAnswer
 
     public string Subject { get; init; }
 
-    // Open it in a browser; null when there is none, with the reason in notes.
+    // Null when there is no link; the notes say why.
     public string PreviewUrl { get; set; }
 
-    // template_key: the rules that give the template its pages.
+    // Only for a template: the rules that give it its pages.
     public IList<string> PickedBy { get; set; }
 
-    // page_id or page_type: the template the rules pick, as the server calculates it.
+    // Only for a page or a page type.
     public TemplateChoice Template { get; set; }
 
     public IList<string> Notes { get; set; } = [];
@@ -306,15 +303,12 @@ public sealed class TemplateChoice
 
     public string Reason { get; set; }
 
-    // published or draft: the theme the calculation read.
     public string Theme { get; init; }
 
     public string RulesFile { get; init; }
 
-    // Every rule tried, in order, up to the one that picks.
     public IList<RuleEvaluationRow> Rules { get; set; } = [];
 
-    // Conditions the calculation could not evaluate, by name.
     public IList<string> NotEvaluated { get; set; } = [];
 
     public string Note { get; init; }
@@ -336,7 +330,6 @@ public sealed class RuleEvaluationRow
 
     public string Template { get; init; }
 
-    // matches, does_not_match, may_match (a condition was not evaluated) or skipped.
     public string Outcome { get; set; }
 
     public string Why { get; set; }

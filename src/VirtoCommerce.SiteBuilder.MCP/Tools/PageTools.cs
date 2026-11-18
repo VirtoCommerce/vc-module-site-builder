@@ -25,8 +25,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Pages of the stores the user reads: the pages list of the designer, one row per Landing Page and per Multilanguage
-// Page, then the store's pages stored as files as its file tree lists a folder; and one page with its content.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageTools(
@@ -41,8 +39,7 @@ public class PageTools(
     ISiteBuilderPublishStatusQueryService publishStatusQueryService,
     ILogger<PageTools> logger)
 {
-    // The pages list has no date filter: the tool finds the pages by their versions changed in the period first. More
-    // versions than this is a scan; the agent narrows the period instead.
+    // The pages list has no date filter, so a period is resolved through its changed versions; more than this is a scan.
     private const int MaxChangedVersions = 1000;
 
     private const int MaxModifiedDays = 365;
@@ -130,8 +127,7 @@ public class PageTools(
         return await ListAsync(context.User, criteria, paging, sources, keyword, cancellationToken);
     }
 
-    // In UTC. modified_days counts back from now, so the agent computes no date. The answer has no room for the window's
-    // was_capped, so a longer period is refused.
+    // A longer period is refused rather than capped: the answer has no field to say it was capped.
     private static DateTime? GetModifiedSince(DateTime? modifiedSince, int? modifiedDays, TimeProvider timeProvider)
     {
         if (modifiedDays == null)
@@ -164,7 +160,7 @@ public class PageTools(
         return condition;
     }
 
-    // The filters only database pages answer: the list of pages stored as files has no status, language or dates.
+    // Pages stored as files have no status, language or dates, so these filters leave them out.
     private static bool HasDatabaseFilters(string status, string language, DateTime? modifiedSince, DateTime? modifiedBefore) =>
         !string.IsNullOrWhiteSpace(status) || !string.IsNullOrWhiteSpace(language) || modifiedSince != null || modifiedBefore != null;
 
@@ -196,8 +192,8 @@ public class PageTools(
         return criteria;
     }
 
-    // The database pages of the filters, then the store's pages stored as files: a page takes the files where the
-    // database pages run out, so next_skip walks both lists once. The files come as one list; the tool pages it.
+    // One paging over both lists: the files continue where the database pages run out. The file list comes whole, so it
+    // is paged here.
     private async Task<McpPage<SitePageRow>> ListAsync(ClaimsPrincipal user, SiteBuilderPageSearchCriteria criteria, McpPaging paging,
         SitePageSources sources, string keyword, CancellationToken cancellationToken)
     {
@@ -227,7 +223,6 @@ public class PageTools(
         return McpPage<SitePageRow>.FromList(files, paging);
     }
 
-    // The pages of the filters, read one by one from skip; take is how many are read in this call.
     private async Task<SitePageSectionSearch> SearchSectionsAsync(RequestContext<CallToolRequestParams> context, SiteBuilderPageSearchCriteria criteria,
         string sectionType, SiteBuilderSectionSettingCondition condition, bool published, CancellationToken cancellationToken)
     {
@@ -328,7 +323,7 @@ public class PageTools(
 
 public sealed class SitePageRow
 {
-    // The page id of a Landing Page; the Multilanguage Page id of a Multilanguage Page.
+    // A Landing Page's page id, or a Multilanguage Page's own id.
     public string Id { get; init; }
 
     public string Type { get; init; }
@@ -339,7 +334,7 @@ public sealed class SitePageRow
 
     public string StoreId { get; init; }
 
-    // A Landing Page only: its language, status and changes. A Multilanguage Page has them per language.
+    // Landing Pages only, as are the status and unpublished changes; a Multilanguage Page has them per language.
     public string Language { get; init; }
 
     public string Status { get; init; }
@@ -373,8 +368,7 @@ public sealed class SitePageRow
         };
     }
 
-    // A page stored as a file: its id is the path the other tools take with store_id. The file list has no status,
-    // language or dates; reading the page with page_id gives its publication state.
+    // The file list has no status, language or dates; reading the page gives its publication state.
     public static SitePageRow FromFile(string storeId, string contentType, SiteBuilderFileSearchItem item) => new()
     {
         Id = new FilePage(storeId, contentType, item.Path?.Trim('/') ?? string.Empty).PageId,
@@ -389,15 +383,13 @@ public sealed class SitePageLanguageRow
 {
     public string Language { get; init; }
 
-    // The language version to pass as page_id; null when the language is Missing.
+    // Null when the language has no version yet.
     public string PageId { get; init; }
 
-    // Draft, Published, Archived, or Missing when the language has no version yet.
     public string Status { get; init; }
 
     public bool HasUnpublishedChanges { get; init; }
 
-    // The source language was published after this translation.
     public bool IsOutdated { get; init; }
 
     public bool IsSourceLanguage { get; init; }
@@ -435,7 +427,7 @@ public sealed class SitePageDetails
     public string MultilanguagePageId { get; init; }
 
     // A source language version: when it was last published. A translation: the source publication it is based on.
-    // set_translations takes the source's value as source_revision_date to mark a translation up to date.
+    // Exposed so the agent can mark a translation up to date.
     public DateTime? SourceRevisionDate { get; init; }
 
     public bool Visibility { get; init; }
@@ -456,17 +448,14 @@ public sealed class SitePageDetails
 
     public string ModifiedBy { get; init; }
 
-    // Draft or Published: the version the content below is of.
     public string ContentVersion { get; init; }
 
-    // Changes with every save of the content.
     public string VersionToken { get; init; }
 
     public JsonObject Settings { get; init; }
 
     public JsonArray Sections { get; init; }
 
-    // Why the content is missing, when it is.
     public string ContentNote { get; init; }
 
     public static SitePageDetails From(GroupedSiteBuilderPage group, SiteBuilderContentSnapshot snapshot)
@@ -507,30 +496,28 @@ public sealed class SitePageDetails
 
 public sealed class FilePageDetails
 {
-    // The path with its folder, as page_id of the tools takes it.
     public string Id { get; init; }
 
     public string StoreId { get; init; }
 
-    // pages or blogs.
     public string ContentType { get; init; }
 
     public string Path { get; init; }
 
-    // git or blob: in git, a publish is a pull request.
+    // In git, a publish is a pull request.
     public string Flow { get; init; }
 
     public bool? Published { get; init; }
 
     public bool? HasUnpublishedChanges { get; init; }
 
-    // In git: a pull request of the page is open; it waits for checks or for a person to merge it.
+    // The page's pull request is open, waiting for checks or for a merge.
     public bool? PublishPending { get; init; }
 
-    // draft or published: the version the content below is of. The draft of a store in git is your own draft branch.
+    // In git, the draft is your own draft branch.
     public string ContentVersion { get; init; }
 
-    // The hash of the content: edit_page_draft and restore_version refuse it once the content changed.
+    // A hash of the content: a page stored as a file has no version of its own.
     public string VersionToken { get; init; }
 
     public JsonObject Settings { get; init; }

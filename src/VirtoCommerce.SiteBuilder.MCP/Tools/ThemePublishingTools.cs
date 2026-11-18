@@ -17,10 +17,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The theme's publication changes how every page of the store looks and takes every draft of the theme, other people's
-// too, so a second person approves it. The approval is bound to the drafts the dry run listed: the call carries their
-// versions as expected_versions, the approved change runs with those arguments, and the publication refuses drafts that
-// changed, appeared or went since, under the theme's lock.
+// A publication restyles every page and takes everyone's drafts, so a second person approves it, bound to the drafts the
+// dry run listed.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class ThemePublishingTools(
@@ -86,8 +84,7 @@ public class ThemePublishingTools(
             change.AddWarning("The theme has no drafts: the publication puts out the live files again, and nothing customers see changes.");
         }
 
-        // The versions the call names must still be the drafts': the approval repeats this dry run as the requester, so a
-        // change whose drafts moved on stays pending for the approver to reject.
+        // Checked on a dry run too: the approval repeats it, so a change whose drafts moved on stays pending for the approver to reject.
         if (expected_versions != null && !SameVersions(expected_versions, change.ExpectedVersions))
         {
             throw new McpException("The theme's drafts changed since the dry run that gave expected_versions, so nothing was published. Call " +
@@ -120,8 +117,7 @@ public class ThemePublishingTools(
         return change;
     }
 
-    // A call that names the drafts it publishes waits for a second person; a call without them is a dry run or is refused
-    // by the tool, so nothing is published without approval either way.
+    // A call without the versions is a dry run or is refused by the tool, so it publishes nothing and needs no approval.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments != null &&
         arguments.TryGetValue(ExpectedVersionsArgument, out var value) &&
@@ -163,14 +159,14 @@ public sealed class ThemePublication : McpChangePreview
     [JsonPropertyName("store_id")]
     public string StoreId { get; set; }
 
-    // Pass these unchanged to the publication, which publishes exactly these drafts.
+    // Sent back unchanged, they bind the publication to exactly these drafts.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     [JsonPropertyName("drafts")]
     public IList<ThemeDraftRow> Drafts { get; set; } = [];
 
-    // The publication's number, once published.
+    // Null on a dry run.
     [JsonPropertyName("publication")]
     public int? Publication { get; set; }
 }
@@ -180,7 +176,7 @@ public sealed class ThemeDraftRow
     [JsonPropertyName("path")]
     public string Path { get; init; }
 
-    // Who last saved the draft, as the store's history records it; null where it is not recorded.
+    // Null when the store's history does not record who saved the draft.
     [JsonPropertyName("changed_by")]
     public string ChangedBy { get; init; }
 

@@ -9,41 +9,32 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// What a page write did or would do: the fields of each page it touches, "from → to", and whether customers see it.
 public sealed class SiteBuilderChange : McpChangePreview, IReviewedChange
 {
-    // The write reaches what the storefront serves: a publish or unpublish, or a change of a page that has a published version.
     [JsonPropertyName("affects_published")]
     public bool AffectsPublished { get; set; }
 
-    // The page the write created or changed: a Landing Page or a language version.
     [JsonPropertyName("page_id")]
     public string PageId { get; set; }
 
     [JsonPropertyName("multilanguage_page_id")]
     public string MultilanguagePageId { get; set; }
 
-    // A created page's sections, in order.
     [JsonPropertyName("sections")]
     public IList<SectionRow> Sections { get; set; }
 
-    // A publish or unpublish of a page stored as a file: where it stands, a pull request in git.
     [JsonPropertyName("shipment")]
     public FilePageShipmentRow Shipment { get; set; }
 
-    // A publish, unpublish, discard or settings change: the versions of what it takes, by page or file. Sent back
-    // unchanged, the write takes exactly these and is refused once one moved.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; }
 
-    // A publish or unpublish of a page stored as a file in git: whose draft branch it ships. Sent back unchanged, so that
-    // an approver ships the requester's draft and not their own.
+    // Sent back unchanged so that an approver ships the requester's git draft branch and not their own.
     [JsonPropertyName("draft_owner")]
     public string DraftOwner { get; set; }
 }
 
-// The operation's dry run, as the caller, then the write; the write re-checks unpublished_only under its lock
-// (RequireUnpublished).
+// The write re-checks unpublished-only under the operation's lock, since a page may be published after the dry run.
 public static class SiteBuilderChanges
 {
     public const string UnpublishedOnlyArgument = "unpublished_only";
@@ -53,13 +44,10 @@ public static class SiteBuilderChanges
         "first, and refuses without changing anything when a page it touches has a published version. Omit it (false) " +
         "to send the change for approval by a second person, which a change of published pages needs.";
 
-    // The condition of [McpRequiresApproval]: every call needs approval unless it asks for unpublished pages only, which
-    // the tool then checks itself.
+    // Skipping approval is safe only because the tool itself refuses a change that touches published pages.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments == null || !arguments.TryGetValue(UnpublishedOnlyArgument, out var value) || value.ValueKind != JsonValueKind.True;
 
-    // The dry run, and with dryRun false the write. A dry run that changes nothing writes nothing. checkAsync runs on the
-    // dry run's result before anything is written: it pins the versions the write takes.
     public static async Task<(SiteBuilderChange Change, TResult Result)> RunAsync<TResult>(
         SiteBuilderChange change,
         Func<bool, Task<TResult>> run,
@@ -78,7 +66,7 @@ public static class SiteBuilderChanges
         change.AddChanges(check.Preview);
         if (includeWarnings)
         {
-            // What a write of a page stored as a file does in git (the branches it merges) is told only here.
+            // Only the dry run's warnings tell what a git write of a file page does.
             foreach (var warning in check.Preview?.Warnings ?? [])
             {
                 change.AddWarning(warning);
@@ -128,7 +116,6 @@ public static class SiteBuilderChanges
         return (change, result);
     }
 
-    // The operation refused the write under its lock: a page it touches was published after the dry run.
     private static void EnsureStillUnpublished(SiteBuilderChange change, SiteBuilderOperationResult result)
     {
         if (result.Status != SiteBuilderOperationStatus.Conflict || result.Error != SiteBuilderContentConflictException.PublishedPageMessage)
@@ -146,9 +133,6 @@ public static class SiteBuilderChanges
             "waits for a second person's approval.");
     }
 
-    // The operation's preview as field changes: those of the tool's own object under their names, those of other
-    // objects (the language versions of a multilanguage page, say) under the object's name. Content changes are
-    // shown section by section rather than as the whole document.
     public static void AddChanges(this McpChangePreview preview, SiteBuilderChangePreview source)
     {
         foreach (var item in source?.Objects ?? [])
@@ -175,7 +159,7 @@ public static class SiteBuilderChanges
         ? "language"
         : JsonNamingPolicy.SnakeCaseLower.ConvertName(name);
 
-    // An operation refused: a sentence the user can act on, never the internals.
+    // A refusal is a sentence the user can act on, never the internals.
     public static void EnsureSucceeded(SiteBuilderOperationResult result, string subject, string forbiddenMessage)
     {
         switch (result.Status)

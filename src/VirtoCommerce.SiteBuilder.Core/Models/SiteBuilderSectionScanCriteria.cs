@@ -9,10 +9,10 @@ namespace VirtoCommerce.SiteBuilder.Core.Models;
 public class SiteBuilderSectionScanCriteria
 {
     /// <summary>
-    /// The pages, as the pages list filters them (stores, statuses, language, page type, keyword, ids). A Multilanguage
-    /// Page is one row; its language versions are scanned one by one, those of <see cref="SearchCriteriaBase.LanguageCode"/>,
-    /// of the statuses and of <see cref="SearchCriteriaBase.ObjectIds"/> only when they are set. Lifecycle and ActiveOn select
-    /// rows only. Skip is the first row to scan; Take is not used.
+    /// The pages, filtered as the pages list filters them, where a Multilanguage Page is one row. Its language versions are
+    /// scanned one by one, narrowed by <see cref="SearchCriteriaBase.LanguageCode"/>, the statuses and
+    /// <see cref="SearchCriteriaBase.ObjectIds"/> when they are set; the other filters select rows only.
+    /// <see cref="SearchCriteriaBase.Skip"/> is the first row to scan; <see cref="MaxPages"/> replaces Take.
     /// </summary>
     public SiteBuilderPageSearchCriteria Pages { get; set; } = new();
 

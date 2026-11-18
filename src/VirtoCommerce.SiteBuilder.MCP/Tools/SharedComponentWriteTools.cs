@@ -21,8 +21,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Content shows on every page the component stands on, so a content change waits for approval. Its save takes the reviewed
-// version of the content and compares it under the component's write lock; the pages copied from are read again right before it.
+// Content shows on every page the component stands on, so a content change waits for approval and writes only over the
+// reviewed versions.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentWriteTools(
@@ -175,7 +175,7 @@ public class SharedComponentWriteTools(
         };
         var subject = $"Shared Component '{component.Id}'";
 
-        // Every check first, the content's and the name's, so that a refused part writes nothing of the other.
+        // Both parts are checked before either is written, so a refused part writes nothing of the other.
         var content = operations == null
             ? null
             : await CheckContentAsync(context.User, component, operations, new ReviewedCall(expected_versions, dryRun), change, cancellationToken);
@@ -229,15 +229,13 @@ public class SharedComponentWriteTools(
         return change;
     }
 
-    // A rename runs at once.
+    // A rename shows nowhere on the storefront, and a content call without expected versions is refused before writing.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments != null &&
         arguments.TryGetValue(OperationsArgument, out var value) &&
         value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
         ReviewedVersions.AreGiven(arguments);
 
-    // The content with the operations applied, null when they change nothing, checked by the operation's dry run of its
-    // save (the change and the pages it reaches) and pinned to the versions it was edited from.
     private async Task<JObject> CheckContentAsync(ClaimsPrincipal user, SiteBuilderSharedComponent component, PageEditOperation[] operations, ReviewedCall call,
         SharedComponentChange change, CancellationToken cancellationToken)
     {
@@ -264,7 +262,6 @@ public class SharedComponentWriteTools(
 
     private sealed record ReviewedCall(IDictionary<string, string> ExpectedVersions, bool DryRun);
 
-    // The versions of what the content was edited from, read again: the component's content and the pages copied from.
     private async Task<IList<KeyValuePair<string, string>>> ReadVersionsAsync(SiteBuilderSharedComponent component, IEnumerable<string> keys,
         CancellationToken cancellationToken)
     {
@@ -283,11 +280,9 @@ public class SharedComponentWriteTools(
         return versions;
     }
 
-    // The content of a component keeps no version of its own: its version is the hash of the content, as of a page stored as a file.
+    // Component content has no stored version, so its hash stands in for one.
     private static string VersionOf(string content) => SiteBuilderContentVersion.CreateForFileContent(content);
 
-    // The component's content with the operations applied, null when they change nothing, and the versions of what it
-    // was edited from.
     private async Task<(JObject Content, IList<KeyValuePair<string, string>> Versions)> EditContentAsync(ClaimsPrincipal user,
         SiteBuilderSharedComponent component, PageEditOperation[] operations, SharedComponentChange change, CancellationToken cancellationToken)
     {
@@ -348,7 +343,6 @@ public class SharedComponentWriteTools(
     }
 }
 
-// A section of a new Shared Component.
 public sealed class NewSection
 {
     [JsonPropertyName("type")]
@@ -374,21 +368,17 @@ public sealed class SharedComponentChange : McpChangePreview, IReviewedChange
     [JsonPropertyName("store_id")]
     public string StoreId { get; set; }
 
-    // The content shows on a published page as soon as it is saved.
     [JsonPropertyName("affects_published")]
     public bool AffectsPublished { get; set; }
 
-    // The pages the component stands on, which show a change of its content at once; null when the content is not
-    // changed, and empty for pages you may not read (the warnings tell how many).
+    // Null when the content does not change; pages you may not read are left out and only counted in a warning.
     [JsonPropertyName("placed_on_pages")]
     public IList<string> PlacedOnPages { get; set; }
 
-    // The component's sections after the change, in order.
     [JsonPropertyName("sections")]
     public IList<SectionRow> Sections { get; set; }
 
-    // A change of the content: the version of the component's content ('shared_component:<id>') and of each page its
-    // sections are copied from ('page:<id>'). Sent back unchanged, the write takes exactly these and is refused once one moved.
+    // Sent back unchanged, they pin the write to the reviewed content and copied pages; it is refused once one moved.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; }
 }

@@ -2,33 +2,28 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// What search_site_pages answers with section_type: the pages among the scanned rows that hold a matching section, and
-// how much was scanned. total_count counts the pages the page filters match, not the pages with the section.
 public sealed class SitePageSectionSearch
 {
     public IList<SitePageSectionRow> Items { get; init; } = [];
 
-    // Pages the page filters match.
+    // Pages the page filters match, with or without the section.
     public int TotalCount { get; init; }
 
-    // The first scanned page, from 0.
     public int Skip { get; init; }
 
     public int ScannedCount { get; init; }
 
     public int ScannedLanguageVersions { get; init; }
 
-    // Every page of the filters was scanned in this call: no item means no page has the section.
+    // Every page of the filters was scanned in this call, so no item means no page has the section.
     public bool IsComplete { get; init; }
 
-    // The skip of the next call, which scans the next pages; null when the last page was scanned.
     public int? NextSkip { get; init; }
 
     public bool HasMore => NextSkip != null;
 
     public string Coverage { get; init; }
 
-    // Language versions in the scanned pages that could not be read.
     public IList<SectionScanUnreadRow> Unread { get; init; } = [];
 
     public static SitePageSectionSearch From(SiteBuilderSectionScanResult scan)
@@ -68,7 +63,6 @@ public sealed class SitePageSectionRow
 
     public string StoreId { get; init; }
 
-    // One per language version that holds a matching section.
     public IList<SectionVersionMatchRow> Matches { get; init; } = [];
 
     public static SitePageSectionRow From(SiteBuilderPageListItem row, IList<SiteBuilderSectionScanPage> versions)
@@ -87,17 +81,15 @@ public sealed class SitePageSectionRow
 
 public sealed class SectionVersionMatchRow
 {
-    // The page id to pass to edit_page_draft: the Landing Page, or the language version.
+    // The id a page edit takes: the Landing Page, or the language version.
     public string PageId { get; init; }
 
     public string Language { get; init; }
 
-    // The version token of the content scanned, as edit_page_draft takes it.
     public string VersionToken { get; init; }
 
     public IList<SectionMatchRow> Sections { get; init; } = [];
 
-    // Shared Components placed on the page whose sections were not read.
     public IList<string> UnreadSharedComponentIds { get; init; } = [];
 
     public static SectionVersionMatchRow From(SiteBuilderSectionScanPage page) => new()
@@ -161,8 +153,7 @@ public sealed class SectionScanUnreadRow
     };
 }
 
-// How much of the filter a scan covered, in a sentence the agent can repeat: a scan never says "none" unless it read
-// every page.
+// A scan never says "none" unless it read every page.
 public static class SectionScanCoverage
 {
     public const string NoPages = "No page matches the page filters, so there was nothing to scan.";

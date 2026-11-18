@@ -16,8 +16,8 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// The restore of database pages and theme files runs through the module's own history operation and designer, over
-// the page store and the theme of the test; the versions are what History answers.
+// Restores run through the module's real history operation and designer over the test's page store and theme; the
+// versions come from the mocked history.
 public sealed class RestoreVersionToolTests : IAsyncDisposable
 {
     private const string Tool = "restore_version";

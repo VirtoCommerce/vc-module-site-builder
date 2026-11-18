@@ -56,8 +56,8 @@ namespace VirtoCommerce.SiteBuilder.Web
 {
     public class Module : IModule, IExportSupport, IImportSupport, IHasConfiguration, IHasModuleService
     {
-        // The MCP module is an optional dependency: when it is installed, it initializes before this module. Its contracts
-        // (VirtoCommerce.MCP.Core and the MCP SDK) are packaged with this module (module.keep), so they load without it.
+        // An optional dependency: when installed, it initializes before this module. Its contract assemblies ship with
+        // this module, so they load without it.
         private const string McpModuleId = "VirtoCommerce.MCP";
 
         private IApplicationBuilder _appBuilder;
@@ -206,7 +206,6 @@ namespace VirtoCommerce.SiteBuilder.Web
 
             if (ModuleService.IsInstalled(McpModuleId))
             {
-                // The Site Builder toolset, in the MCP module's admin scope, and the jobs of its bulk tools.
                 serviceCollection.AddSiteBuilderMcp();
             }
         }

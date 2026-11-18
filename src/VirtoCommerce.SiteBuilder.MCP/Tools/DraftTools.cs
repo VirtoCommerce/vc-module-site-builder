@@ -15,7 +15,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Discarding loses unpublished work: the user confirms it in chat, and the write takes only the versions its dry run answered.
+// Discarding loses unpublished work, so the user confirms it and the write takes only the versions its dry run answered.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class DraftTools(
@@ -98,8 +98,7 @@ public class DraftTools(
         return change;
     }
 
-    // The draft's changes over the live file, then, without dryRun, the designer's discard, which checks the part's
-    // permission. The designer's discard keeps a draft without a live file silently; here it is refused, as a page's is.
+    // The designer's discard silently keeps a draft that has no live file; here it is refused, as for a page.
     private async Task<SiteBuilderChange> DiscardThemeFileAsync(RequestContext<CallToolRequestParams> context, string storeId, string themeFile,
         IDictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
     {
@@ -149,7 +148,7 @@ public class DraftTools(
             change.AddChange("draft", "saved draft", "published version");
         }
 
-        // The version of the draft as the designer's discard compares it.
+        // The discard's own dry run gives the draft's version in the form its write compares.
         var forbidden = $"You may not discard '{path}': it needs builder:update and {permission}, and builder:read in store '{storeId}'.";
         var check = await designerOperationService.DiscardAsync(ThemeFileDiscard(storeId, path, isDryRun: true, versions: null), context.User, cancellationToken);
         EnsureNotChanged(check, change);
@@ -179,8 +178,7 @@ public class DraftTools(
         DryRun = isDryRun,
     };
 
-    // In blob storage the draft is a file next to the page; a store that keeps its pages in git refuses that, and its draft is
-    // the user's own draft branch of the page instead.
+    // A store that keeps its pages in git refuses the blob discard; there the draft is the user's own draft branch.
     private async Task<SiteBuilderChange> DiscardFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId,
         IDictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
     {
@@ -250,7 +248,7 @@ public class DraftTools(
 
     private static KeyValuePair<string, string> Version(string key, string version) => new(key, version);
 
-    // The operation found the draft at another version than the one pinned: a colleague saved it since the dry run.
+    // Conflict means the draft was saved again since the dry run.
     private static void EnsureNotChanged(SiteBuilderOperationResult result, SiteBuilderChange change)
     {
         if (result.Status == SiteBuilderOperationStatus.Conflict)

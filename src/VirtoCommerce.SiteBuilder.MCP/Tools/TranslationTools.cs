@@ -19,8 +19,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The agent's translations of many pages saved into their drafts, one save per page, by a background job. A
-// translation is marked up to date only while the source is the publication it was made from.
+// Only drafts change, so no second person approves. A translation is marked up to date only while its source is still the
+// publication it was made from, so a stale one is never marked current.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class TranslationTools(
@@ -156,7 +156,6 @@ public class TranslationTools(
         return pages;
     }
 
-    // Each page in the user's stores, at the version the agent read, taking its texts as the designer's save would.
     private async Task CheckAsync(ClaimsPrincipal user, SetTranslationsJobPage page, bool markUpToDate, TranslationPreview preview, CancellationToken cancellationToken)
     {
         var group = await groupedPageService.LoadPageAsync(authorizationService, user, page.PageId);
@@ -262,11 +261,10 @@ public sealed class TranslationPageRow
     [JsonPropertyName("text_count")]
     public int TextCount { get; init; }
 
-    // Why the page cannot take its texts; a real call is refused while any page has one.
+    // A real call is refused while any page has one.
     [JsonPropertyName("problem")]
     public string Problem { get; init; }
 
-    // Why the page would be saved but not marked up to date.
     [JsonPropertyName("not_marked_up_to_date")]
     public string NotMarkedUpToDate { get; init; }
 }

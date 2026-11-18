@@ -18,8 +18,7 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The theme's template rules, edited as the designer's rules panel edits them: rules go in the draft of the rules
-// file and reach customers with the theme's publication. A rule may give pages only a template the storefront has.
+// Rules go to a draft that customers see only with the theme's publication, so an edit needs no second person.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class TemplateRuleTools(
@@ -233,7 +232,6 @@ public class TemplateRuleTools(
         rules.SetRules(type, list);
     }
 
-    // A rule by its id among the rules of every page type, or of page_type when the id is taken in more than one.
     private static (string Type, List<JsonObject> List, JsonObject Rule) Find(TemplateRulesDocument rules, RuleEditOperation operation)
     {
         if (string.IsNullOrWhiteSpace(operation.RuleId))
@@ -278,7 +276,7 @@ public class TemplateRuleTools(
         return key;
     }
 
-    // The conditions of the call over the rule's own: null removes one, an empty value too, as the rules panel drops it.
+    // An empty value removes the condition too, as the designer's rules panel drops it.
     private static JsonObject SetConditions(JsonObject when, Dictionary<string, JsonNode> conditions, string pageType)
     {
         var result = (JsonObject)when.DeepClone();
@@ -337,7 +335,7 @@ public class TemplateRuleTools(
         return string.IsNullOrWhiteSpace(operation.After) ? index : index + 1;
     }
 
-    // As the designer's newRuleId: random, and unique among the rules of every page type.
+    // Unique across page types, as in the designer, so a rule id alone finds the rule.
     private static string NewId(TemplateRulesDocument rules)
     {
         var taken = rules.AllIds().ToHashSet(StringComparer.Ordinal);
@@ -351,7 +349,6 @@ public class TemplateRuleTools(
         }
     }
 
-    // A rule after an enabled rule without conditions never picks a template: the earlier one always wins.
     private static void WarnAboutShadowedRules(TemplateRulesDocument rules, ThemeFileChange change)
     {
         foreach (var type in TemplateRulesDocument.PageTypes)
@@ -373,7 +370,6 @@ public class TemplateRuleTools(
     private sealed class RuleEditException(string message) : Exception(message);
 }
 
-// One change of edit_template_rules. Which fields an operation reads is listed in the description of "op".
 public sealed class RuleEditOperation
 {
     [JsonPropertyName("op")]
