@@ -7,12 +7,9 @@ namespace VirtoCommerce.SiteBuilder.MCP;
 // What a page of the database is to the template rules: as the storefront describes a page it shows.
 public sealed record PageRuleSubject(string Permalink, string Language, JsonObject Settings, string ObjectType);
 
-// The conditions of template rules the storefront has built in (its templates/conditions.ts): which page types each
-// applies to and what its value looks like. Only the storefront evaluates rules; the server has no twin of these
-// conditions, so the tools check a value's shape the way the designer's rules panel does, and the server-side
-// calculation of get_preview evaluates only those whose data the server holds: a page's path, language, source and
-// settings. A storefront plugin may add conditions of its own, named with a prefix ("loyalty.tier"); they are kept
-// but not checked.
+// The conditions of template rules the storefront has built in: which page types each applies to and what its value
+// looks like. Mirrors the storefront's templates/conditions.ts; the server has no twin. Conditions of storefront plugins
+// ("loyalty.tier") are kept, not checked.
 public static class TemplateRuleConditions
 {
     public const string PagesObjectType = "Pages";
@@ -28,8 +25,6 @@ public static class TemplateRuleConditions
         ["source"] = (["page"], $"'{PagesObjectType}' (pages of the database) or '{ContentFileObjectType}' (pages kept as files)"),
         ["setting"] = (["page"], "{ \"name\": page setting, \"equals\": value }"),
     };
-
-    public static bool IsBuiltIn(string name) => name != null && BuiltIn.ContainsKey(name);
 
     // Every built-in condition with the page types it applies to and the shape of its value, as the rules panel offers them.
     public static IEnumerable<(string Name, IReadOnlyList<string> PageTypes, string Shape)> All =>

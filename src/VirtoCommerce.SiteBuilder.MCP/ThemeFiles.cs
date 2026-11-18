@@ -20,8 +20,6 @@ public static class ThemeFiles
     public const string CatalogHashKey = "hash";
     public const string PaletteTokensKey = "paletteTokens";
 
-    private const string MainSectionMarker = "main section";
-
     public static async Task<string> GetPathAsync(IThemeStorageFactory themeStorageFactory, string storeId, string fileInTheme) =>
         $"{await themeStorageFactory.GetThemeNameAsync(storeId)}/{fileInTheme}";
 
@@ -152,31 +150,9 @@ public static class ThemeFiles
                 throw new McpException($"{subject} was not found.");
             default:
                 var errors = result.Errors ?? (result.Error == null ? [] : [result.Error]);
-                if (errors.FirstOrDefault(x => x.Contains(MainSectionMarker, StringComparison.Ordinal)) is { } mainSection)
-                {
-                    throw new McpException(DescribeMainSectionRefusal(subject, mainSection));
-                }
-
                 var details = errors.Count > 1 ? $" {string.Join("; ", errors)}" : string.Empty;
                 throw new McpException($"{subject} was not saved: {result.Error}{details}");
         }
-    }
-
-    // The section that shows what the template's pages are about may not go: removed, or hidden where it was shown.
-    private static string DescribeMainSectionRefusal(string subject, string error)
-    {
-        var section = System.Text.RegularExpressions.Regex.Match(error, "main section '([^']+)'", System.Text.RegularExpressions.RegexOptions.None,
-            TimeSpan.FromSeconds(1)).Groups[1].Value;
-        var what = section switch
-        {
-            "product-info" => "the product itself",
-            "category-listing" => "the category's product listing",
-            _ => "the page's own content",
-        };
-        var verb = error.EndsWith("hidden", StringComparison.Ordinal) ? "hidden" : "removed";
-
-        return $"{subject} was not saved: its main section '{section}' cannot be {verb}, because every page the template lays out would " +
-            $"lose {what}. Nothing was saved. Keep that section (you may move it or change its settings) and change the others.";
     }
 
     private static List<string> GetStrings(JsonNode node) =>

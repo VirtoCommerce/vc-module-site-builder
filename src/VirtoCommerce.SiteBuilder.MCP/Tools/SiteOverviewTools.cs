@@ -481,7 +481,8 @@ public sealed class LanguageCoverage
 
 public sealed class PageChangeRow
 {
-    // A Landing Page's id, or a Multilanguage Page's id: search_site_pages reads either.
+    // A Landing Page's id, or a Multilanguage Page's id (type tells which): get_publish_readiness takes the latter as
+    // multilanguage_page_id.
     public string Id { get; init; }
 
     public string Type { get; init; }

@@ -15,12 +15,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The settings a page group keeps outside its content: name, address, language, audience and dates. Customers see a
-// change of a published page as soon as it is saved, so such a change waits for a second person (see NeedsApproval); a
-// page that was never published changes at once with unpublished_only, which the operation checks again under the lock
-// of its save. The dry run answers the version of the settings (expected_versions): the write takes them only at that
-// version, so an approved change is refused once someone changed the page after the review. The write applies only the
-// settings the call names, to the page as it is read right before it, never the model of an earlier read.
+// A change of a published page waits for approval; the write re-reads the page and applies only the named settings, at the reviewed settings version.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageSettingsTools(
@@ -39,8 +34,7 @@ public class PageSettingsTools(
 
     private static readonly string[] ClearableFields = [UserGroupsField, OrganizationField, StartDateField, EndDateField];
 
-    // A call that touches published pages waits for a second person once it names the versions it reviewed; without
-    // them it is a dry run or is refused by the tool, so nothing published changes without approval either way.
+    // Approval unless unpublished_only; without expected_versions the tool refuses the write itself.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
@@ -54,8 +48,8 @@ public class PageSettingsTools(
         "(language is then its source language). Only the settings you pass change; clear removes a value. First call it " +
         "with dryRun: it shows the change and answers expected_versions. Customers see a change of a published page at " +
         "once, so call it then without dryRun and with those expected_versions: the change waits for approval and is " +
-        "refused if someone changed the page in between. With unpublished_only a change of a page that was never " +
-        "published is made at once (expected_versions optional) and refused if the page is published meanwhile. A start " +
+        "refused if someone changed the page in between. With unpublished_only a change of a page with no published " +
+        "version is made at once (expected_versions optional) and refused if the page is published meanwhile. A start " +
         "date makes a published page visible from that date; it does not publish a draft. Not for the page's content, SEO " +
         "or layout: use edit_page_draft.")]
     public async Task<SiteBuilderChange> ChangePageSettings(

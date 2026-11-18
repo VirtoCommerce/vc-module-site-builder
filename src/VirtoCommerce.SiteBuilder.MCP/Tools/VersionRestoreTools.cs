@@ -18,12 +18,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A version restored overwrites the drafts it names, and so the unpublished work in them: the user confirms it in the
-// chat, and a client that cannot ask does not restore. Customers see nothing of it until the drafts are published. The
-// call names the versions of the drafts the agent read (expected_versions), so a draft saved by someone meanwhile is not
-// overwritten: the restore of database pages and theme files checks them under its lock; a page stored as a file in git
-// keeps no version of its own, so its version is the hash of its content, and the commit is made only over the file
-// that hash was compared with.
+// A restore overwrites drafts: the user confirms it, and the write takes only the draft versions its dry run answered (a git file page: by content hash).
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class VersionRestoreTools(
@@ -128,14 +123,13 @@ public class VersionRestoreTools(
             AddContentChanges(answer, items.Count > 1 ? key : null, item);
         }
 
-        var expected = Normalize(expectedVersions);
-        EnsureExpected(expected, answer.ExpectedVersions, dryRun);
+        ReviewedVersions.Pin(answer, answer.ExpectedVersions, Normalize(expectedVersions), dryRun);
         if (dryRun)
         {
             return answer;
         }
 
-        var result = await contentHistoryOperationService.RestoreAsync(Request(false, expected), user, cancellationToken);
+        var result = await contentHistoryOperationService.RestoreAsync(Request(false, answer.ExpectedVersions), user, cancellationToken);
         EnsureRestored(result, storeId, versionId);
         answer.DryRun = false;
 
@@ -177,49 +171,19 @@ public class VersionRestoreTools(
             answer.AddWarning(warning);
         }
 
-        var expected = Normalize(expectedVersions);
-        EnsureExpected(expected, answer.ExpectedVersions, dryRun);
+        ReviewedVersions.Pin(answer, answer.ExpectedVersions, Normalize(expectedVersions), dryRun);
         if (dryRun)
         {
             return answer;
         }
 
-        var expectedVersion = expected.GetValueOrDefault(page.VersionKey);
+        var expectedVersion = ReviewedVersions.Of(answer, page.VersionKey);
         var result = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(false, expectedVersion), user, cancellationToken));
         EnsureFilePageRestored(result, page, versionId);
         answer.DryRun = false;
         answer.Commit = result.Value?.CommitSha;
 
         return answer;
-    }
-
-    // The versions the call names must be those of the drafts now, for every item: a dry run tells the agent at once, the
-    // call itself is refused before anything is written.
-    private static void EnsureExpected(IDictionary<string, string> expected, IDictionary<string, string> current, bool dryRun)
-    {
-        if (expected == null)
-        {
-            if (dryRun)
-            {
-                return;
-            }
-
-            throw new McpException("Nothing was restored: pass expected_versions, the versions of the drafts the restore overwrites, as the " +
-                "dry run answers them, so that a draft saved meanwhile is not lost. Call restore_version with dryRun first.");
-        }
-
-        var missing = current.Keys.Where(x => !expected.ContainsKey(x)).ToList();
-        if (missing.Count > 0)
-        {
-            throw new McpException($"expected_versions has no version of {string.Join(", ", missing)}. Pass the expected_versions of the dry run unchanged. Nothing was restored.");
-        }
-
-        var changed = current.Where(x => !string.Equals(expected[x.Key], x.Value, StringComparison.Ordinal)).Select(x => x.Key).ToList();
-        if (changed.Count > 0)
-        {
-            throw new McpException($"The draft of {string.Join(", ", changed)} changed since its version was read, so nothing was restored. Read " +
-                "it again (or call restore_version with dryRun), show the user what the restore would overwrite now, and send the new expected_versions.");
-        }
     }
 
     private static Dictionary<string, string> Normalize(Dictionary<string, string> expectedVersions) =>
@@ -315,7 +279,7 @@ public class VersionRestoreTools(
     }
 }
 
-public sealed class VersionRestore : McpChangePreview
+public sealed class VersionRestore : McpChangePreview, IReviewedChange
 {
     [JsonPropertyName("store_id")]
     public string StoreId { get; set; }

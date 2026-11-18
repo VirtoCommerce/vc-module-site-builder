@@ -118,7 +118,7 @@ public sealed class SiteBuilderSectionScannerTests
         var scan = await ScanAsync(x => x.Published = true);
 
         Assert.Empty(scan.Pages);
-        Assert.Equal(SiteBuilderSectionScanSkip.NotPublished, Assert.Single(scan.Unread).Reason);
+        Assert.Equal(SiteBuilderSectionScanUnread.NotPublished, Assert.Single(scan.Unread).Reason);
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public sealed class SiteBuilderSectionScannerTests
     }
 
     [Fact]
-    public async Task ThePagesOfAMultilanguagePage_AreScannedOneByOne_InTheLanguagesAndStatusesAsked()
+    public async Task ThePagesOfAMultilanguagePage_AreScannedOneByOne_InTheLanguagesStatusesAndIdsAsked()
     {
         var en = Seed("en", "s1", "en-US", Published, """{ "settings": {}, "content": [ { "id": "h1", "type": "hero-banner" } ] }""");
         var fr = Seed("fr", "s1", "fr-FR", Draft, """{ "settings": {}, "content": [ { "id": "h1", "type": "hero-banner" } ] }""");
@@ -233,12 +233,14 @@ public sealed class SiteBuilderSectionScannerTests
         var all = await ScanAsync();
         var french = await ScanAsync(x => x.Pages.LanguageCode = "FR-fr");
         var published = await ScanAsync(x => x.Pages.Statuses = Published);
+        var byId = await ScanAsync(x => x.Pages.ObjectIds = ["fr"]);
 
         Assert.Equal((2, 1), (all.ScannedVersionCount, all.ScannedPageCount));
         Assert.Equal(["en", "fr"], all.Pages.Select(x => x.Page.Id));
         Assert.All(all.Pages, x => Assert.Equal("ml1", x.ListItem.Id));
         Assert.Equal(["fr"], french.Pages.Select(x => x.Page.Id));
         Assert.Equal(["en"], published.Pages.Select(x => x.Page.Id));
+        Assert.Equal((1, "fr"), (byId.ScannedVersionCount, Assert.Single(byId.Pages).Page.Id));
     }
 
     [Fact]
@@ -250,7 +252,7 @@ public sealed class SiteBuilderSectionScannerTests
         var scan = await ScanAsync();
 
         Assert.Equal(2, scan.ScannedVersionCount);
-        Assert.Equal([SiteBuilderSectionScanSkip.NotADocument, SiteBuilderSectionScanSkip.Deleted], scan.Unread.Select(x => x.Reason));
+        Assert.Equal([SiteBuilderSectionScanUnread.NotADocument, SiteBuilderSectionScanUnread.Deleted], scan.Unread.Select(x => x.Reason));
     }
 
     [Fact]

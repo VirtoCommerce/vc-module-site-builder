@@ -159,11 +159,7 @@ public class TranslationTools(
     // Each page in the user's stores, at the version the agent read, taking its texts as the designer's save would.
     private async Task CheckAsync(ClaimsPrincipal user, SetTranslationsJobPage page, bool markUpToDate, TranslationPreview preview, CancellationToken cancellationToken)
     {
-        var group = await groupedPageService.GetByIdAsync(page.PageId)
-            ?? throw new McpException($"Page '{page.PageId}' was not found. Call search_site_pages to find its id.");
-
-        // A page of another store is refused before anything about it is said.
-        await authorizationService.EnsureAllowedAsync(user, group, group.StoreId);
+        var group = await groupedPageService.LoadPageAsync(authorizationService, user, page.PageId);
 
         var result = await runner.RunAsync(user, page.PageId, page.VersionToken, TranslationOperations.Create(page.Texts), dryRun: true, cancellationToken);
         var problem = result.Outcome switch

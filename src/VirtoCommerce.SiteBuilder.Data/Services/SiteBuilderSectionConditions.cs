@@ -69,7 +69,7 @@ public static class SiteBuilderSectionConditions
         };
     }
 
-    // An item of a list by its id, else by its 0-based index, as the settings paths of edit_page_draft name them.
+    // An item of a list by its id, else by its 0-based index.
     private static JsonNode FindItem(JsonArray list, string segment)
     {
         var byId = list.OfType<JsonObject>().FirstOrDefault(x => GetId(x) == segment);

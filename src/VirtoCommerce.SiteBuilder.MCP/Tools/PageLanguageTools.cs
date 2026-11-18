@@ -44,8 +44,8 @@ public class PageLanguageTools(
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Turn a Landing Page into a Multilanguage Page: a new Multilanguage Page takes the page's name, address " +
         "and audience, and the page becomes its version in the page's language, served as before. Then add languages " +
-        "with create_page (kind 'language_version'). A published page needs approval; with unpublished_only a page that " +
-        "was never published is converted at once. Call it with dryRun first to show the change.")]
+        "with create_page (kind 'language_version'). A published page needs approval; with unpublished_only a page with " +
+        "no published version is converted at once. Call it with dryRun first to show the change.")]
     public async Task<SiteBuilderChange> ConvertPageToMultilanguage(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the Landing Page (search_site_pages).")] string page_id,
@@ -78,8 +78,8 @@ public class PageLanguageTools(
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Make an existing Landing Page the version of a Multilanguage Page in the page's language. The settings " +
         "in which the page differs from the Multilanguage Page stay as the page's own, so the page is served as before. " +
-        "A change touching a published page needs approval; with unpublished_only a change of pages that were never " +
-        "published is made at once. Call it with dryRun first to show the change.")]
+        "A change touching a published page needs approval; with unpublished_only a change of pages with no published " +
+        "version is made at once. Call it with dryRun first to show the change.")]
     public async Task<SiteBuilderChange> LinkPageLanguage(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the Landing Page to link (search_site_pages).")] string page_id,
@@ -113,7 +113,7 @@ public class PageLanguageTools(
     [Authorize(Update)]
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Turn a language version of a Multilanguage Page back into a Landing Page with its current settings. A " +
-        "published version needs approval; with unpublished_only a version that was never published is unlinked at " +
+        "published version needs approval; with unpublished_only a version with no published page is unlinked at " +
         "once. Call it with dryRun first to show the change.")]
     public async Task<SiteBuilderChange> UnlinkPageLanguage(
         RequestContext<CallToolRequestParams> context,
@@ -144,7 +144,7 @@ public class PageLanguageTools(
         return change;
     }
 
-    // Runs at once: the operation saves the versions in one call, one save per version, and a page has a version per
+    // Not a background job: the operation saves the versions in one call, one save per version, and a page has a version per
     // store language only.
     [McpServerTool(Name = "reset_language_overrides", ReadOnly = false, Destructive = true, Idempotent = true)]
     [McpPermission(Read)]
@@ -152,7 +152,7 @@ public class PageLanguageTools(
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Give every language version of a Multilanguage Page the Multilanguage Page's own value of the chosen " +
         "settings, dropping the values the versions set for themselves. Changing published versions needs approval; " +
-        "with unpublished_only a change of versions that were never published is made at once. Returns each version's " +
+        "with unpublished_only a change of versions with no published page is made at once. Returns each version's " +
         "changes. Call it with dryRun first to show them.")]
     public async Task<SiteBuilderChange> ResetLanguageOverrides(
         RequestContext<CallToolRequestParams> context,

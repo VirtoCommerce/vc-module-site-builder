@@ -6,7 +6,7 @@ namespace VirtoCommerce.SiteBuilder.MCP;
 public sealed record PageDocumentChange(string Field, string From, string To);
 
 // What an edit changes in a page, section by section, for the agent and the approver to read: sections added,
-// removed, moved and hidden, and each setting that changed with its old and new value. Not a dump of the document.
+// removed, moved and hidden, and each setting that changed with its old and new value.
 public static class PageDocumentChanges
 {
     private const int MaxValueLength = 300;
@@ -75,15 +75,15 @@ public static class PageDocumentChanges
         CompareItems(changes, $"{label} block", $"{label} order of blocks", Items(before == null ? null : GetBlocks(before)), Items(GetBlocks(after)));
     }
 
-    private static void CompareValues(List<PageDocumentChange> changes, string label, Dictionary<string, string> before, Dictionary<string, string> after)
+    private static void CompareValues(List<PageDocumentChange> changes, string label, Dictionary<string, JsonNode> before, Dictionary<string, JsonNode> after)
     {
         foreach (var path in before.Keys.Concat(after.Keys.Where(x => !before.ContainsKey(x))))
         {
-            var from = before.GetValueOrDefault(path);
-            var to = after.GetValueOrDefault(path);
-            if (from != to)
+            var hasFrom = before.TryGetValue(path, out var from);
+            var hasTo = after.TryGetValue(path, out var to);
+            if (hasFrom != hasTo || !JsonNode.DeepEquals(from, to))
             {
-                changes.Add(new($"{label}: {path}", from, to));
+                changes.Add(new($"{label}: {path}", hasFrom ? Render(from) : null, hasTo ? Render(to) : null));
             }
         }
     }
@@ -92,9 +92,9 @@ public static class PageDocumentChanges
         items?.OfType<JsonObject>().Where(x => !string.IsNullOrEmpty(GetId(x))).ToList() ?? [];
 
     // Every value by its dotted path; a list is one value, as the designer's settings panel edits it.
-    private static Dictionary<string, string> Flatten(JsonObject item, string[] skippedKeys)
+    private static Dictionary<string, JsonNode> Flatten(JsonObject item, string[] skippedKeys)
     {
-        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var values = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
         if (item != null)
         {
             foreach (var (key, value) in item.Where(x => !skippedKeys.Contains(x.Key)))
@@ -106,7 +106,7 @@ public static class PageDocumentChanges
         return values;
     }
 
-    private static void Flatten(Dictionary<string, string> values, string path, JsonNode node)
+    private static void Flatten(Dictionary<string, JsonNode> values, string path, JsonNode node)
     {
         if (node is JsonObject value && value.Count > 0)
         {
@@ -118,7 +118,7 @@ public static class PageDocumentChanges
             return;
         }
 
-        values[path] = Render(node);
+        values[path] = node;
     }
 
     private static string Render(JsonNode node)

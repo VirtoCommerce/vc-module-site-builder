@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
@@ -13,14 +14,6 @@ public sealed class TemplateRulesDocument
     public const int Version = 2;
 
     public static readonly string[] PageTypes = ["product", "category", "page"];
-
-    // As the storefront, the designer and the snapshot builder default them.
-    private static readonly Dictionary<string, string> DefaultRules = new(StringComparer.Ordinal)
-    {
-        ["product"] = """[{ "id": "default-b2c", "template": "product.b2c", "when": { "property": { "name": "VirtoFrontend_UI_Layout", "equals": "B2C" } } }]""",
-        ["category"] = "[]",
-        ["page"] = "[]",
-    };
 
     private readonly JsonObject _rest;
     private readonly Dictionary<string, List<JsonObject>> _lists;
@@ -96,7 +89,7 @@ public sealed class TemplateRulesDocument
             return own;
         }
 
-        return WithIds((JsonArray)JsonNode.Parse(DefaultRules[pageType]), pageType);
+        return WithIds(JsonNode.Parse(ThemeSnapshotBuilder.DefaultTemplateRulesJson)[pageType] as JsonArray ?? [], pageType);
     }
 
     public void SetRules(string pageType, List<JsonObject> rules) => _lists[pageType] = rules;
@@ -139,26 +132,14 @@ public sealed class TemplateRulesDocument
     private static bool IsRuleLike(JsonNode node) =>
         node is JsonObject rule && rule["template"] is JsonValue template && template.TryGetValue<string>(out _) && rule["when"] is null or JsonObject;
 
-    // The ids the storefront, the designer and the snapshot builder give rules without a unique one.
     private static List<JsonObject> WithIds(JsonArray list, string pageType)
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<JsonObject>();
         foreach (var node in list.Where(IsRuleLike))
         {
-            // the place among the readable rules, as the others count it
-            var index = result.Count;
             var rule = (JsonObject)node.DeepClone();
-            var id = GetString(rule["id"]);
-            if (string.IsNullOrEmpty(id) || ids.Contains(id))
-            {
-                id = $"{pageType}-{index}";
-                for (var n = 2; ids.Contains(id); n++)
-                {
-                    id = $"{pageType}-{index}-{n}";
-                }
-            }
-
+            var id = ThemeSnapshotBuilder.GetTemplateRuleId(pageType, result.Count, GetString(rule["id"]), ids);
             ids.Add(id);
             rule["id"] = id;
             result.Add(rule);

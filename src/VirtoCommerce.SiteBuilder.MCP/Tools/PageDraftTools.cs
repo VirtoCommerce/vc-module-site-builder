@@ -20,9 +20,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
 // The content author's edits of a page's draft: what customers see changes only when the draft is published, so the
-// edit needs no second person. It saves through the designer's own save, with its checks, sanitizing and history. A page
-// stored as a file has no version of its own; its version token is the hash of its content, which the save compares
-// with the draft it replaces.
+// edit needs no second person. A page stored as a file has no version of its own; its version token is the hash of its
+// content, which the save compares with the draft it replaces.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageDraftTools(
@@ -72,10 +71,7 @@ public class PageDraftTools(
             return await EditFilePageAsync(context, store_id, page_id, version_token, operations, dryRun, cancellationToken);
         }
 
-        var group = await groupedPageService.GetByIdAsync(page_id)
-            ?? throw new McpException($"Page '{page_id}' was not found. Call search_site_pages to find its id.");
-
-        await authorizationService.EnsureAllowedAsync(context.User, group, group.StoreId);
+        var group = await groupedPageService.LoadPageAsync(authorizationService, context.User, page_id);
         EnsureOperations(operations);
 
         var current = await PageEditSources.LoadDraftAsync(pageContentService, group, cancellationToken);
@@ -144,10 +140,7 @@ public class PageDraftTools(
         return preview;
     }
 
-    // The token is checked against the content read for the edit and against what the save's own dry run reads as the
-    // current draft, and the save takes it as the version of the draft it replaces: in git the commit names the file it
-    // was compared with, in blob storage the draft is read again right before the write, so a save by someone else in
-    // between is refused rather than overwritten (in blob storage, but for the moment between that read and the write).
+    // In blob storage the draft is re-read right before the write; a save between that read and the write is not seen.
     private async Task<PageDraftEdit> EditFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId, string versionToken,
         PageEditOperation[] operations, bool dryRun, CancellationToken cancellationToken)
     {

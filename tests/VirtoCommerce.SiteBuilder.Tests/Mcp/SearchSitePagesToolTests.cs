@@ -174,6 +174,8 @@ public sealed class SearchSitePagesToolTests : IAsyncDisposable
         var result = await _context.CallAsync(StoreAReader(), Tool, new { page_id = "b1" });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
+        Assert.Contains("the store of page 'b1'", result.Error);
+        Assert.DoesNotContain(StoreB, result.Error);
         _context.PageContents.Verify(x => x.LoadGroupContentAsync(It.IsAny<GroupedSiteBuilderPage>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -273,6 +275,16 @@ public sealed class SearchSitePagesToolTests : IAsyncDisposable
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("is not a page of store", result.Error);
+    }
+
+    [Fact]
+    public async Task AStoreReaderNamingTheirStore_IsNotToldTheStoreOfAPageOfAnotherStore()
+    {
+        var result = await _context.CallAsync(StoreAReader(), Tool, new { store_id = StoreA, page_id = "b1" });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("is not a page of store 'store-a'", result.Error);
+        Assert.DoesNotContain(StoreB, result.Error);
     }
 
     [Fact]

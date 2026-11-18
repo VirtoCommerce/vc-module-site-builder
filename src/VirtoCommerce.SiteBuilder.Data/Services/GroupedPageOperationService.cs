@@ -373,6 +373,12 @@ public class GroupedPageOperationService(
             return dryRun;
         }
 
+        if (request.ExpectedReplacedVersions != null &&
+            !await AreReplacedAsReviewedAsync(conflictingGroups, request.ExpectedReplacedVersions, cancellationToken))
+        {
+            return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage);
+        }
+
         GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds);
         var pagesToDelete = obsoletePageIds.ToList();
         pagesToDelete.AddRange(conflictingGroups.SelectMany(UnpublishConflictingGroup));
@@ -465,6 +471,27 @@ public class GroupedPageOperationService(
         }
 
         return conflictingGroups.Count > 0 ? await authorizationService.CheckStoreOperationAsync(user, conflictingGroups) : null;
+    }
+
+    /// <returns><c>true</c> when the pages the publish unpublishes are those reviewed: none changed, none added and none gone.</returns>
+    private async Task<bool> AreReplacedAsReviewedAsync(IList<GroupedSiteBuilderPage> conflictingGroups, IDictionary<string, string> expectedVersions,
+        CancellationToken cancellationToken)
+    {
+        if (conflictingGroups.Count != expectedVersions.Count)
+        {
+            return false;
+        }
+
+        foreach (var group in conflictingGroups)
+        {
+            var published = await pageContentService.LoadGroupContentAsync(group, draft: false, cancellationToken);
+            if (!expectedVersions.TryGetValue(group.Id, out var eTag) || !string.Equals(eTag?.Trim(), published.ETag, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Turns the published page of a group without a draft back into a draft, like unpublishing does, and returns

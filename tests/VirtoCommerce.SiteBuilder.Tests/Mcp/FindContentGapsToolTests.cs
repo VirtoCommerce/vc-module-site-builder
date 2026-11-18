@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Moq;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
@@ -119,10 +121,21 @@ public sealed class FindContentGapsToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ALanguage_FindsTheMultilanguagePagesMissingIt_AndOnlyThePagesInIt()
+    {
+        var report = await FindAsync(Reader(), new { store_id = StoreA, language = "de-DE" });
+
+        Assert.Contains(report.Findings, x => x.Id == "translation-missing" && x.ObjectId == "root" && x.Title.Contains("de-DE", StringComparison.Ordinal));
+        Assert.DoesNotContain(report.Findings, x => x.ObjectId == "no-seo" || x.ObjectId == "fr-version");
+        _context.PageList.Verify(x => x.SearchAsync(It.Is<SiteBuilderPageSearchCriteria>(c => c.LanguageCode == null), It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
     public async Task AnUnknownCategory_IsRefused()
     {
         var result = await _context.CallAsync(Reader(), Tool, new { category = "images" });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("category must be one of", result.Error);
     }
 }

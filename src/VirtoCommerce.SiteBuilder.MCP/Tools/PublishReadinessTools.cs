@@ -10,6 +10,7 @@ using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
@@ -31,7 +32,8 @@ public class PublishReadinessTools(
     IMultilanguagePageService multilanguagePageService,
     PublicationDryRuns dryRuns,
     ISiteBuilderPageListService pageListService,
-    IContentHistory contentHistory)
+    IContentHistory contentHistory,
+    ILogger<PublishReadinessTools> logger)
 {
     private const string PublishAction = "publish";
     private const string UnpublishAction = "unpublish";
@@ -139,7 +141,7 @@ public class PublishReadinessTools(
 
         if (await dryRuns.CheckPageAsync(user, group, unpublish, readiness, cancellationToken) && !unpublish)
         {
-            readiness.Parts.Add(await ReadPagePartAsync(group, cancellationToken));
+            readiness.Parts.Add(await ReadPagePartAsync(group, readiness, cancellationToken));
             await AddPageFindingsAsync(group, readiness, cancellationToken);
         }
 
@@ -166,7 +168,7 @@ public class PublishReadinessTools(
             var group = await groupedPageService.GetByIdAsync(groupId);
             if (group != null && await dryRuns.CheckLanguageVersionAsync(user, group, readiness, cancellationToken))
             {
-                readiness.Parts.Add(await ReadPagePartAsync(group, cancellationToken));
+                readiness.Parts.Add(await ReadPagePartAsync(group, readiness, cancellationToken));
                 await AddPageFindingsAsync(group, readiness, cancellationToken);
                 audiences.Add(PageAudience.Describe(group));
             }
@@ -199,7 +201,7 @@ public class PublishReadinessTools(
 
     // The draft against what is published, section by section, with who saved the draft and, where the store keeps
     // history, everyone who saved the page since its last publication.
-    private async Task<PublishPart> ReadPagePartAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    private async Task<PublishPart> ReadPagePartAsync(GroupedSiteBuilderPage group, PublishReadiness readiness, CancellationToken cancellationToken)
     {
         var draft = GroupedPagePublishing.GetDraft(group) ?? new SiteBuilderPage();
         var part = new PublishPart
@@ -212,7 +214,7 @@ public class PublishReadinessTools(
         };
 
         AddAuthor(part, draft.ModifiedBy ?? draft.CreatedBy);
-        foreach (var author in await GetAuthorsSincePublicationAsync(group, cancellationToken))
+        foreach (var author in await GetAuthorsSincePublicationAsync(group, readiness, cancellationToken))
         {
             AddAuthor(part, author);
         }
@@ -236,14 +238,20 @@ public class PublishReadinessTools(
         }
     }
 
-    private async Task<IList<string>> GetAuthorsSincePublicationAsync(GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    // A store without history answers no versions. The authors only add to the answer, so a failing repository is a note.
+    private async Task<IList<string>> GetAuthorsSincePublicationAsync(GroupedSiteBuilderPage group, PublishReadiness readiness, CancellationToken cancellationToken)
     {
-        if (await contentHistory.GetStatusAsync(group.StoreId, cancellationToken) != ContentHistoryStatus.Enabled)
+        ContentVersionPage page;
+        try
         {
+            page = await contentHistory.ListAsync(group.StoreId, [new HistoryItem(HistoryItemType.Page, group.Id)], cursor: null, HistoryVersions, cancellationToken);
+        }
+        catch (GitContentException ex)
+        {
+            readiness.Findings.Add(PublicationDryRuns.Info("history-unavailable", $"Who changed page '{group.Name}' since its publication could not be read.",
+                GitContentFailures.Describe(logger, ex), "The draft's last author is listed; check the history in the designer.", "history", group));
             return [];
         }
-
-        var page = await contentHistory.ListAsync(group.StoreId, [new HistoryItem(HistoryItemType.Page, group.Id)], cursor: null, HistoryVersions, cancellationToken);
 
         return (page?.Versions ?? [])
             .TakeWhile(x => !x.Published)
@@ -622,7 +630,8 @@ public sealed class PublishReadiness
     // Who would see the change.
     public string Affected { get; set; }
 
-    // You hold builder:publish; the publication still waits for a second person's approval.
+    // You hold builder:publish in every store, as publish_page and publish_theme require; the publication still waits
+    // for a second person's approval.
     public bool YouCanPublish { get; set; }
 
     public string NextStep { get; init; }

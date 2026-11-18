@@ -5,7 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Moq;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
+using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -87,6 +89,20 @@ public sealed class ListVersionsToolTests : IAsyncDisposable
         Assert.Equal(history, answer.History);
         Assert.Contains("keeps no history", answer.Note);
         Assert.Empty(answer.Versions);
+    }
+
+    [Fact]
+    public async Task AHistoryTheRepositoryRefuses_SaysWhatKindOfFailureItIs()
+    {
+        _context.History
+            .Setup(x => x.ListAsync(It.IsAny<string>(), It.IsAny<IList<HistoryItem>>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new GitContentException("Resource not accessible by integration: acme/site", GitContentFailureKind.NoAccess));
+
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_id = "a1" });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains(GitContentFailures.NoAccess, result.Error);
+        Assert.DoesNotContain("acme/site", result.Error);
     }
 
     [Fact]

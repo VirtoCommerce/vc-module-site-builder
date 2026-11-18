@@ -101,7 +101,7 @@ For each user: connect the agent to `https://<platform>/admin/mcp` with the clie
 | Search | `search_assets` | Images and files of a folder, and where they are used | `platform:asset:read` | — |
 | Search | `search_shared_components` | Shared Components, their content and the pages they are placed on | `builder:shared-components:read` | — |
 | Search | `list_versions` | Saved versions of a page or of theme files, from the store's GitHub history; the commits of a page stored as a file in git | `builder:read` | — |
-| Analysis | `get_preview` | A storefront link to a draft or a version, and which template and rule a page, product or category gets | `builder:read` | — |
+| Analysis | `get_preview` | A storefront link to a draft or a version, and which template and rule a page, product pages or category pages get | `builder:read` | — |
 | Analysis | `find_content_gaps` | Missing and outdated translations, pages without SEO title or description | `builder:read` | — |
 | Analysis | `get_publish_readiness` | What a page or theme publication would put live, who changed it, what blocks it, who sees it | `builder:read` | — |
 | Content | `create_page` | A landing page with sections or as a copy, a missing language version, a copy of a Multilanguage Page | `builder:create` | Dry run |

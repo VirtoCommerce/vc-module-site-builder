@@ -73,8 +73,8 @@ public static class SiteBuilderAccess
         return storeIds;
     }
 
-    // The stores among the named one, or among every store when none is named, where the permission holds: null for
-    // every store. Unlike GetStoreIdsAsync it does not refuse; a scan leaves out what the user may not open.
+    // The named store when the permission covers it, else the stores GetStoreIdsAsync finds: null for every store. A scan
+    // leaves out what the user may not open.
     public static async Task<IList<string>> GetStoreIdsAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         Func<UserManager<ApplicationUser>> userManagerFactory, string storeId, string permission)
     {

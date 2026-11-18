@@ -110,6 +110,24 @@ public sealed class ThemeDraftToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ThePalette_TakesTheVersionTokenOfTheDarkPalette()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        var read = (await _context.CallAsync(Designer(), Tool, new { store_id = StoreA, part = "palette", dryRun = true })).EnsureSucceeded().Read<ThemeFileChange>();
+
+        var result = await _context.CallAsync(Designer(), Tool, new
+        {
+            store_id = StoreA,
+            part = "palette",
+            version_token = read.VersionTokens["default/config/palette.dark.json"],
+            dark_colors = new Dictionary<string, string> { ["color_primary_500"] = "#0a5f38" },
+        });
+
+        result.EnsureSucceeded();
+        Assert.Contains("#0a5f38", _context.ReadThemeFile(StoreA, "config/palette.dark.json", draft: true), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AUserOfStoreA_CannotEditTheThemeOfStoreB()
     {
         await _context.SeedThemeAsync(StoreB);

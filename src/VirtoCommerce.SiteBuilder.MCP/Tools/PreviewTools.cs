@@ -18,8 +18,8 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Where the storefront shows a page or a template, and which template the theme's rules give a page, a product or a
-// category. The template is a calculation on the server from the rules file, not the storefront's rendering: the server
+// Where the storefront shows a page or a template, and which template the theme's rules give a page, product pages or
+// category pages. The template is a calculation on the server from the rules file, not the storefront's rendering: the server
 // evaluates only the conditions whose data it holds and says which it did not.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
@@ -40,26 +40,31 @@ public class PreviewTools(
     [Description("Where to see a page or a template on the storefront, and which template the theme's rules give it and why. " +
         "page_id: the storefront's preview of the page's draft, and the template its rules pick, evaluated on the page's path, " +
         "language, source and settings. template_key: the storefront page that shows the template (the published theme; a draft " +
-        "of a template shows only in the designer), and the rules that give it pages. product_id or category_id: the rules in " +
-        "order, with the conditions the server cannot evaluate for a product or category (categories, product type, properties) " +
+        "of a template shows only in the designer), and the rules that give it pages. page_type product or category: the rules " +
+        "in order for product or category pages, with the conditions on catalog data (categories, product type, properties) " +
         "marked as not evaluated. The template choice is the server's calculation, not a rendering.")]
     public async Task<PreviewAnswer> GetPreview(
         RequestContext<CallToolRequestParams> context,
         [Description("A database page: a Landing Page or a language version (search_site_pages).")] string page_id = null,
-        [Description("Store id; required with template_key, product_id and category_id.")] string store_id = null,
+        [Description("Store id; required with template_key and page_type.")] string store_id = null,
         [Description("A template of the store's theme, for example 'product.bicycles'.")] string template_key = null,
-        [Description("A product of the store's catalog.")] string product_id = null,
-        [Description("A category of the store's catalog.")] string category_id = null,
+        [Description("product or category: the rules in order for product or category pages; conditions on catalog data are not evaluated.")] string page_type = null,
         [Description("'published' (default) to calculate with the published rules and templates, 'draft' with the theme's drafts.")] string theme = null,
         CancellationToken cancellationToken = default)
     {
-        var named = new[] { page_id, template_key, product_id, category_id }.Count(x => !string.IsNullOrWhiteSpace(x));
+        var named = new[] { page_id, template_key, page_type }.Count(x => !string.IsNullOrWhiteSpace(x));
         if (named != 1)
         {
-            throw new McpException("Pass one of page_id, template_key, product_id and category_id.");
+            throw new McpException("Pass one of page_id, template_key and page_type.");
         }
 
-        var draftTheme = SitePageFilters.ParseVersion(theme ?? SitePageFilters.PublishedVersion) == false;
+        var draftTheme = (theme ?? SitePageFilters.PublishedVersion).Trim().ToLowerInvariant() switch
+        {
+            SitePageFilters.DraftVersion => true,
+            SitePageFilters.PublishedVersion => false,
+            _ => throw new McpException("theme must be 'draft' or 'published'."),
+        };
+
         if (!string.IsNullOrWhiteSpace(page_id))
         {
             return await PreviewPageAsync(context.User, page_id.Trim(), draftTheme, cancellationToken);
@@ -77,11 +82,16 @@ public class PreviewTools(
             return await PreviewTemplateAsync(context.User, store_id, template_key.Trim(), draftTheme, cancellationToken);
         }
 
-        var type = string.IsNullOrWhiteSpace(product_id) ? "category" : "product";
+        var type = page_type.Trim().ToLowerInvariant();
+        if (type is not ("product" or "category"))
+        {
+            throw new McpException("page_type must be 'product' or 'category'.");
+        }
+
         return new PreviewAnswer
         {
             StoreId = store_id,
-            Subject = $"{type} '{product_id ?? category_id}'",
+            Subject = $"{type} pages",
             Template = await ChooseAsync(context.User, store_id, type, subject: null, ownTemplate: null, draftTheme, cancellationToken),
         };
     }
@@ -279,7 +289,7 @@ public sealed class PreviewAnswer
     // template_key: the rules that give the template its pages.
     public IList<string> PickedBy { get; set; }
 
-    // page_id, product_id, category_id: the template the rules pick, as the server calculates it.
+    // page_id or page_type: the template the rules pick, as the server calculates it.
     public TemplateChoice Template { get; set; }
 
     public IList<string> Notes { get; set; } = [];

@@ -84,11 +84,12 @@ public class HistoryTools(
         }
 
         var items = request.Items.Select(x => HistoryItem.TryParse(x, out var item) ? item : null).Where(x => x != null).ToList();
+        var pageSize = await pageSizeResolver.GetPageSizeAsync(take);
 
         ContentVersionPage page;
         try
         {
-            page = await contentHistory.ListAsync(store_id, items, cursor, await pageSizeResolver.GetPageSizeAsync(take), cancellationToken);
+            page = await FilePages.RunAsync(logger, () => contentHistory.ListAsync(store_id, items, cursor, pageSize, cancellationToken));
         }
         catch (ArgumentException)
         {

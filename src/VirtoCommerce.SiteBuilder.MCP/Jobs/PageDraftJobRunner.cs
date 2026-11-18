@@ -65,6 +65,8 @@ public class PageDraftJobRunner(
             return new(PageJobOutcome.Failed, "its content is not a page document");
         }
 
+        editor.PageLanguage = group.CultureName;
+
         try
         {
             await editor.ApplyAsync(operations, NoSources.Instance, cancellationToken);

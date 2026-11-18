@@ -140,7 +140,6 @@ public sealed class SearchSharedComponentsToolTests : IAsyncDisposable
     [Fact]
     public async Task WithoutBuilderReadInTheStore_ThePagesAreNotNamed()
     {
-        // builder:read in store B only: the tool is visible, the pages of store A are not.
         var user = McpTestUser.Create("components-only")
             .WithScopedPermission(Permissions.SharedComponentsRead, StoreScope, StoreA)
             .WithScopedPermission(Permissions.Read, StoreScope, StoreB);

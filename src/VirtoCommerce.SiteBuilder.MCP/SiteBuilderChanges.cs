@@ -42,11 +42,8 @@ public sealed class SiteBuilderChange : McpChangePreview, IReviewedChange
     public string DraftOwner { get; set; }
 }
 
-// Runs a write of an operation service the way every page tool does: the operation's own dry run first, as the user of
-// the call, then the write. The dry run gives the preview for the agent and the approver, and refuses an unpublished_only
-// call that touches a published page before anything is written; the write checks unpublished_only again under its own
-// lock (RequireUnpublished), so a page published in between is refused there. A change held for approval runs the same
-// way when it is approved, as the approver.
+// The operation's dry run, as the caller, then the write; the write re-checks unpublished_only under its lock
+// (RequireUnpublished).
 public static class SiteBuilderChanges
 {
     public const string UnpublishedOnlyArgument = "unpublished_only";

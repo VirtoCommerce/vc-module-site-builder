@@ -236,6 +236,31 @@ public sealed class PageDocumentEditorTests
     }
 
     [Fact]
+    public async Task ATextInThePagesLanguage_SetsOneTextForEveryLanguage()
+    {
+        var editor = PageDocumentEditor.Read(Document)!;
+        editor.PageLanguage = "fr-FR";
+
+        await editor.ApplyAsync([Op("set_section_settings", sectionId: "hero", settings: new() { ["title"] = "Printemps" }, language: "fr-fr")],
+            _sources, CancellationToken.None);
+
+        Assert.Equal("Printemps", Text(Section(editor, 0)["title"]));
+    }
+
+    [Fact]
+    public async Task ATextInAnotherLanguageThanThePages_ForOneTextForEveryLanguage_IsRefused()
+    {
+        var editor = PageDocumentEditor.Read(Document)!;
+        editor.PageLanguage = "fr-FR";
+
+        var error = await Assert.ThrowsAsync<McpException>(() => editor.ApplyAsync(
+            [Op("set_section_settings", sectionId: "hero", settings: new() { ["title"] = "Frühling" }, language: "de-DE")], _sources, CancellationToken.None));
+
+        Assert.Contains("language must be fr-FR", error.Message);
+        Assert.Equal("Spring", Text(Section(editor, 0)["title"]));
+    }
+
+    [Fact]
     public async Task Blocks_AreAddedMovedDuplicatedHiddenAndRemoved()
     {
         var editor = await EditAsync(
@@ -430,6 +455,18 @@ public sealed class PageDocumentEditorTests
         Assert.Contains(new PageDocumentChange("section features 'list' block item 'b1': label", "One", "First"), changes);
         Assert.Contains(new PageDocumentChange($"section text '{added}'", null, "added at position 3"), changes);
         Assert.Contains(new PageDocumentChange($"section text '{added}': body", null, "Hi"), changes);
+    }
+
+    [Fact]
+    public async Task AChange_PastTheShownLengthOfAValue_IsListed()
+    {
+        var text = new string('a', 400);
+        var before = await EditAsync(Op("set_section_settings", sectionId: "hero", settings: new() { ["title"] = text }));
+        var after = await EditAsync(Op("set_section_settings", sectionId: "hero", settings: new() { ["title"] = text[..350] + "b" + text[351..] }));
+
+        var changes = PageDocumentChanges.Compare(before, after);
+
+        Assert.Equal("section hero-banner 'hero': title", Assert.Single(changes).Field);
     }
 
     private async Task<PageDocumentEditor> EditAsync(params PageEditOperation[] operations)

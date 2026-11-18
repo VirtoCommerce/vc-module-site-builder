@@ -24,8 +24,6 @@ public class UpdateSectionsBulkJobPage : ISiteBuilderJobPage
 {
     public string PageId { get; set; }
 
-    public string StoreId { get; set; }
-
     public string VersionToken { get; set; }
 
     public IList<string> SectionIds { get; set; } = [];

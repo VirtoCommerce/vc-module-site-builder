@@ -18,7 +18,6 @@ namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
 {
     private const string Content = """{ "settings": {}, "content": [ { "id": "bar", "type": "announcement-bar", "text": "Free shipping" } ] }""";
-    private static readonly McpToolCallOptions Approved = new() { AsApprovedChange = true };
 
     private readonly McpTestContext _context = new();
     private readonly List<SiteBuilderSharedComponent> _components = [Component("sc-a", StoreA), Component("sc-b", StoreB)];
@@ -217,7 +216,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     public async Task AComponentSavedRightBeforeTheWrite_IsNotOverwritten()
     {
         var call = await ReviewAsync(Revise(CopyFrom("promo")));
-        // a colleague's save lands after the call checked the component, while the operation reads the pages it reaches
+        // a colleague's save lands while the call reads the pages the component stands on
         _onUsage = () => _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
 
         var result = await _context.CallAsync(Reviser(), "revise_shared_component", call, Approved);

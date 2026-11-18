@@ -110,7 +110,6 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
         Assert.Equal(["find_content_gaps", "get_preview", "get_publish_readiness", "get_site_overview", "list_versions", "search_site_pages", "search_templates"], _context.Harness.GetVisibleToolNames(StoreAReader()));
     }
 
-    // builder:update alone edits pages: the template and theme writes need builder:templates or builder:theme besides.
     [Fact]
     public void BuilderReadAndUpdate_ShowTheEditAndBulkTools()
     {

@@ -150,7 +150,7 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
             // the blob flow would publish an opted-in store's pages straight to production
             if (connection.IsEnabled && !string.IsNullOrEmpty(connection.Error) && (await ReadStoreSettingsAsync(storeId)).IsEnabled)
             {
-                throw new GitContentException(connection.Error, GitContentFailureKind.NotConfigured);
+                throw new GitContentException(connection.Error, connection.ErrorKind);
             }
 
             return null;

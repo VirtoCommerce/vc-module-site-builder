@@ -240,8 +240,9 @@ public class TemplateRuleTools(
             throw new RuleEditException("Pass rule_id; search_templates lists the rules with their ids.");
         }
 
+        var pageType = string.IsNullOrWhiteSpace(operation.PageType) ? null : operation.PageType.Trim().ToLowerInvariant();
         var found = TemplateRulesDocument.PageTypes
-            .Where(x => operation.PageType == null || x == operation.PageType)
+            .Where(x => pageType == null || x == pageType)
             .Select(type => (Type: type, List: rules.RulesOf(type)))
             .SelectMany(x => x.List.Where(rule => GetId(rule) == operation.RuleId).Select(rule => (x.Type, x.List, Rule: rule)))
             .ToList();

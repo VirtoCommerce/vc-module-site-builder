@@ -24,4 +24,11 @@ public class GroupedPagePublishOperationRequest : GroupedPageOperationRequest
     /// with the publish; <c>false</c> refuses the publish while there are any.
     /// </summary>
     public bool UnpublishConflicting { get; set; }
+
+    /// <summary>
+    /// With <see cref="UnpublishConflicting"/>: the version of every published page the caller reviewed as replaced, by its group id, as a dry run
+    /// answers them in <see cref="SiteBuilderObjectChange.ObjectId"/> and <see cref="SiteBuilderObjectChange.ETag"/>. Nothing is published when the
+    /// pages to unpublish are not those any more: one changed, appeared or went. <c>null</c> unpublishes the pages that conflict at the write.
+    /// </summary>
+    public IDictionary<string, string> ExpectedReplacedVersions { get; set; }
 }

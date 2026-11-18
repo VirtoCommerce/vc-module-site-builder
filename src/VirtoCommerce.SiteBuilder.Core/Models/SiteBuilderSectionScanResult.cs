@@ -27,7 +27,7 @@ public class SiteBuilderSectionScanResult
     public IList<SiteBuilderSectionScanPage> Pages { get; set; } = [];
 
     /// <summary>Language versions that were in the scanned rows but could not be read.</summary>
-    public IList<SiteBuilderSectionScanSkip> Unread { get; set; } = [];
+    public IList<SiteBuilderSectionScanUnread> Unread { get; set; } = [];
 }
 
 public class SiteBuilderSectionScanPage
@@ -56,7 +56,7 @@ public class SiteBuilderSectionMatch
 {
     /// <summary>
     /// The id of the section in the page; for a section of a placed Shared Component, its id in the component.
-    /// Sections stored without an id get one from their place, as the designer and the MCP tools name them.
+    /// Sections stored without an id get one from their place, the same on every read of the version.
     /// </summary>
     public string SectionId { get; set; }
 
@@ -73,7 +73,7 @@ public class SiteBuilderSectionMatch
     public string PlacementId { get; set; }
 }
 
-public class SiteBuilderSectionScanSkip
+public class SiteBuilderSectionScanUnread
 {
     public const string Deleted = "Deleted";
     public const string NoContent = "NoContent";

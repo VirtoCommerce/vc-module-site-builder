@@ -1,14 +1,16 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol;
+using VirtoCommerce.MCP.Core;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
 
 // The page or multilanguage page a write names, found and checked against the stores of the user before the
-// operation runs, so a refusal names the store. The operation checks the store again, as its endpoint does.
+// operation runs. The operation checks the store again, as its endpoint does.
 public static class PageLookup
 {
     // A page kept as a file is named by its path in the store, as the designer opens it; the id of a database page never
@@ -33,7 +35,11 @@ public static class PageLookup
         var group = await groupedPageService.GetByIdAsync(pageId)
             ?? throw new McpException($"Page '{pageId}' was not found. Call search_site_pages to find its id.");
 
-        await authorizationService.EnsureAllowedAsync(user, group, group.StoreId);
+        // The caller did not name the page's store and may not know it, so the refusal leaves it out.
+        if (!await authorizationService.IsAllowedAsync(user, group))
+        {
+            throw new McpForbiddenException($"Your {Read} permission does not cover the store of page '{pageId}'.");
+        }
 
         return group;
     }
@@ -49,7 +55,10 @@ public static class PageLookup
         var root = await multilanguagePageService.GetByIdAsync(multilanguagePageId)
             ?? throw new McpException($"Multilanguage Page '{multilanguagePageId}' was not found. Call search_site_pages to find its id.");
 
-        await authorizationService.EnsureAllowedAsync(user, root, root.StoreId);
+        if (!await authorizationService.IsAllowedAsync(user, root))
+        {
+            throw new McpForbiddenException($"Your {Read} permission does not cover the store of Multilanguage Page '{multilanguagePageId}'.");
+        }
 
         return root;
     }

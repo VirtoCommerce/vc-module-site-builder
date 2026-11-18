@@ -178,17 +178,13 @@ public class SiteBuilderResources(
     }
 
     [McpServerResource(UriTemplate = "site-builder://organizations{?keyword,skip,take}", Name = "organizations", MimeType = JsonMimeType)]
-    [McpPermission(Read, CustomerPermissions.Read)]
+    [McpPermission(Read)]
+    // Granted in full only, as the designer's list needs it: a role limited to some organizations would see the others' names.
+    [Authorize(CustomerPermissions.Read)]
     [Description("Organizations a page's audience can name (change_page_settings, organization_id): id and name, filtered by " +
         "keyword. Needs customer:read for every organization. Paged: skip and take, next_skip for the next page.")]
-    public async Task<string> Organizations(RequestContext<ReadResourceRequestParams> context, string keyword = null, int? skip = null, int? take = null)
+    public async Task<string> Organizations(string keyword = null, int? skip = null, int? take = null)
     {
-        // A role limited to some organizations would see the others' names here: the designer's list needs the permission in full too.
-        if (context.User.GetMcpPermissionGrant(CustomerPermissions.Read)?.IsGlobal != true)
-        {
-            throw new McpForbiddenException($"Listing organizations needs {CustomerPermissions.Read} for every organization, as the designer's list does.");
-        }
-
         var paging = await pageSizeResolver.GetPagingAsync(skip, take);
         var result = await memberSearchService.SearchMembersAsync(new MembersSearchCriteria
         {

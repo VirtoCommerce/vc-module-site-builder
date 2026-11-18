@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using ModelContextProtocol;
 using Moq;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Testing;
@@ -143,10 +144,11 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
         Assert.Contains(preview.Warnings, x => x.Contains("Shared Components"));
     }
 
-    [Fact]
-    public async Task WithoutBackgroundJobs_TheAgentIsToldInASentence()
+    [Theory]
+    [MemberData(nameof(MissingJobEngines))]
+    public async Task WithoutBackgroundJobs_TheAgentIsToldInASentence(Exception failure)
     {
-        _context.Jobs.Failure = new BackgroundJobEngineNotInstalledException();
+        _context.Jobs.Failure = failure;
 
         var result = await _context.CallAsync(Editor(), Tool, Rename());
 
@@ -155,6 +157,12 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
         Assert.Contains("nothing was changed", result.Error);
         Assert.Contains("edit_page_draft", result.Error);
     }
+
+    public static IEnumerable<object[]> MissingJobEngines() =>
+    [
+        [new BackgroundJobEngineNotInstalledException()],
+        [new McpException("Background jobs are not available on this platform, so the bulk operation cannot start. Tell the user to contact the administrator.")],
+    ];
 
     [Fact]
     public async Task AnUnknownChange_IsRefused()
@@ -231,8 +239,10 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
     [Fact]
     public async Task AnAccountThatNoLongerExists_ChangesNothing()
     {
+        _context.JobUsers["editor"] = Editor().ToPrincipal();
         await CallAsync<McpJobHandle>(Editor(), Rename());
         var payload = (UpdateSectionsBulkJobPayload)_context.Jobs.Enqueued.Single().Payload;
+        _context.DeletedUsers.Add("editor");
 
         var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload);
 

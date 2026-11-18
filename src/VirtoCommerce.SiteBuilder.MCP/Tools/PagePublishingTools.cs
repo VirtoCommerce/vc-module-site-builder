@@ -15,14 +15,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Publishing and unpublishing change what customers see, so they wait for a second person. The approver sees the dry
-// run of the requester; the change then runs as the approver, with the requester's arguments, through the endpoint's
-// own operation. So the call names what was reviewed: the dry run answers expected_versions (the version of each draft
-// or published page it takes; in git the commit of the draft branch, which the write ships from a publish branch of its
-// own) and, in git, draft_owner (whose branch it ships), and the call without dryRun sends them back. The write takes
-// exactly those or is refused; a call without them is refused and never waits for approval. A page stored as a file in
-// git is published by a pull request that may conflict; the way out that replaces the other edit (rebase) is an
-// argument of its own, so it is a call of its own with its own approval, and never a retry.
+// Publishing changes what customers see: the write waits for approval and takes exactly the versions its dry run answered (ReviewedVersions).
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PagePublishingTools(
@@ -93,11 +86,11 @@ public class PagePublishingTools(
                     new FilePageShipCall(store_id, page_id, Publish: true, rebase, draft_owner, expected_versions, dryRun), cancellationToken);
             }
 
-            return await PublishGroupAsync(context.User, page_id, publish: true, EnsureNoRebase(rebase, expected_versions), unpublish_conflicting, dryRun,
-                cancellationToken);
+            EnsureNoRebase(rebase);
+            return await PublishGroupAsync(context.User, page_id, publish: true, expected_versions, unpublish_conflicting, dryRun, cancellationToken);
         }
 
-        EnsureNoRebase(rebase, expected_versions);
+        EnsureNoRebase(rebase);
         if (all_languages == languages?.Length > 0)
         {
             throw new McpException("With multilanguage_page_id, pass either languages or all_languages: true.");
@@ -145,14 +138,12 @@ public class PagePublishingTools(
     // A call that names the versions it takes waits for a second person; one without them is a dry run or is refused.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) => ReviewedVersions.AreGiven(arguments);
 
-    private static IDictionary<string, string> EnsureNoRebase(bool rebase, IDictionary<string, string> expectedVersions)
+    private static void EnsureNoRebase(bool rebase)
     {
         if (rebase)
         {
             throw new McpException("rebase goes with a page stored as a file in git; a database page has no merge to conflict.");
         }
-
-        return expectedVersions;
     }
 
     private static void EnsureNoUnpublishConflicting(bool unpublishConflicting, string reason)
@@ -163,7 +154,6 @@ public class PagePublishingTools(
         }
     }
 
-    // The version of the draft a publish takes, or of the published page an unpublish takes.
     private async Task<SiteBuilderChange> PublishGroupAsync(ClaimsPrincipal user, string pageId, bool publish, IDictionary<string, string> expectedVersions,
         bool unpublishConflicting, bool dryRun, CancellationToken cancellationToken)
     {
@@ -179,7 +169,9 @@ public class PagePublishingTools(
         };
 
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => RunPublishAsync(user, group.Id, publish, isDryRun, ReviewedVersions.Of(change, group.Id), unpublishConflicting, cancellationToken),
+            isDryRun => RunPublishAsync(user, group.Id, publish, isDryRun, ReviewedVersions.Of(change, group.Id),
+                unpublishConflicting && !isDryRun ? ReplacedVersions(change, change.ExpectedVersions.Keys.Where(x => x != group.Id)) : null, unpublishConflicting,
+                cancellationToken),
             x => EnsurePublished(x, group, publish),
             dryRun,
             checkAsync: x => PinAsync(change, x.Preview?.Objects, expectedVersions, dryRun));
@@ -268,14 +260,15 @@ public class PagePublishingTools(
         var change = NewMultilanguageChange(root);
         change.DryRun = true;
         var drafts = new List<SiteBuilderObjectChange>();
-        var replaced = new Dictionary<string, string>();
+        var replaced = new Dictionary<string, List<string>>();
         foreach (var group in groups)
         {
-            var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, expectedVersion: null, unpublishConflicting, cancellationToken);
+            var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, expectedVersion: null, expectedReplacedVersions: null,
+                unpublishConflicting, cancellationToken);
             EnsurePublished(check, group, publish: true);
             change.AddChanges(check.Preview);
             drafts.AddRange(check.Preview?.Objects ?? []);
-            replaced[group.Id] = string.Join(", ", check.Preview?.Objects.Where(x => x.ObjectId != group.Id).Select(x => $"page '{x.ObjectId}'") ?? []);
+            replaced[group.Id] = check.Preview?.Objects.Where(x => x.ObjectId != group.Id).Select(x => x.ObjectId).ToList() ?? [];
         }
 
         change.AffectsPublished = true;
@@ -288,8 +281,8 @@ public class PagePublishingTools(
         var published = new List<string>();
         foreach (var group in groups)
         {
-            var result = await RunPublishAsync(user, group.Id, publish: true, isDryRun: false, ReviewedVersions.Of(change, group.Id), unpublishConflicting,
-                cancellationToken);
+            var result = await RunPublishAsync(user, group.Id, publish: true, isDryRun: false, ReviewedVersions.Of(change, group.Id),
+                unpublishConflicting ? ReplacedVersions(change, replaced[group.Id]) : null, unpublishConflicting, cancellationToken);
             if (!result.Succeeded)
             {
                 var done = published.Count == 0 ? "No version was published." : $"Published: {string.Join(", ", published)}.";
@@ -302,16 +295,17 @@ public class PagePublishingTools(
                 throw new McpException($"Publishing the {group.CultureName} version '{group.Id}' failed: {reason}. {done}");
             }
 
-            published.Add(string.IsNullOrEmpty(replaced[group.Id]) ? group.CultureName : $"{group.CultureName} (and unpublished {replaced[group.Id]})");
+            published.Add(replaced[group.Id].Count == 0
+                ? group.CultureName
+                : $"{group.CultureName} (and unpublished {string.Join(", ", replaced[group.Id].Select(x => $"page '{x}'"))})");
         }
 
         change.DryRun = false;
         return change;
     }
 
-    // The write takes the version pinned: of the draft for a publish, of the published page for an unpublish.
     private Task<SiteBuilderOperationResult> RunPublishAsync(ClaimsPrincipal user, string groupId, bool publish, bool isDryRun, string expectedVersion,
-        bool unpublishConflicting, CancellationToken cancellationToken)
+        IDictionary<string, string> expectedReplacedVersions, bool unpublishConflicting, CancellationToken cancellationToken)
     {
         return groupedPageOperationService.PublishAsync(new GroupedPagePublishOperationRequest
         {
@@ -321,10 +315,15 @@ public class PagePublishingTools(
             ExpectedDraftVersion = publish ? expectedVersion : null,
             ExpectedPublishedVersion = publish ? null : expectedVersion,
             UnpublishConflicting = unpublishConflicting,
+            ExpectedReplacedVersions = expectedReplacedVersions,
             DryRun = isDryRun,
             ReportImpact = true,
         }, user, cancellationToken);
     }
+
+    // The published pages the publish replaces, at their pinned versions: the write is refused once others would be unpublished.
+    private static Dictionary<string, string> ReplacedVersions(SiteBuilderChange change, IEnumerable<string> pageIds) =>
+        pageIds.ToDictionary(x => x, x => ReviewedVersions.Of(change, x));
 
     private static Task PinAsync(SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts, IDictionary<string, string> expectedVersions, bool dryRun)
     {

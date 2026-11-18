@@ -151,6 +151,21 @@ public sealed class TemplateRuleToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ThePageTypeOfARule_IgnoresCaseAndSpaces()
+    {
+        await SeedAsync();
+
+        var change = (await _context.CallAsync(Designer(), Tool, new
+        {
+            store_id = StoreA,
+            version_token = await VersionAsync(),
+            operations = new object[] { new { op = "remove", rule_id = "gloves", page_type = " Product" } },
+        })).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Contains(change.Changes, x => x.Field == "product rule 'gloves'" && x.To?.ToString() == "removed");
+    }
+
+    [Fact]
     public async Task AStaleVersion_IsRefused()
     {
         await SeedAsync();

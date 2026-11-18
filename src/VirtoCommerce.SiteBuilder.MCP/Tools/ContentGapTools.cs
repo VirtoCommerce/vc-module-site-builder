@@ -71,11 +71,13 @@ public class ContentGapTools(
         CancellationToken cancellationToken = default)
     {
         var kind = ParseCategory(category);
+        var languageCode = Trim(language);
+
+        // The language is filtered in memory: in the criteria it would keep only the Multilanguage Pages that have a version in it.
         var criteria = new SiteBuilderPageSearchCriteria
         {
             StoreId = Trim(store_id),
             Statuses = $"{PageStatuses.Draft},{PageStatuses.Published}",
-            LanguageCode = Trim(language),
             Sort = $"{nameof(SiteBuilderPageListItem.ModifiedDate)}:desc;{nameof(SiteBuilderPageListItem.CreatedDate)}:desc",
         }.WithPaging(await pageSizeResolver.GetPagingAsync(skip, take));
 
@@ -92,7 +94,7 @@ public class ContentGapTools(
         var findings = new List<McpFinding>();
         foreach (var row in rows.Results)
         {
-            await CheckRowAsync(row, kind, criteria.LanguageCode, findings, cancellationToken);
+            await CheckRowAsync(row, kind, languageCode, findings, cancellationToken);
         }
 
         report.Complete(findings, criteria.Skip, rows.Results.Count, rows.TotalCount);
@@ -146,12 +148,12 @@ public class ContentGapTools(
         }
     }
 
-    // A Landing Page, or the language versions a Multilanguage Page has (in the language, when one is named).
+    // A Landing Page or the language versions of a Multilanguage Page, in the language when one is named.
     private static IEnumerable<GroupedSiteBuilderPage> PagesOf(SiteBuilderPageListItem row, string language)
     {
         if (row.Page != null)
         {
-            return [row.Page];
+            return language == null || row.Page.CultureName.EqualsIgnoreCase(language) ? [row.Page] : [];
         }
 
         return (row.Languages ?? [])

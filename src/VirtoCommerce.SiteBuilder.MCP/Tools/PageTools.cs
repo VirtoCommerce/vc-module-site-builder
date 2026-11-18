@@ -53,7 +53,7 @@ public class PageTools(
         "address, language, audience, dates), its content (page settings and sections, each with its id) and the version " +
         "token of that content, which edit_page_draft takes; for a page stored as a file, also its publication state. " +
         "Pass section_type to find the database pages that use a section, optionally with a condition on its settings: the pages are " +
-        "read one by one, take of them per call, and the answer lists per language version the matching section ids and " +
+        "read one by one, 'take' pages per call, and the answer lists per language version the matching section ids and " +
         "says how many pages were scanned; continue with next_skip until is_complete or has_more is false before saying a " +
         "section is used nowhere. To change the matching sections on every page, use update_sections_bulk.")]
     public async Task<object> SearchSitePages(
@@ -70,7 +70,8 @@ public class PageTools(
         [Description("Pages stored as files of one folder: 'pages', 'blogs' or a folder inside them such as 'pages/landing'. " +
             "Its subfolders are not listed; without it, the pages right in 'pages' and 'blogs' are.")] string folder = null,
         [Description("Pages changed at or after this UTC time, ISO 8601. A change of a Shared Component on the page counts.")] DateTime? modified_since = null,
-        [Description("Pages not changed after this UTC time, ISO 8601.")] DateTime? modified_before = null,
+        [Description("Pages with a version last changed at or before this UTC time, ISO 8601: a page whose draft changed later " +
+            "still matches by its older published version. With modified_since: pages with a version changed in that period.")] DateTime? modified_before = null,
         [Description("With page_id or section_type: 'draft' (default) for the content the designer edits, which is the " +
             "published one when the page has no unpublished changes, or 'published' for what the storefront shows.")] string version = SitePageFilters.DraftVersion,
         [Description("Only pages with a section of this type, for example 'hero-banner', in the version 'version' names " +
@@ -106,7 +107,7 @@ public class PageTools(
         var criteria = await CreateCriteriaAsync(context.User, store_id, keyword, status, language, sources.DatabasePageType, paging);
         if (modified_since != null || modified_before != null)
         {
-            criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, criteria.StoreIds, ToUtc(modified_since), ToUtc(modified_before));
+            criteria.ObjectIds = await GetChangedPageIdsAsync(store_id, criteria.StoreIds, PageLookup.ToUtc(modified_since), PageLookup.ToUtc(modified_before));
             if (criteria.ObjectIds.Count == 0)
             {
                 return NoPages(section_type, paging);
@@ -268,11 +269,17 @@ public class PageTools(
         var group = await groupedPageService.GetByIdAsync(pageId)
             ?? throw new McpException($"Page '{pageId}' was not found. Call search_site_pages without page_id to find its id.");
 
-        await authorizationService.EnsureAllowedAsync(context.User, group, group.StoreId);
-
         if (!string.IsNullOrEmpty(storeId) && !storeId.EqualsIgnoreCase(group.StoreId))
         {
             throw new McpException($"Page '{pageId}' is not a page of store '{storeId}'.");
+        }
+
+        // The refusal names only a store the caller named, so it does not tell which store an id belongs to.
+        if (!await authorizationService.IsAllowedAsync(context.User, group))
+        {
+            throw new McpForbiddenException(string.IsNullOrEmpty(storeId)
+                ? $"Your {Read} permission does not cover the store of page '{pageId}'."
+                : $"Your {Read} permission does not cover store '{storeId}'.");
         }
 
         SiteBuilderContentSnapshot snapshot;
@@ -287,14 +294,6 @@ public class PageTools(
 
         return SitePageDetails.From(group, snapshot);
     }
-
-    // A time without a kind is read as UTC, as the stored dates are.
-    private static DateTime? ToUtc(DateTime? value) => value?.Kind switch
-    {
-        null => null,
-        DateTimeKind.Local => value.Value.ToUniversalTime(),
-        _ => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc),
-    };
 }
 
 public sealed class SitePageRow

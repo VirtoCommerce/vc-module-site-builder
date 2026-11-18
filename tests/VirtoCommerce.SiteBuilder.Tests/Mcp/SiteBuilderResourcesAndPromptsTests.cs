@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
@@ -29,7 +30,7 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// The resources and prompts as the MCP module serves them: a user sees those whose [McpPermission] they hold, and a
+// The resources and prompts as the MCP module serves them: a user sees those whose [McpPermission] and [Authorize] they hold, and a
 // resource is read with its address.
 public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
 {
@@ -167,7 +168,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         var organizations = await ReadAsync(everyOrganization, "site-builder://organizations?keyword=con");
 
         Assert.Equal("Contoso", organizations.GetProperty("items")[0].GetProperty("name").GetString());
-        await Assert.ThrowsAnyAsync<McpException>(() => ReadAsync(someOrganizations, "site-builder://organizations"));
+        Assert.DoesNotContain("organizations", VisibleResources(someOrganizations));
     }
 
     private IEnumerable<McpServerPrompt> Prompts() =>
@@ -183,9 +184,11 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
             .Order(StringComparer.Ordinal)
             .ToList();
 
-    // As the MCP module lists prompts and resources: every [McpPermission] permission, in some store or in all.
+    // As the MCP module lists prompts and resources: every [McpPermission] permission, in some store or in all; and, as
+    // the SDK's authorization filters with the platform's policies, every [Authorize] permission granted in full.
     private static bool HasPermissions(ClaimsPrincipal user, IMcpServerPrimitive primitive) =>
-        primitive.Metadata.OfType<McpPermissionAttribute>().SelectMany(x => x.Permissions).All(x => user.GetMcpPermissionGrant(x) != null);
+        primitive.Metadata.OfType<McpPermissionAttribute>().SelectMany(x => x.Permissions).All(x => user.GetMcpPermissionGrant(x) != null) &&
+        primitive.Metadata.OfType<IAuthorizeData>().All(x => string.IsNullOrEmpty(x.Policy) || user.GetMcpPermissionGrant(x.Policy)?.IsGlobal == true);
 
     private async Task<JsonElement> ReadAsync(ClaimsPrincipal user, string uri)
     {

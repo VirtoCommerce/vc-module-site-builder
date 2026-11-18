@@ -3,10 +3,7 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.MCP;
 
-// Whether a translation may be marked up to date: it is a language version, not the source, and the source has not
-// been published since the agent read it. The source revision is the one MultilanguagePageService.MarkUpToDateAsync
-// copies onto the translation: the SourceRevisionDate of the default language version. The mark is saved only while the
-// source is still at the revision that was checked, as the save reads it under its lock.
+// A translation is marked only while the source is still at the revision the agent read.
 public class TranslationSources(IMultilanguagePageService multilanguagePageService)
 {
     public const string SourcePublishedAgain = "the source language version was published again after you read it";
@@ -73,11 +70,5 @@ public class TranslationSources(IMultilanguagePageService multilanguagePageServi
 
     // The stored time may lose a fraction of a millisecond on its way through JSON and the database.
     private static bool IsSame(DateTime stored, DateTime given) =>
-        Math.Abs((ToUtc(stored) - ToUtc(given)).TotalMilliseconds) < 1;
-
-    private static DateTime ToUtc(DateTime value) => value.Kind switch
-    {
-        DateTimeKind.Local => value.ToUniversalTime(),
-        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
-    };
+        Math.Abs((PageLookup.ToUtc(stored).Value - PageLookup.ToUtc(given).Value).TotalMilliseconds) < 1;
 }

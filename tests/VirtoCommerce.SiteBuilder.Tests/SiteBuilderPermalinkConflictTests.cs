@@ -484,6 +484,33 @@ public class SiteBuilderPermalinkConflictTests
     }
 
     [Fact]
+    public async Task PublishAsync_AnotherPagePublishedAtThePermalinkSinceTheReview_UnpublishesNothing()
+    {
+        var service = CreateService(Group(x => x.Id = "new"), PublishedGroup(x => x.Id = "old"));
+        service.SeedContent("new-draft", DraftContent);
+        var operations = CreateOperations(service);
+        var dryRun = new GroupedPagePublishOperationRequest { GroupId = "new", Publish = true, UnpublishConflicting = true, DryRun = true };
+        var review = await operations.PublishAsync(dryRun, User, TestContext.Current.CancellationToken);
+        var other = PublishedGroup(x => x.Id = "published");
+        other.Pages[0].StoreId = StoreId;
+        other.Pages[0].GroupId = other.Id;
+        service.SeedGroup(other);
+        var request = new GroupedPagePublishOperationRequest
+        {
+            GroupId = "new", Publish = true, UnpublishConflicting = true,
+            ExpectedDraftVersion = review.Preview.Objects.Single(x => x.ObjectId == "new").ETag,
+            ExpectedReplacedVersions = review.Preview.Objects.Where(x => x.ObjectId != "new").ToDictionary(x => x.ObjectId, x => x.ETag),
+        };
+
+        var result = await operations.PublishAsync(request, User, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal(Draft, (await service.GetByIdAsync("new")).Status);
+        Assert.Equal(Published, (await service.GetByIdAsync("old")).Status);
+        Assert.Equal(Published, (await service.GetByIdAsync("published")).Status);
+    }
+
+    [Fact]
     public async Task CreateGroup_WithPublishedPage_CreatesDraftOnly()
     {
         var service = CreateService(PublishedGroup(x => x.Id = "old"));

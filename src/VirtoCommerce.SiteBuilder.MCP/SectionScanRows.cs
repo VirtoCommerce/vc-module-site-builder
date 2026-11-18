@@ -146,16 +146,16 @@ public sealed class SectionScanUnreadRow
 
     public string Reason { get; init; }
 
-    public static SectionScanUnreadRow From(SiteBuilderSectionScanSkip skip) => new()
+    public static SectionScanUnreadRow From(SiteBuilderSectionScanUnread skip) => new()
     {
         PageId = skip.PageId,
         StoreId = skip.StoreId,
         Language = skip.CultureName,
         Reason = skip.Reason switch
         {
-            SiteBuilderSectionScanSkip.Deleted => "deleted while it was scanned",
-            SiteBuilderSectionScanSkip.NotPublished => "has no published version",
-            SiteBuilderSectionScanSkip.NoContent => "has no content in this version",
+            SiteBuilderSectionScanUnread.Deleted => "deleted while it was scanned",
+            SiteBuilderSectionScanUnread.NotPublished => "has no published version",
+            SiteBuilderSectionScanUnread.NoContent => "has no content in this version",
             _ => "its content is not a page document",
         },
     };
@@ -183,7 +183,7 @@ public static class SectionScanCoverage
                   ? $"pages {last + 1}-{scan.TotalPageCount} were not scanned, so the section may be on them too: call again with skip={scan.NextSkip}."
                   : $"pages 1-{scan.Skip} were scanned by earlier calls, not this one.");
 
-        var unread = scan.Unread.Count(x => x.Reason != SiteBuilderSectionScanSkip.NotPublished);
+        var unread = scan.Unread.Count(x => x.Reason != SiteBuilderSectionScanUnread.NotPublished);
         if (unread > 0)
         {
             text += $" {unread} language versions could not be read and are listed in unread.";

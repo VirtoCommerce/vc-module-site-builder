@@ -67,7 +67,7 @@ public class SiteBuilderSectionScanner(
     }
 
     // A Landing Page is its own version; a Multilanguage Page is scanned language by language, only those the
-    // language and status filters name, since the list keeps a Multilanguage Page when any of its versions matches.
+    // language, status and id filters name, since the list keeps a Multilanguage Page when any of its versions matches.
     protected virtual IEnumerable<GroupedSiteBuilderPage> GetVersions(SiteBuilderPageListItem row, SiteBuilderPageSearchCriteria criteria)
     {
         if (row.Page != null)
@@ -81,7 +81,8 @@ public class SiteBuilderSectionScanner(
             .Select(x => x.Page)
             .Where(x => x != null)
             .Where(x => string.IsNullOrEmpty(criteria.LanguageCode) || string.Equals(x.CultureName, criteria.LanguageCode, StringComparison.OrdinalIgnoreCase))
-            .Where(x => statuses.Length == 0 || HasStatus(x, statuses));
+            .Where(x => statuses.Length == 0 || HasStatus(x, statuses))
+            .Where(x => criteria.ObjectIds is not { Count: > 0 } || criteria.ObjectIds.Contains(x.Id));
     }
 
     // The grouped pages filter in memory: Archived when every version is archived, any other status when one is in it.
@@ -103,27 +104,27 @@ public class SiteBuilderSectionScanner(
         }
         catch (KeyNotFoundException)
         {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanSkip.Deleted));
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.Deleted));
             return;
         }
 
         // Without a published version the published read answers an archived one, which the storefront does not show.
         if (criteria.Published && page.Pages?.FirstOrDefault(x => x.Id == snapshot.PageId)?.Status != Published)
         {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanSkip.NotPublished));
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NotPublished));
             return;
         }
 
         if (string.IsNullOrWhiteSpace(snapshot.Content))
         {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanSkip.NoContent));
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NoContent));
             return;
         }
 
         var document = SiteBuilderPageDocument.Read(snapshot.Content);
         if (document == null)
         {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanSkip.NotADocument));
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NotADocument));
             return;
         }
 
@@ -278,15 +279,15 @@ public class SiteBuilderSectionScanner(
         return match;
     }
 
-    private static SiteBuilderSectionScanSkip Unread(GroupedSiteBuilderPage page, string reason)
+    private static SiteBuilderSectionScanUnread Unread(GroupedSiteBuilderPage page, string reason)
     {
-        var skip = AbstractTypeFactory<SiteBuilderSectionScanSkip>.TryCreateInstance();
-        skip.PageId = page.Id;
-        skip.StoreId = page.StoreId;
-        skip.CultureName = page.CultureName;
-        skip.Reason = reason;
+        var unread = AbstractTypeFactory<SiteBuilderSectionScanUnread>.TryCreateInstance();
+        unread.PageId = page.Id;
+        unread.StoreId = page.StoreId;
+        unread.CultureName = page.CultureName;
+        unread.Reason = reason;
 
-        return skip;
+        return unread;
     }
 
     private static void ThrowIfInvalid(SiteBuilderSectionSettingCondition condition)

@@ -32,8 +32,6 @@ using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.MCP;
-using VirtoCommerce.SiteBuilder.MCP.Jobs;
-using VirtoCommerce.SiteBuilder.MCP.Tools;
 using VirtoCommerce.CustomerModule.Core.Services;
 using VirtoCommerce.Platform.Core.Settings;
 using VirtoCommerce.StoreModule.Core.Services;
@@ -83,7 +81,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     public Mock<IUserNameResolver> UserNames { get; } = new();
     public RecordingJobDispatcher Jobs { get; } = new();
 
-    // The accounts a job runs as, by user id, as a sign-in would give them when the job runs; a missing one no longer exists.
+    // The accounts a job runs as, by user id, as a sign-in would give them when the job runs.
     public Dictionary<string, ClaimsPrincipal> JobUsers { get; } = new(StringComparer.Ordinal);
 
     // Accounts the user store no longer finds, and accounts locked out until a time ahead.
@@ -129,12 +127,12 @@ internal sealed class McpTestContext : IAsyncDisposable
     // Runs right before a designer save that writes, after the dry runs of the call: a change made here is a concurrent one.
     public Action BeforeDesignerWrite { get; set; }
 
-    public McpToolHarness Harness => _harness ??= McpToolHarness.Create<McpAssemblyMarker>(Register);
+    public McpToolHarness Harness => _harness ??= McpToolHarness.Create(services => services.AddSiteBuilderMcp(), Register, scope: null);
 
     public static McpTestUser Reader(string name = "reader") =>
         McpTestUser.Create(name).WithPermissions(Permissions.Read);
 
-    // builder:read (and the other permissions) in store A only, through the store scope of a role.
+    // builder:read in store A only, through a role's store scope.
     public static McpTestUser StoreAReader(string name = "store-a-reader") =>
         McpTestUser.Create(name).WithScopedPermission(Permissions.Read, StoreScope, StoreA);
 
@@ -270,7 +268,7 @@ internal sealed class McpTestContext : IAsyncDisposable
         Visibility = true,
     };
 
-    // The groups GetByIdAsync finds.
+    // The groups the page service finds.
     public void AddGroups(params GroupedSiteBuilderPage[] groups)
     {
         GroupedPages
@@ -364,25 +362,16 @@ internal sealed class McpTestContext : IAsyncDisposable
                 RequestValidators.Content(StoreA, StoreB, StoreC), Blobs, Blobs, Blobs, ThemeStorage, new FakeGitContentPolicy(enabled: GitFlow), null,
                 GitHubConnections.CreateService(new GitContentOptions()), Options.Create(new GitContentOptions()), GitHistory.Object));
 
-        // The bulk tools and their jobs as SiteBuilderMcpRegistration adds them; the job engine is the test's dispatcher.
         var principals = new Mock<IUserClaimsPrincipalFactory<ApplicationUser>>();
         principals
             .Setup(x => x.CreateAsync(It.IsAny<ApplicationUser>()))
-            .ReturnsAsync((ApplicationUser account) => JobUsers.GetValueOrDefault(account.Id));
+            .ReturnsAsync((ApplicationUser account) => JobUsers[account.Id]);
         services
             .AddSingleton<IMcpJobDispatcher>(Jobs)
             .AddSingleton(MultilanguagePages.Object)
             .AddSingleton(UserNames.Object)
             .AddSingleton(principals.Object)
-            .AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>))
-            .AddTransient<PageDraftJobRunner>()
-            .AddTransient<TranslationSources>()
-            .AddTransient<SiteBuilderJobUsers>()
-            .AddTransient<UpdateSectionsBulkJob>()
-            .AddTransient<SetTranslationsJob>()
-            .AddTransient<SiteThemeStates>()
-            .AddTransient<PublicationDryRuns>()
-            .AddTransient<FilePageShipping>();
+            .AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
 
         // The stores, settings and members the overview and the resources read.
         services

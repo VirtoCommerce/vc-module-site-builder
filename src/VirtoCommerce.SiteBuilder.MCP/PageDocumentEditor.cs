@@ -32,10 +32,8 @@ public enum PageDocumentKind
     SharedComponent,
 }
 
-// Applies the operations of edit_page_draft to a page document the way the designer's own edits change it (see the
-// designer's useDesigner.ts and schema.ts): new items get new ids, a copy gets new ids for itself and its blocks, a
-// placement of a Shared Component is never hidden or edited in place. Templates and the header and footer are edited
-// with the same operations (edit_template, edit_theme_draft).
+// Applies the operations of edit_page_draft to a page document: new items and copies get new ids, a placed Shared
+// Component is never hidden or edited in place. Templates and the header and footer take the same operations.
 public sealed class PageDocumentEditor
 {
     public static readonly JsonSerializerOptions WriteOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -64,6 +62,9 @@ public sealed class PageDocumentEditor
     public JsonArray Sections { get; }
 
     public bool IsLegacyShape { get; }
+
+    // The language of the page; a text in it may set a setting that holds one text for every language.
+    public string PageLanguage { get; set; }
 
     // Null when the content is not a page document. A page without content starts empty, as in the designer.
     public static PageDocumentEditor Read(string content) => Read(content, PageDocumentKind.Page);
@@ -488,7 +489,7 @@ public sealed class PageDocumentEditor
         return string.IsNullOrWhiteSpace(operation.After) ? index.i : index.i + 1;
     }
 
-    private static void SetValues(JsonObject target, Dictionary<string, JsonNode> values, string language, bool page)
+    private void SetValues(JsonObject target, Dictionary<string, JsonNode> values, string language, bool page)
     {
         if (values == null || values.Count == 0)
         {
@@ -529,7 +530,7 @@ public sealed class PageDocumentEditor
         }
     }
 
-    private static void SetItemValue(JsonObject item, string[] segments, JsonNode value, string language, string path)
+    private void SetItemValue(JsonObject item, string[] segments, JsonNode value, string language, string path)
     {
         var key = segments[0];
         if (ItemOwnedKeys.Contains(key))
@@ -559,7 +560,7 @@ public sealed class PageDocumentEditor
         SetItemValue(block, segments[2..], value, language, path);
     }
 
-    private static void SetValue(JsonObject target, string[] segments, JsonNode value, string language, string path)
+    private void SetValue(JsonObject target, string[] segments, JsonNode value, string language, string path)
     {
         JsonNode parent = target;
         foreach (var segment in segments[..^1])
@@ -618,7 +619,7 @@ public sealed class PageDocumentEditor
     }
 
     // A text per language changes in one language at a time, so another language's text is never lost to a plain value.
-    private static JsonNode SetText(JsonNode current, JsonNode value, string language, string path)
+    private JsonNode SetText(JsonNode current, JsonNode value, string language, string path)
     {
         if (language == null)
         {
@@ -633,7 +634,18 @@ public sealed class PageDocumentEditor
 
         if (!IsTranslations(current))
         {
-            throw new EditException($"'{path}' holds one text for every language, so language does not apply; set it without language.");
+            if (string.IsNullOrEmpty(PageLanguage))
+            {
+                throw new EditException($"'{path}' holds one text for every language, so language does not apply; set it without language.");
+            }
+
+            if (!language.Equals(PageLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new EditException($"'{path}' holds one text, in the page's language {PageLanguage}, so the text's language must be " +
+                    $"{PageLanguage}; a {language} text goes into the page's {language} language version.");
+            }
+
+            return value;
         }
 
         var translations = (JsonObject)current;

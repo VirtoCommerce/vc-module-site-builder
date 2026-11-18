@@ -10,8 +10,9 @@ public class SiteBuilderSectionScanCriteria
 {
     /// <summary>
     /// The pages, as the pages list filters them (stores, statuses, language, page type, keyword, ids). A Multilanguage
-    /// Page is one row; its language versions are scanned one by one, those of <see cref="SearchCriteriaBase.LanguageCode"/>
-    /// and of the statuses only when they are set. Skip is the first row to scan; Take is not used.
+    /// Page is one row; its language versions are scanned one by one, those of <see cref="SearchCriteriaBase.LanguageCode"/>,
+    /// of the statuses and of <see cref="SearchCriteriaBase.ObjectIds"/> only when they are set. Lifecycle and ActiveOn select
+    /// rows only. Skip is the first row to scan; Take is not used.
     /// </summary>
     public SiteBuilderPageSearchCriteria Pages { get; set; } = new();
 

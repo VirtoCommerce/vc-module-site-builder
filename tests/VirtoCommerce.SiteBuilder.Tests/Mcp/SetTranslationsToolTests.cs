@@ -145,6 +145,16 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APageStoredAsAFile_IsRefusedAsOne()
+    {
+        var result = await _context.CallAsync(Editor(), Tool,
+            new { translations = new[] { Item("pages/about.page", "\"any\"", "h1", "title", "Printemps") }, dryRun = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("is a page stored as a file", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task MarkingALandingPage_IsShownAsNotPossible()
     {
         var preview = await CallAsync<TranslationPreview>(Editor(),

@@ -212,7 +212,7 @@ public class TemplateTools(
             dryRun, Templates, $"Read it again with search_templates (template_key '{key}') and repeat the edit on that version.", cancellationToken);
 
         change.Sections = SectionRow.From(editor.Sections);
-        if (created)
+        if (created && !ThemeTemplates.BuiltIn.Contains(key))
         {
             change.AddWarning($"Template '{key}' gets pages only through a template rule: add one with edit_template_rules (template '{key}').");
         }
@@ -369,7 +369,6 @@ public static class ThemeTemplates
     }
 }
 
-// search_templates' answer: a page of templates, and every rule of the theme with the version to edit them at.
 public sealed class TemplateSearch
 {
     public string StoreId { get; init; }

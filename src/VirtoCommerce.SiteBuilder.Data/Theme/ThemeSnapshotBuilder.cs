@@ -23,7 +23,8 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
     // A dictionary has a culture name with a subtag, so that a row such as { "sku": "X1" } stays a row.
     private static readonly Regex SubtaggedCultureNamePattern = new("^[a-z]{2,3}(-[a-z0-9]{2,8})+$", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
 
-    private static readonly JObject DefaultTemplateRules = JObject.Parse("""
+    /// <summary>The rules of a page type the template rules file has no list for, as the storefront and the designer default them.</summary>
+    public const string DefaultTemplateRulesJson = """
         {
           "product": [
             {
@@ -33,7 +34,9 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
             }
           ]
         }
-        """);
+        """;
+
+    private static readonly JObject DefaultTemplateRules = JObject.Parse(DefaultTemplateRulesJson);
 
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
@@ -147,18 +150,8 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
 
         foreach (var rule in list.OfType<JObject>().Where(IsTemplateRule))
         {
-            var index = result.Count;
             var copy = (JObject)rule.DeepClone();
-            var id = GetString(copy, "id");
-            if (string.IsNullOrEmpty(id) || ids.Contains(id))
-            {
-                id = $"{pageType}-{index}";
-                for (var n = 2; ids.Contains(id); n++)
-                {
-                    id = $"{pageType}-{index}-{n}";
-                }
-            }
-
+            var id = GetTemplateRuleId(pageType, result.Count, GetString(copy, "id"), ids);
             ids.Add(id);
             copy["id"] = id;
 
@@ -171,6 +164,25 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The rule's own id, else one made from its place among the readable rules of its page type, as the storefront and the designer make it.
+    /// </summary>
+    public static string GetTemplateRuleId(string pageType, int index, string id, ISet<string> takenIds)
+    {
+        if (!string.IsNullOrEmpty(id) && !takenIds.Contains(id))
+        {
+            return id;
+        }
+
+        var generated = $"{pageType}-{index}";
+        for (var n = 2; takenIds.Contains(generated); n++)
+        {
+            generated = $"{pageType}-{index}-{n}";
+        }
+
+        return generated;
     }
 
     protected virtual bool IsTemplateRule(JObject rule)

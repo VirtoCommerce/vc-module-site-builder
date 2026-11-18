@@ -34,10 +34,10 @@ public class ThemePublishingTools(
     [McpRequiresApproval(Condition = nameof(NeedsApproval))]
     [Description("Publish the theme of a store: every draft of its templates, template rules, header, footer, brand and palette " +
         "goes live at once, whoever saved it, and every page then shows the new look. First call it with dryRun: it lists the " +
-        "drafts with who last changed each, what keeps the theme from being published (such as a palette below WCAG 2.2 AA), " +
-        "and expected_versions. Then call it without dryRun and with those expected_versions: the publication waits for a second " +
-        "person's approval and publishes exactly the drafts that were reviewed; if a draft changes in between, it is refused and " +
-        "nothing is published. To publish a single page use publish_page.")]
+        "drafts with who last changed each and expected_versions, or, when the theme cannot be published (such as with a palette " +
+        "below WCAG 2.2 AA), an error naming why. Then call it without dryRun and with those expected_versions: the publication " +
+        "waits for a second person's approval and publishes exactly the drafts that were reviewed; if a draft changes in between, " +
+        "it is refused and nothing is published. To publish a single page use publish_page.")]
     public async Task<ThemePublication> PublishTheme(
         RequestContext<CallToolRequestParams> context,
         [Description("Store id.")] string store_id,
@@ -127,7 +127,11 @@ public class ThemePublishingTools(
 
     private static bool SameVersions(IDictionary<string, string> expected, IDictionary<string, string> current)
     {
-        var normalized = expected.ToDictionary(x => x.Key?.TrimStart('/') ?? string.Empty, x => x.Value?.Trim(), StringComparer.OrdinalIgnoreCase);
+        var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in expected)
+        {
+            normalized[key?.TrimStart('/') ?? string.Empty] = value?.Trim();
+        }
 
         return normalized.Count == current.Count &&
             current.All(x => normalized.TryGetValue(x.Key, out var eTag) && string.Equals(eTag, x.Value, StringComparison.Ordinal));

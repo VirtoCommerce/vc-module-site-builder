@@ -334,7 +334,15 @@ public class GitHubApiClient(IHttpClientFactory httpClientFactory) : IGitHubApiC
         }
 
         return new GitContentException($"GitHub request to {operation} failed: {(int)response.StatusCode} {response.ReasonPhrase}. {details}",
-            GetFailureKind(response.StatusCode));
+            IsRateLimited(response) ? GitContentFailureKind.Unreachable : GetFailureKind(response.StatusCode));
+    }
+
+    // GitHub answers a rate limit with 403 as well as 429.
+    private static bool IsRateLimited(HttpResponseMessage response)
+    {
+        return response.StatusCode == HttpStatusCode.Forbidden &&
+               (response.Headers.RetryAfter != null ||
+                (response.Headers.TryGetValues("x-ratelimit-remaining", out var remaining) && remaining.FirstOrDefault() == "0"));
     }
 
     // 404 is how GitHub answers a repository the App cannot see, as well as one that does not exist.

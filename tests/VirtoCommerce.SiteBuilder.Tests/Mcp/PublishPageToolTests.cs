@@ -356,6 +356,11 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         Assert.Contains("Published: en-US (and unpublished page 'old-en').", result.Error, StringComparison.Ordinal);
         operations.Verify(x => x.PublishAsync(It.Is<GroupedPagePublishOperationRequest>(r => !r.UnpublishConflicting),
             It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Never);
+        operations.Verify(x => x.PublishAsync(It.Is<GroupedPagePublishOperationRequest>(r => !r.DryRun && r.GroupId == "ml-en" &&
+            r.ExpectedReplacedVersions.Count == 1 && r.ExpectedReplacedVersions.ContainsKey("old-en")),
+            It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
+        operations.Verify(x => x.PublishAsync(It.Is<GroupedPagePublishOperationRequest>(r => !r.DryRun && r.GroupId == "ml-fr" &&
+            r.ExpectedReplacedVersions.Count == 0), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

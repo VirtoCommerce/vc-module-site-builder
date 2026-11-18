@@ -33,7 +33,8 @@ public sealed class PageEditOperation
     [JsonPropertyName("settings")]
     [Description("Values to set: a key is a setting name or a dotted path into nested values, for example 'title', " +
         "'button.url' or 'seoInfo.pageTitle'; in a list, a path step is the id of an item or its 0-based index, so " +
-        "'blocks.b1.text' is the text of block b1. null removes the setting. Other settings stay as they are.")]
+        "'blocks.b1.text' is the text of block b1. null removes the setting; an item of a list is removed by setting the whole list. " +
+        "Other settings stay as they are.")]
     public Dictionary<string, JsonNode> Settings { get; set; }
 
     [JsonPropertyName("language")]

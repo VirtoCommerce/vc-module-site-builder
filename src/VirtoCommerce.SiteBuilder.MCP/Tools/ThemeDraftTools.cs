@@ -43,11 +43,11 @@ public class ThemeDraftTools(
     private const int MaxOperations = 100;
 
     // The brand fields and the logos of settings_data.json a theme without a brand file shows (the designer's themeLook.ts).
-    private static readonly (string Field, string Argument, string SettingsKey)[] BrandFields =
+    private static readonly (string Field, string SettingsKey)[] BrandFields =
     [
-        ("logoUrl", "logo_url", "logo_image"),
-        ("secondaryLogoUrl", "secondary_logo_url", "logo_inverted_image"),
-        ("faviconUrl", "favicon_url", "favicon_image"),
+        ("logoUrl", "logo_image"),
+        ("secondaryLogoUrl", "logo_inverted_image"),
+        ("faviconUrl", "favicon_image"),
     ];
 
     [McpServerTool(Name = "edit_theme_draft", ReadOnly = false, Destructive = true, Idempotent = false)]
@@ -65,7 +65,9 @@ public class ThemeDraftTools(
         RequestContext<CallToolRequestParams> context,
         [Description("Store id.")] string store_id,
         [Description("What to edit: header, footer, brand or palette.")] string part,
-        [Description("header and footer: the version token of the part's file, from version_tokens of the last answer. An edit of an older version is refused.")] string version_token = null,
+        [Description("The version token of the part's file, from version_tokens of the last answer; an edit of an older version is refused. " +
+            "header and footer: required. brand: optional, the token of the brand file. palette: optional, the token of either palette file " +
+            "(palette.json or palette.dark.json).")] string version_token = null,
         [Description("header and footer: the changes of sections and blocks, applied in order, as in edit_page_draft.")] PageEditOperation[] operations = null,
         [Description("brand: URL of the logo on light backgrounds; an empty text removes it.")] string logo_url = null,
         [Description("brand: URL of the logo on dark backgrounds (the footer, the dark theme); an empty text removes it.")] string secondary_logo_url = null,
@@ -87,7 +89,7 @@ public class ThemeDraftTools(
         var name = part?.Trim().ToLowerInvariant();
         CheckArguments(name, operations, logo_url, secondary_logo_url, favicon_url, primary_color, secondary_color, light_colors, dark_colors);
         var change = new ThemeFileChange { Action = "edit_theme_draft", ObjectType = "theme-part", StoreId = store_id };
-        var request = new PartRequest(context.User, store_id, operations, dryRun, cancellationToken);
+        var request = new PartRequest(context.User, store_id, operations, cancellationToken);
         var edits = name switch
         {
             HeaderPart or FooterPart => await EditGroupAsync(request, name, version_token, change),
@@ -101,7 +103,7 @@ public class ThemeDraftTools(
             _ => throw new McpException("part must be header, footer, brand or palette."),
         };
 
-        // Only reading: the part as it is, with its versions.
+        // null: nothing to save, the part was only read.
         if (edits == null)
         {
             change.DryRun = true;
@@ -210,7 +212,8 @@ public class ThemeDraftTools(
         var dark = await ThemeFiles.ReadAsync(designerOperationService, request.User, request.StoreId, darkPath, request.CancellationToken);
         Describe(change, lightPath, "The palette", light);
         change.VersionTokens[darkPath] = dark.ETag;
-        CheckVersion(versionToken, light, PalettePart);
+        // Each token names one file, so the dark palette's token is checked against that file.
+        CheckVersion(versionToken, versionToken?.Trim() == dark.ETag ? dark : light, PalettePart);
 
         var catalog = await ThemeFiles.GetCatalogAsync(schemaCatalogService, request.StoreId, request.CancellationToken);
         var tokens = ThemeFiles.GetPaletteTokens(catalog);
@@ -407,5 +410,5 @@ public class ThemeDraftTools(
         }
     }
 
-    private sealed record PartRequest(ClaimsPrincipal User, string StoreId, PageEditOperation[] Operations, bool DryRun, CancellationToken CancellationToken);
+    private sealed record PartRequest(ClaimsPrincipal User, string StoreId, PageEditOperation[] Operations, CancellationToken CancellationToken);
 }

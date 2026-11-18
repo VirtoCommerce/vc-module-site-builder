@@ -122,4 +122,15 @@ public class GitHubApiClientTests
 
         Assert.Equal(kind, GitHubApiClient.CreateException(response, "details", "read the repository").Kind);
     }
+
+    [Theory]
+    [InlineData("retry-after", "60")]
+    [InlineData("x-ratelimit-remaining", "0")]
+    public void CreateException_TellsARateLimitedForbidden_IsUnreachable(string header, string value)
+    {
+        using var response = new HttpResponseMessage(HttpStatusCode.Forbidden);
+        response.Headers.Add(header, value);
+
+        Assert.Equal(GitContentFailureKind.Unreachable, GitHubApiClient.CreateException(response, "details", "read the repository").Kind);
+    }
 }

@@ -8,9 +8,12 @@ using Moq;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
+using VirtoCommerce.SiteBuilder.MCP;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -61,6 +64,22 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
         Assert.Contains(part.Changes, x => x.Field.Contains("hero", StringComparison.Ordinal) && x.From == "Spring" && x.To == "Summer");
         Assert.Contains(readiness.Findings, x => x.Id == "unpublish-refused-while-draft" && x.Severity == McpFindingSeverities.Info);
         Assert.Contains($"'{StoreA}'", readiness.Affected, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AFailingHistory_IsANote_AndThePublicationIsStillChecked()
+    {
+        _context.History
+            .Setup(x => x.ListAsync(It.IsAny<string>(), It.IsAny<IList<HistoryItem>>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new GitContentException("GitHub request timed out", GitContentFailureKind.Unreachable));
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "edited" });
+
+        Assert.True(readiness.Ready);
+        Assert.Equal("edited", Assert.Single(readiness.Parts).ObjectId);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "history-unavailable");
+        Assert.Equal(McpFindingSeverities.Info, finding.Severity);
+        Assert.Equal(GitContentFailures.Unreachable, finding.Evidence);
     }
 
     [Fact]
@@ -185,17 +204,18 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
 
     [Theory]
     [MemberData(nameof(WrongTargets))]
-    public async Task OneTarget_IsNeeded(object arguments)
+    public async Task OneTarget_IsNeeded(object arguments, string refusal)
     {
         var result = await _context.CallAsync(Reader(), Tool, arguments);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains(refusal, result.Error);
     }
 
     public static IEnumerable<object[]> WrongTargets() =>
     [
-        [new { }],
-        [new { page_id = "new", theme = true, store_id = StoreA }],
-        [new { theme = true, store_id = StoreA, unpublish = true }],
+        [new { }, "Pass one of page_id"],
+        [new { page_id = "new", theme = true, store_id = StoreA }, "Pass one of page_id"],
+        [new { theme = true, store_id = StoreA, unpublish = true }, "unpublish goes with page_id"],
     ];
 }

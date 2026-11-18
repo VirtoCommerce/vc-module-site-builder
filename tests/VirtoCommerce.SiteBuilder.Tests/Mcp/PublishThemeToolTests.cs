@@ -13,7 +13,6 @@ namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 public sealed class PublishThemeToolTests : IAsyncDisposable
 {
     private const string Tool = "publish_theme";
-    private static readonly McpToolCallOptions Approved = new() { AsApprovedChange = true };
 
     private readonly McpTestContext _context = new();
 

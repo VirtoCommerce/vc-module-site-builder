@@ -123,6 +123,7 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
         var result = await _context.CallAsync(Editor(), Tool, new { kind = "shared_component", page_id = "edited" });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("kind must be 'page' or 'theme_file'", result.Error, StringComparison.Ordinal);
         Assert.Contains((await _pages.GetByIdAsync("edited")).Pages, x => x.Status == "Draft");
     }
 

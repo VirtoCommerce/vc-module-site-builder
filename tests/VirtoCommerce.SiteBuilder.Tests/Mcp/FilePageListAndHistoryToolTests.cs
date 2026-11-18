@@ -193,6 +193,7 @@ public sealed class FilePageListAndHistoryToolTests : IAsyncDisposable
         var result = await _context.CallAsync(Reader(), VersionsTool, new { store_id = StoreA, page_id = PageId, theme_files = new[] { "default/templates/product.json" } });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("call list_versions once for each", result.Error);
     }
 
     [Fact]

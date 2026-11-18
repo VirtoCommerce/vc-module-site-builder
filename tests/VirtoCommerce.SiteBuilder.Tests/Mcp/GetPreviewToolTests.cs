@@ -67,12 +67,13 @@ public sealed class GetPreviewToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task AProduct_GetsTheRulesInOrder_WithTheConditionsTheServerDoesNotEvaluate()
+    public async Task ProductPages_GetTheRulesInOrder_WithTheConditionsTheServerDoesNotEvaluate()
     {
         await SeedAsync();
 
-        var answer = (await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, product_id = "p1" })).EnsureSucceeded().Read<PreviewAnswer>();
+        var answer = (await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_type = "product" })).EnsureSucceeded().Read<PreviewAnswer>();
 
+        Assert.Equal("product pages", answer.Subject);
         Assert.False(answer.Template.Decided);
         Assert.Equal("product", answer.Template.Template);
         Assert.Equal(["inCategory"], answer.Template.NotEvaluated);
@@ -97,9 +98,27 @@ public sealed class GetPreviewToolTests : IAsyncDisposable
         await _context.SeedThemeAsync(StoreB);
 
         var page = await _context.CallAsync(StoreAReader(), Tool, new { page_id = "b1" });
-        var product = await _context.CallAsync(StoreAReader(), Tool, new { store_id = StoreB, product_id = "p1" });
+        var product = await _context.CallAsync(StoreAReader(), Tool, new { store_id = StoreB, page_type = "product" });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, page.Outcome);
         Assert.Equal(McpToolCallOutcome.Forbidden, product.Outcome);
+    }
+
+    [Fact]
+    public async Task AnUnknownTheme_IsRefused_NamingTheTheme()
+    {
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_type = "product", theme = "live" });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("theme must be 'draft' or 'published'", result.Error);
+    }
+
+    [Fact]
+    public async Task AnUnknownPageType_IsRefused()
+    {
+        var result = await _context.CallAsync(Reader(), Tool, new { store_id = StoreA, page_type = "brand" });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("page_type must be 'product' or 'category'", result.Error);
     }
 }

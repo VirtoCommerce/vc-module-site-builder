@@ -116,6 +116,22 @@ public sealed class TemplateToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ADefaultTemplateCreated_IsNotSentToTheRules()
+    {
+        await SeedAsync();
+
+        var change = (await _context.CallAsync(Designer(), "edit_template", new
+        {
+            store_id = StoreA,
+            template_key = "category",
+            operations = new[] { new { op = "add_section", type = "text", settings = new { title = "Sizes" } } },
+        })).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Equal("create_template", change.Action);
+        Assert.DoesNotContain(change.Warnings, x => x.Contains("edit_template_rules", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ADryRun_WritesNothing_AndShowsTheSectionChanges()
     {
         await SeedAsync();
@@ -173,8 +189,7 @@ public sealed class TemplateToolsTests : IAsyncDisposable
         });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains($"its main section 'product-info' cannot be {verb}", result.Error, StringComparison.Ordinal);
-        Assert.Contains("the product itself", result.Error, StringComparison.Ordinal);
+        Assert.Contains($"main section 'product-info' cannot be {verb}", result.Error, StringComparison.Ordinal);
         Assert.Null(_context.ReadThemeFile(StoreA, "templates/product.json", draft: true));
     }
 

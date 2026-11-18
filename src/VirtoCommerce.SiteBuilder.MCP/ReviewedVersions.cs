@@ -90,6 +90,7 @@ public static class ReviewedVersions
         ChangePreview.ThemeFile => $"'{change.ObjectId}'",
         ChangePreview.MultilanguagePage => $"Multilanguage Page '{change.ObjectId}'",
         ChangePreview.SharedComponent => $"Shared Component '{change.ObjectId}' or a page its sections are copied from",
+        "version" => $"A draft that restoring version '{change.ObjectId}' overwrites",
         _ => $"Page '{change.ObjectId}'",
     };
 }

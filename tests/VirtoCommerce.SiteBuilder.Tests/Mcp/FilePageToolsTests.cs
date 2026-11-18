@@ -193,7 +193,7 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ABlobPublish_SendsTheReviewedVersion_AndADraftSavedAtTheWriteIsNotPublished()
+    public async Task ABlobPublish_SendsTheReviewedVersion_AndReportsTheOperationsConflict()
     {
         var draft = Published.Replace("Spring", "Summer", StringComparison.Ordinal);
         _context.SeedFilePage(StoreA, Path, draft, draft: true);

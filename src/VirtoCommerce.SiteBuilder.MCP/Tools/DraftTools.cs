@@ -13,11 +13,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Dropping a draft loses its author's unpublished work, and customers see nothing of it either way: the user confirms
-// it in the chat, and a client that cannot ask does not discard. What is discarded is named by kind, each with its own
-// argument: a page by page_id (a database page by its id, a page stored as a file by its path and store_id), a file of
-// the theme by theme_file. The question lists the arguments, which name it. The call takes the draft its dry run showed:
-// it sends back the versions the dry run answers (expected_versions), and a draft a colleague saved since is not dropped.
+// Discarding loses unpublished work: the user confirms it in chat, and the write takes only the versions its dry run answered.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class DraftTools(
@@ -229,7 +225,9 @@ public class DraftTools(
         }
 
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => FilePages.RunAsync(logger, () => filePageOperationService.DiscardDraftAsync(BlobRequest(isDryRun), context.User, cancellationToken)),
+            isDryRun => isDryRun
+                ? Task.FromResult(blob)
+                : FilePages.RunAsync(logger, () => filePageOperationService.DiscardDraftAsync(BlobRequest(isDryRun: false), context.User, cancellationToken)),
             x => EnsureFileDiscarded(x, change, page, onlyCopy: x is SiteBuilderOperationResult<FileDraftDiscard> { Status: SiteBuilderOperationStatus.Invalid, Value.Status: DraftDiscardStatus.OnlyCopy }),
             dryRun,
             checkAsync: x => PinAsync(change, x.Preview?.Objects.Select(item => Version(page.PageId, item.ETag)), expectedVersions, dryRun));

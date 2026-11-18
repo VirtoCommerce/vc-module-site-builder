@@ -29,6 +29,8 @@ public class GitHubConnection
 
     public string Error { get; set; }
 
+    public GitContentFailureKind ErrorKind { get; set; }
+
     public bool UsesApp => !string.IsNullOrWhiteSpace(AppId) && !string.IsNullOrWhiteSpace(PrivateKey);
 
     public bool IsConfigured => HasTarget && HasCredentials && !string.IsNullOrWhiteSpace(BaseBranch);

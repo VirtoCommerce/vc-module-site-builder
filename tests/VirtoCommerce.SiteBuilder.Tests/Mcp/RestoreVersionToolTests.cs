@@ -166,7 +166,7 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task AFilePage_IsRestoredFromItsCommit_WhenItsContentIsTheOneRead()
+    public async Task AFilePage_IsRestoredWithTheVersionRead_AndTheOperationsConflictIsReported()
     {
         const string current = """{ "settings": {}, "content": [ { "id": "hero", "type": "hero-banner", "title": "Summer" } ] }""";
         var atTheCommit = current;

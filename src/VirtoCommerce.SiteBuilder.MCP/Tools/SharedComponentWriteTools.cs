@@ -19,12 +19,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A new Shared Component stands on no page, so creating it changes nothing anyone sees and needs no second person. Its
-// content, once it is placed, shows on every page at once, the published ones too: a change of the content waits for a
-// second person, who sees the pages it stands on; a new name shows nowhere on the storefront and runs at once. The
-// approved change runs the operations again, so it names what they ran on (expected_versions): the component's content
-// and the content of every page sections are copied from. The save of a component's content takes no version, so the
-// tool reads them again right before it; a save landing between that read and the write is not seen.
+// Content shows on every page the component stands on, so a content change waits for approval. Its save takes no version:
+// the tool re-reads right before it, and a save in between is not seen.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentWriteTools(
@@ -160,7 +156,10 @@ public class SharedComponentWriteTools(
 
         var component = await sharedComponentService.GetByIdAsync(shared_component_id.Trim())
             ?? throw new McpException($"Shared Component '{shared_component_id}' was not found. Call search_shared_components to find its id.");
-        await authorizationService.EnsureAllowedAsync(context.User, component, component.StoreId, SharedComponentsRead);
+        if (!await authorizationService.IsAllowedAsync(context.User, component, SharedComponentsRead))
+        {
+            throw new McpForbiddenException($"Your {SharedComponentsRead} permission does not cover the store of Shared Component '{component.Id}'.");
+        }
 
         var change = new SharedComponentChange
         {
@@ -222,8 +221,7 @@ public class SharedComponentWriteTools(
         return change;
     }
 
-    // A call that changes the content waits for a second person once it names the versions it reviewed; without them it
-    // is a dry run or is refused by the tool, so no content changes without approval either way. A rename runs at once.
+    // A rename runs at once.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments != null &&
         arguments.TryGetValue(OperationsArgument, out var value) &&

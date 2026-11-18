@@ -100,7 +100,6 @@ public class SectionBulkTools(
             .Select(x => new UpdateSectionsBulkJobPage
             {
                 PageId = x.Page.Id,
-                StoreId = x.Page.StoreId,
                 VersionToken = x.ETag,
                 SectionIds = x.Sections.Where(s => s.SharedComponentId == null).Select(s => s.SectionId).ToList(),
             })
