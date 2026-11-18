@@ -530,8 +530,9 @@ public class MultilanguagePageServiceTests
         var root = await fixture.CreateRootAsync();
         await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("hero-en"));
 
-        var nl = await fixture.Roots.CreateLanguageAsync(root.Id, "nl-NL", copyContent: true, TestContext.Current.CancellationToken);
+        var created = await fixture.Roots.CreateLanguageAsync(root.Id, "nl-NL", copyContent: true, TestContext.Current.CancellationToken);
 
+        var nl = await fixture.Groups.GetByIdAsync(created.Id);
         var content = (await fixture.Groups.LoadGroupContentAsync(nl, draft: true, TestContext.Current.CancellationToken)).Content;
         Assert.Contains("hero-en", content);
         Assert.Contains("\"cultureName\":\"nl-NL\"", content);
