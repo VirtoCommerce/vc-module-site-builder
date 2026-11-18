@@ -43,7 +43,7 @@ public sealed class SearchSitePagesSectionFilterTests : IAsyncDisposable
         Assert.Equal(["a1", "a3", "b1"], search.Items.Select(x => x.Id));
         var match = Assert.Single(search.Items[0].Matches);
         Assert.Equal(("a1", "h1", 1), (match.PageId, Assert.Single(match.Sections).Id, match.Sections[0].Position));
-        Assert.Equal(await TokenAsync("a1"), match.VersionToken);
+        Assert.Equal(await _context.DraftVersionAsync("a1"), match.VersionToken);
         Assert.True(search.IsComplete);
         Assert.Equal((4, 4), (search.TotalCount, search.ScannedCount));
         Assert.StartsWith("Scanned all 4 pages", search.Coverage);
@@ -134,24 +134,5 @@ public sealed class SearchSitePagesSectionFilterTests : IAsyncDisposable
         return result.EnsureSucceeded().Read<SitePageSectionSearch>();
     }
 
-    private async Task<string> TokenAsync(string id)
-    {
-        var group = (await _pages.GetAsync([id])).Single();
-        return (await _pages.LoadGroupContentAsync(group, cancellationToken: TestContext.Current.CancellationToken)).ETag;
-    }
-
-    private void Seed(string id, string storeId, string content)
-    {
-        _pages.SeedGroup(new GroupedSiteBuilderPage
-        {
-            Id = id,
-            StoreId = storeId,
-            Name = $"Page {id}",
-            Permalink = $"/{id}",
-            CultureName = "en-US",
-            Pages = [new SiteBuilderPage { Id = $"{id}-draft", GroupId = id, StoreId = storeId, Status = "Draft" }],
-        });
-        _pages.SeedContent($"{id}-draft", content);
-        _ids.Add(id);
-    }
+    private void Seed(string id, string storeId, string content) => _ids.Add(_context.SeedDraft(id, storeId, content).Id);
 }

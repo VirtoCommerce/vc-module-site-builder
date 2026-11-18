@@ -33,12 +33,7 @@ public sealed class PublishPageToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private static McpTestUser Publisher() => McpTestUser.Create("publisher").WithPermissions(Permissions.Read, Permissions.Publish);
-
     private static McpTestUser Approver() => McpTestUser.Create("approver").WithPermissions(Permissions.Read, Permissions.Publish);
-
-    private static McpTestUser StoreAPublisher() =>
-        McpTestUser.Create("store-a-publisher").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Publish);
 
     private static Dictionary<string, object> Page(string pageId) => new() { ["page_id"] = pageId };
 
@@ -139,8 +134,7 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         operations
             .Setup(x => x.PublishAsync(It.IsAny<GroupedPagePublishOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((GroupedPagePublishOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun(CreatePageToolTests.Preview("status", "Draft", "Published", objectId: "edited", affectsPublished: true)
-                    .WithETag("reviewed"))
+                ? SiteBuilderOperationResult.DryRun(Preview("status", "Draft", "Published", objectId: "edited", affectsPublished: true, eTag: "reviewed"))
                 : SiteBuilderOperationResult.Success(affectsPublished: true));
         _context.GroupedPageOperations = operations.Object;
 
@@ -342,8 +336,8 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         operations
             .Setup(x => x.PublishAsync(It.IsAny<GroupedPagePublishOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((GroupedPagePublishOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun(CreatePageToolTests.Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true)
-                    .WithETag("reviewed"))
+                ? SiteBuilderOperationResult.DryRun(Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true,
+                    eTag: "reviewed"))
                 : SiteBuilderOperationResult.Success(affectsPublished: true));
         _context.GroupedPageOperations = operations.Object;
         var settings = SiteBuilderContentVersion.CreateForGroupSettings(await _pages.GetByIdAsync("ml-fr"));
@@ -386,7 +380,7 @@ public sealed class PublishPageToolTests : IAsyncDisposable
             {
                 if (request.DryRun)
                 {
-                    var preview = CreatePageToolTests.Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true).WithETag("reviewed");
+                    var preview = Preview("status", "Draft", "Published", objectId: request.GroupId, affectsPublished: true, eTag: "reviewed");
                     if (request.GroupId == "ml-en")
                     {
                         preview.AddObject("page", "old-en", "old").AddField("status", "Published", "Draft");
@@ -574,18 +568,4 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     private void VerifyPublishedAll(Times times) =>
         _context.MultilanguagePageOperations.Verify(x => x.PublishAllAsync(It.Is<MultilanguagePagePublishAllOperationRequest>(r => !r.DryRun),
             It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), times);
-}
-
-internal static class PreviewVersions
-{
-    // Every object of the preview at the version given, as an operation's dry run answers it.
-    public static SiteBuilderChangePreview WithETag(this SiteBuilderChangePreview preview, string eTag)
-    {
-        foreach (var item in preview.Objects)
-        {
-            item.ETag = eTag;
-        }
-
-        return preview;
-    }
 }

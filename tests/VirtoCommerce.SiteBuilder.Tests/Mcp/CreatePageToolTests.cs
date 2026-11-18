@@ -155,19 +155,4 @@ public sealed class CreatePageToolTests : IAsyncDisposable
         _context.MultilanguagePageOperations.Verify(x => x.CloneAsync(It.Is<MultilanguagePageOperationRequest>(r => !r.DryRun),
             It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Never);
     }
-
-    internal static SiteBuilderChangePreview Preview(string field, string from, string to, string objectType = "page", string objectId = null,
-        bool affectsPublished = false) => new()
-        {
-            AffectsPublished = affectsPublished,
-            Objects =
-            [
-                new SiteBuilderObjectChange
-                {
-                    ObjectType = objectType,
-                    ObjectId = objectId,
-                    Fields = [new SiteBuilderFieldChange { Name = field, From = from, To = to }],
-                },
-            ],
-        };
 }

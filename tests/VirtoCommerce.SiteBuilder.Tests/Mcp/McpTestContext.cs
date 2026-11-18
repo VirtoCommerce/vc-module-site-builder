@@ -4,7 +4,6 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
-using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -30,7 +29,6 @@ using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
-using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using VirtoCommerce.CustomerModule.Core.Services;
@@ -44,7 +42,7 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
 // The Site Builder toolset served by the MCP test harness: the module's real store authorization (the handler and its
-// requirement) and history request validation, over services the test fills in.
+// requirement), over services the test fills in.
 internal sealed class McpTestContext : IAsyncDisposable
 {
     public const string StoreA = "store-a";
@@ -137,6 +135,19 @@ internal sealed class McpTestContext : IAsyncDisposable
     public static McpTestUser StoreAReader(string name = "store-a-reader") =>
         McpTestUser.Create(name).WithScopedPermission(Permissions.Read, StoreScope, StoreA);
 
+    // builder:update is granted in every store, as the designer's save requires; builder:read may be limited to a store.
+    public static McpTestUser Editor(string name = "editor") =>
+        McpTestUser.Create(name).WithPermissions(Permissions.Read, Permissions.Update);
+
+    public static McpTestUser StoreAEditor() =>
+        McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update);
+
+    public static McpTestUser Publisher() =>
+        McpTestUser.Create("publisher").WithPermissions(Permissions.Read, Permissions.Publish);
+
+    public static McpTestUser StoreAPublisher() =>
+        McpTestUser.Create("store-a-publisher").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Publish);
+
     // An account bound to store A: global permissions still reach store A only.
     public McpTestUser StoreBoundReader(string name = "bound-reader")
     {
@@ -186,6 +197,51 @@ internal sealed class McpTestContext : IAsyncDisposable
 
         return group;
     }
+
+    // A page of the page store with a draft only, holding the content.
+    public GroupedSiteBuilderPage SeedDraft(string id, string storeId, string content, string language = "en-US", string multilanguagePageId = null,
+        DateTime? sourceRevision = null)
+    {
+        var group = new GroupedSiteBuilderPage
+        {
+            Id = id,
+            StoreId = storeId,
+            Name = $"Page {id}",
+            Permalink = $"/{id}",
+            CultureName = language,
+            MultilanguagePageId = multilanguagePageId,
+            SourceRevisionDate = sourceRevision,
+            Pages = [new SiteBuilderPage { Id = $"{id}-draft", GroupId = id, StoreId = storeId, Status = "Draft" }],
+        };
+        PageStore.SeedGroup(group);
+        PageStore.SeedContent($"{id}-draft", content);
+        return group;
+    }
+
+    // The content of a page of the page store as the designer loads it: the draft if there is one, with its version.
+    public async Task<SiteBuilderContentSnapshot> LoadDraftAsync(string id) =>
+        await PageStore.LoadGroupContentAsync(await PageStore.GetByIdAsync(id), cancellationToken: Xunit.TestContext.Current.CancellationToken);
+
+    public async Task<string> DraftContentAsync(string id) => (await LoadDraftAsync(id)).Content;
+
+    public async Task<string> DraftVersionAsync(string id) => (await LoadDraftAsync(id)).ETag;
+
+    // The dry run of an operation that changes one field of one object, at the version given.
+    public static SiteBuilderChangePreview Preview(string field, string from, string to, string objectType = "page", string objectId = null,
+        bool affectsPublished = false, string eTag = null) => new()
+        {
+            AffectsPublished = affectsPublished,
+            Objects =
+            [
+                new SiteBuilderObjectChange
+                {
+                    ObjectType = objectType,
+                    ObjectId = objectId,
+                    ETag = eTag,
+                    Fields = [new SiteBuilderFieldChange { Name = field, From = from, To = to }],
+                },
+            ],
+        };
 
     public const string SampleContent = """{ "settings": { "name": "Home" }, "content": [ { "id": "hero", "type": "hero-banner", "title": "Spring" } ] }""";
 
@@ -308,8 +364,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         services.AddSingleton<Func<UserManager<ApplicationUser>>>(CreateUserManager);
         services.AddSingleton<IAuthorizationHandler>(new SiteBuilderAuthorizationHandler(CreateUserManager, Options.Create(CreateJsonOptions())));
         services.AddSingleton<IContentPermissionService>(provider => new ContentPermissionService(provider.GetRequiredService<IAuthorizationService>()));
-        services.AddSingleton<IValidator<ContentHistoryRequest>>(new ContentHistoryRequestValidator(
-            new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = StoreA }, new Store { Id = StoreB }, new Store { Id = StoreC }))));
 
         services
             .AddSingleton(pageSize.Object)

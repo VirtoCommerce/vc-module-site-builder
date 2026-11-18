@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Moq;
 using VirtoCommerce.MCP.Testing;
-using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
@@ -188,7 +187,7 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
 
         var versions = (IDictionary<string, string>)call["expected_versions"];
         Assert.Equal(["page:promo", "shared_component:sc-a"], versions.Keys.Order(StringComparer.Ordinal));
-        Assert.Equal(await DraftVersionAsync("promo"), versions["page:promo"]);
+        Assert.Equal(await _context.DraftVersionAsync("promo"), versions["page:promo"]);
     }
 
     [Fact]
@@ -287,9 +286,6 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
 
     private Task<Dictionary<string, object>> ReviewAsync(Dictionary<string, object> arguments) =>
         _context.ReviewAsync(Reviser(), "change_shared_component", arguments);
-
-    private async Task<string> DraftVersionAsync(string pageId) =>
-        (await _pages.LoadGroupContentAsync(await _pages.GetByIdAsync(pageId), cancellationToken: CancellationToken.None)).ETag;
 
     private static object CopyFrom(string pageId) => new { op = "copy_sections_from", source_page_id = pageId };
 

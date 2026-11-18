@@ -23,11 +23,6 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private static McpTestUser Publisher() => McpTestUser.Create("publisher").WithPermissions(Permissions.Read, Permissions.Publish);
-
-    private static McpTestUser StoreAPublisher() =>
-        McpTestUser.Create("store-a-publisher").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Publish);
-
     private async Task SeedAsync()
     {
         await _context.SeedThemeAsync(StoreA);

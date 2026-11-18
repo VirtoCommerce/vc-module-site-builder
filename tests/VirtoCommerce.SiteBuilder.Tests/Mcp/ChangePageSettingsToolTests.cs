@@ -11,7 +11,6 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
-using static VirtoCommerce.SiteBuilder.Tests.Mcp.CreatePageToolTests;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
 using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
@@ -35,8 +34,6 @@ public sealed class ChangePageSettingsToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private static McpTestUser Editor() => McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
-
     private static McpTestUser Approver() => McpTestUser.Create("approver").WithPermissions(Permissions.Read, Permissions.Update);
 
     private static Dictionary<string, object> Arguments(string pageId, params (string Name, object Value)[] settings)
@@ -49,9 +46,6 @@ public sealed class ChangePageSettingsToolTests : IAsyncDisposable
 
         return arguments;
     }
-
-    private static McpTestUser StoreAEditor() =>
-        McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update);
 
     [Fact]
     public void TheTool_NeedsBuilderReadAndUpdate()
@@ -177,9 +171,8 @@ public sealed class ChangePageSettingsToolTests : IAsyncDisposable
                 {
                     // a colleague's save lands between the dry run and the write
                     _pages.ChangeGroup("new", x => x.Permalink = "/moved");
-                    var preview = Preview("name", "Page new", "Renamed", objectId: "new");
-                    preview.Objects[0].ETag = "settings-v1";
-                    return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
+                    return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(
+                        Preview("name", "Page new", "Renamed", objectId: "new", eTag: "settings-v1"));
                 }
 
                 written = request;
@@ -248,9 +241,8 @@ public sealed class ChangePageSettingsToolTests : IAsyncDisposable
             {
                 if (request.DryRun)
                 {
-                    var preview = Preview("permalink", "/ml-a", "/about", "multilanguage-page", "ml-a");
-                    preview.Objects[0].ETag = "root-v1";
-                    return SiteBuilderOperationResult.DryRun<MultilanguagePage>(preview);
+                    return SiteBuilderOperationResult.DryRun<MultilanguagePage>(
+                        Preview("permalink", "/ml-a", "/about", "multilanguage-page", "ml-a", eTag: "root-v1"));
                 }
 
                 return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PublishedPageMessage).As<MultilanguagePage>();

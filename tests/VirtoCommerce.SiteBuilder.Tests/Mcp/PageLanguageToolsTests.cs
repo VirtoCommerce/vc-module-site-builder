@@ -9,7 +9,6 @@ using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
-using static VirtoCommerce.SiteBuilder.Tests.Mcp.CreatePageToolTests;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
 using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
@@ -33,11 +32,6 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
     private Mock<VirtoCommerce.SiteBuilder.Core.Services.IMultilanguagePageOperationService> Operations => _context.MultilanguagePageOperations;
-
-    private static McpTestUser Editor() => McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
-
-    private static McpTestUser StoreAEditor() =>
-        McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update);
 
     [Fact]
     public void Convert_NeedsBuilderCreateToo_TheOthersBuilderUpdate()
@@ -212,8 +206,8 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         Operations
             .Setup(x => x.UnlinkAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Versioned(Preview("multilanguagePageId", "ml-a", null, objectId: "version",
-                    affectsPublished: true), "version-v1"))
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("multilanguagePageId", "ml-a", null, objectId: "version",
+                    affectsPublished: true, eTag: "version-v1"))
                 : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "version" }, affectsPublished: true));
 
         var call = await _context.ReviewAsync(Editor(), "unlink_page_language", new Dictionary<string, object> { ["page_id"] = "version" });
@@ -232,8 +226,8 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         Operations
             .Setup(x => x.UnlinkAsync(It.IsAny<MultilanguagePageVersionOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageVersionOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Versioned(Preview("multilanguagePageId", "ml-a", null, objectId: "version",
-                    affectsPublished: true), "version-v1"))
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("multilanguagePageId", "ml-a", null, objectId: "version",
+                    affectsPublished: true, eTag: "version-v1"))
                 : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.SettingsChangedMessage).As<GroupedSiteBuilderPage>());
         var call = await _context.ReviewAsync(Editor(), "unlink_page_language", new Dictionary<string, object> { ["page_id"] = "version" });
 
@@ -316,8 +310,8 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         Operations
             .Setup(x => x.LinkAsync(It.IsAny<MultilanguagePageLinkOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageLinkOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(WithRoot(Versioned(Preview("multilanguagePageId", null, "ml-a", objectId: "landing",
-                    affectsPublished: affectsPublished), "landing-v1"), rootVersion))
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(WithRoot(Preview("multilanguagePageId", null, "ml-a", objectId: "landing",
+                    affectsPublished: affectsPublished, eTag: "landing-v1"), rootVersion))
                 : request.RequireUnpublished && publishedAtTheWrite
                     ? SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PublishedPageMessage).As<GroupedSiteBuilderPage>()
                     : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "landing" }, affectsPublished));
@@ -329,16 +323,9 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
         Operations
             .Setup(x => x.ResetOverridesAsync(It.IsAny<MultilanguagePageResetOverridesOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageResetOverridesOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
-                ? SiteBuilderOperationResult.DryRun<IList<string>>(WithRoot(Versioned(Preview("userGroups", "VIP", "Staff", objectId: "fr", affectsPublished: true),
-                    "fr-v1"), rootVersion))
+                ? SiteBuilderOperationResult.DryRun<IList<string>>(WithRoot(Preview("userGroups", "VIP", "Staff", objectId: "fr", affectsPublished: true,
+                    eTag: "fr-v1"), rootVersion))
                 : SiteBuilderOperationResult.Success<IList<string>>(["fr-FR"], affectsPublished: true));
-    }
-
-    // As the operation answers it: the version of the page it changes.
-    private static SiteBuilderChangePreview Versioned(SiteBuilderChangePreview preview, string version)
-    {
-        preview.Objects[0].ETag = version;
-        return preview;
     }
 
     // As the operation answers it: the Multilanguage Page whose values the page takes, unchanged, at its version.

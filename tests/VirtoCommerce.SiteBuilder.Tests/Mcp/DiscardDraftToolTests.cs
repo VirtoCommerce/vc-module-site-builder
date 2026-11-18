@@ -28,11 +28,6 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private static McpTestUser Editor() => McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
-
-    private static McpTestUser StoreAEditor() =>
-        McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update);
-
     [Fact]
     public void TheTool_NeedsBuilderReadAndUpdate()
     {

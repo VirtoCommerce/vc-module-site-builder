@@ -9,7 +9,6 @@ using Moq;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
-using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.MCP.Jobs;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
@@ -37,10 +36,10 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
     public SetTranslationsToolTests()
     {
         _pages = _context.UsePageStore();
-        Seed("en", StoreA, "en-US", Content, multilanguagePageId: "ml1", sourceRevision: _published);
-        Seed("fr", StoreA, "fr-FR", Content, multilanguagePageId: "ml1");
-        Seed("de", StoreA, "de-DE", Content.Replace("fr-FR", "de-DE"), multilanguagePageId: "ml1");
-        Seed("b1", StoreB, "fr-FR", Content);
+        _context.SeedDraft("en", StoreA, Content, "en-US", multilanguagePageId: "ml1", sourceRevision: _published);
+        _context.SeedDraft("fr", StoreA, Content, "fr-FR", multilanguagePageId: "ml1");
+        _context.SeedDraft("de", StoreA, Content.Replace("fr-FR", "de-DE"), "de-DE", multilanguagePageId: "ml1");
+        _context.SeedDraft("b1", StoreB, Content, "fr-FR");
 
         // As the designer's mark up to date answers: a dry run compares the source revision as it is, the write under the lock of its save,
         // which may be after the job read it.
@@ -70,11 +69,6 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private static McpTestUser Editor(string name = "editor") => McpTestUser.Create(name).WithPermissions(Permissions.Read, Permissions.Update);
-
-    private static McpTestUser StoreAEditor() =>
-        McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update);
-
     [Fact]
     public void TheTool_IsVisibleWithBuilderReadAndUpdate_Only()
     {
@@ -96,7 +90,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         Assert.Contains(preview.Changes, x => x.Field.EndsWith("page settings: seoInfo.pageTitle.fr-FR") && x.To?.ToString() == "Accueil");
         Assert.Null(Assert.Single(preview.Pages).Problem);
         Assert.Empty(preview.Warnings);
-        Assert.Equal(Content, await ContentAsync("fr"));
+        Assert.Equal(Content, await _context.DraftContentAsync("fr"));
         Assert.Empty(_context.SavedVersions.Records);
         Assert.Empty(_context.Jobs.Enqueued);
     }
@@ -107,7 +101,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         var items = new[]
         {
             Item("fr", "\"stale\"", "h1", "title", "Printemps"),
-            Item("de", await TokenAsync("de"), "missing", "title", "Frühling", "de-DE"),
+            Item("de", await _context.DraftVersionAsync("de"), "missing", "title", "Frühling", "de-DE"),
         };
 
         var preview = await CallAsync<TranslationPreview>(Editor(), new { translations = items, dryRun = true });
@@ -129,7 +123,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
     [Fact]
     public async Task ARealRun_QueuesOneJob_OneSavePerPage()
     {
-        var items = (await FrenchAsync()).Append(Item("de", await TokenAsync("de"), "h1", "title", "Frühling", "de-DE")).ToArray();
+        var items = (await FrenchAsync()).Append(Item("de", await _context.DraftVersionAsync("de"), "h1", "title", "Frühling", "de-DE")).ToArray();
 
         await CallAsync<McpJobHandle>(Editor(), new { translations = items, mark_up_to_date = true });
 
@@ -144,7 +138,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
     public async Task APageOfAnotherStore_IsRefused()
     {
         var result = await _context.CallAsync(StoreAEditor(), Tool,
-            new { translations = new[] { Item("b1", await TokenAsync("b1"), "h1", "title", "Printemps") }, dryRun = true });
+            new { translations = new[] { Item("b1", await _context.DraftVersionAsync("b1"), "h1", "title", "Printemps") }, dryRun = true });
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
     }
@@ -162,8 +156,10 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
     [Fact]
     public async Task MarkingALandingPage_IsShownAsNotPossible()
     {
+        var token = await _context.DraftVersionAsync("b1");
+
         var preview = await CallAsync<TranslationPreview>(Editor(),
-            new { translations = new[] { Item("b1", await TokenAsync("b1"), "h1", "title", "Printemps") }, mark_up_to_date = true, dryRun = true });
+            new { translations = new[] { Item("b1", token, "h1", "title", "Printemps") }, mark_up_to_date = true, dryRun = true });
 
         Assert.Contains("not a language version", Assert.Single(preview.Pages).NotMarkedUpToDate);
     }
@@ -176,7 +172,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
 
         var run = await _context.RunJobAsync<SetTranslationsJob, SetTranslationsJobPayload>(payload);
 
-        var saved = JsonNode.Parse(await ContentAsync("fr"))!;
+        var saved = JsonNode.Parse(await _context.DraftContentAsync("fr"))!;
         Assert.Equal("Printemps", saved["content"]![0]!["title"]!["fr-FR"]!.GetValue<string>());
         Assert.Equal("Spring", saved["content"]![0]!["title"]!["en-US"]!.GetValue<string>());
         Assert.Equal("Accueil", saved["settings"]!["seoInfo"]!["pageTitle"]!["fr-FR"]!.GetValue<string>());
@@ -291,7 +287,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
 
     private async Task<object[]> FrenchAsync()
     {
-        var token = await TokenAsync("fr");
+        var token = await _context.DraftVersionAsync("fr");
         return
         [
             Item("fr", token, "h1", "title", "Printemps"),
@@ -314,33 +310,5 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
     {
         var result = await _context.CallAsync(user, Tool, arguments);
         return result.EnsureSucceeded().Read<T>();
-    }
-
-    private async Task<string> ContentAsync(string id)
-    {
-        var group = (await _pages.GetAsync([id])).Single();
-        return (await _pages.LoadGroupContentAsync(group, cancellationToken: TestContext.Current.CancellationToken)).Content;
-    }
-
-    private async Task<string> TokenAsync(string id)
-    {
-        var group = (await _pages.GetAsync([id])).Single();
-        return (await _pages.LoadGroupContentAsync(group, cancellationToken: TestContext.Current.CancellationToken)).ETag;
-    }
-
-    private void Seed(string id, string storeId, string language, string content, string multilanguagePageId = null, DateTime? sourceRevision = null)
-    {
-        _pages.SeedGroup(new GroupedSiteBuilderPage
-        {
-            Id = id,
-            StoreId = storeId,
-            Name = $"Page {id}",
-            Permalink = $"/{id}",
-            CultureName = language,
-            MultilanguagePageId = multilanguagePageId,
-            SourceRevisionDate = sourceRevision,
-            Pages = [new SiteBuilderPage { Id = $"{id}-draft", GroupId = id, StoreId = storeId, Status = "Draft" }],
-        });
-        _pages.SeedContent($"{id}-draft", content);
     }
 }

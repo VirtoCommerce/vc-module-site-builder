@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Moq;
 using VirtoCommerce.MCP.Testing;
-using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
@@ -28,11 +27,10 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
     private const string FilePageId = "pages/landing/spring.page";
 
     private readonly McpTestContext _context = new();
-    private readonly PublishedRenameContentPreservationTests.FakeGroupedPageService _pages;
 
     public RestoreVersionToolTests()
     {
-        _pages = _context.UsePageStore();
+        _context.UsePageStore();
         _context.SeedPage("a1", StoreA, published: true, draft: true);
         _context.SeedPage("b1", StoreB, published: true, draft: true);
         _context.History
@@ -41,11 +39,6 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
-
-    private static McpTestUser Editor() => McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
-
-    private static McpTestUser StoreAEditor() =>
-        McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update);
 
     [Fact]
     public void TheTool_NeedsBuilderReadAndUpdate()
@@ -62,8 +55,8 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
 
         Assert.True(restore.DryRun);
         Assert.Contains(restore.Changes, x => x.Field == "section hero-banner 'hero': title" && x.From?.ToString() == "Summer" && x.To?.ToString() == "Spring");
-        Assert.Equal(await DraftVersionAsync("a1"), restore.ExpectedVersions["page:a1"]);
-        Assert.Contains("Summer", await DraftContentAsync("a1"), StringComparison.Ordinal);
+        Assert.Equal(await _context.DraftVersionAsync("a1"), restore.ExpectedVersions["page:a1"]);
+        Assert.Contains("Summer", await _context.DraftContentAsync("a1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -75,7 +68,7 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
 
         Assert.True(result.AskedForConfirmation);
         Assert.False(result.EnsureSucceeded().Read<VersionRestore>().DryRun);
-        Assert.Contains("Spring", await DraftContentAsync("a1"), StringComparison.Ordinal);
+        Assert.Contains("Spring", await _context.DraftContentAsync("a1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -87,7 +80,7 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
             new { store_id = StoreA, version_id = VersionId, page_id = "a1", expected_versions = new Dictionary<string, string> { ["page:a1"] = token } });
 
         result.EnsureSucceeded();
-        Assert.Contains("Spring", await DraftContentAsync("a1"), StringComparison.Ordinal);
+        Assert.Contains("Spring", await _context.DraftContentAsync("a1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -99,7 +92,7 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
             new McpToolCallOptions { DeclineConfirmation = true });
 
         Assert.Equal(McpToolCallOutcome.Declined, result.Outcome);
-        Assert.Contains("Summer", await DraftContentAsync("a1"), StringComparison.Ordinal);
+        Assert.Contains("Summer", await _context.DraftContentAsync("a1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,14 +102,14 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("expected_versions", result.Error, StringComparison.Ordinal);
-        Assert.Contains("Summer", await DraftContentAsync("a1"), StringComparison.Ordinal);
+        Assert.Contains("Summer", await _context.DraftContentAsync("a1"), StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task ADraftSavedSinceItsVersionWasRead_IsNotOverwritten()
     {
         var expected = (await DryRunAsync("a1")).ExpectedVersions;
-        var token = await DraftVersionAsync("a1");
+        var token = await _context.DraftVersionAsync("a1");
         await _context.CallAsync(Editor(), "edit_page_draft", new
         {
             page_id = "a1",
@@ -128,7 +121,7 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("changed since", result.Error, StringComparison.Ordinal);
-        Assert.Contains("Autumn", await DraftContentAsync("a1"), StringComparison.Ordinal);
+        Assert.Contains("Autumn", await _context.DraftContentAsync("a1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -141,7 +134,7 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
         Assert.Equal(McpToolCallOutcome.Forbidden, named.Outcome);
-        Assert.Contains("Summer", await DraftContentAsync("b1"), StringComparison.Ordinal);
+        Assert.Contains("Summer", await _context.DraftContentAsync("b1"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -223,11 +216,4 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
     private async Task<VersionRestore> DryRunAsync(string pageId) =>
         (await _context.CallAsync(Editor(), Tool, new { store_id = StoreA, version_id = VersionId, page_id = pageId, dryRun = true }))
         .EnsureSucceeded().Read<VersionRestore>();
-
-    private async Task<SiteBuilderContentSnapshot> DraftAsync(string pageId) =>
-        await _pages.LoadGroupContentAsync(await _pages.GetByIdAsync(pageId), cancellationToken: CancellationToken.None);
-
-    private async Task<string> DraftContentAsync(string pageId) => (await DraftAsync(pageId)).Content;
-
-    private async Task<string> DraftVersionAsync(string pageId) => (await DraftAsync(pageId)).ETag;
 }

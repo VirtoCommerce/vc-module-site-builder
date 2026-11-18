@@ -37,12 +37,8 @@ public sealed class FilePageToolsTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private static McpTestUser Editor() => McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
-
     private static McpTestUser StoreAEditor() =>
         McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update, Permissions.Publish);
-
-    private static McpTestUser Publisher() => McpTestUser.Create("publisher").WithPermissions(Permissions.Read, Permissions.Publish);
 
     [Fact]
     public async Task TheReadTool_ReadsAFilePage_WithItsSectionsAndVersion()

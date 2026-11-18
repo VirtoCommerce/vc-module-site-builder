@@ -40,11 +40,6 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private static McpTestUser Editor(string name = "editor") => McpTestUser.Create(name).WithPermissions(Permissions.Read, Permissions.Update);
-
-    private static McpTestUser StoreAEditor() =>
-        McpTestUser.Create("store-a-editor").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update);
-
     private static object Rename() => new
     {
         section_type = "hero-banner",
@@ -68,7 +63,7 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
     [Fact]
     public async Task ADryRun_WritesNothing_AndShowsTheChangeWithTheCoverage()
     {
-        var before = await ContentAsync("a1");
+        var before = await _context.DraftContentAsync("a1");
 
         var preview = await CallAsync<SectionBulkPreview>(Editor(), new
         {
@@ -84,7 +79,7 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
         Assert.Equal((4, 4, true, 2, 2), (preview.TotalPageCount, preview.ScannedPageCount, preview.IsComplete, preview.TargetPageCount, preview.TargetSectionCount));
         Assert.Equal(["a1", "b1"], preview.Pages.Select(x => x.PageId));
         Assert.Contains(preview.Changes, x => x.Field.EndsWith("section hero-banner 'h1': title") && x.From?.ToString() == "Black Friday" && x.To?.ToString() == "Cyber Monday");
-        Assert.Equal(before, await ContentAsync("a1"));
+        Assert.Equal(before, await _context.DraftContentAsync("a1"));
         Assert.Empty(_context.SavedVersions.Records);
         Assert.Empty(_context.Jobs.Enqueued);
     }
@@ -100,7 +95,7 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
         Assert.Equal("editor", job.UserId);
         Assert.Equal(("set_section_settings", "hero-banner"), (job.Change, job.SectionType));
         Assert.Equal(["a1", "b1"], job.Pages.Select(x => x.PageId));
-        Assert.Equal(await TokenAsync("a1"), job.Pages[0].VersionToken);
+        Assert.Equal(await _context.DraftVersionAsync("a1"), job.Pages[0].VersionToken);
         Assert.Equal(["h1"], job.Pages[0].SectionIds);
         Assert.Equal(2, request.TotalCount);
         Assert.Equal("job-1", handle.JobId);
@@ -182,9 +177,9 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
 
         var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload);
 
-        Assert.Equal("Cyber Monday", Title(await ContentAsync("a1")));
-        Assert.Equal("Cyber Monday", Title(await ContentAsync("b1")));
-        Assert.Equal("Spring", Title(await ContentAsync("a3")));
+        Assert.Equal("Cyber Monday", Title(await _context.DraftContentAsync("a1")));
+        Assert.Equal("Cyber Monday", Title(await _context.DraftContentAsync("b1")));
+        Assert.Equal("Spring", Title(await _context.DraftContentAsync("a3")));
         Assert.Equal([1L, 2L, 2L], run.Reports.Select(x => x.ProcessedCount ?? 0));
         Assert.Contains("2 pages changed", run.FinalMessage);
         Assert.Equal(2, _context.SavedVersions.Records.Count);
@@ -201,8 +196,8 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
 
         var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload);
 
-        Assert.Equal("Black Friday", Title(await ContentAsync("a1")));
-        Assert.Equal("Cyber Monday", Title(await ContentAsync("b1")));
+        Assert.Equal("Black Friday", Title(await _context.DraftContentAsync("a1")));
+        Assert.Equal("Cyber Monday", Title(await _context.DraftContentAsync("b1")));
         Assert.Contains("1 skipped because they changed since the call: a1", run.FinalMessage);
     }
 
@@ -215,8 +210,8 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
 
         var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload);
 
-        Assert.Equal("Cyber Monday", Title(await ContentAsync("a1")));
-        Assert.Equal("Black Friday", Title(await ContentAsync("b1")));
+        Assert.Equal("Cyber Monday", Title(await _context.DraftContentAsync("a1")));
+        Assert.Equal("Black Friday", Title(await _context.DraftContentAsync("b1")));
         Assert.Contains("1 pages changed", run.FinalMessage);
         Assert.Contains("1 refused: b1 (no builder:read in store 'store-b')", run.FinalMessage);
     }
@@ -260,8 +255,8 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
         var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload,
             _ => _context.JobUsers["editor"] = Reader("editor").ToPrincipal());
 
-        Assert.Equal("Cyber Monday", Title(await ContentAsync("a1")));
-        Assert.Equal("Black Friday", Title(await ContentAsync("b1")));
+        Assert.Equal("Cyber Monday", Title(await _context.DraftContentAsync("a1")));
+        Assert.Equal("Black Friday", Title(await _context.DraftContentAsync("b1")));
         Assert.StartsWith("Done", run.FinalMessage, StringComparison.Ordinal);
         Assert.Contains("1 pages changed", run.FinalMessage);
         Assert.Contains("1 refused: b1 (the account no longer has builder:update)", run.FinalMessage);
@@ -276,8 +271,8 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
 
         var run = await _context.RunJobAsync<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(payload, _ => _context.DeletedUsers.Add("editor"));
 
-        Assert.Equal("Cyber Monday", Title(await ContentAsync("a1")));
-        Assert.Equal("Black Friday", Title(await ContentAsync("b1")));
+        Assert.Equal("Cyber Monday", Title(await _context.DraftContentAsync("a1")));
+        Assert.Equal("Black Friday", Title(await _context.DraftContentAsync("b1")));
         Assert.StartsWith($"Stopped after 2 of 2 pages: {SiteBuilderJobUsers.AccountGone}; 0 pages were not reached.", run.FinalMessage, StringComparison.Ordinal);
         Assert.Contains($"1 refused: b1 ({SiteBuilderJobUsers.AccountGone})", run.FinalMessage);
     }
@@ -306,30 +301,5 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
     private static string Title(string content) =>
         SiteBuilderPageItems.GetString(JsonNode.Parse(content)!["content"]!.AsArray().First(x => x!["id"]!.GetValue<string>() == "h1")!["title"]);
 
-    private async Task<string> ContentAsync(string id)
-    {
-        var group = (await _pages.GetAsync([id])).Single();
-        return (await _pages.LoadGroupContentAsync(group, cancellationToken: TestContext.Current.CancellationToken)).Content;
-    }
-
-    private async Task<string> TokenAsync(string id)
-    {
-        var group = (await _pages.GetAsync([id])).Single();
-        return (await _pages.LoadGroupContentAsync(group, cancellationToken: TestContext.Current.CancellationToken)).ETag;
-    }
-
-    private void Seed(string id, string storeId, string content)
-    {
-        _pages.SeedGroup(new GroupedSiteBuilderPage
-        {
-            Id = id,
-            StoreId = storeId,
-            Name = $"Page {id}",
-            Permalink = $"/{id}",
-            CultureName = "en-US",
-            Pages = [new SiteBuilderPage { Id = $"{id}-draft", GroupId = id, StoreId = storeId, Status = "Draft" }],
-        });
-        _pages.SeedContent($"{id}-draft", content);
-        _ids.Add(id);
-    }
+    private void Seed(string id, string storeId, string content) => _ids.Add(_context.SeedDraft(id, storeId, content).Id);
 }
