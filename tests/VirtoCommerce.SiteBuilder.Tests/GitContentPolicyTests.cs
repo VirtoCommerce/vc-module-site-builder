@@ -14,8 +14,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
     /// <summary>
     /// The git flow must be impossible to enter by accident: it takes the global switch, a usable
     /// connection and the store's opt-in, all three. These tests are the backward-compatibility
-    /// guarantee — with the switch off nothing about the module's behaviour may change, and the policy
-    /// must not even ask the settings store.
+    /// guarantee — with the switch off nothing about the behaviour of a store that did not opt in may
+    /// change — and a store that did opt in never falls back to the blob flow.
     /// </summary>
     public class GitContentPolicyTests
     {
@@ -31,23 +31,50 @@ namespace VirtoCommerce.SiteBuilder.Tests
             GitHubConnections.CreatePolicy(Options.Create(options), settings, ownership);
 
         [Fact]
-        public async Task Disabled_globally_never_touches_the_settings_store()
+        public async Task Disabled_globally_store_that_did_not_opt_in_is_off()
         {
-            // a null settings manager would throw if the policy consulted it
-            var policy = Policy(Configured(enabled: false), settings: null);
+            var policy = Policy(Configured(enabled: false), new FakeSettingsManager(value: null));
 
             Assert.False(await policy.IsEnabledForStoreAsync("vccom", TestContext.Current.CancellationToken));
+            Assert.Null(await policy.GetRepositoryAsync("vccom", TestContext.Current.CancellationToken));
         }
 
         [Fact]
-        public async Task Enabled_but_unconfigured_is_off()
+        public async Task Disabled_globally_store_that_opted_in_is_refused()
+        {
+            var policy = Policy(Configured(enabled: false), new FakeSettingsManager(value: true));
+
+            var exception = await Assert.ThrowsAsync<GitContentException>(() => policy.IsEnabledForStoreAsync("vccom", TestContext.Current.CancellationToken));
+            Assert.Contains("not connected", exception.Message);
+            Assert.Contains(ModuleConstants.Settings.StoreLevelSettings.GitContentEnabled.Name, exception.Message);
+            await Assert.ThrowsAsync<GitContentException>(() => policy.GetRepositoryAsync("vccom", TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<GitContentException>(() => policy.GetRepositoryInfoAsync("vccom", TestContext.Current.CancellationToken));
+            await Assert.ThrowsAsync<GitContentException>(() => policy.GetConfiguredRepositoryAsync("vccom", TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public async Task Enabled_but_unconfigured_store_that_did_not_opt_in_is_off()
         {
             var options = Configured();
             options.Token = null;
 
-            var policy = Policy(options, settings: null);
+            var policy = Policy(options, new FakeSettingsManager(value: null));
 
             Assert.False(await policy.IsEnabledForStoreAsync("vccom", TestContext.Current.CancellationToken));
+            Assert.Null(await policy.GetRepositoryAsync("vccom", TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public async Task Enabled_but_unconfigured_store_that_opted_in_is_refused()
+        {
+            var options = Configured();
+            options.Token = null;
+
+            var policy = Policy(options, new FakeSettingsManager(value: true));
+
+            var exception = await Assert.ThrowsAsync<GitContentException>(() => policy.IsEnabledForStoreAsync("vccom", TestContext.Current.CancellationToken));
+            Assert.Contains("not configured", exception.Message);
+            await Assert.ThrowsAsync<GitContentException>(() => policy.GetRepositoryAsync("vccom", TestContext.Current.CancellationToken));
         }
 
         [Fact]
@@ -355,16 +382,25 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Null(await policy.GetRepositoryAsync("b2b-store", TestContext.Current.CancellationToken));
         }
 
-        [Fact]
-        public async Task IsEnabledForStoreAsync_SavedAppUnreadableAndSwitchedOff_IsOffWithoutReadingTheStore()
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task IsEnabledForStoreAsync_SavedAppUnreadableAndSwitchedOff_IsOffUnlessTheStoreOptedIn(bool optedIn)
         {
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string> { [$"{GitContentOptions.SectionName}:Enabled"] = "false" })
                 .Build();
-            // A null settings manager would throw if the policy consulted it.
-            var policy = AppPolicy(storeSettings: null, configuration);
+            var policy = AppPolicy(storeSettings: new FakeSettingsManager(value: optedIn), configuration);
 
-            Assert.False(await policy.IsEnabledForStoreAsync("b2b-store", TestContext.Current.CancellationToken));
+            if (optedIn)
+            {
+                var exception = await Assert.ThrowsAsync<GitContentException>(() => policy.IsEnabledForStoreAsync("b2b-store", TestContext.Current.CancellationToken));
+                Assert.Contains("could not be read", exception.Message);
+            }
+            else
+            {
+                Assert.False(await policy.IsEnabledForStoreAsync("b2b-store", TestContext.Current.CancellationToken));
+            }
         }
 
         private static GitContentPolicy AppPolicy(ISettingsManager storeSettings, IConfiguration configuration = null)

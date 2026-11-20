@@ -194,14 +194,24 @@ public class GitHubSiteHistoryTests
         Assert.Equal(expected, await history.GetStatusAsync("s1", Ct));
     }
 
-    [Fact]
-    public async Task GetStatusAsync_GitHubNotConnected_ReturnsSetupRequired()
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task GetStatusAsync_GitHubNotConnected_ReturnsSetupRequired(bool switchedOn, bool gitContent)
     {
         var options = SiteHistories.Options();
-        options.Value.Organization = null;
-        options.Value.Token = null;
+        options.Value.Enabled = switchedOn;
+        if (switchedOn)
+        {
+            options.Value.Organization = null;
+            options.Value.Token = null;
+        }
 
-        Assert.Equal(ContentHistoryStatus.SetupRequired, await History(new GitHubScript(), options: options).GetStatusAsync("s1", Ct));
+        var history = History(new GitHubScript(), new FakeSettingsManager(gitContent), options);
+
+        Assert.Equal(ContentHistoryStatus.SetupRequired, await history.GetStatusAsync("s1", Ct));
     }
 
     [Theory]

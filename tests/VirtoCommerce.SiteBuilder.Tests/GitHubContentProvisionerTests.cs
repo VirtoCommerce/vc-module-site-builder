@@ -210,6 +210,21 @@ public class GitHubContentProvisionerTests
     }
 
     [Fact]
+    public async Task DisconnectAsync_GitHubNotConnected_StillSwitchesStoreOff()
+    {
+        var setting = new VirtoCommerce.Platform.Core.Settings.ObjectSettingEntry(ModuleConstants.Settings.StoreLevelSettings.GitContentEnabled) { Value = true };
+        var stores = new FakeStoreService(new Store { Id = "s1", Settings = [setting] });
+        var provisioner = Provisioner(new GitHubScript(), configure: x => x.Enabled = false, stores: stores);
+
+        var status = await provisioner.GetStatusAsync("s1", TestContext.Current.CancellationToken);
+        await provisioner.DisconnectAsync("s1", TestContext.Current.CancellationToken);
+
+        Assert.False(status.Configured);
+        Assert.Null(status.Error);
+        Assert.Equal(false, Assert.Single(Assert.Single(stores.Saved).Settings).Value);
+    }
+
+    [Fact]
     public async Task ArchiveRepositoryAsync_RepositoryOfStore_ArchivesIt()
     {
         var github = new GitHubScript(
