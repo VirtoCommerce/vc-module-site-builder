@@ -20,12 +20,21 @@ public sealed class SearchAssetsToolTests : IAsyncDisposable
 {
     private const string Tool = "search_assets";
     private const string Folder = "/stores/store-a/Page Builder";
+    private const string PublicFolder = "https://cdn.example/assets/stores/store-a/Page%20Builder";
 
     private readonly McpTestContext _context = new();
     private readonly List<BlobEntry> _entries =
     [
-        new BlobFolder { Name = "banners", Type = "folder", RelativeUrl = $"{Folder}/banners" },
-        .. Enumerable.Range(1, 4).Select(x => new BlobInfo { Name = $"image-{x}.png", Type = "blob", RelativeUrl = $"{Folder}/image-{x}.png", ContentType = "image/png", Size = 100 * x }),
+        new BlobFolder { Name = "banners", Type = "folder", RelativeUrl = $"{Folder}/banners", Url = $"{PublicFolder}/banners" },
+        .. Enumerable.Range(1, 4).Select(x => new BlobInfo
+        {
+            Name = $"image-{x}.png",
+            Type = "blob",
+            RelativeUrl = $"{Folder}/image-{x}.png",
+            Url = $"{PublicFolder}/image-{x}.png",
+            ContentType = "image/png",
+            Size = 100 * x,
+        }),
     ];
 
     private SiteBuilderAssetReferencesSearchCriteria _lastReferenceCriteria;
@@ -82,6 +91,15 @@ public sealed class SearchAssetsToolTests : IAsyncDisposable
         Assert.Equal("folder", page.Items[0].Type);
         Assert.All(page.Items, x => Assert.Null(x.References));
         _context.AssetReferences.Verify(x => x.SearchReferencesAsync(It.IsAny<SiteBuilderAssetReferencesSearchCriteria>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AFile_IsGivenTheLinkToPutOnAPage_AndAFolder_ThePathToOpenIt()
+    {
+        var page = await SearchAsync(AssetReader(), new { folder_url = Folder });
+
+        Assert.Equal($"{PublicFolder}/image-1.png", page.Items.Single(x => x.Name == "image-1.png").Url);
+        Assert.Equal($"{Folder}/banners", page.Items.Single(x => x.Type == "folder").Url);
     }
 
     [Fact]

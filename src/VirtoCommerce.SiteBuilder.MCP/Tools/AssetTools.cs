@@ -33,7 +33,8 @@ public class AssetTools(
     [Description("List the folders and files of one folder of the asset library, folders first, with type, size and " +
         "change date. With store_id, each file also says how many pages and Shared Components of that store use it " +
         "and names the pages (Shared Components only with builder:shared-components:read in the store). The library " +
-        "of a store opens at '/stores/{store_id}/Page Builder'; open a subfolder with the url of its row.")]
+        "of a store opens at '/stores/{store_id}/Page Builder'; open a subfolder with the url of its row. The url of a file " +
+        "is its public link, the one to put in a page, a template or the theme.")]
     public async Task<McpPage<AssetRow>> SearchAssets(
         RequestContext<CallToolRequestParams> context,
         IMcpPageSizeResolver pageSizeResolver,
@@ -131,7 +132,8 @@ public sealed class AssetRow
         return new AssetRow
         {
             Name = entry.Name,
-            Url = url,
+            // a page or the theme holds a file's public link, as the designer saves it; a folder is opened by its library path
+            Url = entry.Type == FolderType || string.IsNullOrEmpty(entry.Url) ? url : entry.Url,
             Type = entry.Type,
             ContentType = blob?.ContentType,
             Size = blob?.Size,
