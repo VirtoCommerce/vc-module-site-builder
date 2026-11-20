@@ -4,7 +4,6 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// A translation is marked only while the source is still at the revision the agent read.
 public class TranslationSources(IMultilanguagePageOperationService multilanguagePageOperations)
 {
     public const string SourcePublishedAgain = "the source language version was published again after you read it";

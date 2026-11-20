@@ -14,8 +14,8 @@ public class GroupedPagePublishOperationRequest : GroupedPageOperationRequest
     public string ExpectedDraftVersion { get; set; }
 
     /// <summary>
-    /// The version of the page's settings the caller reviewed, as <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> makes it: who sees the
-    /// page and when are not in its content, so the publish is refused once they are at another one. <c>null</c> publishes the page whatever its settings.
+    /// The <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version the caller reviewed: who sees the page and when are not in the draft
+    /// version, so they are checked apart. <c>null</c> skips the check.
     /// </summary>
     public string ExpectedSettingsVersion { get; set; }
 
@@ -32,9 +32,8 @@ public class GroupedPagePublishOperationRequest : GroupedPageOperationRequest
     public bool UnpublishConflicting { get; set; }
 
     /// <summary>
-    /// With <see cref="UnpublishConflicting"/>: the version of every published page the caller reviewed as replaced, by its group id, as a dry run
-    /// answers them in <see cref="SiteBuilderObjectChange.ObjectId"/> and <see cref="SiteBuilderObjectChange.ETag"/>. Nothing is published when the
-    /// pages to unpublish are not those any more: one changed, appeared or went. <c>null</c> unpublishes the pages that conflict at the write.
+    /// With <see cref="UnpublishConflicting"/>: the version of each published page reviewed as replaced, by group id. Nothing is published when one
+    /// changed, appeared or went. <c>null</c> unpublishes whatever conflicts at the write.
     /// </summary>
     public IDictionary<string, string> ExpectedReplacedVersions { get; set; }
 }

@@ -323,7 +323,6 @@ public class MultilanguagePageService(
         var preview = CreatePreview();
         if (cultureName != null)
         {
-            // the versions a caller sends back to link only the page it reviewed, with the values of the root it reviewed
             preview.AddPage(group, GetLinked(root, group, cultureName)).ETag = SiteBuilderContentVersion.CreateForGroupSettings(group);
             preview.AddObject(ModuleConstants.ChangePreview.MultilanguagePage, root.Id, SiteBuilderContentVersion.CreateForMultilanguagePage(root));
         }
@@ -406,7 +405,6 @@ public class MultilanguagePageService(
         var root = await GetRequiredAsync(multilanguagePageId);
         if (expectedVersion != null)
         {
-            // the values the versions take: those of the root reviewed, as read and as stored right before the first save
             if (!string.Equals(SiteBuilderContentVersion.CreateForMultilanguagePage(root), expectedVersion, StringComparison.Ordinal))
             {
                 throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
@@ -436,7 +434,6 @@ public class MultilanguagePageService(
         var changedCultureNames = new List<string>();
         foreach (var (group, version) in resets)
         {
-            // compared again under the lock of the save, and the root after the save derived the overrides from it
             var expectedPageVersion = expectedPageVersions == null ? null : version;
             await (requireUnpublished || expectedPageVersion != null || expectedVersion != null
                 ? groupedPageContentService.SaveGroupSettingsAsync(group, new GroupedPageSaveCondition
@@ -474,7 +471,6 @@ public class MultilanguagePageService(
             {
                 // the save derives the mask again
                 MultilanguagePageInheritance.SetOverriddenFields(reset, MultilanguagePageInheritance.GetDifferingFields(root, reset));
-                // the version a caller sends back to reset only the versions it reviewed
                 if (preview.AddPage(group, reset) is { } change)
                 {
                     change.ETag = SiteBuilderContentVersion.CreateForGroupSettings(group);
@@ -484,7 +480,6 @@ public class MultilanguagePageService(
 
         if (preview.Objects.Count > 0)
         {
-            // the values the versions take: the version a caller sends back to reset them to the root it reviewed
             preview.AddObject(ModuleConstants.ChangePreview.MultilanguagePage, root.Id, SiteBuilderContentVersion.CreateForMultilanguagePage(root));
         }
 
@@ -511,7 +506,7 @@ public class MultilanguagePageService(
 
         var (group, source) = await PrepareMarkUpToDateAsync(groupId, expectedSourceRevisionDate);
 
-        // the stored revision, as the save compares it exactly under its lock, which the source's next publication takes too
+        // the stored revision: the save compares it exactly, under the lock the source's next publication takes too
         group.SourceRevisionDate = source.SourceRevisionDate;
         var condition = new GroupedPageSaveCondition { SourceGroupId = source.Id, ExpectedSourceRevisionDate = source.SourceRevisionDate };
         await groupedPageContentService.SaveGroupAsync(group, condition, cancellationToken);
@@ -698,7 +693,6 @@ public class MultilanguagePageService(
 
         var preview = CreatePreview();
         preview.AddMultilanguagePage(from: null, root);
-        // the version a caller sends back to convert only the page it reviewed
         var version = SiteBuilderContentVersion.CreateForGroupSettings(group);
         if (preview.AddPage(group, GetLinked(root, group, root.DefaultCultureName)) is { } change)
         {
@@ -786,7 +780,6 @@ public class MultilanguagePageService(
             unlinked.MultilanguagePageId = null;
             unlinked.SourceRevisionDate = null;
             MultilanguagePageInheritance.SetOverriddenFields(unlinked, []);
-            // the version a caller sends back to unlink only the page it reviewed
             preview.AddPage(group, unlinked).ETag = SiteBuilderContentVersion.CreateForGroupSettings(group);
         }
 
@@ -933,10 +926,7 @@ public class MultilanguagePageService(
         return result;
     }
 
-    /// <summary>
-    /// The drafts, and the settings they go live with, must be those reviewed: none changed, none added and none gone.
-    /// A <c>null</c> set is not compared.
-    /// </summary>
+    /// <summary>The drafts and the settings they go live with must be those reviewed; a <c>null</c> set is not compared.</summary>
     /// <exception cref="SiteBuilderContentConflictException">They are not.</exception>
     protected virtual async Task CheckDraftVersionsAsync(IList<GroupedSiteBuilderPage> groups, IDictionary<string, string> expectedDraftVersions,
         IDictionary<string, string> expectedSettingsVersions, CancellationToken cancellationToken)
@@ -987,7 +977,7 @@ public class MultilanguagePageService(
             return MultilanguagePageBatchResult.NoDraftReason;
         }
 
-        // the address and audience it would go live with changed after the check, or its draft appeared after it
+        // changed after the check, or its draft appeared after it
         if (expectedSettingsVersions != null && !IsAtSettingsVersion(group, expectedSettingsVersions))
         {
             return MultilanguagePageBatchResult.ChangedReason;
@@ -1193,7 +1183,6 @@ public class MultilanguagePageService(
             throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
         }
 
-        // a link or an unlink of a published page changes what it serves
         if (condition.RequireUnpublished &&
             await repository.SiteBuilderPages.AnyAsync(x => x.GroupId == entity.Id && x.Status == ModuleConstants.PageStatuses.Published, cancellationToken))
         {
@@ -1206,6 +1195,6 @@ public class MultilanguagePageService(
         }
     }
 
-    /// <summary>The versions come trimmed: the check compares them as they are.</summary>
+    // The versions come trimmed.
     private sealed record LinkCondition(bool RequireUnpublished, string ExpectedPageVersion, string ExpectedRootVersion);
 }

@@ -2,36 +2,23 @@ using VirtoCommerce.Platform.Core.Common;
 
 namespace VirtoCommerce.SiteBuilder.Core.Models;
 
-/// <summary>
-/// Which database pages to read for sections of a type. There is no index of section types: the scan reads the content
-/// of every page it covers, so it reads at most <see cref="MaxPages"/> rows of the pages list per call.
-/// </summary>
 public class SiteBuilderSectionScanCriteria
 {
     /// <summary>
-    /// The pages, filtered as the pages list filters them, where a Multilanguage Page is one row. Its language versions are
-    /// scanned one by one, narrowed by <see cref="SearchCriteriaBase.LanguageCode"/>, the statuses and
-    /// <see cref="SearchCriteriaBase.ObjectIds"/> when they are set; the other filters select rows only.
-    /// <see cref="SearchCriteriaBase.Skip"/> is the first row to scan; <see cref="MaxPages"/> replaces Take.
+    /// Selects rows of the pages list, a Multilanguage Page being one row; only the language, statuses and object ids also narrow its language
+    /// versions. <see cref="SearchCriteriaBase.Skip"/> is the first row; <see cref="MaxPages"/> replaces Take.
     /// </summary>
     public SiteBuilderPageSearchCriteria Pages { get; set; } = new();
 
-    /// <summary>Rows of the pages list to read, from Skip.</summary>
     public int MaxPages { get; set; }
 
-    /// <summary>
-    /// The published version, what the storefront shows; otherwise the draft, which is the published version when the
-    /// page has no unpublished changes. Chosen before the sections are filtered.
-    /// </summary>
+    /// <summary><c>false</c> reads the draft, or the published version of a page with no draft.</summary>
     public bool Published { get; set; }
 
     public string SectionType { get; set; }
 
     public SiteBuilderSectionSettingCondition Condition { get; set; }
 
-    /// <summary>
-    /// Stores whose Shared Components the scan opens, to find the sections a placed component brings into a page;
-    /// null opens those of every store. A placement of a component of any other store is reported unread.
-    /// </summary>
+    /// <summary>Stores whose Shared Components the scan opens; <c>null</c> opens all. A placement from any other store is reported unread.</summary>
     public IList<string> SharedComponentStoreIds { get; set; }
 }

@@ -20,7 +20,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A restore overwrites drafts, so the user confirms it and the write takes only the draft versions its dry run answered.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class VersionRestoreTools(
@@ -288,15 +287,12 @@ public sealed class VersionRestore : McpChangePreview, IReviewedChange
     [JsonPropertyName("version_id")]
     public string VersionId { get; set; }
 
-    // Null unless the page is stored as a file.
     [JsonPropertyName("page_id")]
     public string PageId { get; set; }
 
-    // Sent back unchanged, they let the restore overwrite only these drafts.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    // Null except after a page stored as a file is restored.
     [JsonPropertyName("commit")]
     public string Commit { get; set; }
 }

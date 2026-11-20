@@ -1171,10 +1171,6 @@ public class FilePageOperationService(
         }
     }
 
-    /// <summary>
-    /// The draft branch has to be at the commit the caller reviewed, or still be missing when the caller reviewed none; neither named takes it
-    /// wherever it is.
-    /// </summary>
     /// <returns>The conflict when the branch has moved, is gone or appeared; <c>null</c> otherwise.</returns>
     protected virtual async Task<SiteBuilderOperationResult> CheckDraftHeadAsync(GitPageFileLocation location, FilePageDraftOperationRequest request,
         CancellationToken cancellationToken)

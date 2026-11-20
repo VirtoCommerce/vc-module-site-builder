@@ -10,8 +10,6 @@ public interface IReviewedChange
     IDictionary<string, string> ExpectedVersions { get; set; }
 }
 
-// An approved change runs again as the approver and a confirmed one may run after a colleague saved, so the write takes
-// only the versions its dry run answered; the operation compares them again as late as it can.
 public static class ReviewedVersions
 {
     public const string Argument = "expected_versions";
@@ -19,8 +17,7 @@ public static class ReviewedVersions
     public const string Description = "The expected_versions of the dry run, unchanged: the versions of what the call takes, by page " +
         "or file. Required without dryRun, so that exactly what was reviewed is changed.";
 
-    // Only a call that names its versions waits for approval; one without them is a dry run or is refused, so nothing
-    // ships unapproved either way.
+    // Without versions a call is a dry run or is refused, so only a call that names them waits for approval.
     public static bool AreGiven(IReadOnlyDictionary<string, JsonElement> arguments) =>
         arguments != null &&
         arguments.TryGetValue(Argument, out var value) &&

@@ -19,8 +19,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Only drafts change, so no second person approves. A translation is marked up to date only while its source is still the
-// publication it was made from, so a stale one is never marked current.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class TranslationTools(
@@ -261,7 +259,6 @@ public sealed class TranslationPageRow
     [JsonPropertyName("text_count")]
     public int TextCount { get; init; }
 
-    // A real call is refused while any page has one.
     [JsonPropertyName("problem")]
     public string Problem { get; init; }
 

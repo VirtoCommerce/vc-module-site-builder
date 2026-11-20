@@ -23,7 +23,7 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
     // A dictionary has a culture name with a subtag, so that a row such as { "sku": "X1" } stays a row.
     private static readonly Regex SubtaggedCultureNamePattern = new("^[a-z]{2,3}(-[a-z0-9]{2,8})+$", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
 
-    /// <summary>For a page type the template rules file has no list for; the storefront and the designer default to the same.</summary>
+    // The storefront and the designer default to the same rules.
     public const string DefaultTemplateRulesJson = """
         {
           "product": [
@@ -166,9 +166,7 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         return result;
     }
 
-    /// <summary>
-    /// Ids as the storefront and the designer make them; <paramref name="index"/> counts only the readable rules of the page type.
-    /// </summary>
+    // Ids as the storefront and the designer make them, counting only the readable rules of the page type.
     public static string GetTemplateRuleId(string pageType, int index, string id, ISet<string> takenIds)
     {
         if (!string.IsNullOrEmpty(id) && !takenIds.Contains(id))

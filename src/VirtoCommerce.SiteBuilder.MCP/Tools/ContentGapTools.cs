@@ -250,7 +250,6 @@ public sealed class ContentGapReport
 {
     public IList<McpFinding> Findings { get; set; } = [];
 
-    // A Multilanguage Page counts once, with all its languages.
     public int TotalCount { get; set; }
 
     public int ScannedCount { get; set; }
@@ -274,7 +273,6 @@ public sealed class ContentGapReport
         Coverage = $"Read pages {skip + 1}–{skip + scanned} of {totalCount}{next}";
     }
 
-    // Named with the reason, so a check that cannot run does not read as clean.
     public IList<ContentGapCheck> NotChecked { get; init; } = [];
 }
 

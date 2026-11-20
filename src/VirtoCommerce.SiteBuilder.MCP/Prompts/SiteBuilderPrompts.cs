@@ -6,8 +6,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Prompts;
 
-// Prompts have no checks of their own: the tools enforce access, and the permission only hides the prompts from users
-// who cannot read Site Builder.
+// No checks here: the tools enforce access, and the permission only hides the prompts.
 [McpServerPromptType]
 [McpScope(McpScopes.Admin)]
 [McpPermission(Read)]

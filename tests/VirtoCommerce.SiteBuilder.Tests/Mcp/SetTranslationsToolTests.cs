@@ -41,8 +41,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         _context.SeedDraft("de", StoreA, Content.Replace("fr-FR", "de-DE"), "de-DE", multilanguagePageId: "ml1");
         _context.SeedDraft("b1", StoreB, Content, "fr-FR");
 
-        // A dry run checks the source revision as it is; the write checks it under its save's lock, which may come after the
-        // job read it.
+        // The write checks the source revision under its save's lock, which may come after the job read it.
         _context.MultilanguagePageOperations
             .Setup(x => x.MarkUpToDateAsync(It.IsAny<MultilanguagePageMarkUpToDateOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MultilanguagePageMarkUpToDateOperationRequest request, ClaimsPrincipal _, CancellationToken _) =>

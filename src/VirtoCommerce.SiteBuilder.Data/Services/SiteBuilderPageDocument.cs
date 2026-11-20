@@ -3,15 +3,12 @@ using System.Text.Json.Nodes;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
-// Both stored shapes are read into one, with an id on every section and block, so that whoever reads a version and
-// whoever edits the same version name its sections alike.
 public sealed class SiteBuilderPageDocument
 {
     public JsonObject Settings { get; init; }
 
     public JsonArray Sections { get; init; }
 
-    // No Shared Component placed in a page of the older shape is indexed.
     public bool IsLegacyShape { get; init; }
 
     public static SiteBuilderPageDocument Read(string content)

@@ -10,8 +10,6 @@ using VirtoCommerce.SiteBuilder.MCP.Tools;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The history pages by branches rather than by versions, so the tool's cursor carries both the branch cursor and the
-// offset into that answer.
 public static class FilePageVersions
 {
     private const string CursorPrefix = "file:";
@@ -70,7 +68,6 @@ public static class FilePageVersions
         return history.Truncated && !string.IsNullOrEmpty(history.EndCursor) ? Cursor(0, history.EndCursor) : null;
     }
 
-    // Not found means blob storage, where a save overwrites the page and keeps no versions.
     private static ContentVersionsAnswer NoHistory(FilePage page) => new()
     {
         StoreId = page.StoreId,

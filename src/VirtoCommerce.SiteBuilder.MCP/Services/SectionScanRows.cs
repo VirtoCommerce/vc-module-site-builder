@@ -6,7 +6,6 @@ public sealed class SitePageSectionSearch
 {
     public IList<SitePageSectionRow> Items { get; init; } = [];
 
-    // Pages the page filters match, with or without the section.
     public int TotalCount { get; init; }
 
     public int Skip { get; init; }
@@ -15,7 +14,6 @@ public sealed class SitePageSectionSearch
 
     public int ScannedLanguageVersions { get; init; }
 
-    // Every page of the filters was scanned in this call, so no item means no page has the section.
     public bool IsComplete { get; init; }
 
     public int? NextSkip { get; init; }
@@ -52,7 +50,6 @@ public sealed class SitePageSectionSearch
 
 public sealed class SitePageSectionRow
 {
-    // The page id of a Landing Page; the Multilanguage Page id of a Multilanguage Page.
     public string Id { get; init; }
 
     public string Type { get; init; }
@@ -81,7 +78,6 @@ public sealed class SitePageSectionRow
 
 public sealed class SectionVersionMatchRow
 {
-    // The id a page edit takes: the Landing Page, or the language version.
     public string PageId { get; init; }
 
     public string Language { get; init; }
@@ -112,7 +108,6 @@ public sealed class SectionMatchRow
 
     public bool Hidden { get; init; }
 
-    // Set when the section comes from a placed Shared Component: edit the component, not the page.
     public string SharedComponentId { get; init; }
 
     public string PlacementId { get; init; }
@@ -153,7 +148,6 @@ public sealed class SectionScanUnreadRow
     };
 }
 
-// A scan never says "none" unless it read every page.
 public static class SectionScanCoverage
 {
     public const string NoPages = "No page matches the page filters, so there was nothing to scan.";

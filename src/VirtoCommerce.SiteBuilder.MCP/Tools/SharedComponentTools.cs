@@ -17,7 +17,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Access follows the designer: reading a component and reading the pages it stands on are separate permissions.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentTools(
@@ -25,7 +24,6 @@ public class SharedComponentTools(
     ISiteBuilderSharedComponentOperationService sharedComponentOperationService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService)
 {
-    // Caps the answer for a component placed on every page of a large site; the usage list arrives whole, so it is paged in memory.
     public const int MaxUsagePages = 50;
 
     [McpServerTool(Name = "search_shared_components", ReadOnly = true, Destructive = false, Idempotent = true)]
@@ -133,7 +131,6 @@ public sealed class SharedComponentDetails
 
     public int UsageCount { get; init; }
 
-    // Null when the user may not read the store's pages.
     public IList<SiteBuilderSharedComponentUsagePage> UsagePages { get; init; }
 
     public int? UsagePageCount { get; init; }

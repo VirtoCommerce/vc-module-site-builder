@@ -5,8 +5,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
-// Follows the designer's rules for sections and blocks, so that items read or written here look the same to it.
-// A Shared Component placement holds its id, type and reference and nothing else.
 public static partial class SiteBuilderPageItems
 {
     public const string IdKey = "id";
@@ -29,6 +27,7 @@ public static partial class SiteBuilderPageItems
 
     public static bool IsInGroup(JsonObject item) => item.ContainsKey(GroupKey);
 
+    // A placement holds its id, type and reference and nothing else.
     public static bool IsPlacement(JsonObject item) =>
         item.Count == 3 && GetItemType(item) == SharedComponents.ReferenceType &&
         !string.IsNullOrWhiteSpace(GetId(item)) && !string.IsNullOrWhiteSpace(GetString(item[SharedComponents.ReferenceProperty]));
@@ -37,13 +36,12 @@ public static partial class SiteBuilderPageItems
 
     public static JsonArray GetBlocks(JsonObject item) => item[BlocksKey] as JsonArray;
 
-    // For the messages the agent and the approver read.
     public static string Describe(JsonObject item) => IsPlacement(item)
         ? $"Shared Component '{GetComponentId(item)}' (placement '{GetId(item)}')"
         : $"{GetItemType(item) ?? "untyped"} '{GetId(item)}'";
 
-    // Stored sections and blocks may have no id: the designer gives them one when it opens the page. Here they get
-    // one from their place, so that reading a version and editing the same version name them alike.
+    // The designer gives items without an id one when it opens the page; here the id comes from the place, so that
+    // reading a version and editing the same version name them alike.
     public static void AssignMissingIds(JsonArray sections)
     {
         var used = CollectIds(sections);
@@ -76,7 +74,7 @@ public static partial class SiteBuilderPageItems
 
     public static string NewPlacementId(ISet<string> used) => NewId(SharedComponents.ReferenceType, used);
 
-    // Copies as the designer does, so a copy made here looks like one made there.
+    // Copies as the designer does.
     public static JsonObject Copy(JsonObject item, ISet<string> used)
     {
         var copy = (JsonObject)item.DeepClone();

@@ -12,9 +12,8 @@ public class FilePageDraftOperationRequest : FilePageOperationRequest
     public string ExpectedDraftHead { get; set; }
 
     /// <summary>
-    /// With no <see cref="ExpectedDraftHead"/>: the caller reviewed the write with no draft branch, as a dry run answers it with no
-    /// <see cref="SiteBuilderObjectChange.DraftHead"/>, and the write is refused once there is one. An unpublish given it ships the deletion it commits
-    /// from a branch of its own, as with <see cref="ExpectedDraftHead"/>. <c>false</c> takes the branch wherever it is, or none.
+    /// With no <see cref="ExpectedDraftHead"/>: the write is refused once a draft branch exists. An unpublish ships its deletion from a branch of
+    /// its own, as with <see cref="ExpectedDraftHead"/>.
     /// </summary>
     public bool ExpectNoDraftBranch { get; set; }
 }

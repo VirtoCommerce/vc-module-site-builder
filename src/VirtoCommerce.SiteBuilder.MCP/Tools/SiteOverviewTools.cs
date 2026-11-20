@@ -30,8 +30,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Read from the services the designer uses, so the numbers match what users see there; a part that cannot be read says
-// why instead of showing zero.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SiteOverviewTools(
@@ -46,7 +44,6 @@ public class SiteOverviewTools(
     ISiteBuilderPublishStatusQueryService publishStatusQueryService,
     ILogger<SiteOverviewTools> logger)
 {
-    // Each store's overview reads a few dozen counts and files, so one call covers only a few stores.
     private const int MaxStores = 10;
 
     private const int ListedRows = 5;
@@ -93,7 +90,6 @@ public class SiteOverviewTools(
         return McpPage<StoreOverview>.Create(rows, totalCount, paging);
     }
 
-    // A null id list means the permission covers every store.
     private async Task<(IList<Store> Stores, int TotalCount)> GetStoresAsync(ClaimsPrincipal user, McpPaging paging)
     {
         var storeIds = await authorizationService.GetStoreIdsAsync(user, userManagerFactory);
@@ -173,7 +169,6 @@ public class SiteOverviewTools(
         return counts;
     }
 
-    // The designer's translation filters, so the numbers match its pages list.
     private async Task<IList<LanguageCoverage>> ReadCoverageAsync(Store store, CancellationToken cancellationToken)
     {
         var coverage = new List<LanguageCoverage>();
@@ -402,18 +397,14 @@ public sealed class StoreOverview
 
     public IList<string> Languages { get; init; } = [];
 
-    // Page start and end dates are stored in UTC.
     public string TimeZone { get; init; }
 
     public PageCounts Pages { get; init; }
 
-    // Null in the short form.
     public IList<PageChangeRow> WaitingForPublication { get; set; }
 
-    // Null in the short form.
     public IList<PageChangeRow> RecentChanges { get; set; }
 
-    // Null in the short form.
     public IList<LanguageCoverage> LanguageCoverage { get; set; }
 
     public ThemeOverview Theme { get; init; }
@@ -447,7 +438,6 @@ public sealed class PageCounts
 
     public int EndedOrArchived { get; init; }
 
-    // Empty in the short form.
     public IList<LanguageCount> ByLanguage { get; init; } = [];
 }
 
@@ -469,7 +459,6 @@ public sealed class LanguageCoverage
 
 public sealed class PageChangeRow
 {
-    // A Landing Page's or a Multilanguage Page's id; Type tells which.
     public string Id { get; init; }
 
     public string Type { get; init; }
@@ -502,7 +491,6 @@ public sealed class ThemeOverview
 {
     public bool Available { get; init; }
 
-    // Null when the theme was never published.
     public int? Publication { get; init; }
 
     public int DraftFiles { get; init; }
@@ -513,10 +501,8 @@ public sealed class ThemeOverview
 
     public IList<string> UnpublishedTemplates { get; init; } = [];
 
-    // Null in the short form.
     public RulesOverview Rules { get; set; }
 
-    // Null in the short form.
     public IList<ThemePartState> Parts { get; set; }
 
     public string Note { get; init; }
@@ -526,7 +512,6 @@ public sealed class ThemeOverview
 
 public sealed class RulesOverview
 {
-    // Counted in the draft when there is one, as the designer edits them.
     public int Rules { get; init; }
 
     public int Disabled { get; init; }

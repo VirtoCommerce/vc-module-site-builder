@@ -10,9 +10,8 @@ public class MultilanguagePagePublishAllOperationRequest : MultilanguagePageOper
     public IDictionary<string, string> ExpectedDraftVersions { get; set; }
 
     /// <summary>
-    /// The version of the settings of every language version whose draft the caller reviewed, by its id, as
-    /// <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> makes it: the address and audience the drafts go live with. Nothing is
-    /// published when they are not those any more. <c>null</c> publishes the drafts whatever the settings hold.
+    /// The <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version of each reviewed language version, by id: the drafts go live with
+    /// those settings, which the draft versions do not cover. <c>null</c> skips the check.
     /// </summary>
     public IDictionary<string, string> ExpectedSettingsVersions { get; set; }
 }

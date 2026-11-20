@@ -836,7 +836,6 @@ public class MultilanguagePageServiceTests
             new SiteBuilderPageSearchCriteria { StoreIds = [], Take = 10 }, TestContext.Current.CancellationToken);
 
         Assert.Equal(new[] { root.Id, landing.Id }.Order(), mine.Results.Select(x => x.Id).Order());
-        // the list narrows the store named, never widens it
         Assert.Empty(narrowed.Results);
         Assert.Empty(none.Results);
     }

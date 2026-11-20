@@ -16,7 +16,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Publishing changes what customers see, so the write waits for approval and takes exactly the versions its dry run answered.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PagePublishingTools(
@@ -139,7 +138,6 @@ public class PagePublishingTools(
             : PublishGroupAsync(context.User, page_id, publish: false, expected_versions, unpublishConflicting: false, dryRun, cancellationToken);
     }
 
-    // A call without expected_versions is a dry run or is refused, so there is nothing to approve.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) => ReviewedVersions.AreGiven(arguments);
 
     private static void EnsureNoRebase(bool rebase)
@@ -333,8 +331,7 @@ public class PagePublishingTools(
     private static Dictionary<string, string> ReplacedVersions(SiteBuilderChange change, IEnumerable<string> pageIds) =>
         pageIds.ToDictionary(x => x, x => ReviewedVersions.Of(change, x));
 
-    // Settings are pinned too: who sees a page and when are not in its content, and an unpublished page's settings change
-    // without approval.
+    // Settings are pinned too: they are not in the content and change without approval while the page is unpublished.
     private async Task PinAsync(SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts, IEnumerable<string> publishedIds,
         IDictionary<string, string> expectedVersions, bool dryRun)
     {

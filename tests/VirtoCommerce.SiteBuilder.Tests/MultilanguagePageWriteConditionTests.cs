@@ -535,7 +535,6 @@ public class MultilanguagePageWriteConditionTests
 
     private static string ETag(SiteBuilderChangePreview preview, string objectType) => Assert.Single(preview.Objects, x => x.ObjectType == objectType).ETag;
 
-    /// <summary>Someone else shows the page to one customer group only.</summary>
     private static async Task RestrictAsync(Fixture fixture, string groupId)
     {
         var group = await fixture.Groups.GetByIdAsync(groupId);

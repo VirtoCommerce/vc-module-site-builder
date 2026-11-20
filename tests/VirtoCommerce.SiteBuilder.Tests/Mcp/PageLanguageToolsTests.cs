@@ -273,7 +273,6 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
     [Fact]
     public async Task Reset_Approved_AfterTheMultilanguagePageChanged_IsRefused_AndResetsNothing()
     {
-        // The published version overrides the groups, so the Multilanguage Page's own groups change at once while the reset waits.
         SetUpReset(rootVersion: "ml-a-v1");
         var call = await _context.ReviewAsync(Editor(), "reset_language_overrides",
             new Dictionary<string, object> { ["multilanguage_page_id"] = "ml-a", ["fields"] = new[] { "user_groups" } });
@@ -326,7 +325,6 @@ public sealed class PageLanguageToolsTests : IAsyncDisposable
                 : SiteBuilderOperationResult.Success<IList<string>>(["fr-FR"], affectsPublished: true));
     }
 
-    // The operation lists the Multilanguage Page unchanged, only for its version.
     private static SiteBuilderChangePreview WithRoot(SiteBuilderChangePreview preview, string version)
     {
         preview.Objects.Add(new SiteBuilderObjectChange { ObjectType = "multilanguage-page", ObjectId = "ml-a", ETag = version });

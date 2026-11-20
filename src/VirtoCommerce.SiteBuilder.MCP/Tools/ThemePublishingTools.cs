@@ -17,8 +17,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A publication restyles every page and takes everyone's drafts, so a second person approves it, bound to the drafts the
-// dry run listed.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class ThemePublishingTools(
@@ -84,7 +82,7 @@ public class ThemePublishingTools(
             change.AddWarning("The theme has no drafts: the publication puts out the live files again, and nothing customers see changes.");
         }
 
-        // Checked on a dry run too: the approval repeats it, so a change whose drafts moved on stays pending for the approver to reject.
+        // Checked on a dry run too: the approval repeats it, so moved drafts stay pending for the approver to reject.
         if (expected_versions != null && !SameVersions(expected_versions, change.ExpectedVersions))
         {
             throw new McpException("The theme's drafts changed since the dry run that gave expected_versions, so nothing was published. Call " +
@@ -159,14 +157,12 @@ public sealed class ThemePublication : McpChangePreview
     [JsonPropertyName("store_id")]
     public string StoreId { get; set; }
 
-    // Sent back unchanged, they bind the publication to exactly these drafts.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     [JsonPropertyName("drafts")]
     public IList<ThemeDraftRow> Drafts { get; set; } = [];
 
-    // Null on a dry run.
     [JsonPropertyName("publication")]
     public int? Publication { get; set; }
 }
@@ -176,7 +172,6 @@ public sealed class ThemeDraftRow
     [JsonPropertyName("path")]
     public string Path { get; init; }
 
-    // Null when the store's history does not record who saved the draft.
     [JsonPropertyName("changed_by")]
     public string ChangedBy { get; init; }
 

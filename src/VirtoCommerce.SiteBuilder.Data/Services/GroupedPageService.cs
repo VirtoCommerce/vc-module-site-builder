@@ -755,7 +755,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             }
         }
 
-        /// <summary>The stored link wins, as where the save derives the overrides, so this is the root they were derived from.</summary>
+        // The stored link wins, as in the save that derives the overrides from it.
         private static async Task<string> GetRootVersionAsync(ISiteBuilderRepository repository, GroupedSiteBuilderPage group,
             GroupedSiteBuilderPageEntity existing, CancellationToken cancellationToken)
         {

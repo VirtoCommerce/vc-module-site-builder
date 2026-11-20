@@ -4,7 +4,7 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.Data.Services;
 
-// A section's settings are its own keys, as the designer stores them, so a path starts at the section itself.
+// The designer stores a section's settings as its own keys, so a path starts at the section itself.
 public static class SiteBuilderSectionConditions
 {
     public const string AnyItem = "*";
@@ -19,7 +19,6 @@ public static class SiteBuilderSectionConditions
         return condition == null || Resolve(section, condition.Path.Split('.')).Any(x => IsMatch(x, condition));
     }
 
-    // Null when the condition can be checked; otherwise why not, for the caller to say.
     public static string Validate(SiteBuilderSectionSettingCondition condition)
     {
         if (condition == null)

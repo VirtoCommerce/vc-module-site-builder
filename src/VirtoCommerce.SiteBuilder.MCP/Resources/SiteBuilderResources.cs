@@ -32,7 +32,6 @@ using CustomerSettings = VirtoCommerce.CustomerModule.Core.ModuleConstants.Setti
 
 namespace VirtoCommerce.SiteBuilder.MCP.Resources;
 
-// Each resource asks for the permissions the designer's own lists need.
 [McpServerResourceType]
 [McpScope(McpScopes.Admin)]
 public class SiteBuilderResources(
@@ -178,7 +177,7 @@ public class SiteBuilderResources(
 
     [McpServerResource(UriTemplate = "site-builder://organizations{?keyword,skip,take}", Name = "organizations", MimeType = JsonMimeType)]
     [McpPermission(Read)]
-    // Granted in full only, as the designer's list needs it: a role limited to some organizations would see the others' names.
+    // Unscoped only: a role limited to some organizations would see the others' names.
     [Authorize(CustomerPermissions.Read)]
     [Description("Organizations a page's audience can name (change_page_settings, organization_id): id and name, filtered by " +
         "keyword. Needs customer:read for every organization. Paged: skip and take, next_skip for the next page.")]

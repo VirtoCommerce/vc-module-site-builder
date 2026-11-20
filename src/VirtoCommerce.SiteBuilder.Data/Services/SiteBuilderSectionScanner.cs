@@ -50,7 +50,6 @@ public class SiteBuilderSectionScanner(
         result.Skip = listCriteria.Skip;
         result.ScannedPageCount = rows.Results.Count;
 
-        // A component placed on many pages is read once per scan.
         var components = new Dictionary<string, SiteBuilderPageDocument>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var row in rows.Results)
@@ -84,7 +83,7 @@ public class SiteBuilderSectionScanner(
             .Where(x => criteria.ObjectIds is not { Count: > 0 } || criteria.ObjectIds.Contains(x.Id));
     }
 
-    // The status rule of the grouped pages search, applied in memory.
+    // The status filter of the grouped pages search, applied in memory.
     protected static bool HasStatus(GroupedSiteBuilderPage page, string[] statuses)
     {
         var pages = page.Pages ?? [];

@@ -21,8 +21,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Content shows on every page the component stands on, so a content change waits for approval and writes only over the
-// reviewed versions.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentWriteTools(
@@ -371,14 +369,12 @@ public sealed class SharedComponentChange : McpChangePreview, IReviewedChange
     [JsonPropertyName("affects_published")]
     public bool AffectsPublished { get; set; }
 
-    // Null when the content does not change; pages you may not read are left out and only counted in a warning.
     [JsonPropertyName("placed_on_pages")]
     public IList<string> PlacedOnPages { get; set; }
 
     [JsonPropertyName("sections")]
     public IList<SectionRow> Sections { get; set; }
 
-    // Sent back unchanged, they pin the write to the reviewed content and copied pages; it is refused once one moved.
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; }
 }

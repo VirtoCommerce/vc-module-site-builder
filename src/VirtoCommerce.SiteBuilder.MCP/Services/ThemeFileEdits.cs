@@ -31,7 +31,6 @@ public sealed class ThemeFileChange : McpChangePreview
     [JsonPropertyName("values")]
     public JsonObject Values { get; set; }
 
-    // The theme is not published while any of these remain.
     [JsonPropertyName("contrast_failures")]
     public IList<ContrastFailureRow> ContrastFailures { get; set; }
 }
@@ -233,17 +232,14 @@ public sealed class TemplateRuleRow
 
     public string PageType { get; init; }
 
-    // The storefront tries the rules in this order.
     public int Position { get; init; }
 
     public string Template { get; init; }
 
     public bool Disabled { get; init; }
 
-    // All of them must hold.
     public JsonObject When { get; init; }
 
-    // The storefront's defaults; the first change makes them the page type's own.
     public bool IsDefault { get; init; }
 
     public static IList<TemplateRuleRow> From(TemplateRulesDocument rules) =>

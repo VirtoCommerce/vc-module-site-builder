@@ -22,7 +22,6 @@ public sealed class PageEditSources(
 {
     private readonly Dictionary<string, string> _pageVersions = new(StringComparer.OrdinalIgnoreCase);
 
-    // A write that must take exactly what was reviewed pins these versions.
     public IReadOnlyDictionary<string, string> PageVersions => _pageVersions;
 
     public async Task<JsonArray> GetPageSectionsAsync(string pageId, CancellationToken cancellationToken)

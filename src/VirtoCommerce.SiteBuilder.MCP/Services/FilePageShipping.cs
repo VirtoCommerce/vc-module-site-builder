@@ -12,9 +12,7 @@ namespace VirtoCommerce.SiteBuilder.MCP.Services;
 public sealed record FilePageShipCall(string StoreId, string PageId, bool Publish, bool Rebase, string DraftOwner,
     IDictionary<string, string> ExpectedVersions, bool DryRun);
 
-// The write is bound to what the dry run showed. In git each editor drafts on their own branch and an approved change
-// runs as the approver, so the dry run pins whose branch and which commit, and the write ships it from a branch of its
-// own so later draft commits stay out. Blob storage has one unlocked draft, pinned by the hash of its content.
+// In git the dry run pins whose draft branch and which commit; blob storage has one draft, pinned by its content hash.
 public class FilePageShipping(
     IAuthorizationService authorizationService,
     IFilePageOperationService filePageOperationService,
@@ -23,11 +21,9 @@ public class FilePageShipping(
 {
     public const string DraftOwnerArgument = "draft_owner";
 
-    // Pins the published content an unpublish in git removes, next to the draft head pinned under the page id.
     private const string PublishedKeyPrefix = "published:";
 
-    // A git conflict is answered as an outcome with the ways out, since the pull request may already be open; nothing
-    // is retried.
+    // A git conflict is an outcome, not an error: the pull request may already be open.
     public async Task<SiteBuilderChange> ShipAsync(ClaimsPrincipal user, FilePageShipCall call, CancellationToken cancellationToken)
     {
         var page = await FilePages.LoadAsync(authorizationService, user, call.StoreId, call.PageId);

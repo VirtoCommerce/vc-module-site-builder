@@ -13,7 +13,6 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// The writes run through the module's own shared component operation over the component services of the test.
 public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
 {
     private const string Content = """{ "settings": {}, "content": [ { "id": "bar", "type": "announcement-bar", "text": "Free shipping" } ] }""";
@@ -220,7 +219,6 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     public async Task AComponentSavedRightBeforeTheWrite_IsNotOverwritten()
     {
         var call = await ReviewAsync(Revise(CopyFrom("promo")));
-        // a colleague's save lands after the call read the versions again, right before the write takes the component's lock
         _beforeSave = () => _contents["sc-a"] = Content.Replace("Free shipping", "Gift wrap", StringComparison.Ordinal);
 
         var result = await _context.CallAsync(Reviser(), "change_shared_component", call, Approved);

@@ -45,7 +45,6 @@ public static class FilePages
         return new FilePage(storeId.Trim(), folder, path);
     }
 
-    // The store first, as the operations check it, so a refusal names the store before anything about the page.
     public static async Task<FilePage> LoadAsync(IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId, string pageId)
     {
         var page = Parse(storeId, pageId);
@@ -54,7 +53,6 @@ public static class FilePages
         return page;
     }
 
-    // A draft read falls back to what is published, as the designer opens the page.
     public static async Task<string> ReadAsync(ISiteBuilderContentQueryService contentQueryService, ILogger logger, ClaimsPrincipal user, FilePage page,
         bool draft, CancellationToken cancellationToken)
     {
@@ -84,14 +82,11 @@ public static class FilePages
         await ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken)
         ?? throw new McpException($"Page '{page.PageId}' was not found in store '{page.StoreId}'. Check the folder and path the designer shows for it.");
 
-    // A file page has no version of its own; the operations compare this content hash at their write, so a change made
-    // since the read is refused.
     public static string VersionOf(string content) => SiteBuilderContentVersion.CreateForFileContent(content);
 
     public static string Forbidden(FilePage page, string verb) =>
         $"You may not {verb} page '{page.PageId}': it needs builder:read in store '{page.StoreId}'.";
 
-    // Git failures arrive as exceptions with messages meant for an administrator, so the agent gets a generic description.
     public static async Task<T> RunAsync<T>(ILogger logger, Func<Task<T>> operation)
     {
         try
@@ -148,7 +143,6 @@ public sealed class FilePageShipmentRow
     [JsonPropertyName("pull_request_url")]
     public string PullRequestUrl { get; init; }
 
-    // Publishing again with rebase is the way out of a conflict; it needs a new approval.
     [JsonPropertyName("can_rebase")]
     public bool CanRebase { get; init; }
 

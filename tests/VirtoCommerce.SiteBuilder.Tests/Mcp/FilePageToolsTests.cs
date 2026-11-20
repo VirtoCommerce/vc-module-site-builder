@@ -16,8 +16,6 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// File pages are read and saved through the real designer over the test's blob storage; the file page operations are
-// mocked because their git work has its own tests.
 public sealed class FilePageToolsTests : IAsyncDisposable
 {
     private const string Path = "landing/spring.page";

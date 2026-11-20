@@ -6,10 +6,6 @@ public class SharedComponentContentSaveOperationRequest : SharedComponentOperati
 {
     public JObject Content { get; set; }
 
-    /// <summary>
-    /// The version of the content the caller reviewed, as a dry run answers it in <see cref="SiteBuilderObjectChange.ETag"/>
-    /// (<see cref="SiteBuilderContentVersion.CreateForFileContent"/> of the content as it is read): the save is refused once someone saved the
-    /// content since. <c>null</c> writes over whatever it holds.
-    /// </summary>
+    /// <summary>The <see cref="SiteBuilderContentVersion.CreateForFileContent"/> version the caller reviewed; <c>null</c> skips the check.</summary>
     public string ExpectedContentVersion { get; set; }
 }

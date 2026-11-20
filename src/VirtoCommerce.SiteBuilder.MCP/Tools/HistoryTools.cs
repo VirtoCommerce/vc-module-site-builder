@@ -59,7 +59,7 @@ public class HistoryTools(
 
         var items = GetItems(page_id, theme_files);
 
-        // The store first, so an answer about the arguments does not tell which stores exist; a refusal after it is about the page.
+        // The store first, so an answer about the arguments does not tell which stores exist.
         await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
 
         if (items.Count == 0)
@@ -168,10 +168,8 @@ public sealed class ContentVersionRow
 
     public IList<string> Items { get; init; }
 
-    // Pages stored as files only: the commit is on your own draft branch.
     public bool? Mine { get; init; }
 
-    // Pages stored as files only: the commit changed far more than this page, such as an import.
     public bool? Bulk { get; init; }
 
     public static ContentVersionRow From(ContentVersion version)

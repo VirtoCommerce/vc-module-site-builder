@@ -21,7 +21,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Only drafts change, so no second person approves the change.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SectionBulkTools(
@@ -31,7 +30,6 @@ public class SectionBulkTools(
     IMcpJobDispatcher jobDispatcher,
     Func<UserManager<ApplicationUser>> userManagerFactory)
 {
-    // A real run must fix the whole filtered set, not a sample, so it scans further than a preview.
     private const int MaxPreviewScan = 200;
     private const int MaxPages = 1000;
     private const int MaxPreviewPages = 10;

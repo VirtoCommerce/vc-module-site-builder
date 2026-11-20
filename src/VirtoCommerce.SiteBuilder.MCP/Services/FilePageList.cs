@@ -8,8 +8,6 @@ using VirtoCommerce.SiteBuilder.MCP.Tools;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// Pages stored as files have no status, language or date in a list, so such a filter leaves them out, or is refused
-// when files are asked for explicitly.
 public sealed record SitePageSources(bool Database, bool Files, string DatabasePageType, string Folder)
 {
     public const string FileType = "File";
@@ -56,7 +54,6 @@ public static class FilePageList
     private const string Pages = "pages";
     private const string Blogs = "blogs";
 
-    // Subfolders are left out, as the designer lists one folder at a time.
     public static async Task<IList<SitePageRow>> ListAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user,
         string storeId, string folder, string keyword, CancellationToken cancellationToken)
     {

@@ -19,8 +19,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Customers see a draft only once it is published, so an edit needs no approval. A page stored as a file has no version
-// of its own, so its version token is a hash of its content.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageDraftTools(
@@ -139,7 +137,6 @@ public class PageDraftTools(
         return preview;
     }
 
-    // In blob storage the draft is re-read right before the write; a save between that read and the write is not seen.
     private async Task<PageDraftEdit> EditFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId, string versionToken,
         PageEditOperation[] operations, bool dryRun, CancellationToken cancellationToken)
     {

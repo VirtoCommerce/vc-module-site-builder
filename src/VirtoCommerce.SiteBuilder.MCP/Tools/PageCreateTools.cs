@@ -15,7 +15,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A new page is a draft, so customers see nothing until it is published and creating one needs no approval.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageCreateTools(

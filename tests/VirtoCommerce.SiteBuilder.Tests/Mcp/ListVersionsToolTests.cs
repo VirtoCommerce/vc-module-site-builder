@@ -36,7 +36,6 @@ public sealed class ListVersionsToolTests : IAsyncDisposable
     {
         _context.AddGroups(Group("a1", StoreA), Group("b1", StoreB));
 
-        // The history pages by an opaque cursor: here the index of the next version.
         _context.History
             .Setup(x => x.ListAsync(It.IsAny<string>(), It.IsAny<IList<HistoryItem>>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string _, IList<HistoryItem> items, string cursor, int take, CancellationToken _) =>

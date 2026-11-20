@@ -41,7 +41,6 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// The module's real store authorization over services the tests fill in.
 internal sealed class McpTestContext : IAsyncDisposable
 {
     public const string StoreA = "store-a";
@@ -50,8 +49,6 @@ internal sealed class McpTestContext : IAsyncDisposable
     public const string StoreScope = nameof(StoreSelectedScope);
     public const string AssetRead = "platform:asset:read";
 
-    // The handler reads the store binding from the user account it looks up, not from the principal, so one binding
-    // covers every user of a test.
     private string _boundStoreId;
     private McpToolHarness _harness;
     private (DesignerContentService Designer, ThemeDraftService Themes) _designer;
@@ -97,13 +94,11 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public Mock<ISiteBuilderPreviewQueryService> Previews { get; } = new();
 
-    // Mocked: the git work of these operations has its own tests.
     public Mock<IFilePageOperationService> FilePageOperations { get; } = new();
 
     public Mock<ISiteBuilderPublishStatusQueryService> PublishStatuses { get; } = new();
 
-    // Turns git on for the content queries only: file page reads and writes stay in the test's blob storage, so it serves
-    // version listing only.
+    // Git serves version listing only; file page reads and writes stay in the test's blob storage.
     public bool GitFlow { get; set; }
 
     public Mock<IGitContentHistory> GitHistory { get; } = new();
@@ -116,7 +111,6 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public IGroupedPageOperationService GroupedPageOperations { get; set; }
 
-    // A change made here lands between the call's dry runs and its write, as a concurrent one.
     public Action BeforeDesignerWrite { get; set; }
 
     public McpToolHarness Harness => _harness ??= McpToolHarness.Create(services => services.AddSiteBuilderMcp(), Register, scope: null);
@@ -260,7 +254,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         Page = page,
     };
 
-    // onReport runs after each progress report, so a test can change content between two pages of the job.
     public async Task<RecordingJobContext> RunJobAsync<THandler, TPayload>(TPayload payload, Action<int> onReport = null)
         where THandler : class, VirtoCommerce.Platform.Core.Jobs.IBackgroundJobHandler<TPayload>
         where TPayload : class
@@ -277,7 +270,6 @@ internal sealed class McpTestContext : IAsyncDisposable
 
     public static readonly McpToolCallOptions Approved = new() { AsApprovedChange = true };
 
-    // Builds the call as the change stored for approval holds it: the arguments plus what their dry run answered.
     public async Task<Dictionary<string, object>> ReviewAsync(McpTestUser user, string tool, Dictionary<string, object> arguments)
     {
         var review = (await CallAsync(user, tool, new Dictionary<string, object>(arguments) { ["dryRun"] = true })).EnsureSucceeded().Read<SiteBuilderChange>();
@@ -332,7 +324,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         var pageSize = new Mock<IMcpPageSizeResolver>();
         pageSize.Setup(x => x.GetPageSizeAsync(It.IsAny<int?>())).ReturnsAsync((int? take) => Math.Clamp(take ?? 20, 1, 50));
 
-        // The platform's permission policies, which the module's services ask for by name.
         services.AddAuthorizationCore(options =>
         {
             foreach (var permission in Permissions.AllPermissions)
@@ -450,7 +441,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         if (_designer == default)
         {
             var themes = new ThemeDraftService(ThemeStorage, Lock, Blobs, NullLogger<ThemeDraftService>.Instance);
-            // Pages stored as files are kept in the blob storage of the test: no store of the test keeps them in git.
             var filePages = TestServices.FilePageDrafts(Options.Create(new GitContentOptions()), connection: null, policy: new FakeGitContentPolicy(enabled: false),
                 storeService: Stores, pathResolver: Blobs, blobs: Blobs, publishing: Blobs, events: Blobs);
             _designer = (TestServices.Designer(SavedVersions, filePageDrafts: filePages, themeDrafts: themes, pages: PageStore, themePublisher: CreateThemePublisher(),
@@ -556,7 +546,6 @@ internal sealed class McpTestContext : IAsyncDisposable
         return new UserManager<ApplicationUser>(store.Object, null, null, null, null, null, null, null, null);
     }
 
-    // Registered as the platform does at startup, so the handler can read store-scoped permission claims.
     private static void RegisterPermissionScopes()
     {
         AbstractTypeFactory<PermissionScope>.RegisterType<StoreSelectedScope>();
@@ -572,11 +561,11 @@ internal sealed class McpTestContext : IAsyncDisposable
     }
 }
 
-// A set failure stands for a platform without background jobs.
 internal sealed class RecordingJobDispatcher : IMcpJobDispatcher
 {
     public List<(Type Handler, object Payload, McpJobRequest Request)> Enqueued { get; } = [];
 
+    // A set failure stands for a platform without background jobs.
     public Exception Failure { get; set; }
 
     public Task<McpJobHandle> EnqueueAsync<THandler>(RequestContext<CallToolRequestParams> context, object payload, McpJobRequest request)

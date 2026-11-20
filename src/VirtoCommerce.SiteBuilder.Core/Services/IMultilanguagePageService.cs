@@ -38,20 +38,14 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     /// </summary>
     Task<GroupedSiteBuilderPage> LinkAsync(string multilanguagePageId, string groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Links the page as <see cref="LinkAsync(string, string, CancellationToken)"/> does; with <paramref name="requireUnpublished"/>, only a page not
-    /// published, as read under the lock of the link.
-    /// </summary>
+    /// <summary>Links the page as <see cref="LinkAsync(string, string, CancellationToken)"/> does, checking the conditions under the lock of the link.</summary>
     /// <param name="expectedVersion">
-    /// The version of the root (<see cref="SiteBuilderContentVersion.CreateForMultilanguagePage"/>), which has no lock of its own: read under the lock
-    /// of the link, and again by the save after it once that has taken the overrides from it; <c>null</c> links to whatever it holds.
+    /// The root's <see cref="SiteBuilderContentVersion.CreateForMultilanguagePage"/> version. The root has no lock of its own, so the save after the
+    /// link compares it again; <c>null</c> skips the check.
     /// </param>
-    /// <param name="expectedPageVersion">
-    /// The version of the page's settings (<see cref="SiteBuilderContentVersion.CreateForGroupSettings"/>), read under the lock of the link;
-    /// <c>null</c> links the page whatever it holds.
-    /// </param>
+    /// <param name="expectedPageVersion">The page's <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version; <c>null</c> skips the check.</param>
     /// <exception cref="SiteBuilderContentConflictException">
-    /// The page is published, or the root or the page changed: it is not linked, or the link is undone when the save after it finds the root changed.
+    /// A condition does not hold: the page is not linked, or the link is undone when the save after it finds the root changed.
     /// </exception>
     Task<GroupedSiteBuilderPage> LinkAsync(string multilanguagePageId, string groupId, bool requireUnpublished, string expectedVersion, string expectedPageVersion,
         CancellationToken cancellationToken = default);
@@ -61,15 +55,9 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     /// </summary>
     Task<GroupedSiteBuilderPage> UnlinkAsync(string groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Unlinks the page as <see cref="UnlinkAsync(string, CancellationToken)"/> does; with <paramref name="requireUnpublished"/>, only a page not
-    /// published, as read under the lock of the unlink.
-    /// </summary>
-    /// <param name="expectedVersion">
-    /// The version of the page's settings (<see cref="SiteBuilderContentVersion.CreateForGroupSettings"/>), read under the lock of the unlink;
-    /// <c>null</c> unlinks the page whatever it holds.
-    /// </param>
-    /// <exception cref="SiteBuilderContentConflictException">The page is published, or changed: it is not unlinked.</exception>
+    /// <summary>Unlinks the page as <see cref="UnlinkAsync(string, CancellationToken)"/> does, checking the conditions under the lock of the unlink.</summary>
+    /// <param name="expectedVersion">The page's <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version; <c>null</c> skips the check.</param>
+    /// <exception cref="SiteBuilderContentConflictException">A condition does not hold: the page is not unlinked.</exception>
     Task<GroupedSiteBuilderPage> UnlinkAsync(string groupId, bool requireUnpublished, string expectedVersion, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -78,15 +66,12 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     /// </summary>
     Task<MultilanguagePage> ConvertAsync(string groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Converts the page as <see cref="ConvertAsync(string, CancellationToken)"/> does; with <paramref name="requireUnpublished"/>, only a page not
-    /// published, as read under the lock of its link.
-    /// </summary>
+    /// <summary>Converts the page as <see cref="ConvertAsync(string, CancellationToken)"/> does, checking the conditions under the lock of its link.</summary>
     /// <param name="expectedVersion">
-    /// The version of the page's settings (<see cref="SiteBuilderContentVersion.CreateForGroupSettings"/>), which the root takes, read before the
-    /// root is created and again under the lock of the link; <c>null</c> converts the page whatever it holds.
+    /// The page's <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version, compared before the root is created and again under the lock;
+    /// <c>null</c> skips the check.
     /// </param>
-    /// <exception cref="SiteBuilderContentConflictException">The page is published, or changed: no root is left behind.</exception>
+    /// <exception cref="SiteBuilderContentConflictException">A condition does not hold: no root is left behind.</exception>
     Task<MultilanguagePage> ConvertAsync(string groupId, bool requireUnpublished, string expectedVersion, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -105,9 +90,7 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     /// Marks the translation as <see cref="MarkUpToDateAsync(string, CancellationToken)"/> does, when the source revision is still
     /// <paramref name="expectedSourceRevisionDate"/>, read under the lock of the save, which takes the source language version's lock too.
     /// </summary>
-    /// <param name="expectedSourceRevisionDate">
-    /// Matched within a millisecond, as a revision sent through JSON may lose a fraction of one; <c>null</c> takes the source revision as it is.
-    /// </param>
+    /// <param name="expectedSourceRevisionDate"><c>null</c> takes the source revision as it is.</param>
     /// <exception cref="SiteBuilderContentConflictException">The source was published again: nothing is written.</exception>
     Task<GroupedSiteBuilderPage> MarkUpToDateAsync(string groupId, DateTime? expectedSourceRevisionDate, CancellationToken cancellationToken = default);
 
@@ -122,17 +105,15 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     /// only when no published version changes, as each save of one reads it under its lock.
     /// </summary>
     /// <param name="expectedVersion">
-    /// The version of the root whose values the versions take (<see cref="SiteBuilderContentVersion.CreateForMultilanguagePage"/>), which has no lock
-    /// of its own: read right before the first save, and again by each save once that has taken the overrides from it; <c>null</c> resets to whatever
-    /// it holds.
+    /// The root's <see cref="SiteBuilderContentVersion.CreateForMultilanguagePage"/> version. The root has no lock of its own, so it is compared before
+    /// the first save and again by each save; <c>null</c> skips the check.
     /// </param>
     /// <param name="expectedPageVersions">
-    /// The settings version (<see cref="SiteBuilderContentVersion.CreateForGroupSettings"/>) of every language version the reset changes, by its id,
-    /// as <see cref="PreviewResetOverridesAsync"/> answers them, each read again under the lock of its save; <c>null</c> resets whatever the
-    /// versions hold.
+    /// The <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version of each language version the reset changes, by id, each compared
+    /// again under the lock of its save; <c>null</c> skips the check.
     /// </param>
     /// <exception cref="SiteBuilderContentConflictException">
-    /// A published version would change, the root changed, or the versions the reset changes are not those expected: one changed, appeared or went.
+    /// A published version would change, the root changed, or a version the reset changes changed, appeared or went.
     /// Before the first save nothing is written; a version published or changed, or a root changed, after that is refused at the version's own save,
     /// after the versions before it are reset.
     /// </exception>
@@ -161,9 +142,8 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
     /// </summary>
     /// <param name="expectedDraftVersions"><c>null</c> publishes the drafts whatever they hold.</param>
     /// <param name="expectedSettingsVersions">
-    /// The settings version (<see cref="SiteBuilderContentVersion.CreateForGroupSettings"/>) of every version with a draft, by its id; a version
-    /// whose settings changed after the check, as read again before its save, is skipped with <see cref="MultilanguagePageBatchResult.ChangedReason"/>.
-    /// <c>null</c> publishes the drafts whatever the settings hold.
+    /// The <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version of each version with a draft, by id; one that changes before its save
+    /// is skipped with <see cref="MultilanguagePageBatchResult.ChangedReason"/>. <c>null</c> skips the check.
     /// </param>
     /// <exception cref="SiteBuilderContentConflictException">A draft or the settings of a version with one changed, appeared or went: nothing is published.</exception>
     Task<MultilanguagePageBatchResult> PublishAllAsync(string multilanguagePageId, IDictionary<string, string> expectedDraftVersions,
@@ -179,13 +159,11 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
 
     Task<SiteBuilderChangePreview> PreviewUpdateAsync(MultilanguagePage model, CancellationToken cancellationToken = default);
 
-    /// <summary>The page, with the version of its settings; and, with the version a link compares, the root, whose fields do not change.</summary>
     Task<SiteBuilderChangePreview> PreviewLinkAsync(string multilanguagePageId, string groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>The page, with the version of its settings.</summary>
     Task<SiteBuilderChangePreview> PreviewUnlinkAsync(string groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>The new root has no id yet, and neither has the link to it. The page comes with the version of its settings.</summary>
+    /// <summary>The new root has no id yet, and neither has the link to it.</summary>
     Task<SiteBuilderChangePreview> PreviewConvertAsync(string groupId, CancellationToken cancellationToken = default);
 
     /// <summary>The copies have no ids yet; their content is not compared.</summary>
@@ -193,16 +171,8 @@ public interface IMultilanguagePageService : ICrudService<MultilanguagePage>
 
     Task<SiteBuilderChangePreview> PreviewMarkUpToDateAsync(string groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// As <see cref="PreviewMarkUpToDateAsync(string, CancellationToken)"/>, refusing a source revision that is not
-    /// <paramref name="expectedSourceRevisionDate"/> as <see cref="MarkUpToDateAsync(string, DateTime?, CancellationToken)"/> does.
-    /// </summary>
     Task<SiteBuilderChangePreview> PreviewMarkUpToDateAsync(string groupId, DateTime? expectedSourceRevisionDate, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// The versions the reset changes, each with the version of its settings; and, when there is one, the root with the version a reset compares,
-    /// whose fields do not change.
-    /// </summary>
     Task<SiteBuilderChangePreview> PreviewResetOverridesAsync(string multilanguagePageId, IList<string> fields, CancellationToken cancellationToken = default);
 
     /// <summary>The new version has no id yet; its content is not compared.</summary>

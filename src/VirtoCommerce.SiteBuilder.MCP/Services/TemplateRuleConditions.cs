@@ -6,8 +6,7 @@ namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
 public sealed record PageRuleSubject(string Permalink, string Language, JsonObject Settings, string ObjectType);
 
-// Mirrors the storefront's built-in conditions, which have no server twin, so the two change together; conditions of
-// storefront plugins are kept unchecked.
+// Mirrors the storefront's built-in conditions, which have no server twin: change the two together.
 public static class TemplateRuleConditions
 {
     public const string PagesObjectType = "Pages";
@@ -105,7 +104,6 @@ public static class TemplateRuleConditions
         }
     }
 
-    // Mirrors the storefront's path matching.
     public static bool MatchesPath(string permalink, string glob)
     {
         if (permalink == null)

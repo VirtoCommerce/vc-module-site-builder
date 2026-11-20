@@ -10,10 +10,9 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The operation checks the store again, as its endpoint does.
 public static class PageLookup
 {
-    // A page kept as a file is named by its path, as the designer opens it; a database page id never holds a '/'.
+    // A database page id never holds a '/'; a page kept as a file is named by its path.
     public static bool IsFilePagePath(string pageId) => pageId?.Contains('/') == true;
 
     public static async Task<GroupedSiteBuilderPage> LoadPageAsync(this IGroupedPageService groupedPageService, IAuthorizationService authorizationService,

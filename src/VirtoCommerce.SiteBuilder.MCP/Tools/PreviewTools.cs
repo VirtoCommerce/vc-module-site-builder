@@ -20,8 +20,6 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The server repeats the storefront's template choice but holds the data of only some rule conditions, so an answer may be
-// undecided.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PreviewTools(
@@ -100,7 +98,6 @@ public class PreviewTools(
         var link = await previewQueryService.GetGroupedPagePreviewAsync(new GroupedPageQueryRequest { GroupId = group.Id }, user, cancellationToken);
         SetLink(answer, link, "The storefront's preview of the page's draft.");
 
-        // Customers see the published version's settings; a page never published has only its draft.
         var published = group.Pages.Any(x => x.Status == PageStatuses.Published);
         SiteBuilderContentSnapshot snapshot;
         try
@@ -277,13 +274,10 @@ public sealed class PreviewAnswer
 
     public string Subject { get; init; }
 
-    // Null when there is no link; the notes say why.
     public string PreviewUrl { get; set; }
 
-    // Only for a template: the rules that give it its pages.
     public IList<string> PickedBy { get; set; }
 
-    // Only for a page or a page type.
     public TemplateChoice Template { get; set; }
 
     public IList<string> Notes { get; set; } = [];
@@ -295,10 +289,8 @@ public sealed class TemplateChoice
 
     public string Template { get; set; }
 
-    // The rule that picks it; null for the type's default template or the page's own.
     public string RuleId { get; set; }
 
-    // false when an earlier rule depends on a condition the server did not evaluate.
     public bool Decided { get; set; }
 
     public string Reason { get; set; }
@@ -343,7 +335,6 @@ public sealed class ConditionEvaluationRow
 
     public JsonNode Value { get; init; }
 
-    // null when the server did not evaluate it.
     public bool? Holds { get; init; }
 
     public string NotEvaluated { get; init; }

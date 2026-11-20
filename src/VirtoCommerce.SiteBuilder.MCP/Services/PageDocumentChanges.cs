@@ -89,7 +89,6 @@ public static class PageDocumentChanges
     private static List<JsonObject> Items(JsonArray items) =>
         items?.OfType<JsonObject>().Where(x => !string.IsNullOrEmpty(GetId(x))).ToList() ?? [];
 
-    // A list is one value, as the designer's settings panel edits it.
     private static Dictionary<string, JsonNode> Flatten(JsonObject item, string[] skippedKeys)
     {
         var values = new Dictionary<string, JsonNode>(StringComparer.Ordinal);

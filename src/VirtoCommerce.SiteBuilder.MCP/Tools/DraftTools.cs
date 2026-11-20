@@ -15,7 +15,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Discarding loses unpublished work, so the user confirms it and the write takes only the versions its dry run answered.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class DraftTools(
@@ -148,7 +147,6 @@ public class DraftTools(
             change.AddChange("draft", "saved draft", "published version");
         }
 
-        // The discard's own dry run gives the draft's version in the form its write compares.
         var forbidden = $"You may not discard '{path}': it needs builder:update and {permission}, and builder:read in store '{storeId}'.";
         var check = await designerOperationService.DiscardAsync(ThemeFileDiscard(storeId, path, isDryRun: true, versions: null), context.User, cancellationToken);
         EnsureNotChanged(check, change);
@@ -178,7 +176,6 @@ public class DraftTools(
         DryRun = isDryRun,
     };
 
-    // A store that keeps its pages in git refuses the blob discard; there the draft is the user's own draft branch.
     private async Task<SiteBuilderChange> DiscardFilePageAsync(RequestContext<CallToolRequestParams> context, string storeId, string pageId,
         IDictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
     {
@@ -248,7 +245,6 @@ public class DraftTools(
 
     private static KeyValuePair<string, string> Version(string key, string version) => new(key, version);
 
-    // Conflict means the draft was saved again since the dry run.
     private static void EnsureNotChanged(SiteBuilderOperationResult result, SiteBuilderChange change)
     {
         if (result.Status == SiteBuilderOperationStatus.Conflict)

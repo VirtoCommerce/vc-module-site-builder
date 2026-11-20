@@ -16,7 +16,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// The write re-reads the page and applies only the named settings, so values it does not name are not overwritten with stale ones.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageSettingsTools(
@@ -35,7 +34,6 @@ public class PageSettingsTools(
 
     private static readonly string[] ClearableFields = [UserGroupsField, OrganizationField, StartDateField, EndDateField];
 
-    // Without expected_versions the tool refuses the write itself, so there is nothing to approve.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
@@ -160,7 +158,6 @@ public class PageSettingsTools(
         return change;
     }
 
-    // A change that needs no approval may take the version of its own dry run.
     private static Task Pin(SettingsCall call, SiteBuilderChange change, SiteBuilderOperationResult check)
     {
         var version = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == change.ObjectType && x.ObjectId == change.ObjectId)?.ETag;

@@ -10,10 +10,7 @@ public class SiteBuilderPageSearchCriteria : SearchCriteriaBase, IHasStoreId
 {
     public string StoreId { get; set; }
 
-    /// <summary>
-    /// Only pages of these stores, for a caller whose permission covers several stores but not all. It narrows
-    /// <see cref="StoreId"/> and never widens it, so a request that names one store cannot reach others through it.
-    /// </summary>
+    /// <summary>Narrows <see cref="StoreId"/> and never widens it, so a request that names one store cannot reach others through it.</summary>
     public IList<string> StoreIds { get; set; }
 
     public string Statuses { get; set; }

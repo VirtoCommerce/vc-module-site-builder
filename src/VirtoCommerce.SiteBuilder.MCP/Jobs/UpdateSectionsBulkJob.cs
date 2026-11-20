@@ -6,7 +6,6 @@ namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
 
 public class UpdateSectionsBulkJobPayload
 {
-    // The job runs as this user.
     public string UserId { get; set; }
 
     public string SectionType { get; set; }
@@ -17,7 +16,6 @@ public class UpdateSectionsBulkJobPayload
 
     public string SettingsLanguage { get; set; }
 
-    // Fixed at call time, so the job never reaches pages or sections the agent did not see.
     public IList<UpdateSectionsBulkJobPage> Pages { get; set; } = [];
 }
 
@@ -72,7 +70,6 @@ public class UpdateSectionsBulkJob(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // One page that cannot be saved does not stop the others; the reason stays in the log.
             logger.LogError(ex, "update_sections_bulk could not change page {PageId}", page.PageId);
             return new PageJobResult(PageJobOutcome.Failed, "an unexpected error; see the platform log");
         }

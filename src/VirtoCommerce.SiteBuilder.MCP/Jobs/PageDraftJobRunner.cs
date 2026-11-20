@@ -21,8 +21,6 @@ public enum PageJobOutcome
 
 public sealed record PageJobResult(PageJobOutcome Outcome, string Reason = null, IList<PageDocumentChange> Changes = null, string VersionToken = null);
 
-// Saves through the designer's own save as the user, so a bulk edit gets the same checks; a page changed since the
-// tool read it is skipped so another edit is never overwritten.
 public class PageDraftJobRunner(
     IAuthorizationService authorizationService,
     IGroupedPageService groupedPageService,
@@ -105,7 +103,6 @@ public class PageDraftJobRunner(
         };
     }
 
-    // The bulk changes read nothing outside the page.
     private sealed class NoSources : IPageEditSources
     {
         public static readonly NoSources Instance = new();

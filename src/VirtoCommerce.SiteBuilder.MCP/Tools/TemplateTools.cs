@@ -22,8 +22,6 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A template draft reaches customers only with the theme's publication, so an edit needs no second person; the save is
-// the designer's own, with its checks and history.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class TemplateTools(
@@ -237,7 +235,7 @@ public class TemplateTools(
             ?? throw new McpException($"Template '{key}' is not a template document, so it cannot be edited here. Open it in the designer.");
     }
 
-    // As the designer starts a template: a copy drops its source's version, and the type's main section is always there.
+    // As the designer does, a copy drops its source's version.
     private async Task<PageDocumentEditor> CreateAsync(ClaimsPrincipal user, string storeId, string key, string type, IList<ThemeTemplate> templates,
         string copyOf, CancellationToken cancellationToken)
     {
@@ -353,7 +351,6 @@ public static class ThemeTemplates
         };
     }
 
-    // The draft, else the live file, as the designer edits them.
     public static async Task<(TemplateRulesDocument Rules, ThemeFileContent File)> ReadRulesAsync(IDesignerOperationService designerOperationService,
         IThemeStorageFactory themeStorageFactory, ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
     {
@@ -388,10 +385,8 @@ public sealed class TemplateSearch
 
     public bool RulesHaveDraft { get; init; }
 
-    // Null without template_key.
     public TemplateDetails Template { get; set; }
 
-    // Null without section_type.
     public IList<string> UnreadTemplateKeys { get; set; }
 
     public IList<string> Notes { get; set; } = [];
@@ -411,7 +406,6 @@ public sealed class TemplateRow
 
     public IList<string> Rules { get; init; } = [];
 
-    // Null without section_type.
     public IList<SectionMatchRow> Sections { get; set; }
 
     public static TemplateRow From(ThemeTemplate template, TemplateRulesDocument rules) => new()
@@ -436,17 +430,14 @@ public sealed class TemplateDetails
 
     public string Version { get; init; }
 
-    // Null for the published version: only the draft is edited.
     public string VersionToken { get; init; }
 
     public JsonObject Settings { get; init; }
 
     public JsonArray Sections { get; init; }
 
-    // It cannot be removed or hidden, so the agent needs to know which section it is.
     public string MainSection { get; init; }
 
-    // Missing is not an error: the storefront then adds the section itself.
     public string MainSectionState { get; init; }
 
     public string Note { get; init; }

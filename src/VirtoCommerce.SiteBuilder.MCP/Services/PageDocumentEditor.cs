@@ -13,14 +13,11 @@ public interface IPageEditSources
 {
     Task<JsonArray> GetPageSectionsAsync(string pageId, CancellationToken cancellationToken);
 
-    // Refuses a component that is not one of the page's store the user may read.
     Task EnsureSharedComponentAsync(string sharedComponentId, CancellationToken cancellationToken);
 
     Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken);
 }
 
-// Only a database page may hold a Shared Component: the storefront resolves placements on database pages only, and the
-// save of a page stored as a file does not check them.
 public enum PageDocumentKind
 {
     Page,
@@ -34,7 +31,6 @@ public sealed class PageDocumentEditor
 {
     public static readonly JsonSerializerOptions WriteOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    // These mirror the page's own name, address and language, which change with the page rather than with its content.
     private static readonly string[] PageOwnedSettings = ["name", "permalink", "cultureName", TypeKey];
     private static readonly string[] ItemOwnedKeys = [IdKey, TypeKey, GroupKey, SharedComponents.ReferenceProperty];
 
@@ -58,10 +54,8 @@ public sealed class PageDocumentEditor
 
     public bool IsLegacyShape { get; }
 
-    // A text in this language may set a setting that holds one text for every language.
     public string PageLanguage { get; set; }
 
-    // A page without content starts empty, as in the designer.
     public static PageDocumentEditor Read(string content) => Read(content, PageDocumentKind.Page);
 
     public static PageDocumentEditor Read(string content, PageDocumentKind kind)
@@ -101,7 +95,6 @@ public sealed class PageDocumentEditor
     // Kinds whose page-owned settings are refused, as they follow the page (or the component) itself.
     private bool HasPageSettings => _kind is PageDocumentKind.Page or PageDocumentKind.FilePage or PageDocumentKind.SharedComponent;
 
-    // In the shape it was read in, so a page stored the older way stays readable by what reads it that way.
     public string Write()
     {
         if (IsLegacyShape)
@@ -611,7 +604,6 @@ public sealed class PageDocumentEditor
         parentObjectNode[last] = SetText(parentObjectNode[last]?.DeepClone(), value, language, path);
     }
 
-    // A text per language changes in one language at a time, so another language's text is never lost to a plain value.
     private JsonNode SetText(JsonNode current, JsonNode value, string language, string path)
     {
         if (language == null)

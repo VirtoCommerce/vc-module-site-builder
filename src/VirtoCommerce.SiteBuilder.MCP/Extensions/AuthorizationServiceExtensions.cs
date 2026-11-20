@@ -11,8 +11,7 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Extensions;
 
-// The tool-level permission check only proves the permission in some store; these narrow it with the controllers'
-// requirement, so store-bound accounts and store-limited roles reach the same data as in the designer.
+// The tool-level permission check passes with the permission in any store; these narrow it to the store at hand.
 public static class AuthorizationServiceExtensions
 {
     public static async Task<bool> IsAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
@@ -23,7 +22,6 @@ public static class AuthorizationServiceExtensions
         return result.Succeeded;
     }
 
-    // Without a store only a permission granted in every store passes, hence the hint to pass one.
     public static async Task EnsureAllowedAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         object resource, string storeId, string permission = Read)
     {
@@ -46,8 +44,7 @@ public static class AuthorizationServiceExtensions
         string permission = Read) =>
         authorizationService.EnsureAllowedAsync(user, new SiteBuilderPageSearchCriteria { StoreId = storeId }, storeId, permission);
 
-    // Null means every store. Each candidate is re-checked with the requirement, so the list matches what the
-    // designer would let the user open.
+    // Null means every store.
     public static async Task<IList<string>> GetStoreIdsAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         Func<UserManager<ApplicationUser>> userManagerFactory, string permission = Read)
     {
@@ -79,7 +76,6 @@ public static class AuthorizationServiceExtensions
         return storeIds;
     }
 
-    // A scan silently leaves out stores the user may not open; null means every store.
     public static async Task<IList<string>> GetStoreIdsAsync(this IAuthorizationService authorizationService, ClaimsPrincipal user,
         Func<UserManager<ApplicationUser>> userManagerFactory, string storeId, string permission)
     {

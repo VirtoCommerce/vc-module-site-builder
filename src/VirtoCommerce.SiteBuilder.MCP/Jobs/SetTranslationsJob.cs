@@ -7,7 +7,6 @@ namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
 
 public class SetTranslationsJobPayload
 {
-    // The job runs as this user.
     public string UserId { get; set; }
 
     public bool MarkUpToDate { get; set; }
@@ -21,7 +20,6 @@ public class SetTranslationsJobPage : ISiteBuilderJobPage
 
     public string VersionToken { get; set; }
 
-    // The translation is marked up to date only while the source is still this publication.
     public DateTime? SourceRevisionDate { get; set; }
 
     public IList<SetTranslationsJobText> Texts { get; set; } = [];
@@ -29,7 +27,6 @@ public class SetTranslationsJobPage : ISiteBuilderJobPage
 
 public class SetTranslationsJobText
 {
-    // Null for a setting of the page.
     public string SectionId { get; set; }
 
     public string SettingPath { get; set; }
@@ -99,7 +96,6 @@ public class SetTranslationsJob(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // One page that cannot be saved does not stop the others; the reason stays in the log.
             logger.LogError(ex, "set_translations could not save page {PageId}", page.PageId);
             return new PageJobResult(PageJobOutcome.Failed, "an unexpected error; see the platform log");
         }

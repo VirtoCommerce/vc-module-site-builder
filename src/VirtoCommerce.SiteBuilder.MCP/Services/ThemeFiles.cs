@@ -12,8 +12,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// Reads and saves go through the designer's own, so a draft written here gets the same checks, sanitizing and history;
-// paths carry the theme folder, as the designer names them.
 public static class ThemeFiles
 {
     public const string CatalogHashKey = "hash";
@@ -24,8 +22,7 @@ public static class ThemeFiles
 
     public static string GetTemplateFile(string templateKey) => ThemeStorage.GetTemplateFile(templateKey);
 
-    // Theme files are saved and published against the catalog the storefront sent last, as the designer saves against
-    // the one its preview sent.
+    // Saved against the catalog the storefront sent last, as the designer saves against the one its preview sent.
     public static async Task<JsonObject> GetCatalogAsync(ISchemaCatalogService schemaCatalogService, string storeId, CancellationToken cancellationToken)
     {
         var catalog = await schemaCatalogService.GetAsync(storeId, hash: null, cancellationToken);
@@ -69,7 +66,7 @@ public static class ThemeFiles
         return tokens;
     }
 
-    // The draft, else what is live, as the designer edits it; Content is null for a missing file.
+    // The draft, else what is live; Content is null for a missing file.
     public static async Task<ThemeFileContent> ReadAsync(IDesignerOperationService designerOperationService, ClaimsPrincipal user, string storeId,
         string path, CancellationToken cancellationToken)
     {

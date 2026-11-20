@@ -56,8 +56,7 @@ namespace VirtoCommerce.SiteBuilder.Web
 {
     public class Module : IModule, IExportSupport, IImportSupport, IHasConfiguration, IHasModuleService
     {
-        // An optional dependency: when installed, it initializes before this module. Its contract assemblies ship with
-        // this module, so they load without it.
+        // Optional dependency, initialized first when installed; its contract assemblies ship with this module.
         private const string McpModuleId = "VirtoCommerce.MCP";
 
         private IApplicationBuilder _appBuilder;

@@ -18,8 +18,6 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// File pages are listed by the module's real file search over the test's blob storage and take their versions from the
-// mocked git history; database pages come from the mocked pages list.
 public sealed class FilePageListAndHistoryToolTests : IAsyncDisposable
 {
     private const string SearchTool = "search_site_pages";

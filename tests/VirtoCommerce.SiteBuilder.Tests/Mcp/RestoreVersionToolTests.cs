@@ -16,8 +16,6 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-// Restores run through the module's real history operation and designer over the test's page store and theme; the
-// versions come from the mocked history.
 public sealed class RestoreVersionToolTests : IAsyncDisposable
 {
     private const string Tool = "restore_version";
@@ -168,7 +166,6 @@ public sealed class RestoreVersionToolTests : IAsyncDisposable
             {
                 if (!request.DryRun)
                 {
-                    // the commit is made only over the file the version was compared with
                     return request.ExpectedContentVersion == FilePages.VersionOf(atTheCommit)
                         ? SiteBuilderOperationResult.Success(new FilePageVersionRestore { CommitSha = "new-commit", RestoredFrom = request.Sha })
                         : SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage).As<FilePageVersionRestore>();

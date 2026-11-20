@@ -22,7 +22,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Read from the dry runs of the publishing operations themselves, so the same checks refuse here as in a publication.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PublishReadinessTools(
@@ -235,7 +234,6 @@ public class PublishReadinessTools(
         }
     }
 
-    // A store without history answers no versions. The authors only add to the answer, so a failing repository is a note.
     private async Task<IList<string>> GetAuthorsSincePublicationAsync(GroupedSiteBuilderPage group, PublishReadiness readiness, CancellationToken cancellationToken)
     {
         ContentVersionPage page;
@@ -390,7 +388,6 @@ public class PublicationDryRuns(
         return true;
     }
 
-    // Publishing every language skips a version that would replace published pages.
     public async Task<bool> CheckLanguageVersionAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
@@ -615,7 +612,6 @@ public sealed class PublishReadiness
 
     public string Affected { get; set; }
 
-    // The permission the publishing tools require; a publication still waits for a second person's approval.
     public bool YouCanPublish { get; set; }
 
     public string NextStep { get; init; }
@@ -656,7 +652,6 @@ public sealed class PublishPart
         return part;
     }
 
-    // A page never published is compared with an empty document, so everything reads as new.
     public static IList<PartChange> Compare(string published, string draft)
     {
         var after = PageDocumentEditor.Read(draft);

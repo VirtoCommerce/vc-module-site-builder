@@ -29,12 +29,10 @@ public sealed class SiteBuilderChange : McpChangePreview, IReviewedChange
     [JsonPropertyName("expected_versions")]
     public IDictionary<string, string> ExpectedVersions { get; set; }
 
-    // Sent back unchanged so that an approver ships the requester's git draft branch and not their own.
     [JsonPropertyName("draft_owner")]
     public string DraftOwner { get; set; }
 }
 
-// The write re-checks unpublished-only under the operation's lock, since a page may be published after the dry run.
 public static class SiteBuilderChanges
 {
     public const string UnpublishedOnlyArgument = "unpublished_only";
@@ -123,7 +121,6 @@ public static class SiteBuilderChanges
             return;
         }
 
-        // A Multilanguage Page saves its language versions one by one, each under its own lock: those before the refused one keep the change.
         var saved = change.ObjectType == ChangePreview.MultilanguagePage
             ? " What was saved before the published version (the Multilanguage Page's own values, other versions) may keep the change: read " +
               "the Multilanguage Page again with search_site_pages."
@@ -154,12 +151,10 @@ public static class SiteBuilderChanges
         }
     }
 
-    // As the tools' arguments name the fields, not as the REST models do.
     private static string FieldName(string name) => name is ChangePreview.CultureName or ChangePreview.DefaultCultureName
         ? "language"
         : JsonNamingPolicy.SnakeCaseLower.ConvertName(name);
 
-    // A refusal is a sentence the user can act on, never the internals.
     public static void EnsureSucceeded(SiteBuilderOperationResult result, string subject, string forbiddenMessage)
     {
         switch (result.Status)

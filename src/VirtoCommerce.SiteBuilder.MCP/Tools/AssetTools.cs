@@ -70,7 +70,7 @@ public class AssetTools(
             ? null
             : await GetReferencesAsync(store_id, result.Results, canReadSharedComponents, cancellationToken);
 
-        // The service clamps a skip past the end to the last page, so the paging reports the skip it used.
+        // The service clamps a skip past the end, so report the skip it used.
         return McpPage<AssetRow>.Create(
             result.Results.Select(x => AssetRow.From(x, references)),
             result.TotalCount,
@@ -118,7 +118,6 @@ public sealed class AssetRow
 
     public DateTime? ModifiedDate { get; init; }
 
-    // Null for folders and when the call names no store.
     public AssetReferencesRow References { get; init; }
 
     public static string GetUrl(BlobEntry entry) => string.IsNullOrEmpty(entry.RelativeUrl) ? entry.Url : entry.RelativeUrl;
@@ -146,12 +145,10 @@ public sealed class AssetRow
 
 public sealed class AssetReferencesRow
 {
-    // Includes pages and Shared Components that are not listed below.
     public int Count { get; init; }
 
     public int PageCount { get; init; }
 
-    // Null when the user may not read the store's Shared Components.
     public int? SharedComponentCount { get; init; }
 
     public IList<SiteBuilderAssetReferencePage> Pages { get; init; }

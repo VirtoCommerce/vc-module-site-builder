@@ -5,7 +5,6 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// Reads and writes the rules file as the designer does; what the file holds that the designer does not know is kept as it is.
 public sealed class TemplateRulesDocument
 {
     public const int Version = 2;
@@ -22,7 +21,7 @@ public sealed class TemplateRulesDocument
         Unreadable = unreadable;
     }
 
-    // Rules neither the designer nor the storefront can read are dropped, as the designer drops them when it saves.
+    // Unreadable rules are dropped on write, as the designer drops them when it saves.
     public int Unreadable { get; }
 
     public static TemplateRulesDocument Read(string content)
@@ -73,7 +72,6 @@ public sealed class TemplateRulesDocument
         return new TemplateRulesDocument(rest, lists, unreadable);
     }
 
-    // Without its own list a page type gets the storefront's default rules.
     public bool HasOwnRules(string pageType) => _lists.ContainsKey(pageType);
 
     // Without its own list, a copy of the defaults, which becomes the type's own once set.

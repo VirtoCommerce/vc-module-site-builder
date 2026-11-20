@@ -18,7 +18,7 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// Rules go to a draft that customers see only with the theme's publication, so an edit needs no second person.
+// Rules go to the theme's draft, so an edit needs no second person.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class TemplateRuleTools(
@@ -276,7 +276,6 @@ public class TemplateRuleTools(
         return key;
     }
 
-    // An empty value removes the condition too, as the designer's rules panel drops it.
     private static JsonObject SetConditions(JsonObject when, Dictionary<string, JsonNode> conditions, string pageType)
     {
         var result = (JsonObject)when.DeepClone();
@@ -335,7 +334,7 @@ public class TemplateRuleTools(
         return string.IsNullOrWhiteSpace(operation.After) ? index : index + 1;
     }
 
-    // Unique across page types, as in the designer, so a rule id alone finds the rule.
+    // Unique across page types, so a rule id alone finds the rule.
     private static string NewId(TemplateRulesDocument rules)
     {
         var taken = rules.AllIds().ToHashSet(StringComparer.Ordinal);

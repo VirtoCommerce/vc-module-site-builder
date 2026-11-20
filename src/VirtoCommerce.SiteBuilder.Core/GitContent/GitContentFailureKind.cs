@@ -1,7 +1,6 @@
 namespace VirtoCommerce.SiteBuilder.Core.GitContent;
 
-// What went wrong, for an answer that may not show the message: the message can carry GitHub's own text, repository
-// names and configuration keys, which only an administrator should read.
+// Lets an answer say what failed without the message, which can carry repository names and configuration keys.
 public enum GitContentFailureKind
 {
     Unknown,

@@ -193,8 +193,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
             .Order(StringComparer.Ordinal)
             .ToList();
 
-    // Mirrors how the MCP module and the SDK's authorization filter show a primitive: [McpPermission] granted in some
-    // store or globally, [Authorize] only globally.
+    // Mirrors the MCP module and the SDK's filter: [McpPermission] granted in some store or globally, [Authorize] only globally.
     private static bool HasPermissions(ClaimsPrincipal user, IMcpServerPrimitive primitive) =>
         primitive.Metadata.OfType<McpPermissionAttribute>().SelectMany(x => x.Permissions).All(x => user.GetMcpPermissionGrant(x) != null) &&
         primitive.Metadata.OfType<IAuthorizeData>().All(x => string.IsNullOrEmpty(x.Policy) || user.GetMcpPermissionGrant(x.Policy)?.IsGlobal == true);

@@ -14,7 +14,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
-// A language link decides which address and audience a published version is served with, so changing one waits for approval.
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageLanguageTools(
@@ -40,7 +39,6 @@ public class PageLanguageTools(
         ["end_date"] = MultilanguagePageInheritance.EndDate,
     };
 
-    // Without expected_versions the tool refuses the write itself, so there is nothing to approve.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
@@ -161,7 +159,7 @@ public class PageLanguageTools(
         return change;
     }
 
-    // Not a background job: one save per language version, and a page has at most one per store language.
+    // Not a background job: one save per language version, at most one per store language.
     [McpServerTool(Name = "reset_language_overrides", ReadOnly = false, Destructive = true, Idempotent = true)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -219,7 +217,6 @@ public class PageLanguageTools(
         return change;
     }
 
-    // A change that needs no approval may take the versions of its own dry run.
     private static Task Pin(SiteBuilderChange change, SiteBuilderOperationResult check, IDictionary<string, string> expectedVersions, bool dryRun,
         bool unpublishedOnly)
     {
@@ -241,7 +238,6 @@ public class PageLanguageTools(
     {
         if (result.Status == SiteBuilderOperationStatus.Conflict && result.Error == SiteBuilderContentConflictException.SettingsChangedMessage)
         {
-            // A reset saves the language versions one by one, each under its own lock: those before one changed meanwhile keep the reset.
             throw change.ObjectType == ChangePreview.MultilanguagePage
                 ? new McpException($"Multilanguage Page '{change.ObjectId}' or a language version the reset takes changed since the dry run that " +
                     $"gave {ReviewedVersions.Argument}, so the reset was refused. If a version changed while the versions were being saved, those " +

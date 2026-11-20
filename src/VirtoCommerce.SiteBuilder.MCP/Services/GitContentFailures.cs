@@ -3,8 +3,7 @@ using VirtoCommerce.SiteBuilder.Core.GitContent;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The exception's message can carry GitHub's text, repository names and configuration keys that the reader of the
-// answer may not see, so it goes to the log and the answer names only the kind of failure.
+// The exception's message may carry details the reader may not see, so it goes to the log only.
 public static class GitContentFailures
 {
     public const string NotConfigured = "The store's content repository is not set up correctly on this platform; an administrator can check the " +
