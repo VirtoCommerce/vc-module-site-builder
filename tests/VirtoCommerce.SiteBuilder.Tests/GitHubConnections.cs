@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
@@ -29,8 +30,14 @@ internal static class GitHubConnections
         return CreateService(options, settings, keys, github, configuration);
     }
 
-    public static GitContentPolicy CreatePolicy(IOptions<GitContentOptions> options, ISettingsManager settings, IGitContentOwnership ownership = null) =>
-        new(CreateService(options.Value), options, settings, ownership ?? new FakeGitContentOwnership());
+    public static GitContentPolicy CreatePolicy(IOptions<GitContentOptions> options, ISettingsManager settings, IGitContentOwnership ownership = null,
+        IConfiguration configuration = null) =>
+        new(CreateService(options.Value, configuration: configuration), options, settings, ownership ?? new FakeGitContentOwnership());
+
+    /// <summary>An explicit <c>Enabled=false</c>, which a bound option cannot tell from one left unset.</summary>
+    public static IConfiguration SwitchedOff() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string> { [$"{GitContentOptions.SectionName}:{nameof(GitContentOptions.Enabled)}"] = "false" })
+        .Build();
 
     public static GitHubScript CreateManifestConversion(string owner) => new(("POST", "app-manifests/c0de/conversions", (_, _) =>
         GitHubScript.Json(new JObject

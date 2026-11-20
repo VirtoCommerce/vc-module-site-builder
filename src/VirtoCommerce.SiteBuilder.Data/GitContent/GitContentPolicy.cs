@@ -15,7 +15,8 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
 {
     /// <summary>
     /// Three independent switches must all be on: the global kill switch, a usable connection, and the
-    /// store's own opt-in. A store that opted in is refused while the connection is not usable.
+    /// store's own opt-in. A store that opted in is refused while the connection is not usable, unless
+    /// the configuration switches git content off for every store.
     /// </summary>
     public class GitContentPolicy : IGitContentPolicy
     {
@@ -144,6 +145,12 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
             if (IsAvailable(connection))
             {
                 return await ReadStoreSettingsAsync(storeId);
+            }
+
+            // the global kill switch sends every store to the blob flow without asking the settings store
+            if (connection.IsSwitchedOff)
+            {
+                return null;
             }
 
             // the blob flow would publish an opted-in store's pages straight to production, and show none of what git holds

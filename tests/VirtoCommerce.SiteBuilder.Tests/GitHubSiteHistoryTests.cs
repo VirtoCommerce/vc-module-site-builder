@@ -194,6 +194,18 @@ public class GitHubSiteHistoryTests
         Assert.Equal(expected, await history.GetStatusAsync("s1", Ct));
     }
 
+    [Fact]
+    public async Task GetStatusAsync_SwitchedOffGlobally_ReturnsSetupRequiredForAStoreThatOptedIn()
+    {
+        var options = SiteHistories.Options();
+        options.Value.Enabled = false;
+        var connection = GitHubConnections.CreateService(options.Value, configuration: GitHubConnections.SwitchedOff());
+
+        var history = History(new GitHubScript(), new FakeSettingsManager(true), options, connection: connection);
+
+        Assert.Equal(ContentHistoryStatus.SetupRequired, await history.GetStatusAsync("s1", Ct));
+    }
+
     [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]

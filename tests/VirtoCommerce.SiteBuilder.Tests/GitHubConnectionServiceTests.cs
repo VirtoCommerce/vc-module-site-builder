@@ -41,6 +41,36 @@ public class GitHubConnectionServiceTests
 
         Assert.True(connection.UsesApp);
         Assert.False(connection.IsEnabled);
+        Assert.True(connection.IsSwitchedOff);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetConnectionAsync_EnabledFalseInConfiguration_IsSwitchedOffWithOrWithoutConfiguredConnection(bool configured)
+    {
+        var connection = await CreateService(new FakeSettingsManager(), configuration: SwitchedOff(), configure: x =>
+        {
+            if (configured)
+            {
+                x.Repository = "acme/site";
+                x.Token = "t0ken";
+                x.BaseBranch = "main";
+            }
+        }).GetConnectionAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(configured, connection.Source == GitHubConnectionSource.Configuration);
+        Assert.False(connection.IsEnabled);
+        Assert.True(connection.IsSwitchedOff);
+    }
+
+    [Fact]
+    public async Task GetConnectionAsync_EnabledLeftUnset_IsNotSwitchedOff()
+    {
+        var connection = await CreateService(new FakeSettingsManager()).GetConnectionAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(connection.IsEnabled);
+        Assert.False(connection.IsSwitchedOff);
     }
 
     [Fact]
@@ -155,5 +185,6 @@ public class GitHubConnectionServiceTests
 
         Assert.False(connection.IsEnabled);
         Assert.NotNull(connection.Error);
+        Assert.True(connection.IsSwitchedOff);
     }
 }
