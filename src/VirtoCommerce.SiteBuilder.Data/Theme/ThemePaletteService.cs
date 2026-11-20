@@ -571,6 +571,9 @@ public class ThemePaletteService : IThemePaletteService
 
         pairs.AddRange(CreateAreaPairs("header_top", "secondary_900", "additional_50", "accent_300", "additional_50", "accent_300"));
         pairs.AddRange(CreateAreaPairs("header_bottom", "additional_50", "neutral_900", "secondary_700", "neutral_900", "neutral_900"));
+        // the storefront draws the header's icons in the primary color on its bottom row
+        pairs.Add(CreatePair("header-bottom-icon", CreateTokenReference("primary_500", "primary_500"), CreateTokenReference("header_bottom_bg", "additional_50"),
+            NonTextContrastRatio));
         pairs.AddRange(CreateAreaPairs("footer_top", "secondary_900", "additional_50", "neutral_400", "additional_50", "additional_50"));
         pairs.AddRange(CreateAreaPairs("footer_bottom", "secondary_950", "additional_50", "accent_300", "additional_50", "additional_50"));
 

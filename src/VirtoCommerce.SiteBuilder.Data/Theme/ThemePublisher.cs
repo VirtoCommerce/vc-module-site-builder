@@ -41,6 +41,11 @@ public class ThemePublisher(
 {
     private const string PaletteTokensKey = "paletteTokens";
 
+    // a section colors itself with two color tokens, its text 'color' on its 'background', as the storefront's announcement bar does
+    private const string SectionTextColor = "color";
+    private const string SectionBackground = "background";
+    private const double TextContrastRatio = 4.5;
+
     private static readonly Dictionary<string, Action<ThemeSource, JToken>> ThemeParts = new(StringComparer.OrdinalIgnoreCase)
     {
         [ThemeStorage.TemplateRulesFile] = (source, content) => source.Rules = content,
@@ -222,8 +227,78 @@ public class ThemePublisher(
 
         // A palette is refused when it is published: a live palette that fails stays live whatever else is published, and a first
         // publication puts the live files out as they are.
-        return (includeDrafts && HasPaletteDraft(source) ? errors.Concat(ValidatePalette(source, catalog)) : errors).ToList();
+        return (includeDrafts && HasPaletteDraft(source) ? errors.Concat(ValidatePalette(source, catalog)) : errors)
+            .Concat(includeDrafts ? ValidateSectionColors(source) : [])
+            .ToList();
     }
+
+    /// <summary>
+    /// The colors a section sets for itself must meet WCAG 2.2 AA in both palettes, as a token may be light in one and dark in the other.
+    /// A file is checked when it is published, and every file when a palette is: colors that fail and stay live are not refused.
+    /// </summary>
+    protected virtual IList<string> ValidateSectionColors(ThemeSource source)
+    {
+        // without light colors the storefront keeps its preset, whose colors are not known here
+        if (ThemePaletteValues.ReadColors(source.Palette) is not { } light)
+        {
+            return [];
+        }
+
+        var palettes = new List<(string Scheme, Dictionary<string, string> Colors)> { (ModuleConstants.Palette.Light, light) };
+        if (ThemePaletteValues.ReadColors(source.PaletteDark) is { } dark)
+        {
+            palettes.Add((ModuleConstants.Palette.Dark, dark));
+        }
+
+        var paletteChanged = HasPaletteDraft(source);
+        var documents = new List<(string File, JToken Document)> { (ThemeStorage.HeaderGroupFile, source.Header), (ThemeStorage.FooterGroupFile, source.Footer) };
+        documents.AddRange(source.Templates.Select(x => (ThemeStorage.GetTemplateFile(x.Key), x.Value)));
+
+        return documents
+            .Where(x => x.Document != null && (paletteChanged || source.Drafts.ContainsKey(x.File)))
+            .SelectMany(x => GetItems(x.Document).SelectMany(item => palettes.Select(palette => GetSectionColorError(x.File, item, palette.Scheme, palette.Colors))))
+            .Where(x => x != null)
+            .ToList();
+    }
+
+    protected virtual string GetSectionColorError(string file, JObject item, string scheme, IDictionary<string, string> colors)
+    {
+        var text = GetString(item, SectionTextColor);
+        var background = GetString(item, SectionBackground);
+        if (text == null || background == null
+            || !colors.TryGetValue(text, out var textValue) || !PaletteColor.TryParse(textValue, out var textColor)
+            || !colors.TryGetValue(background, out var backgroundValue) || !PaletteColor.TryParse(backgroundValue, out var backgroundColor))
+        {
+            return null;
+        }
+
+        var ratio = ColorContrast.GetContrastRatio(textColor, backgroundColor);
+        if (ratio >= TextContrastRatio)
+        {
+            return null;
+        }
+
+        return string.Create(CultureInfo.InvariantCulture,
+            $"{file}: '{GetString(item, "id")}' has a contrast of {Math.Round(ratio, 2):0.##}:1 in the {scheme} palette ({text} {textValue} on {background} {backgroundValue}), less than the {TextContrastRatio:0.##}:1 WCAG 2.2 AA asks for");
+    }
+
+    // the sections of a section group or a template, and their blocks
+    private static IEnumerable<JObject> GetItems(JToken document)
+    {
+        var content = document switch
+        {
+            JObject page when page["content"] is JArray sections => sections,
+            JArray legacy => legacy.Skip(1),
+            _ => [],
+        };
+
+        return GetItems(content);
+    }
+
+    private static IEnumerable<JObject> GetItems(IEnumerable<JToken> items) =>
+        items.OfType<JObject>().SelectMany(x => x["blocks"] is JArray blocks ? GetItems((IEnumerable<JToken>)blocks).Prepend(x) : [x]);
+
+    private static string GetString(JObject item, string name) => item[name] is JValue { Type: JTokenType.String } value ? (string)value : null;
 
     /// <summary>The publication puts a light or a dark palette live; the palette is then checked as a whole, as the storefront gets both.</summary>
     protected virtual bool HasPaletteDraft(ThemeSource source) =>

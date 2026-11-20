@@ -35,6 +35,10 @@ public class ThemeOperationServiceTests
     private const string PassingPalette = """{ "color_neutral_950": "#111111", "color_neutral_50": "#ffffff" }""";
     // #777777 on white is 4.47:1, short of the 4.5:1 body text needs
     private const string FailingPalette = """{ "color_neutral_950": "#777777", "color_neutral_50": "#ffffff" }""";
+    private const string HeaderGroup = "default/sections/header-group.json";
+    // the brand's green under white text in the light palette, and under the dark palette's near-black additional_50
+    private const string BrandPalette = """{ "color_primary_500": "#1f4d3a", "color_additional_50": "#ffffff", "color_header_top_text": "#ffffff" }""";
+    private const string BrandDarkPalette = """{ "color_primary_500": "#1f4d3a", "color_additional_50": "#0a090b", "color_header_top_text": "#ffffff" }""";
     private const string FailingPair = "'body-text' has a contrast of 4.47:1 (color_neutral_950 #777777 on color_neutral_50 #ffffff), less than the 4.5:1 WCAG 2.2 AA asks for";
 
     private readonly FakeBlobStorage _storage = new();
@@ -204,6 +208,52 @@ public class ThemeOperationServiceTests
     }
 
     [Fact]
+    public async Task PublishAsync_HeaderDraftWithColorsThatFailInTheDarkPalette_IsRefusedWithTheSection()
+    {
+        await SeedThemeAsync();
+        _storage.Files[Theme(Palette)] = BrandPalette;
+        _storage.Files[Theme(DarkPalette)] = BrandDarkPalette;
+        _storage.Files[Theme(HeaderGroup + "-draft")] = BarOf("color_additional_50");
+
+        var result = await Service().PublishAsync(Publish(), User, Ct);
+        var dryRun = await Service().PublishAsync(DryRun(), User, Ct);
+
+        var error = "sections/header-group.json: 'bar' has a contrast of 2.06:1 in the dark palette (color_additional_50 #0a090b on color_primary_500 #1f4d3a), " +
+            "less than the 4.5:1 WCAG 2.2 AA asks for";
+        Assert.Equal([error], result.Errors);
+        Assert.Equal([error], dryRun.Errors);
+        AssertNothingPublished();
+    }
+
+    [Fact]
+    public async Task PublishAsync_PaletteDraftThatMakesTheLiveHeaderColorsFail_IsRefused()
+    {
+        await SeedThemeAsync();
+        _storage.Files[Theme(Palette)] = BrandPalette;
+        _storage.Files[Theme(HeaderGroup)] = BarOf("color_additional_50");
+        _storage.Files[Theme(DarkPalette + "-draft")] = BrandDarkPalette;
+
+        var result = await Service().PublishAsync(Publish(), User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains(result.Errors, x => x.StartsWith("sections/header-group.json: 'bar' has a contrast of 2.06:1 in the dark palette", StringComparison.Ordinal));
+        AssertNothingPublished();
+    }
+
+    [Fact]
+    public async Task PublishAsync_HeaderColorsThatMeetTheContrastInBothPalettes_PublishesThem()
+    {
+        await SeedThemeAsync();
+        _storage.Files[Theme(Palette)] = BrandPalette;
+        _storage.Files[Theme(DarkPalette)] = BrandDarkPalette;
+        _storage.Files[Theme(HeaderGroup + "-draft")] = BarOf("color_header_top_text");
+
+        var result = await Service().PublishAsync(Publish(), User, Ct);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
     public async Task PublishAsync_LivePaletteThatFailsTheContrastAndNoPaletteDraft_PublishesAndTheDryRunWarnsOfIt()
     {
         await SeedThemeAsync();
@@ -303,7 +353,7 @@ public class ThemeOperationServiceTests
 
     private async Task SeedThemeAsync(string paletteTokens = null)
     {
-        var catalog = new JObject { ["hash"] = Catalog, ["sections"] = new JObject { ["product-info"] = new JObject(), ["text"] = new JObject() } };
+        var catalog = new JObject { ["hash"] = Catalog, ["sections"] = new JObject { ["product-info"] = new JObject(), ["text"] = new JObject(), ["announcement-bar"] = new JObject() } };
         if (paletteTokens != null)
         {
             catalog["paletteTokens"] = JObject.Parse(paletteTokens);
@@ -312,6 +362,9 @@ public class ThemeOperationServiceTests
         await new SchemaCatalogService(_themes).SaveAsync(StoreId, catalog.ToString(), Ct);
         _storage.Files[Theme(Product + "-draft")] = Template("product-info");
     }
+
+    private static string BarOf(string textColor) =>
+        $$"""{ "content": [ { "id": "bar", "type": "announcement-bar", "background": "color_primary_500", "color": "{{textColor}}" } ] }""";
 
     private void AssertNothingPublished()
     {
