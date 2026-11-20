@@ -8,4 +8,10 @@ public class MultilanguagePagePublishAllOperationRequest : MultilanguagePageOper
     /// those any more: one changed, appeared or went. <c>null</c> publishes the drafts whatever they hold.
     /// </summary>
     public IDictionary<string, string> ExpectedDraftVersions { get; set; }
+
+    /// <summary>
+    /// The <see cref="SiteBuilderContentVersion.CreateForGroupSettings"/> version of each reviewed language version, by id: the drafts go live with
+    /// those settings, which the draft versions do not cover. <c>null</c> skips the check.
+    /// </summary>
+    public IDictionary<string, string> ExpectedSettingsVersions { get; set; }
 }

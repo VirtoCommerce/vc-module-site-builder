@@ -11,6 +11,7 @@
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data.PostgreSql\VirtoCommerce.SiteBuilder.Data.PostgreSql.csproj" />
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data.SqlServer\VirtoCommerce.SiteBuilder.Data.SqlServer.csproj" />
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Data\VirtoCommerce.SiteBuilder.Data.csproj" />
+    <ProjectReference Include="..\VirtoCommerce.SiteBuilder.MCP\VirtoCommerce.SiteBuilder.MCP.csproj" />
     <ProjectReference Include="..\VirtoCommerce.SiteBuilder.Xapi\VirtoCommerce.SiteBuilder.Xapi.csproj" />
   </ItemGroup>
 

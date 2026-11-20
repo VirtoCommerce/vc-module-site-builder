@@ -1,0 +1,152 @@
+using System.Security.Claims;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using ModelContextProtocol;
+using VirtoCommerce.ContentModule.Core;
+using VirtoCommerce.MCP.Core;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Theme;
+using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
+
+namespace VirtoCommerce.SiteBuilder.MCP.Services;
+
+public static class ThemeFiles
+{
+    public const string CatalogHashKey = "hash";
+    public const string PaletteTokensKey = "paletteTokens";
+
+    public static async Task<string> GetPathAsync(IThemeStorageFactory themeStorageFactory, string storeId, string fileInTheme) =>
+        $"{await themeStorageFactory.GetThemeNameAsync(storeId)}/{fileInTheme}";
+
+    public static string GetTemplateFile(string templateKey) => ThemeStorage.GetTemplateFile(templateKey);
+
+    // Saved against the catalog the storefront sent last, as the designer saves against the one its preview sent.
+    public static async Task<JsonObject> GetCatalogAsync(ISchemaCatalogService schemaCatalogService, string storeId, CancellationToken cancellationToken)
+    {
+        var catalog = await schemaCatalogService.GetAsync(storeId, hash: null, cancellationToken);
+        if (string.IsNullOrEmpty(catalog))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonNode.Parse(catalog) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static async Task<string> RequireCatalogHashAsync(ISchemaCatalogService schemaCatalogService, string storeId, CancellationToken cancellationToken)
+    {
+        var catalog = await GetCatalogAsync(schemaCatalogService, storeId, cancellationToken);
+
+        return GetCatalogHash(catalog) ?? throw NoCatalog(storeId);
+    }
+
+    public static string GetCatalogHash(JsonObject catalog) => catalog?[CatalogHashKey] is JsonValue value && value.TryGetValue<string>(out var hash) ? hash : null;
+
+    public static McpException NoCatalog(string storeId) =>
+        new($"The storefront of store '{storeId}' has not sent its schema catalog yet, so theme files cannot be checked and nothing was " +
+            "saved. Open the store once in the designer (its preview sends the catalog), then repeat the call.");
+
+    public static ThemePaletteTokens GetPaletteTokens(JsonObject catalog)
+    {
+        var tokens = new ThemePaletteTokens();
+        if (catalog?[PaletteTokensKey] is JsonObject announced)
+        {
+            tokens.Light = GetStrings(announced[Palette.Light]);
+            tokens.Dark = GetStrings(announced[Palette.Dark]);
+        }
+
+        return tokens;
+    }
+
+    // The draft, else what is live; Content is null for a missing file.
+    public static async Task<ThemeFileContent> ReadAsync(IDesignerOperationService designerOperationService, ClaimsPrincipal user, string storeId,
+        string path, CancellationToken cancellationToken)
+    {
+        var result = await designerOperationService.ReadThemeFileAsync(new DesignerThemeFileRequest { StoreId = storeId, Path = path }, user, cancellationToken);
+        switch (result.Status)
+        {
+            case SiteBuilderOperationStatus.Succeeded:
+                return result.Value;
+            case SiteBuilderOperationStatus.Forbidden:
+                throw new McpForbiddenException($"You may not read the theme of store '{storeId}': it needs builder:read there.");
+            default:
+                throw new McpException($"'{path}' could not be read: {result.Error ?? "it is not a theme file of the store"}.");
+        }
+    }
+
+    public static async Task<string> ReadLiveAsync(ISiteBuilderContentQueryService contentQueryService, ClaimsPrincipal user, string storeId,
+        string path, CancellationToken cancellationToken)
+    {
+        var result = await contentQueryService.ReadFileAsync(new SiteBuilderFileReadRequest
+        {
+            StoreId = storeId,
+            ContentType = ContentConstants.ContentTypes.Themes,
+            Path = path,
+            Draft = false,
+        }, user, cancellationToken);
+
+        switch (result.Status)
+        {
+            case SiteBuilderOperationStatus.Succeeded:
+                if (result.Value.Stream == null)
+                {
+                    return result.Value.Text;
+                }
+
+                await using (var stream = result.Value.Stream)
+                {
+                    using var reader = new StreamReader(stream);
+                    return await reader.ReadToEndAsync(cancellationToken);
+                }
+            case SiteBuilderOperationStatus.NotFound:
+                return null;
+            case SiteBuilderOperationStatus.Forbidden:
+                throw new McpForbiddenException($"You may not read the theme of store '{storeId}': it needs builder:read there.");
+            default:
+                throw new McpException($"'{path}' could not be read: {result.Error}.");
+        }
+    }
+
+    public static Task<SiteBuilderOperationResult<DesignerSaveResult>> SaveAsync(IDesignerOperationService designerOperationService, ClaimsPrincipal user,
+        string storeId, string catalogHash, IList<DesignerSaveFile> files, bool dryRun, CancellationToken cancellationToken) =>
+        designerOperationService.SaveAsync(new DesignerSaveOperationRequest
+        {
+            StoreId = storeId,
+            CatalogHash = catalogHash,
+            Changes = new DesignerSaveRequest { ThemeFiles = files },
+            SaveId = Guid.NewGuid().ToString("N"),
+            DryRun = dryRun,
+        }, user, cancellationToken);
+
+    // The save checks the file's own permission; the caller names it only for the refusal.
+    public static void EnsureSaved(SiteBuilderOperationResult result, string subject, string permission, string storeId, string readAgain)
+    {
+        switch (result.Status)
+        {
+            case SiteBuilderOperationStatus.Succeeded:
+                return;
+            case SiteBuilderOperationStatus.Forbidden:
+                throw new McpForbiddenException($"You may not change {subject}: it needs builder:update and {permission}, and builder:read in store '{storeId}'.");
+            case SiteBuilderOperationStatus.Conflict:
+            case SiteBuilderOperationStatus.VersionRequired:
+                throw new McpException($"{subject} changed since you read it, so nothing was saved. {readAgain}");
+            case SiteBuilderOperationStatus.NotFound:
+                throw new McpException($"{subject} was not found.");
+            default:
+                var errors = result.Errors ?? (result.Error == null ? [] : [result.Error]);
+                var details = errors.Count > 1 ? $" {string.Join("; ", errors)}" : string.Empty;
+                throw new McpException($"{subject} was not saved: {result.Error}{details}");
+        }
+    }
+
+    private static List<string> GetStrings(JsonNode node) =>
+        (node as JsonArray)?.Select(x => x is JsonValue value && value.TryGetValue<string>(out var text) ? text : null).Where(x => x != null).ToList() ?? [];
+}

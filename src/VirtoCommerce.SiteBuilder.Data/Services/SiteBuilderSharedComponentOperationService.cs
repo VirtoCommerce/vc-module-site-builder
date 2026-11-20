@@ -228,7 +228,7 @@ public class SiteBuilderSharedComponentOperationService(
             // the save does not need the pages the component is placed on: they are read only for a caller that asks how far it reaches
             var affectsPublished = request.ReportImpact && (await GetUsageAsync(component, cancellationToken)).Pages.Any(IsPublished);
 
-            if (!await sharedComponentContentService.TrySaveContentAsync(component, content, cancellationToken))
+            if (!await sharedComponentContentService.TrySaveContentAsync(component, content, request.ExpectedContentVersion, cancellationToken))
             {
                 return SiteBuilderOperationResult.NotFound();
             }
@@ -238,6 +238,10 @@ public class SiteBuilderSharedComponentOperationService(
         catch (InvalidDataException ex)
         {
             return SiteBuilderOperationResult.Invalid(ex.Message);
+        }
+        catch (SiteBuilderContentConflictException ex)
+        {
+            return SiteBuilderOperationResult.Conflict(ex.Message);
         }
     }
 
@@ -252,7 +256,7 @@ public class SiteBuilderSharedComponentOperationService(
 
         var preview = CreatePreview();
         preview.AffectsPublished = affectsPublished;
-        preview.AddObject(SharedComponent, component.Id).AddField(Content, current, content);
+        preview.AddObject(SharedComponent, component.Id, SiteBuilderContentVersion.CreateForFileContent(current)).AddField(Content, current, content);
         if (await CanReadPagesAsync(component, user))
         {
             foreach (var page in usage.Pages)

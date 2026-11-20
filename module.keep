@@ -1,1 +1,5 @@
 VirtoCommerce.Pages.Core.dll
+Microsoft.Extensions.AI.Abstractions.dll
+ModelContextProtocol.Core.dll
+ModelContextProtocol.dll
+VirtoCommerce.MCP.Core.dll

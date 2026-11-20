@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Moq;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
@@ -120,7 +121,7 @@ public partial class PageContentAtomicWriteTests
         var decorated = DispatchProxy.Create<IGroupedPageService, ServiceContractProxy>();
         ((ServiceContractProxy)decorated).Target = original;
         var services = new ServiceCollection();
-        new Web.Module { Configuration = new ConfigurationBuilder().Build(), ModuleInfo = new ManifestModuleInfo() }.Initialize(services);
+        new Web.Module { Configuration = new ConfigurationBuilder().Build(), ModuleInfo = new ManifestModuleInfo(), ModuleService = Mock.Of<IModuleService>() }.Initialize(services);
         services.AddLogging();
         services.AddSingleton<Func<ISiteBuilderRepository>>(() => new SiteBuilderRepository(CreateContext(database.ConnectionString)));
         services.AddSingleton<Func<IContentStreamRepository>>(() => new SqliteContentStreamRepository(CreateContext(database.ConnectionString)));

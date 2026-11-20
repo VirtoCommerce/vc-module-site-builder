@@ -283,8 +283,9 @@ public class SiteBuilderContentProviderSharedComponentChangeTests
         public Task<bool> TrySaveContentAsync(
             SiteBuilderSharedComponent expectedComponent,
             string content,
+            string expectedContentVersion,
             CancellationToken cancellationToken = default) =>
-            inner.TrySaveContentAsync(expectedComponent, content, cancellationToken);
+            inner.TrySaveContentAsync(expectedComponent, content, expectedContentVersion, cancellationToken);
     }
 
 

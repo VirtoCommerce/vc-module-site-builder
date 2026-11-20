@@ -188,6 +188,7 @@ public class SiteBuilderSharedComponentResolverTests
         public Task<bool> TrySaveContentAsync(
             SiteBuilderSharedComponent expectedComponent,
             string content,
+            string expectedContentVersion,
             CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

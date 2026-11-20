@@ -226,6 +226,7 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
             change =>
             {
                 Assert.Equal((ModuleConstants.ChangePreview.SharedComponent, component.Id), (change.ObjectType, change.ObjectId));
+                Assert.Equal(SiteBuilderContentVersion.CreateForFileContent("""{"settings":{},"content":[]}"""), change.ETag);
                 var field = Assert.Single(change.Fields);
                 Assert.Equal(("""{"settings":{},"content":[]}""", """{"settings":{},"content":[{"id":"hero","type":"text"}]}"""), (field.From, field.To));
             },
@@ -263,6 +264,23 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
         Assert.True(result.Succeeded);
         Assert.Equal(affectsPublished, result.AffectsPublished);
         Assert.Equal("""{"settings":{},"content":[{"id":"hero","type":"text"}]}""", contentService.SavedContent);
+    }
+
+    [Fact]
+    public async Task SaveContentOperation_ContentSavedSinceTheReviewedVersion_AnswersConflict_AndWritesNothing()
+    {
+        var component = CreateAuthorizedComponent();
+        var contentService = new StubSharedComponentContentService { ConditionalSaveResult = true, ContentChanged = true };
+        var operations = TestServices.SharedComponentOperations(new StubAuthorizationService(canReadPages: true), new StubSharedComponentService(component),
+            contentService, new StubUsageService());
+        var request = ContentRequest(component, dryRun: false);
+        request.ExpectedContentVersion = "reviewed-version";
+
+        var result = await operations.SaveContentAsync(request, User, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SiteBuilderOperationStatus.Conflict, result.Status);
+        Assert.Equal("reviewed-version", contentService.ExpectedContentVersion);
+        Assert.Null(contentService.SavedContent);
     }
 
     [Fact]
@@ -401,6 +419,8 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
     {
         public string ConditionalLoadResult { get; set; }
         public bool ConditionalSaveResult { get; set; }
+        public bool ContentChanged { get; set; }
+        public string ExpectedContentVersion { get; private set; }
         public SiteBuilderSharedComponent LastExpectedComponent { get; private set; }
         public bool LegacyLoadCalled { get; private set; }
         public bool LegacySaveCalled { get; private set; }
@@ -441,9 +461,16 @@ public class SiteBuilderSharedComponentUsageAuthorizationTests
         public Task<bool> TrySaveContentAsync(
             SiteBuilderSharedComponent expectedComponent,
             string content,
+            string expectedContentVersion,
             CancellationToken cancellationToken = default)
         {
             LastExpectedComponent = expectedComponent;
+            ExpectedContentVersion = expectedContentVersion;
+            if (ContentChanged)
+            {
+                throw new SiteBuilderContentConflictException();
+            }
+
             SavedContent = content;
             return Task.FromResult(ConditionalSaveResult);
         }

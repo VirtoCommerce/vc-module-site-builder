@@ -197,6 +197,7 @@ public class SiteBuilderSharedComponentAggregatePersistenceTests
         var saved = await service.TrySaveContentAsync(
             expectedComponent,
             ContentWithAsset(NewAssetUrl),
+            expectedContentVersion: null,
             TestContext.Current.CancellationToken);
 
         Assert.True(saved);
@@ -205,6 +206,45 @@ public class SiteBuilderSharedComponentAggregatePersistenceTests
             .Select(x => x.NormalizedAssetUrl)
             .ToArrayAsync(TestContext.Current.CancellationToken);
 
+        Assert.Equal([NewAssetUrl], assetReferences);
+        Assert.Equal([typeof(SiteBuilderSharedComponentContentChangedEvent)], events.EventTypes);
+    }
+
+    [Fact]
+    public async Task TrySaveContentAsync_TwoSavesOfTheSameReviewedVersion_SavesTheFirstAndRefusesTheSecond()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.SeedComponentAsync(OldAssetUrl);
+        var expectedComponent = await database.LoadComponentAsync();
+        var events = new RecordingEventPublisher();
+        var service = new SiteBuilderSharedComponentContentService(
+            database.RepositoryFactory,
+            events,
+            new SiteBuilderSharedComponentAssetReferenceIndexService());
+        var reviewedVersion = SiteBuilderContentVersion.CreateForFileContent(
+            await service.TryLoadContentAsync(expectedComponent, TestContext.Current.CancellationToken));
+
+        var saved = await service.TrySaveContentAsync(
+            expectedComponent,
+            ContentWithAsset(NewAssetUrl),
+            reviewedVersion,
+            TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() => service.TrySaveContentAsync(
+            expectedComponent,
+            ContentWithAsset(ReplacementAssetUrl),
+            reviewedVersion,
+            TestContext.Current.CancellationToken));
+
+        Assert.True(saved);
+        await using var context = database.CreateContext();
+        var content = await context.Set<SiteBuilderSharedComponentContentEntity>()
+            .Select(x => x.ComponentContent)
+            .SingleAsync(TestContext.Current.CancellationToken);
+        var assetReferences = await context.Set<SiteBuilderSharedComponentAssetReferenceEntity>()
+            .Select(x => x.NormalizedAssetUrl)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(ContentWithAsset(NewAssetUrl), content);
         Assert.Equal([NewAssetUrl], assetReferences);
         Assert.Equal([typeof(SiteBuilderSharedComponentContentChangedEvent)], events.EventTypes);
     }
@@ -544,6 +584,7 @@ public class SiteBuilderSharedComponentAggregatePersistenceTests
         var saved = await service.TrySaveContentAsync(
             authorizedSnapshot,
             "{}",
+            expectedContentVersion: null,
             TestContext.Current.CancellationToken);
 
         Assert.False(saved);
@@ -690,6 +731,7 @@ public class SiteBuilderSharedComponentAggregatePersistenceTests
         var saved = await contentService.TrySaveContentAsync(
             authorizedSnapshot,
             ContentWithAsset(NewAssetUrl),
+            expectedContentVersion: null,
             TestContext.Current.CancellationToken);
         var deleted = await componentService.TryDeleteAsync(
             authorizedSnapshot,

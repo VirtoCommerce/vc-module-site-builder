@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.SqlServer\VirtoCommerce.SiteBuilder.Data.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.PostgreSql\VirtoCommerce.SiteBuilder.Data.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Data.MySql\VirtoCommerce.SiteBuilder.Data.MySql.csproj" />
+    <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.MCP\VirtoCommerce.SiteBuilder.MCP.csproj" />
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Web\VirtoCommerce.SiteBuilder.Web.csproj" />
     <ProjectReference Include="..\..\src\VirtoCommerce.SiteBuilder.Xapi\VirtoCommerce.SiteBuilder.Xapi.csproj" />
   </ItemGroup>
@@ -24,6 +25,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
     <PackageReference Include="Moq" Version="4.21.0" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+    <PackageReference Include="VirtoCommerce.MCP.Testing" Version="3.1001.0" />
     <!-- x-cms registers the builder page handler and type that Site Builder replaces -->
     <PackageReference Include="VirtoCommerce.XCMS.Data" Version="3.1009.0" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />

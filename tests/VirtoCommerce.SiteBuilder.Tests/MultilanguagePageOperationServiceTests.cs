@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading;
@@ -75,7 +76,7 @@ public class MultilanguagePageOperationServiceTests
         var dryRun = await Operations(fixture).LinkAsync(request, _user, Ct);
 
         Assert.Equal((true, false), (dryRun.Succeeded, dryRun.AffectsPublished));
-        var change = Assert.Single(dryRun.Preview.Objects);
+        var change = Assert.Single(dryRun.Preview.Objects, x => x.ObjectType == ModuleConstants.ChangePreview.Page);
         Assert.Equal(landing.Id, change.ObjectId);
         Assert.Contains(change.Fields, x => x.Name == ModuleConstants.ChangePreview.MultilanguagePageId && x.From == null && x.To == root.Id);
         Assert.Null((await fixture.LoadGroupAsync(landing.Id)).MultilanguagePageId);
@@ -257,15 +258,42 @@ public class MultilanguagePageOperationServiceTests
         Assert.Equal(ModuleConstants.PageStatuses.Draft, (await fixture.Groups.GetByIdAsync(english.Id)).Status);
     }
 
-    /// <summary>The publish of every draft a dry run lists, at the version it tells.</summary>
+    [Fact]
+    public async Task PublishAllAsync_SettingsChangedSinceTheDryRun_IsAConflictAndPublishesNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var english = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+        var dutch = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons", draftContent: Content);
+        var reviewed = await ReviewedAsync(fixture, root);
+        var group = await fixture.Groups.GetByIdAsync(dutch.Id);
+        group.UserGroups = "vip";
+        await fixture.Groups.SaveChangesAsync([group]);
+        // the drafts as they are now, the settings as they were reviewed
+        var request = await ReviewedAsync(fixture, root);
+        request.ExpectedSettingsVersions = reviewed.ExpectedSettingsVersions;
+
+        var result = await Operations(fixture).PublishAllAsync(request, _user, Ct);
+
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
+        Assert.Equal(ModuleConstants.PageStatuses.Draft, (await fixture.Groups.GetByIdAsync(english.Id)).Status);
+        Assert.Equal(ModuleConstants.PageStatuses.Draft, (await fixture.Groups.GetByIdAsync(dutch.Id)).Status);
+    }
+
     private async Task<MultilanguagePagePublishAllOperationRequest> ReviewedAsync(Fixture fixture, MultilanguagePage root)
     {
         var dryRun = await Operations(fixture).PublishAllAsync(new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = root.Id, DryRun = true }, _user, Ct);
+        var settings = new Dictionary<string, string>();
+        foreach (var change in dryRun.Preview.Objects)
+        {
+            settings[change.ObjectId] = SiteBuilderContentVersion.CreateForGroupSettings(await fixture.Groups.GetByIdAsync(change.ObjectId));
+        }
 
         return new MultilanguagePagePublishAllOperationRequest
         {
             MultilanguagePageId = root.Id,
             ExpectedDraftVersions = dryRun.Preview.Objects.ToDictionary(x => x.ObjectId, x => x.ETag),
+            ExpectedSettingsVersions = settings,
         };
     }
 
@@ -317,6 +345,21 @@ public class MultilanguagePageOperationServiceTests
         Assert.Equal((true, reportImpact), (result.Succeeded, result.AffectsPublished));
         roots.Verify(x => x.PreviewUnlinkAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), reportImpact ? Times.Once() : Times.Never());
         Assert.Null((await fixture.LoadGroupAsync(version.Id)).MultilanguagePageId);
+    }
+
+    [Fact]
+    public async Task MarkUpToDateAsync_TranslationGoneDuringTheWrite_IsNotFound()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", permalink: "/over-ons");
+        var roots = new Mock<IMultilanguagePageService>();
+        roots.Setup(x => x.MarkUpToDateAsync(nl.Id, It.IsAny<CancellationToken>())).ThrowsAsync(new KeyNotFoundException($"Page '{nl.Id}' not found."));
+        var operations = new MultilanguagePageOperationService(new FakeAuthorizationService(StoreId), roots.Object, fixture.Groups, fixture.StoreService);
+
+        var result = await operations.MarkUpToDateAsync(new MultilanguagePageMarkUpToDateOperationRequest { GroupId = nl.Id }, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.NotFound, result.Status);
     }
 
     [Fact]

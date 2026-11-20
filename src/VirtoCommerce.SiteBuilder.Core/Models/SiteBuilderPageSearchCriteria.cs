@@ -10,6 +10,9 @@ public class SiteBuilderPageSearchCriteria : SearchCriteriaBase, IHasStoreId
 {
     public string StoreId { get; set; }
 
+    /// <summary>Narrows <see cref="StoreId"/> and never widens it, so a request that names one store cannot reach others through it.</summary>
+    public IList<string> StoreIds { get; set; }
+
     public string Statuses { get; set; }
 
     /// <summary>
