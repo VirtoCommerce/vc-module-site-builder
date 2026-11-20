@@ -16,6 +16,7 @@ using Microsoft.Extensions.Configuration;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Models;
 using VirtoCommerce.SiteBuilder.Data.Repositories;
 using VirtoCommerce.SiteBuilder.Data.Services;
@@ -127,6 +128,7 @@ public partial class PageContentAtomicWriteTests
         services.AddSingleton<IPlatformMemoryCache>(cache);
         services.AddSingleton<IEventPublisher>(new NoopEventPublisher());
         services.AddSingleton<IGroupedPageService>(decorated);
+        services.AddSingleton<ISchemaCatalogService>(new TestServices.NoSchemaCatalogs());
         using var provider = services.BuildServiceProvider();
         var content = provider.GetRequiredService<SiteBuilderPageContentService>();
         var group = await decorated.GetByIdAsync(GroupId);

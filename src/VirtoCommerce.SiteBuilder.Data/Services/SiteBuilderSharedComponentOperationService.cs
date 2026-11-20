@@ -6,6 +6,7 @@ using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Validation;
@@ -24,7 +25,8 @@ public class SiteBuilderSharedComponentOperationService(
     ISiteBuilderSharedComponentUsageService sharedComponentUsageService,
     IAuthorizationService authorizationService,
     IStoreService storeService,
-    ISiteBuilderContentGuard contentGuard) : ISiteBuilderSharedComponentOperationService
+    ISiteBuilderContentGuard contentGuard,
+    ISchemaCatalogService schemaCatalogService) : ISiteBuilderSharedComponentOperationService
 {
     private const string ComponentName = "shared component";
     private const string StoreIdRequiredError = "StoreId is required.";
@@ -118,7 +120,7 @@ public class SiteBuilderSharedComponentOperationService(
 
         try
         {
-            var content = GuardContent(request.Content);
+            var content = await GuardContentAsync(component.StoreId, request.Content, cancellationToken);
             if (request.DryRun)
             {
                 var preview = CreatePreview();
@@ -217,7 +219,7 @@ public class SiteBuilderSharedComponentOperationService(
 
         try
         {
-            var content = GuardContent(request.Content);
+            var content = await GuardContentAsync(component.StoreId, request.Content, cancellationToken);
             if (request.DryRun)
             {
                 var usage = await GetUsageAsync(component, cancellationToken);
@@ -313,10 +315,12 @@ public class SiteBuilderSharedComponentOperationService(
     protected virtual SiteBuilderOperationResult CheckNameLength(string name) =>
         name.Trim().Length > NameMaxLength ? SiteBuilderOperationResult.Invalid($"Name cannot exceed {NameMaxLength} characters.") : null;
 
+    /// <summary>Checks the content against the store's current catalog.</summary>
     /// <exception cref="InvalidDataException">Something in the content can run script.</exception>
-    protected virtual string GuardContent(JObject content)
+    protected virtual async Task<string> GuardContentAsync(string storeId, JObject content, CancellationToken cancellationToken)
     {
-        var errors = contentGuard.GuardPage(content, ComponentName, catalog: null).Errors;
+        var catalog = await schemaCatalogService.GetCatalogObjectAsync(storeId, hash: null, cancellationToken);
+        var errors = contentGuard.GuardPage(content, ComponentName, catalog).Errors;
         SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
 
         return content.ToString(Formatting.None);

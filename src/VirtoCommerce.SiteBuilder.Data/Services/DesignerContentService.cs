@@ -8,6 +8,7 @@ using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
@@ -433,28 +434,16 @@ public class DesignerContentService(
         SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
     }
 
-    /// <summary>Null for no hash or an unknown one: the content is then checked without a schema.</summary>
-    protected virtual async Task<JObject> GetCatalogAsync(string storeId, string catalogHash, CancellationToken cancellationToken) =>
-        string.IsNullOrEmpty(catalogHash) ? null : await ReadCatalogAsync(storeId, catalogHash, cancellationToken);
+    /// <summary>
+    /// The catalog of the hash; for no hash or an unknown one, the store's current catalog.
+    /// Null only when the store has none: the content is then checked without a schema.
+    /// </summary>
+    protected virtual Task<JObject> GetCatalogAsync(string storeId, string catalogHash, CancellationToken cancellationToken) =>
+        schemaCatalogService.GetCatalogOrCurrentAsync(storeId, catalogHash, cancellationToken);
 
     /// <summary>The store's current catalog for no hash.</summary>
-    protected virtual async Task<JObject> ReadCatalogAsync(string storeId, string hash, CancellationToken cancellationToken)
-    {
-        var catalog = await schemaCatalogService.GetAsync(storeId, hash, cancellationToken);
-        if (catalog == null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return ThemeJson.ParseObject(catalog);
-        }
-        catch (JsonReaderException)
-        {
-            return null;
-        }
-    }
+    protected virtual Task<JObject> ReadCatalogAsync(string storeId, string hash, CancellationToken cancellationToken) =>
+        schemaCatalogService.GetCatalogObjectAsync(storeId, hash, cancellationToken);
 
     /// <summary>Writes the page last, so that a refused page leaves the theme drafts to be put back.</summary>
     protected virtual async Task<string> SavePageAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken)

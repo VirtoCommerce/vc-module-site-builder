@@ -21,6 +21,20 @@ public class GroupedPageOperationServiceTests
     private static readonly string TooLongName = new('a', 1025);
 
     private const string EditedContent = """{"settings":{"name":"Home"},"content":[{"id":"b","type":"text"}]}""";
+    private const string DataLinkContent = """{"settings":{},"content":[{"id":"a","type":"notice","link":"data:text/html,<p>x</p>"}]}""";
+    private const string ScriptNoteContent = """{"settings":{},"content":[{"id":"a","type":"notice","note":"<p>x</p><script>alert(1)</script>"}]}""";
+    private const string SanitizedNoteContent = """{"settings":{},"content":[{"id":"a","type":"notice","note":"<p>x</p>"}]}""";
+    private const string NoticeCatalog = """
+        {
+          "hash": "abc12345",
+          "sections": {
+            "text": {},
+            "notice": { "settings": [ { "id": "link", "type": "url" }, { "id": "note", "type": "markdown", "resultType": "html" } ] }
+          },
+          "blocks": {},
+          "shared": {}
+        }
+        """;
 
     private readonly Fakes.FakeGroupedPageService _pages = new();
     private readonly RecordingContentHistory _history = new();
@@ -154,6 +168,50 @@ public class GroupedPageOperationServiceTests
     }
 
     [Fact]
+    public async Task CreateWithContentAsync_LinkToADataUrl_IsInvalidAgainstTheStoresCurrentCatalog()
+    {
+        var request = new GroupedPageCreateOperationRequest
+        {
+            Page = new CreateGroupedPageRequest { StoreId = "s1", Name = "New", Permalink = "/new", Content = DataLinkContent },
+        };
+
+        var result = await Operations(catalog: NoticeCatalog).CreateWithContentAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("page: 'content[0].link' links to a data: URL", result.Error);
+    }
+
+    [Fact]
+    public async Task CreateWithContentAsync_HtmlOfAFieldTheCurrentCatalogNames_IsSanitized()
+    {
+        var request = new GroupedPageCreateOperationRequest
+        {
+            Page = new CreateGroupedPageRequest { StoreId = "s1", Name = "New", Permalink = "/new", Content = ScriptNoteContent },
+            DryRun = true,
+        };
+
+        var result = await Operations(catalog: NoticeCatalog).CreateWithContentAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(SanitizedNoteContent, Assert.Single(result.Preview.Objects).Fields.Single(x => x.Name == ModuleConstants.ChangePreview.Content).To);
+    }
+
+    [Fact]
+    public async Task CreateWithContentAsync_StoreWithoutACatalog_ChecksTheContentWithoutASchema()
+    {
+        var request = new GroupedPageCreateOperationRequest
+        {
+            Page = new CreateGroupedPageRequest { StoreId = "s1", Name = "New", Permalink = "/new", Content = DataLinkContent },
+            DryRun = true,
+        };
+
+        var result = await Operations().CreateWithContentAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(DataLinkContent, Assert.Single(result.Preview.Objects).Fields.Single(x => x.Name == ModuleConstants.ChangePreview.Content).To);
+    }
+
+    [Fact]
     public async Task SaveRawContentAsync_MalformedContentOfAPageOfAnotherUser_IsForbiddenBeforeTheContentIsChecked()
     {
         var request = new GroupedPageContentSaveOperationRequest { GroupId = "live", Content = "{ not json" };
@@ -188,6 +246,42 @@ public class GroupedPageOperationServiceTests
         Assert.Equal((ModuleConstants.ChangePreview.Content, DraftContent, EditedContent), (field.Name, field.From, field.To));
         Assert.Equal(DraftContent, await _pages.LoadContent("edited-draft", Ct));
         Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task SaveContentAsync_LinkToADataUrl_IsInvalidAgainstTheStoresCurrentCatalogAndWritesNothing()
+    {
+        var request = new GroupedPageContentSaveOperationRequest { GroupId = "edited", Content = DataLinkContent, ETag = await ETagAsync("edited") };
+
+        var result = await Operations(catalog: NoticeCatalog).SaveContentAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("page: 'content[0].link' links to a data: URL", result.Error);
+        Assert.Equal(DraftContent, await _pages.LoadContent("edited-draft", Ct));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task SaveContentAsync_HtmlOfAFieldTheCurrentCatalogNames_IsSavedSanitized()
+    {
+        var request = new GroupedPageContentSaveOperationRequest { GroupId = "edited", Content = ScriptNoteContent, ETag = await ETagAsync("edited") };
+
+        var result = await Operations(catalog: NoticeCatalog).SaveContentAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(SanitizedNoteContent, await _pages.LoadContent("edited-draft", Ct));
+        Assert.Equal(SanitizedNoteContent, Assert.Single(_history.Records).Record.Entries.Single().Content);
+    }
+
+    [Fact]
+    public async Task SaveContentAsync_StoreWithoutACatalog_ChecksTheContentWithoutASchema()
+    {
+        var request = new GroupedPageContentSaveOperationRequest { GroupId = "edited", Content = ScriptNoteContent, ETag = await ETagAsync("edited") };
+
+        var result = await Operations().SaveContentAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(ScriptNoteContent, await _pages.LoadContent("edited-draft", Ct));
     }
 
     [Fact]
@@ -526,7 +620,8 @@ public class GroupedPageOperationServiceTests
         Assert.Empty(_history.Records);
     }
 
-    private GroupedPageOperationService Operations(IAuthorizationService authorization = null)
+    /// <param name="catalog">The store's current catalog; none when null.</param>
+    private GroupedPageOperationService Operations(IAuthorizationService authorization = null, string catalog = null)
     {
         authorization ??= new FakeAuthorizationService("s1");
         var pageService = new Fakes.FakeSiteBuilderPageService(_pages);
@@ -538,7 +633,8 @@ public class GroupedPageOperationServiceTests
             NullLogger<ThemeDraftService>.Instance);
 
         return TestServices.GroupedPageOperations(authorization, _pages, contentService, pageService,
-            designerContentService: TestServices.Designer(_history, themeDrafts: themeDrafts, pages: _pages), contentHistory: _history);
+            designerContentService: TestServices.Designer(_history, themeDrafts: themeDrafts, pages: _pages), contentHistory: _history,
+            catalogs: catalog == null ? null : new TestServices.CurrentSchemaCatalog(catalog));
     }
 
     private async Task<GroupedSiteBuilderPage> GetAsync(string groupId) => (await _pages.GetAsync([groupId])).Single();
