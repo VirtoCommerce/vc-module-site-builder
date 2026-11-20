@@ -680,6 +680,7 @@ import SettingsPanel from "../designer/components/SettingsPanel.vue";
 import ThemePanel from "../designer/components/ThemePanel.vue";
 import SharedPanel from "../designer/components/SharedPanel.vue";
 import { useSharedComponentDesigner } from "../site-builder/composables/usePageDesigner";
+import { useGitHubMissingBanner } from "../site-builder/composables/useGitHubMissingBanner";
 import { useThemeLook } from "../designer/useThemeLook";
 import { usePreviewUser } from "../designer/usePreviewUser";
 import { LOOK_FILES } from "../designer/themeLook";
@@ -1529,6 +1530,7 @@ const publishTitle = computed(() => {
 });
 
 const sitePanel = ref(false);
+const gitHubBanner = useGitHubMissingBanner(() => designer.storeId.value, () => enableHistory());
 async function loadSiteHistory(storeId: string) {
   siteHistory.value = await historyStatus(storeId).catch(() => undefined);
 }
@@ -1545,7 +1547,11 @@ function enableHistory() {
     onClose: async () => {
       sitePanel.value = false;
       if (maximized) maximized.value = true;
-      const [{ on }] = await Promise.all([gitFlowOf(storeId, file?.theme ?? (await storeTheme(storeId))), loadSiteHistory(storeId)]);
+      const [{ on }] = await Promise.all([
+        gitFlowOf(storeId, file?.theme ?? (await storeTheme(storeId))),
+        loadSiteHistory(storeId),
+        gitHubBanner.refresh(),
+      ]);
       // What is open may have changed to another page or a template, which stays as it is.
       if (!on || !file || file.type === "themes" || designer.file.value?.path !== file.path) return;
       if (unsaved.value) designer.gitFlow.value = true;

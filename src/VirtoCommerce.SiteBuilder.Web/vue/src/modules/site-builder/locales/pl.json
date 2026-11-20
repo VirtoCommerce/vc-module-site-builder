@@ -667,7 +667,8 @@
         "AGAIN": "Skonfiguruj ponownie"
       },
       "CONNECT_FIRST": "Ta platforma nie jest jeszcze połączona z GitHubem. Połącz ją raz w panelu Witryny, a potem włącz tutaj historię.",
-      "OPEN_GITHUB": "Połączenie z GitHubem"
+      "OPEN_GITHUB": "Połączenie z GitHubem",
+      "GITHUB_MISSING": "Ten sklep publikuje strony przez Git, ale GitHub nie jest połączony. Połącz GitHub lub wyłącz publikowanie przez Git dla tego sklepu."
     },
     "GITHUB": {
       "INTRO": "Połącz platformę z organizacją GitHub tylko raz. Każda witryna przechowuje wtedy wersje swoich stron we własnym, prywatnym repozytorium.",

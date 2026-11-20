@@ -667,7 +667,8 @@
         "AGAIN": "Neu einrichten"
       },
       "CONNECT_FIRST": "Diese Plattform ist noch nicht mit GitHub verbunden. Verbinden Sie sie einmal im Bereich „Sites“ und aktivieren Sie dann hier den Verlauf.",
-      "OPEN_GITHUB": "GitHub-Verbindung"
+      "OPEN_GITHUB": "GitHub-Verbindung",
+      "GITHUB_MISSING": "Dieser Shop veröffentlicht Seiten über Git, aber GitHub ist nicht verbunden. Verbinden Sie GitHub oder deaktivieren Sie die Veröffentlichung über Git für diesen Shop."
     },
     "GITHUB": {
       "INTRO": "Verbinden Sie die Plattform einmalig mit einer GitHub-Organisation. Jede Website bewahrt dann die Versionen ihrer Seiten in einem eigenen privaten Repository dort auf.",
