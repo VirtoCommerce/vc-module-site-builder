@@ -64,6 +64,12 @@ public class DesignerContentService(
             throw new ThemeValidationException([.. mainSectionErrors]);
         }
 
+        var sectionErrors = await GetSectionErrorsAsync(storeId, files, catalog, cancellationToken);
+        if (sectionErrors.Count > 0)
+        {
+            throw new ThemeValidationException([.. sectionErrors]);
+        }
+
         if (string.IsNullOrEmpty(catalogHash))
         {
             return;
@@ -109,7 +115,45 @@ public class DesignerContentService(
     }
 
     /// <summary><c>null</c> for no file, or one that is not a page document.</summary>
-    protected virtual ThemeTemplateMainSectionState? GetMainSectionState(ThemeFileContent file, string mainSection)
+    protected virtual ThemeTemplateMainSectionState? GetMainSectionState(ThemeFileContent file, string mainSection) =>
+        ParseOrNull(file) is { } document ? ThemeTemplateMainSections.GetState(document, mainSection) : null;
+
+    /// <summary>
+    /// A template draft may not gain a section the designer does not offer its template, such as one its template schema does not list.
+    /// A section the template held already stays: the storefront shows it, and the designer keeps it.
+    /// </summary>
+    /// <param name="files">Contents by the path with the theme folder.</param>
+    protected virtual async Task<IList<string>> GetSectionErrorsAsync(string storeId, IDictionary<string, JToken> files, JObject catalog,
+        CancellationToken cancellationToken)
+    {
+        var errors = new List<string>();
+        if (catalog == null)
+        {
+            return errors;
+        }
+
+        foreach (var (path, content) in files)
+        {
+            var file = SiteBuilderContentPaths.GetPathInTheme(path);
+            var templateType = ThemeTemplateMainSections.GetTemplateKey(file)?.Split('.')[0];
+            var refused = templateType == null
+                ? []
+                : ThemeTemplateSections.GetSections(content)
+                    .Where(x => x.Type != ModuleConstants.SharedComponents.ReferenceType && !ThemeTemplateSections.IsOffered(catalog, templateType, x.Type))
+                    .ToList();
+            if (refused.Count == 0)
+            {
+                continue;
+            }
+
+            var held = ThemeTemplateSections.GetSections(ParseOrNull(await themeDraftService.ReadAsync(storeId, path, cancellationToken)));
+            errors.AddRange(refused.Except(held).Select(x => $"{file}: a {templateType} template cannot hold the section '{x.Id}' of type '{x.Type}'"));
+        }
+
+        return errors;
+    }
+
+    private static JToken ParseOrNull(ThemeFileContent file)
     {
         if (string.IsNullOrEmpty(file?.Content))
         {
@@ -118,7 +162,7 @@ public class DesignerContentService(
 
         try
         {
-            return ThemeTemplateMainSections.GetState(ThemeJson.Parse(file.Content), mainSection);
+            return ThemeJson.Parse(file.Content);
         }
         catch (JsonReaderException)
         {

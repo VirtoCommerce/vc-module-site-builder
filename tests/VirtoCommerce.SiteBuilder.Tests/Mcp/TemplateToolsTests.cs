@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
@@ -191,6 +192,33 @@ public sealed class TemplateToolsTests : IAsyncDisposable
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains($"main section 'product-info' cannot be {verb}", result.Error, StringComparison.Ordinal);
         Assert.Null(_context.ReadThemeFile(StoreA, "templates/product.json", draft: true));
+    }
+
+    [Fact]
+    public async Task ASectionTheTemplateDoesNotTake_IsRefusedOnTheDryRun()
+    {
+        await SeedAsync();
+        await new SchemaCatalogService(_context.ThemeStorage).SaveAsync(StoreA,
+            """
+            {
+              "hash": "product-sections",
+              "templates": { "product": { "type": "themes", "previewMessage": { "templateKey": "product" }, "sections": [ "product-info", "product-reviews" ] } },
+              "sections": { "product-info": {}, "product-reviews": {}, "announcement-bar": {} }
+            }
+            """, TestContext.Current.CancellationToken);
+
+        var result = await _context.CallAsync(Designer(), "edit_template", new
+        {
+            store_id = StoreA,
+            template_key = "product",
+            version_token = await VersionOfAsync("product"),
+            operations = new[] { new { op = "add_section", type = "announcement-bar" } },
+            dryRun = true,
+        });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("a product template cannot hold", result.Error, StringComparison.Ordinal);
+        Assert.Contains("'announcement-bar'", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
