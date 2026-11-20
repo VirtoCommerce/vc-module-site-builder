@@ -1,0 +1,315 @@
+<template>
+  <aside
+    class="pd-settings"
+    :aria-label="title"
+  >
+    <PanelHeader
+      class="pd-settings__head"
+      :icon="icon"
+      :title="title"
+      :close-label="$t('SITE_BUILDER.DESIGNER.DESELECT')"
+      @close="emit('close')"
+    >
+      <VcDropdown
+        v-if="sel.kind !== 'page'"
+        v-model="menuOpen"
+        :items="actions"
+        floating
+        close-on-select
+        placement="bottom-end"
+        @item-click="(x: { run: () => void }) => x.run()"
+      >
+        <template #trigger="{ isActive, toggle }">
+          <VcButton
+            variant="ghost"
+            size="icon-sm"
+            icon="lucide-ellipsis"
+            :aria-label="$t('SITE_BUILDER.DESIGNER.MORE')"
+            :aria-expanded="isActive"
+            @click="toggle"
+          />
+        </template>
+        <template #item="{ item }">
+          <span
+            class="pd-settings__action"
+            :class="{ 'pd-settings__action--danger': item.danger }"
+          >
+            <VcIcon
+              :icon="item.icon"
+              size="s"
+            />
+            {{ item.title }}
+          </span>
+        </template>
+      </VcDropdown>
+    </PanelHeader>
+
+    <div
+      v-if="tabs.length > 1"
+      role="tablist"
+      class="pd-settings__tabs"
+    >
+      <button
+        v-for="tab in tabs"
+        :key="tab"
+        type="button"
+        role="tab"
+        class="pd-settings__tab"
+        :class="{ 'pd-settings__tab--active': tab === currentTab }"
+        :aria-selected="tab === currentTab"
+        @click="activeTab = tab"
+      >
+        {{ tab }}
+      </button>
+    </div>
+
+    <div class="pd-settings__body">
+      <div
+        v-if="placed"
+        class="pd-settings__shared"
+      >
+        <template v-if="component">
+          <p>{{ $t("SITE_BUILDER.DESIGNER.SHARED_INFO", { name: component.name, count: component.usageCount ?? 0 }) }}</p>
+          <VcButton
+            variant="primary"
+            icon="lucide-pencil"
+            @click="emit('edit-shared', placed.componentRef)"
+          >
+            {{ $t("SITE_BUILDER.DESIGNER.EDIT_SHARED") }}
+          </VcButton>
+          <VcButton
+            variant="secondary"
+            icon="lucide-unlink"
+            @click="detach(placed.id)"
+          >
+            {{ $t("SITE_BUILDER.DESIGNER.DETACH") }}
+          </VcButton>
+          <VcHint>{{ $t("SITE_BUILDER.DESIGNER.DETACH_HINT") }}</VcHint>
+        </template>
+        <p v-else>{{ $t("SITE_BUILDER.DESIGNER.SHARED_MISSING") }}</p>
+      </div>
+      <Fields
+        v-if="values"
+        :key="itemKey"
+        :fields="tabFields"
+        :values="values"
+        :context="context"
+        :group-item="groupItem"
+        :translation="designer.translating(sel.kind === 'page' ? undefined : designer.selectedSection.value)"
+        @update="designer.setField"
+      />
+      <p
+        v-if="values && !placed && !tabFields.length"
+        class="pd-settings__empty"
+      >
+        {{ $t("SITE_BUILDER.DESIGNER.NO_SETTINGS") }}
+      </p>
+    </div>
+
+    <footer
+      v-if="sel.kind !== 'page'"
+      class="pd-settings__foot"
+    >
+      <VcButton
+        variant="ghost"
+        icon="lucide-trash-2"
+        class="pd-settings__remove"
+        :disabled="isMain"
+        @click="confirmRemove"
+      >
+        {{ $t(sel.kind === "block" ? "SITE_BUILDER.DESIGNER.REMOVE_BLOCK" : "SITE_BUILDER.DESIGNER.REMOVE_SECTION") }}
+      </VcButton>
+      <VcHint v-if="isMain">{{ $t("SITE_BUILDER.DESIGNER.MAIN_SECTION.LOCKED") }}</VcHint>
+    </footer>
+  </aside>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import { notification, usePopup } from "@vc-shell/framework";
+import { VcButton, VcDropdown, VcHint, VcIcon } from "@vc-shell/framework/ui";
+import type { Designer } from "../useDesigner";
+import type { Selection } from "../types";
+import { iconOf, itemTitle } from "../schema";
+import { isComponentRef } from "../document";
+import type { GroupItem } from "../whiteLabeling";
+import Fields from "./Fields.vue";
+import PanelHeader from "./PanelHeader.vue";
+
+const props = defineProps<{ designer: Designer; selection: Selection }>();
+const emit = defineEmits<{ copy: []; paste: []; close: []; "edit-shared": [componentId: string] }>();
+
+const { t } = useI18n({ useScope: "global" });
+const sel = computed(() => props.selection);
+const item = computed(() => props.designer.selectedItem.value);
+const groupItem = computed<GroupItem | undefined>(() => {
+  const kind = sel.value.kind;
+  const group = props.designer.selectedSection.value?.__group;
+  return kind !== "page" && group && item.value ? { group, type: item.value.type, kind } : undefined;
+});
+const schema = computed(() => (sel.value.kind === "block" ? props.designer.blockSchema(item.value?.type) : props.designer.sectionSchema(item.value?.type)));
+
+const placed = computed(() => (item.value && isComponentRef(item.value) ? item.value : undefined));
+const component = computed(() => (placed.value ? props.designer.components.get(placed.value.componentRef) : undefined));
+const pageRow = computed(() => (sel.value.kind === "page" ? props.designer.pageRows.value.find((x) => x.key === (sel.value as { key: string }).key) : undefined));
+
+const title = computed(() => {
+  if (sel.value.kind === "page") return pageRow.value && pageRow.value.key !== "settings" ? pageRow.value.name : t("SITE_BUILDER.DESIGNER.PAGE_SETTINGS");
+  if (placed.value) return component.value?.name ?? t("SITE_BUILDER.DESIGNER.SHARED_COMPONENT");
+  return item.value ? itemTitle(item.value, schema.value, props.designer.languages.value.default) : "";
+});
+const icon = computed(() => {
+  if (sel.value.kind === "page") return pageRow.value?.key === "settings" ? "lucide-file-cog" : iconOf({ icon: pageRow.value?.icon });
+  return placed.value ? "lucide-link" : iconOf(schema.value);
+});
+const values = computed(() => (sel.value.kind === "page" ? props.designer.doc.value.settings : item.value));
+const itemKey = computed(() => (sel.value.kind === "page" ? `page:${sel.value.key}` : sel.value.id));
+
+const tabs = computed(() => [...new Set(props.designer.selectedFields.value.map((x) => x.tab ?? t("SITE_BUILDER.DESIGNER.CONTENT")))]);
+const activeTab = ref<string>();
+const menuOpen = ref(false);
+watch(itemKey, () => (activeTab.value = undefined));
+const currentTab = computed(() => (activeTab.value && tabs.value.includes(activeTab.value) ? activeTab.value : tabs.value[0]));
+const tabFields = computed(() => props.designer.selectedFields.value.filter((x) => (x.tab ?? t("SITE_BUILDER.DESIGNER.CONTENT")) === currentTab.value));
+
+const context = computed(() => {
+  const doc = props.designer.doc.value;
+  return {
+    model: values.value,
+    section: props.designer.selectedSection.value,
+    block: sel.value.kind === "block" ? item.value : undefined,
+    schema: schema.value,
+    template: doc,
+    page: doc.content,
+    settings: doc.settings,
+    location: { params: { storeId: props.designer.storeId.value } },
+  };
+});
+
+const isMain = computed(() => sel.value.kind === "section" && props.designer.isMainKept(sel.value.id));
+const hideLocked = computed(() => sel.value.kind === "section" && props.designer.isMainShown(sel.value.id));
+
+const { showConfirmation } = usePopup();
+async function confirmRemove() {
+  const current = sel.value;
+  if (isMain.value) return;
+  if (await showConfirmation(t("SITE_BUILDER.DESIGNER.CONFIRM_REMOVE", { name: title.value }))) props.designer.remove(current);
+}
+
+async function detach(id: string) {
+  try {
+    await props.designer.detach(id);
+  } catch {
+    notification.error(t("SITE_BUILDER.DESIGNER.DETACH_FAILED"));
+  }
+}
+
+const actions = computed(() => {
+  const current = sel.value;
+  if (current.kind === "page") return [];
+  return [
+    ...((placed.value && !props.designer.canPlaceShared.value) || (current.kind === "section" && props.designer.isAtLimit(item.value?.type ?? ""))
+      ? []
+      : [{ title: t("SITE_BUILDER.DESIGNER.DUPLICATE"), icon: "lucide-copy-plus", run: () => props.designer.duplicate(current) }]),
+    { title: t("SITE_BUILDER.DESIGNER.CLIPBOARD.COPY"), icon: "lucide-copy", run: () => emit("copy") },
+    { title: t("SITE_BUILDER.DESIGNER.CLIPBOARD.PASTE"), icon: "lucide-clipboard-paste", run: () => emit("paste") },
+    ...(placed.value || hideLocked.value ? [] : [{
+      title: t(item.value?.hidden ? "SITE_BUILDER.DESIGNER.SHOW" : "SITE_BUILDER.DESIGNER.HIDE"),
+      icon: item.value?.hidden ? "lucide-eye" : "lucide-eye-off",
+      run: () => props.designer.toggleHidden(current),
+    }]),
+    ...(isMain.value ? [] : [{ title: t("SITE_BUILDER.DESIGNER.REMOVE"), icon: "lucide-trash-2", danger: true, run: confirmRemove }]),
+  ];
+});
+</script>
+
+<style lang="scss" scoped>
+.pd-settings {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  font-size: 13px;
+
+  &__head :deep(.vc-dropdown) {
+    flex: none;
+    width: auto;
+  }
+
+  &__tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 8px 0;
+  }
+
+  &__tab {
+    flex: 1;
+    height: 32px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--neutrals-500);
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--neutrals-100);
+    }
+
+    &--active,
+    &--active:hover {
+      background: var(--primary-50);
+      color: var(--primary-700);
+      font-weight: 600;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  &__shared {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    color: var(--neutrals-700);
+
+    p {
+      margin: 0;
+    }
+  }
+
+  &__empty {
+    margin: 0;
+    color: var(--neutrals-500);
+  }
+
+  &__foot {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--neutrals-200);
+  }
+
+  &__remove {
+    color: var(--danger-500);
+  }
+
+  &__action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    &--danger {
+      color: var(--danger-500);
+    }
+  }
+}
+</style>

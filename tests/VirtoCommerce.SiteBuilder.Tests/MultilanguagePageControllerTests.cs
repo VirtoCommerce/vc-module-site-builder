@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.GenericCrud;
@@ -266,6 +267,7 @@ public class MultilanguagePageControllerTests
         var pagesController = CreatePagesController(fixture);
 
         Assert.IsType<BadRequestObjectResult>((await controller.Search(null)).Result);
+        Assert.IsType<BadRequestObjectResult>((await pagesController.SearchGroups(null)).Result);
         Assert.IsType<BadRequestObjectResult>((await pagesController.SearchList(null, fixture.List, TestContext.Current.CancellationToken)).Result);
         Assert.IsType<BadRequestObjectResult>((await pagesController.FindPermalinkUsage(null, fixture.List, TestContext.Current.CancellationToken)).Result);
     }
@@ -311,14 +313,16 @@ public class MultilanguagePageControllerTests
 
     private static SiteBuilderPageController CreatePagesController(Fixture fixture)
     {
+        var authorization = new PredicateAuthorizationService(_ => true);
         return new SiteBuilderPageController(
-            null!,
             fixture.Groups,
             fixture.GroupSearch,
-            new PredicateAuthorizationService(_ => true),
+            authorization,
             null!,
             null!,
-            NullLogger<SiteBuilderPageController>.Instance)
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, fixture.Groups),
+            TestServices.PublishStatuses(authorization, fixture.Groups))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -327,12 +331,12 @@ public class MultilanguagePageControllerTests
     private static MultilanguagePageController CreateController(Fixture fixture, Func<object, bool> isAllowed = null,
         IMultilanguagePageService roots = null)
     {
+        var authorization = new PredicateAuthorizationService(isAllowed ?? (_ => true));
         return new MultilanguagePageController(
             roots ?? fixture.Roots,
             null!,
-            fixture.Groups,
-            new PredicateAuthorizationService(isAllowed ?? (_ => true)),
-            fixture.StoreService)
+            authorization,
+            new MultilanguagePageOperationService(authorization, roots ?? fixture.Roots, fixture.Groups, fixture.StoreService))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

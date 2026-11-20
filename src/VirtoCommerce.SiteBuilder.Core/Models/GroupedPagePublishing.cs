@@ -13,7 +13,7 @@ public static class GroupedPagePublishing
     /// <returns><c>false</c> when the group has no draft; the group is left unchanged.</returns>
     public static bool TryPublishDraft(GroupedSiteBuilderPage group, out IList<string> obsoletePageIds)
     {
-        var draft = SiteBuilderPageSelection.Order(group.Pages).FirstOrDefault(x => x.Status == Draft);
+        var draft = GetDraft(group);
         if (draft == null)
         {
             obsoletePageIds = [];
@@ -24,6 +24,10 @@ public static class GroupedPagePublishing
         obsoletePageIds = group.Pages.Where(x => x.Id != draft.Id).Select(x => x.Id).ToList();
         return true;
     }
+
+    /// <summary>The draft a publish makes live; <c>null</c> when the group has none.</summary>
+    public static SiteBuilderPage GetDraft(GroupedSiteBuilderPage group) =>
+        SiteBuilderPageSelection.Order(group.Pages).FirstOrDefault(x => x.Status == Draft);
 
     /// <returns><c>false</c> when every page is already archived.</returns>
     public static bool Archive(GroupedSiteBuilderPage group)

@@ -16,8 +16,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using Xunit;
 
@@ -243,13 +243,16 @@ public class PageContentConcurrencyContractTests
     private static SiteBuilderPageController CreateController(PublishedRenameContentPreservationTests.FakeGroupedPageService service)
     {
         var pageService = new PublishedRenameContentPreservationTests.FakeSiteBuilderPageService(service);
-        var contentService = new SiteBuilderPageContentService(pageService, service, new NoopSharedComponentReferenceIndexService(),
+        var contentService = new SiteBuilderPageContentService(pageService, service,
             new PublishedRenameContentPreservationTests.NoopEventPublisher(), NullLogger<SiteBuilderPageContentService>.Instance);
-        return new SiteBuilderPageController(pageService, service,
+        var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
+        return new SiteBuilderPageController(service,
             new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-            new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+            authorization,
             new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(), contentService,
-            NullLogger<SiteBuilderPageController>.Instance)
+            NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, service, contentService, pageService),
+            TestServices.PublishStatuses(authorization, service))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

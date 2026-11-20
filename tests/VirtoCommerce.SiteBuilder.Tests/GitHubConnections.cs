@@ -1,0 +1,50 @@
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
+using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Data.GitContent;
+using VirtoCommerce.Platform.Core.Settings;
+
+namespace VirtoCommerce.SiteBuilder.Tests;
+
+internal static class GitHubConnections
+{
+    public static readonly string AppPrivateKey = RSA.Create(2048).ExportPkcs8PrivateKeyPem();
+
+    public static GitHubConnectionService CreateService(GitContentOptions options, ISettingsManager settings = null, IDataProtectionProvider keys = null,
+        GitHubScript github = null, IConfiguration configuration = null) =>
+        new(Options.Create(options), configuration ?? new ConfigurationBuilder().Build(), settings ?? new FakeSettingsManager(),
+            keys ?? new EphemeralDataProtectionProvider(), new GitHubApiClient(github ?? new GitHubScript()), NullLogger<GitHubConnectionService>.Instance);
+
+    public static GitHubConnectionService CreateService(ISettingsManager settings, IDataProtectionProvider keys = null, GitHubScript github = null,
+        Action<GitContentOptions> configure = null, IConfiguration configuration = null)
+    {
+        var options = new GitContentOptions();
+        configure?.Invoke(options);
+        return CreateService(options, settings, keys, github, configuration);
+    }
+
+    public static GitContentPolicy CreatePolicy(IOptions<GitContentOptions> options, ISettingsManager settings, IGitContentOwnership ownership = null,
+        IConfiguration configuration = null) =>
+        new(CreateService(options.Value, configuration: configuration), options, settings, ownership ?? new FakeGitContentOwnership());
+
+    /// <summary>An explicit <c>Enabled=false</c>, which a bound option cannot tell from one left unset.</summary>
+    public static IConfiguration SwitchedOff() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string> { [$"{GitContentOptions.SectionName}:{nameof(GitContentOptions.Enabled)}"] = "false" })
+        .Build();
+
+    public static GitHubScript CreateManifestConversion(string owner) => new(("POST", "app-manifests/c0de/conversions", (_, _) =>
+        GitHubScript.Json(new JObject
+        {
+            ["id"] = 77,
+            ["slug"] = "site-builder-acme",
+            ["pem"] = AppPrivateKey,
+            ["owner"] = new JObject { ["login"] = owner },
+        }.ToString(), HttpStatusCode.Created)));
+}

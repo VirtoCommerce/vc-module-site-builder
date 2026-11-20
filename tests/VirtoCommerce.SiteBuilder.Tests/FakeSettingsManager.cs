@@ -1,20 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using VirtoCommerce.Platform.Core.Settings;
 
 namespace VirtoCommerce.SiteBuilder.Tests
 {
-    /// <summary>
-    /// Records the lookup the policy performs and returns one canned value. Only
-    /// <see cref="GetObjectSettingAsync"/> is exercised; everything else throws, so a change that starts
-    /// calling the settings store some other way fails loudly instead of passing silently.
-    /// </summary>
-    public class FakeSettingsManager : ISettingsManager
+    internal sealed class FakeSettingsManager : ISettingsManager
     {
         private readonly object _value;
+        private readonly string _repository;
 
-        public FakeSettingsManager(object value) => _value = value;
+        public FakeSettingsManager(object value = null, string repository = null)
+        {
+            _value = value;
+            _repository = repository;
+        }
+
+        public Dictionary<string, object> Values { get; } = [];
+
+        public Exception ReadFailure { get; init; }
 
         public string AskedName { get; private set; }
         public string AskedObjectType { get; private set; }
@@ -22,18 +27,45 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
         public Task<ObjectSettingEntry> GetObjectSettingAsync(string name, string objectType = null, string objectId = null)
         {
+            if (ReadFailure != null)
+            {
+                return Task.FromException<ObjectSettingEntry>(ReadFailure);
+            }
+
             AskedName = name;
             AskedObjectType = objectType;
             AskedObjectId = objectId;
 
-            return Task.FromResult(new ObjectSettingEntry { Name = name, Value = _value });
+            return Task.FromResult(new ObjectSettingEntry { Name = name, Value = GetValue(name) });
         }
 
-        public Task<IEnumerable<ObjectSettingEntry>> GetObjectSettingsAsync(IEnumerable<string> names, string objectType = null, string objectId = null) =>
-            throw new NotSupportedException();
+        public Task<IEnumerable<ObjectSettingEntry>> GetObjectSettingsAsync(IEnumerable<string> names, string objectType = null, string objectId = null)
+        {
+            if (ReadFailure != null)
+            {
+                return Task.FromException<IEnumerable<ObjectSettingEntry>>(ReadFailure);
+            }
 
-        public Task SaveObjectSettingsAsync(IEnumerable<ObjectSettingEntry> objectSettings) =>
-            throw new NotSupportedException();
+            var asked = names.ToList();
+            AskedName = asked.FirstOrDefault();
+            AskedObjectType = objectType;
+            AskedObjectId = objectId;
+
+            return Task.FromResult<IEnumerable<ObjectSettingEntry>>(asked
+                .Select(name => new ObjectSettingEntry { Name = name, Value = GetValue(name) })
+                .ToList());
+        }
+
+        public Task SaveObjectSettingsAsync(IEnumerable<ObjectSettingEntry> objectSettings)
+        {
+            // Like the platform, unregistered settings and settings without a value are not saved.
+            foreach (var setting in objectSettings.Where(x => x.ItHasValues && Core.ModuleConstants.Settings.AllSettings.Any(descriptor => descriptor.Name == x.Name)))
+            {
+                Values[setting.Name] = setting.Value;
+            }
+
+            return Task.CompletedTask;
+        }
 
         public Task RemoveObjectSettingsAsync(IEnumerable<ObjectSettingEntry> objectSettings) =>
             throw new NotSupportedException();
@@ -51,5 +83,15 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
         public void RegisterSettingsForType(IEnumerable<SettingDescriptor> settings, string typeName) =>
             throw new NotSupportedException();
+
+        private object GetValue(string name)
+        {
+            if (Values.TryGetValue(name, out var value))
+            {
+                return value;
+            }
+
+            return name == Core.ModuleConstants.Settings.StoreLevelSettings.GitContentRepository.Name ? _repository : _value;
+        }
     }
 }

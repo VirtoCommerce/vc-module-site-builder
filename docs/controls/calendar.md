@@ -1,6 +1,6 @@
 # Calendar Control Descriptor
 
-This control allows users to select dates, times, or both, using a configurable date/time picker based on [datetime-picker](https://h2qutc.github.io/angular-material-components).
+This control allows users to select dates, times, or both, using a configurable date/time picker.
 
 | Property  | Type                                                | Description                                                                 |
 | --------- | --------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -72,6 +72,6 @@ Some of the available calendar modes are as follows:
 ********
 
 <div style="display: flex; justify-content: space-between;">
-    <a href="../component-context">← Component context </a>
+    <a href="../schemas">← Schemas </a>
     <a href="../checkbox">Checkbox →</a>
 </div>

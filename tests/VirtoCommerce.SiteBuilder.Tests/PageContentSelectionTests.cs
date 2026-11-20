@@ -9,8 +9,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.PageStatuses;
 
@@ -236,6 +236,14 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Equal(string.Empty, body);
         }
 
+        [Fact]
+        public async Task PublishStatus_of_an_unknown_group_is_not_found()
+        {
+            var result = await CreateController(new PublishedRenameContentPreservationTests.FakeGroupedPageService()).PublishStatus("no-such-group");
+
+            Assert.IsType<NotFoundResult>(result.Result);
+        }
+
         private static SiteBuilderPageController CreateController(
             PublishedRenameContentPreservationTests.FakeGroupedPageService service)
         {
@@ -243,17 +251,18 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var pageContentService = new SiteBuilderPageContentService(
                 pageService,
                 service,
-                new NoopSharedComponentReferenceIndexService(),
                 new PublishedRenameContentPreservationTests.NoopEventPublisher(),
                 NullLogger<SiteBuilderPageContentService>.Instance);
+            var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
             var controller = new SiteBuilderPageController(
-                crudService: pageService,
                 groupedPageService: service,
                 groupedPageSearchService: new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-                authorizationService: new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+                authorizationService: authorization,
                 pageDocumentSearchService: new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance);
+                logger: NullLogger<SiteBuilderPageController>.Instance,
+                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService),
+                publishStatusQueryService: TestServices.PublishStatuses(authorization, service));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             httpContext.Response.Body = new MemoryStream();
@@ -268,17 +277,18 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var pageContentService = new SiteBuilderPageContentService(
                 pageService,
                 service,
-                new NoopSharedComponentReferenceIndexService(),
                 new PublishedRenameContentPreservationTests.NoopEventPublisher(),
                 NullLogger<SiteBuilderPageContentService>.Instance);
+            var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
             var controller = new SiteBuilderPageController(
-                crudService: pageService,
                 groupedPageService: service,
                 groupedPageSearchService: new PublishedRenameContentPreservationTests.FakeGroupedPageSearchService(),
-                authorizationService: new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
+                authorizationService: authorization,
                 pageDocumentSearchService: new PublishedRenameContentPreservationTests.NoopPageDocumentSearchService(),
                 pageContentService: pageContentService,
-                logger: NullLogger<SiteBuilderPageController>.Instance);
+                logger: NullLogger<SiteBuilderPageController>.Instance,
+                groupedPageOperationService: TestServices.GroupedPageOperations(authorization, service, pageContentService, pageService),
+                publishStatusQueryService: TestServices.PublishStatuses(authorization, service));
 
             var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
             var body = new MemoryStream();

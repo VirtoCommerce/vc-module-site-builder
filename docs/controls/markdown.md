@@ -14,6 +14,10 @@ When the resultType is `markdown` or `html`, the control returns a string. For `
 
 If resultType is set to `html`, the editor converts the HTML back to Markdown using the [turndown](https://github.com/mixmark-io/turndown) library.
 
+The Site Builder designer removes from the saved HTML whatever can run script: `<script>`, `<iframe>`, event handler attributes and `javascript:` links. Raw HTML that cannot run script is kept. A value that holds HTML only is edited as HTML there, not converted to Markdown.
+
+In a theme file, a translatable `markdown` setting translated into several languages holds one string per language: its HTML, or its Markdown when resultType is `markdown`.
+
 ## Example
 
 

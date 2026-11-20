@@ -9,7 +9,6 @@ using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.ContentProviders;
 using VirtoCommerce.SiteBuilder.Data.Repositories;
 using VirtoCommerce.SiteBuilder.Data.Services;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests;
