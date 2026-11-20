@@ -235,6 +235,33 @@ public sealed class PageDocumentEditorTests
             await RefusedAsync(Op("set_section_settings", sectionId: "hero", settings: new() { ["title"] = "Été" }, language: "fr-FR")));
     }
 
+    [Theory]
+    [InlineData(PageDocumentKind.Page)]
+    [InlineData(PageDocumentKind.SharedComponent)]
+    public async Task ANewTextPerLanguage_WhereTheStorefrontShowsOneText_IsRefused(PageDocumentKind kind)
+    {
+        var editor = PageDocumentEditor.Read(Document, kind)!;
+        var columns = JsonNode.Parse("""[ { "title": { "en-US": "Fast", "de-DE": "Schnell" } } ]""");
+
+        var error = await Assert.ThrowsAsync<McpException>(() =>
+            editor.ApplyAsync([Op("add_section", type: "features", settings: new() { ["columns"] = columns })], _sources, CancellationToken.None));
+
+        Assert.Contains("'columns' takes one text", error.Message);
+    }
+
+    [Theory]
+    [InlineData(PageDocumentKind.Template)]
+    [InlineData(PageDocumentKind.FilePage)]
+    public async Task ANewTextPerLanguage_WhereTheStorefrontPicksTheLanguage_IsSet(PageDocumentKind kind)
+    {
+        var editor = PageDocumentEditor.Read(Document, kind)!;
+
+        await editor.ApplyAsync([Op("set_section_settings", sectionId: "hero", settings: new() { ["title"] = JsonNode.Parse("""{ "en-US": "Spring", "de-DE": "Frühling" }""") })],
+            _sources, CancellationToken.None);
+
+        Assert.Equal("Frühling", Text(Section(editor, 0)["title"]!["de-DE"]));
+    }
+
     [Fact]
     public async Task ATextInThePagesLanguage_SetsOneTextForEveryLanguage()
     {

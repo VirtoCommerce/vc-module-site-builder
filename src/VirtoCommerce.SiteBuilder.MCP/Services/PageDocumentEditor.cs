@@ -614,6 +614,14 @@ public sealed class PageDocumentEditor
                     "pass language to set one of them.");
             }
 
+            // the storefront picks the language in templates, section groups and pages stored as files only; elsewhere it shows the dictionary
+            if ((_kind is PageDocumentKind.Page or PageDocumentKind.SharedComponent) && ContainsTranslations(value))
+            {
+                throw new EditException(_kind == PageDocumentKind.SharedComponent
+                    ? $"'{path}' takes one text, not a text per language: a Shared Component shows the same text in every language version it stands on."
+                    : $"'{path}' takes one text, not a text per language: each language version of a Multilanguage Page holds its own texts, so set the text in that version.");
+            }
+
             return value;
         }
 
@@ -650,6 +658,14 @@ public sealed class PageDocumentEditor
 
         return translations;
     }
+
+    private static bool ContainsTranslations(JsonNode node) => node switch
+    {
+        _ when IsTranslations(node) => true,
+        JsonObject value => value.Any(x => ContainsTranslations(x.Value)),
+        JsonArray list => list.Any(ContainsTranslations),
+        _ => false,
+    };
 
     private static JsonNode GetChild(JsonNode parent, string segment) => parent switch
     {

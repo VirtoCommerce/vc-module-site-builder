@@ -138,6 +138,22 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ACreateWithATextPerLanguage_IsRefused_AsTheComponentShowsOneText()
+    {
+        var result = await _context.CallAsync(Creator(), "create_shared_component", new
+        {
+            store_id = StoreA,
+            name = "Why us",
+            sections = new[] { new { type = "features", settings = new { title = new Dictionary<string, string> { ["en-US"] = "Why us", ["de-DE"] = "Warum wir" } } } },
+            dryRun = true,
+        });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("'title' takes one text", result.Error, StringComparison.Ordinal);
+        Assert.Null(_created);
+    }
+
+    [Fact]
     public async Task ACreateInAnotherStore_IsForbidden()
     {
         var result = await _context.CallAsync(StoreAReviser(), "create_shared_component", new { store_id = StoreB, name = "Banner", sections = new[] { new { type = "text" } } });
