@@ -155,6 +155,14 @@ A behavior that repeats what its element holds, as `data-marquee` does, has `rep
 with one inside an element with one is refused, since each level would multiply the page; a `data-each` row inside one
 is not.
 
+### Render budget
+
+The storefront renders a section within a budget of 5,000. Each element counts 1, plus 1 per behavior on it, counted as
+written, whatever `data-if` hides; an element with `data-each` counts, with what it holds, once per row of its list.
+What an element with a `repeatsChildren` behavior holds counts twice. A kit tag counts 1, and text 0. A section over
+the budget renders nothing. A save does not check the budget, since the rows are the page's content: the storefront
+holds a section to it when it renders.
+
 ## Setting variables
 
 The root's `style` sets a variable per setting the CSS can use, named `--setting-{id}` with `_` written as `-`:

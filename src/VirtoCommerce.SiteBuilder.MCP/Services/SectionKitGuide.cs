@@ -35,6 +35,9 @@ public static class SectionKitGuide
         }
         """;
 
+    // the storefront's RENDER_BUDGET, which it holds a section to when it renders
+    private const int RenderBudget = 5000;
+
     // what the server checks, and the few rules any section keeps; the storefront's guide says the rest
     private static readonly string[] DesignRules =
     [
@@ -129,6 +132,10 @@ public static class SectionKitGuide
                 Images = "src and srcset are a URL of the store's asset library (search_assets), or one binding of an images setting.",
                 Text = $"Text written into the template, or into {JoinOr(rules.TextAttributes)}, is the same in every language and saves with a " +
                     "warning: bind it to a translatable setting.",
+                RenderBudget = $"The storefront renders a section within a budget of {RenderBudget}: each element counts 1, plus 1 per behavior on it, " +
+                    "as written whatever data-if hides, and once per row of its data-each list with what it holds; what an element with a " +
+                    "repeatsChildren behavior holds counts twice, a kit tag 1 and text 0. Over the budget the section renders nothing, so size the " +
+                    "lists and the template within it.",
             },
             Bindings = new
             {

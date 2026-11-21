@@ -217,6 +217,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.StartsWith("The storefront's catalog names no kit", kit.GetProperty("kit").GetProperty("note").GetString(), StringComparison.Ordinal);
         Assert.Contains(kit.GetProperty("css").GetProperty("refused").EnumerateArray(),
             x => x.GetString()!.StartsWith("a selector any part of which can match outside the section", StringComparison.Ordinal));
+        Assert.StartsWith("The storefront renders a section within a budget of 5000:", kit.GetProperty("template").GetProperty("render_budget").GetString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]
