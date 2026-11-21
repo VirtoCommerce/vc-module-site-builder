@@ -20,6 +20,7 @@ export interface PreviewChannelOptions {
   onHover?: (sectionId: string | null) => void;
   onEdit?: (edit: TextEdit) => void;
   onResolved?: (resolved: Resolved) => void;
+  onAuthRenew?: (userId: string) => void;
 }
 
 /**
@@ -78,7 +79,8 @@ export function createPreviewChannel(options: PreviewChannelOptions) {
     else if (event.type === "edit") {
       const { type: _type, ...edit } = event;
       if (can("inline-edit")) options.onEdit?.(edit);
-    } else options.onResolved?.(event.resolved);
+    } else if (event.type === "authRenew") options.onAuthRenew?.(event.userId);
+    else options.onResolved?.(event.resolved);
   }
 
   return { connected, unsupported, loaded, can, send, frameLoaded, receive };

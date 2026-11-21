@@ -46,6 +46,7 @@ using VirtoCommerce.Platform.Core.Jobs;
 using VirtoCommerce.Platform.Core.Modularity;
 using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.Platform.Core.Settings;
+using VirtoCommerce.Platform.Security.OpenIddict;
 using VirtoCommerce.StoreModule.Core.Events;
 using VirtoCommerce.StoreModule.Core.Security;
 using VirtoCommerce.Xapi.Core.Extensions;
@@ -172,6 +173,8 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IContentPermissionService, ContentPermissionService>();
             serviceCollection.AddTransient<IThemeSnapshotService, ThemeSnapshotService>();
             serviceCollection.AddTransient<IThemePaletteService, ThemePaletteService>();
+            serviceCollection.AddTransient<IPreviewAuthCodeService, PreviewAuthCodeService>();
+            serviceCollection.AddGrantTypeHandler<SiteBuilderPreviewGrantTypeHandler>(ModuleConstants.Security.GrantTypes.SiteBuilderPreview);
             serviceCollection.AddTransient<IValidator<SiteBuilderStoreRequest>, SiteBuilderStoreRequestValidator>();
             serviceCollection.AddTransient<IValidator<ContentHistoryRequest>, ContentHistoryRequestValidator>();
             serviceCollection.AddTransient<IValidator<ContentHistoryRestoreRequest>, ContentHistoryRestoreRequestValidator>();

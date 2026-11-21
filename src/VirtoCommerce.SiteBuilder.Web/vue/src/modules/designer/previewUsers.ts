@@ -19,22 +19,11 @@ export function previewUsers(ids: string[], found: { id?: string; userName?: str
   });
 }
 
-/** No `offline_access`, so no refresh token is issued for the preview. */
-export const impersonateBody = (userId: string) => new URLSearchParams({ grant_type: "impersonate", user_id: userId }).toString();
+export const previewCodeUrl = "/api/site-builder/preview-auth/code";
 
-export interface PreviewToken {
-  userId: string;
-  accessToken: string;
-  expiresAt: number;
-}
+export const previewCodeBody = (storeId: string, userId: string) => JSON.stringify({ storeId, userId });
 
-export const TOKEN_MARGIN_MS = 60_000;
-
-export const usableToken = (token: PreviewToken | undefined, userId: string, now: number) =>
-  token && token.userId === userId && token.expiresAt - TOKEN_MARGIN_MS > now ? token : undefined;
-
-export function readToken(userId: string, answer: unknown, now: number): PreviewToken | undefined {
-  const { access_token: accessToken, expires_in: expiresIn } = (answer ?? {}) as { access_token?: unknown; expires_in?: unknown };
-  if (typeof accessToken !== "string" || !accessToken) return undefined;
-  return { userId, accessToken, expiresAt: now + (typeof expiresIn === "number" && expiresIn > 0 ? expiresIn * 1000 : 0) };
+export function readPreviewCode(answer: unknown): string | undefined {
+  const code = (answer as { code?: unknown } | null | undefined)?.code;
+  return typeof code === "string" && code ? code : undefined;
 }

@@ -4,14 +4,7 @@ import { displayText, isTranslations, resolveTranslations, translationOf, withTr
 import { itemTitle, withTextEdit } from "../src/modules/designer/schema";
 import { hidingLosesMain, keptMainSection, mainSectionState, MAIN_SECTIONS } from "../src/modules/designer/templates";
 import { runSearch, searchDisplayValue, requestResult, type SearchField } from "../src/modules/designer/search";
-import {
-  IMPERSONATE_PERMISSION,
-  impersonateBody,
-  previewUserIds,
-  previewUsers,
-  readToken,
-  usableToken,
-} from "../src/modules/designer/previewUsers";
+import { IMPERSONATE_PERMISSION, previewCodeBody, previewCodeUrl, previewUserIds, previewUsers, readPreviewCode } from "../src/modules/designer/previewUsers";
 import type { Field, Item, RemoteRequest } from "../src/modules/designer/types";
 
 const en: Translating = { language: "en-US", defaultLanguage: "en-US" };
@@ -182,22 +175,13 @@ test("the store lists the accounts to preview as, one id per line; the grant nee
   ]);
 });
 
-test("the impersonate grant asks for no refresh token, and the preview gets the access token alone", () => {
-  const body = new URLSearchParams(impersonateBody("user 1&x"));
-  assert.equal(body.get("grant_type"), "impersonate");
-  assert.equal(body.get("user_id"), "user 1&x");
-  assert.equal(body.has("scope"), false);
-  const token = readToken("u1", { access_token: "jwt", refresh_token: "r", expires_in: 1800 }, 1000);
-  assert.deepEqual(token, { userId: "u1", accessToken: "jwt", expiresAt: 1000 + 1800 * 1000 });
-  assert.equal(readToken("u1", { refresh_token: "r" }, 0), undefined);
-});
-
-test("a token is used again for its user until a minute before it expires", () => {
-  const token = { userId: "u1", accessToken: "jwt", expiresAt: 600_000 };
-  assert.equal(usableToken(token, "u1", 500_000), token);
-  assert.equal(usableToken(token, "u1", 540_001), undefined);
-  assert.equal(usableToken(token, "u2", 0), undefined);
-  assert.equal(usableToken(undefined, "u1", 0), undefined);
+test("the preview code is asked for the store and the user, and the answer gives the code alone", () => {
+  assert.equal(previewCodeUrl, "/api/site-builder/preview-auth/code");
+  assert.deepEqual(JSON.parse(previewCodeBody("B2B store", "user 1&x")), { storeId: "B2B store", userId: "user 1&x" });
+  assert.equal(readPreviewCode({ code: "c0de", expiresInSeconds: 60 }), "c0de");
+  assert.equal(readPreviewCode({ code: "" }), undefined);
+  assert.equal(readPreviewCode({ access_token: "jwt" }), undefined);
+  assert.equal(readPreviewCode(undefined), undefined);
 });
 
 test("resolveTranslations: every dictionary, however deep, as one language's text, picked as the publication picks it", () => {
