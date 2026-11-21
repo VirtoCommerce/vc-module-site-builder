@@ -256,6 +256,11 @@ interface ThemeSnapshot {
   palette?: Palette;
   /** the theme's custom section types, by type; see [Custom sections](custom-sections.md) */
   customSections?: Record<string, CustomSectionType>;
+  /**
+   * the public address of the store's asset library, as the server reads it when it publishes; a custom section's image
+   * starts with it, and the storefront shows no other. Left out when the library gives none
+   */
+  assetsBaseUrl?: string;
   /** the names held by `menu` settings of the header and footer */
   menus: string[];
 }

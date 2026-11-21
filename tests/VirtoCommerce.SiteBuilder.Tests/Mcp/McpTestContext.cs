@@ -457,7 +457,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     public ThemeStorageFactory ThemeStorage => _themeStorage ??= new ThemeStorageFactory(Stores, Blobs, Blobs, Blobs);
 
     private ThemePublisher CreateThemePublisher() =>
-        new(ThemeStorage, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
+        new(ThemeStorage, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
             Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService());
 
     public Task SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null, string kit = null)

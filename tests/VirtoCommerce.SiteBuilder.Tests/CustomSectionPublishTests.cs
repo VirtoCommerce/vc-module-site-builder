@@ -60,7 +60,7 @@ public sealed class CustomSectionPublishTests : IDisposable
     public CustomSectionPublishTests()
     {
         _storageFactory = new ThemeStorageFactory(_stores, _storage, _storage, _storage);
-        _publisher = new ThemePublisher(_storageFactory, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory), _lock,
+        _publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory), _lock,
             _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
             new ThemePaletteService());
         _snapshots = new ThemeSnapshotService(_stores, _storageFactory, _publisher, _cache, Options.Create(new ThemeSnapshotOptions()));
@@ -88,6 +88,7 @@ public sealed class CustomSectionPublishTests : IDisposable
         Assert.Equal(("Held", "Willkommen"), NameAndDefault(german));
         Assert.Equal(JObject.Parse(HeroFile)["template"], english["customSections"]!["custom-hero"]!["template"]);
         Assert.Equal(["product-info", "custom-hero"], english["templates"]!["product"]!["content"]!.Select(x => x.Value<string>("type")));
+        Assert.Equal(TestServices.AssetsUrl, english.Value<string>("assetsBaseUrl"));
     }
 
     [Fact]

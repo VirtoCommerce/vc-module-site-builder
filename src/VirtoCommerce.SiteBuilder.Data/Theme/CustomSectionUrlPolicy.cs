@@ -64,7 +64,7 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver)
     }
 
     /// <summary>The public link of a file at the library's root without the file; <c>null</c> when the library gives none.</summary>
-    protected virtual string GetAssetsBaseUrl()
+    public virtual string GetAssetsBaseUrl()
     {
         string url;
         try

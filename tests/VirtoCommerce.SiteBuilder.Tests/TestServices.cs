@@ -47,6 +47,8 @@ internal static class TestServices
 
     public static ThemeValidator ThemeValidator() => new(CustomSectionValidator());
 
+    public static ThemeSnapshotBuilder ThemeSnapshotBuilder(string assetsUrl = AssetsUrl) => new(CustomSectionUrlPolicy(assetsUrl));
+
     public static FilePageDraftService FilePageDrafts(
         IOptions<GitContentOptions> options,
         IGitHubConnectionService connection,

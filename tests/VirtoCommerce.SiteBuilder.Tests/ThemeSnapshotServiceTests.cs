@@ -722,7 +722,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     }
 
     private ThemePublisher Publisher(IContentHistory history) =>
-        new(_storageFactory, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _stores, _catalogs, _lock, _storage, history,
+        new(_storageFactory, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _stores, _catalogs, _lock, _storage, history,
             Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
 
     private TestThemeSnapshotService Snapshots(TestPlatformMemoryCache cache) =>

@@ -335,7 +335,7 @@ public class CustomSectionSaveTests
         var policy = GitHubConnections.CreatePolicy(options, new FakeSettingsManager(false), new FakeGitContentOwnership());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), policy, null, null, new FakeGitContentProvisioner());
         var themeDrafts = new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance);
-        var themePublisher = new ThemePublisher(_themes, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
+        var themePublisher = new ThemePublisher(_themes, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
             _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
 
         return TestServices.DesignerOperations(

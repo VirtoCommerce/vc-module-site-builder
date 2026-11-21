@@ -9,7 +9,7 @@ using VirtoCommerce.Platform.Core.Common;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
-public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
+public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy) : ThemeContentReader, IThemeSnapshotBuilder
 {
     private const int SnapshotFormat = 1;
     private const int TemplateRulesVersion = 2;
@@ -80,6 +80,7 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         snapshot.Brand = GetBrand(source.Brand, source.SettingsData);
         snapshot.Palette = GetPalette(source.Palette, source.PaletteDark);
         snapshot.CustomSections = GetCustomSections(source.CustomSections);
+        snapshot.AssetsBaseUrl = customSectionUrlPolicy.GetAssetsBaseUrl();
         snapshot.Menus = GetMenus(catalog, snapshot.Header, snapshot.Footer);
 
         return snapshot;

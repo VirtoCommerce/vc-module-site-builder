@@ -33,9 +33,12 @@ public class ThemeSnapshotContent : ICloneable
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public ThemePalette Palette { get; set; }
 
-    /// <summary>The theme's custom section types by their type.</summary>
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public IDictionary<string, JObject> CustomSections { get; set; }
+
+    /// <summary>The public address of the store's asset library, which an image of a custom section starts with; left out when it gives none.</summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public string AssetsBaseUrl { get; set; }
 
     public IList<string> Menus { get; set; }
 
