@@ -184,6 +184,46 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task RestoreAsync_TypeOfASecondThemeThatBreaksARule_IsRefused()
+    {
+        var restore = Designer().RestoreAsync(new ContentRestoreCommand
+        {
+            StoreId = "s1",
+            SaveId = "restore-0001",
+            VersionId = "1234567",
+            Contents = new Dictionary<HistoryItem, string>
+            {
+                [new HistoryItem(HistoryItemType.Theme, "default/templates/product.json")] = """{ "settings": {}, "content": [] }""",
+                [new HistoryItem(HistoryItemType.Theme, "other/custom-sections/custom-hero.json")] = HeroWith(template: "<section><script>x()</script></section>"),
+            },
+        }, _user, Ct);
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => restore);
+
+        Assert.Contains("custom-sections/custom-hero.json: <script> at line 1 is not an element a custom section can hold", exception.Errors);
+    }
+
+    [Fact]
+    public async Task PreviewSaveAsync_PagePlacingATypeOfTheStoresTheme_IsSanitizedWhateverThemeItsFilesAreIn()
+    {
+        await SaveCatalogAsync();
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        var command = new DesignerSaveCommand
+        {
+            StoreId = "s1",
+            SaveId = "save-0001",
+            Group = await _pages.GetByIdAsync("g1"),
+            PageContent = """{"settings":{},"content":[{"id":"a","type":"custom-hero","body":"<p>Hi</p><img src=x onerror=alert(1)>"}]}""",
+            ThemeFiles = [new DesignerSaveFile { Path = "other/templates/page.json", Content = """{"settings":{},"content":[]}""" }],
+            CatalogHash = Catalog,
+        };
+
+        await Designer().PreviewSaveAsync(command, _user, Ct);
+
+        Assert.Equal("<p>Hi</p><img src=\"x\">", JObject.Parse(command.PageContent)["content"]![0]!.Value<string>("body"));
+    }
+
+    [Fact]
     public async Task RestoreAsync_TypeThatBreaksARule_IsRefusedAndWritesNothing()
     {
         var restore = TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
@@ -361,6 +401,10 @@ public class CustomSectionSaveTests
     private Task<string> SaveCatalogAsync(string sections = "", string kit = "") =>
         new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "product-info": {}{{sections}} }, "blocks": {}, "shared": {}{{kit}} }""", Ct);
+
+    private DesignerContentService Designer() =>
+        TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
+            catalogs: new SchemaCatalogService(_themes), themes: _themes);
 
     private DesignerOperationService Operations(ICustomSectionValidator customSectionValidator = null, ICustomSectionService customSectionService = null)
     {
