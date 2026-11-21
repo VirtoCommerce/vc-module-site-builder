@@ -19,4 +19,7 @@ public interface ICustomSectionValidator
     /// <summary>The error for types that together are more than the snapshot carries to every page; <c>null</c> for none.</summary>
     /// <param name="types">The file content of each type of the theme by its type.</param>
     string GetSizeError(IDictionary<string, JToken> types);
+
+    /// <summary>The lists <see cref="Validate"/> checks against.</summary>
+    CustomSectionRules GetRules();
 }

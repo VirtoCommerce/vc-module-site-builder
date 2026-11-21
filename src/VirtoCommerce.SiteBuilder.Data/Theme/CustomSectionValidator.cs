@@ -168,6 +168,24 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             $"{ThemeStorage.CustomSectionsFolder}: the custom section types are {FormatSize(size)} of JSON together, more than {FormatSize(MaxTotalSize)}: the snapshot carries every type to every page");
     }
 
+    public virtual CustomSectionRules GetRules()
+    {
+        var result = AbstractTypeFactory<CustomSectionRules>.TryCreateInstance();
+        result.Elements = AllowedElements.Order(StringComparer.Ordinal).ToList();
+        result.Attributes = AllowedAttributes.Order(StringComparer.Ordinal).ToList();
+        result.BindingAttributes = [EachAttribute, IfAttribute, HtmlAttribute];
+        result.TextAttributes = TextAttributes.Order(StringComparer.Ordinal).ToList();
+        result.LinkSchemes = [.. LinkSchemes];
+        result.SchemaKeys = [.. SchemaKeys];
+        result.FieldTypes = [.. LabelFieldTypes, .. ValueFieldTypes, ListFieldType, ObjectFieldType];
+        result.FieldKeys = [.. FieldKeys];
+        result.AtRules = [.. AllowedAtRules];
+        result.MaxPartSize = MaxPartSize;
+        result.MaxTotalSize = MaxTotalSize;
+
+        return result;
+    }
+
     protected virtual void ValidateShape(CustomSectionCheck check, JObject file)
     {
         foreach (var key in file.Properties().Select(x => x.Name).Where(x => !TypeKeys.Contains(x)))
