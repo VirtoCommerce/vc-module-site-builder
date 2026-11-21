@@ -119,7 +119,14 @@ public sealed class CustomSectionPublishTests : IDisposable
 
         var exception = await Record.ExceptionAsync(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
 
-        Assert.Equal(error, (exception as ThemeValidationException)?.Errors.Single());
+        if (error == null)
+        {
+            Assert.Null(exception);
+        }
+        else
+        {
+            Assert.Equal(error, Assert.IsType<ThemeValidationException>(exception).Errors.Single());
+        }
     }
 
     [Fact]

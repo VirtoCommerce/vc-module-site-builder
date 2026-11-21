@@ -39,8 +39,6 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     private const string DocumentStart = "<html><head></head><body>";
     private const string AssetProbe = "file";
 
-    // the CSS parser writes 'transparent' so
-
     private const string FormatKey = "format";
     private const string NameKey = "name";
     private const string SchemaKey = "schema";
@@ -1279,8 +1277,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver, ILogger<Cu
         var imageFunctions = new Stack<string>();
         var directionRules = new Stack<bool>();
         var preludeNamesDirection = false;
-        // a declaration starts a block or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
-        var atDeclarationStart = false;
+        // a declaration starts the CSS or a block, or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
+        var atDeclarationStart = true;
         // the tokens since the last block or ';': a rule's selector, or an at-rule's prelude, once a '{' follows
         var prelude = new List<CssTokenizer.Token>();
         for (var i = 0; i < tokens.Count; i++)
@@ -1310,8 +1308,12 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver, ILogger<Cu
                 case CssTokenizer.TokenKind.Function when IsLateValueFunction(token.Value) && imageFunctions.Count > 0:
                     errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {imageFunctions.Peek()}(), whose URL is then not known on save");
                     break;
+                case CssTokenizer.TokenKind.Ident when blocks.Count == 0 && atDeclarationStart && IsDeclaration(tokens, i):
+                    // the storefront's @scope would apply it to the section's root, where no check of a rule reaches it
+                    errors.Add($"the CSS has the declaration '{token.Value}' outside any rule: write it in :scope {{ }}");
+                    break;
                 case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly && atDeclarationStart:
-                    ValidateCssDeclaration(check, tokens, i, errors, directionRules.Peek() ? null : directions);
+                    ValidateCssDeclaration(check, tokens, i, errors, directionRules.Count > 0 && directionRules.Peek() ? null : directions);
                     break;
             }
 
@@ -1824,6 +1826,41 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver, ILogger<Cu
             x.First.Kind == CssTokenizer.TokenKind.Ident && string.Equals(x.First.Value, "prefers-reduced-motion", StringComparison.OrdinalIgnoreCase) &&
             x.Second.Kind == CssTokenizer.TokenKind.Colon &&
             x.Third.Kind == CssTokenizer.TokenKind.Ident && ReducedMotionValues.Contains(x.Third.Value));
+    }
+
+    // a name and a colon that end at a ';' or a '}', not at a '{' as the selector a:hover { } does
+    private static bool IsDeclaration(IList<CssTokenizer.Token> tokens, int index)
+    {
+        var next = index + 1;
+        while (next < tokens.Count && tokens[next].Kind == CssTokenizer.TokenKind.Whitespace)
+        {
+            next++;
+        }
+
+        if (next >= tokens.Count || tokens[next].Kind != CssTokenizer.TokenKind.Colon)
+        {
+            return false;
+        }
+
+        var depth = 0;
+        for (var i = next + 1; i < tokens.Count; i++)
+        {
+            switch (tokens[i].Kind)
+            {
+                case CssTokenizer.TokenKind.OpenCurly when depth == 0:
+                    return false;
+                case CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly when depth == 0:
+                    return true;
+                case CssTokenizer.TokenKind.OpenParen or CssTokenizer.TokenKind.OpenSquare or CssTokenizer.TokenKind.Function:
+                    depth++;
+                    break;
+                case CssTokenizer.TokenKind.CloseParen or CssTokenizer.TokenKind.CloseSquare:
+                    depth--;
+                    break;
+            }
+        }
+
+        return true;
     }
 
     private static char GetOpener(CssTokenizer.TokenKind closer) => closer switch

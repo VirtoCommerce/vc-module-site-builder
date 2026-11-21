@@ -107,8 +107,7 @@ public class DesignerContentService(
 
         foreach (var (themeName, contents) in themes)
         {
-            // with the theme's other custom types, which a template may place
-            // the theme's other custom types, which a template may place; the validation does not check their own rules again
+            // a template may place the theme's other types; ValidateFilesAsync does not check their own rules
             foreach (var (type, content) in customSections[themeName])
             {
                 contents.TryAdd(ThemeStorage.GetCustomSectionFile(type), content);
