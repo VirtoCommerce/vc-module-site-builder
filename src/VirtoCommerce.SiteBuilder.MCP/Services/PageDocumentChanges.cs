@@ -8,7 +8,6 @@ public sealed record PageDocumentChange(string Field, string From, string To);
 public static class PageDocumentChanges
 {
     private const int MaxValueLength = 300;
-    private static readonly string[] ItemKeys = [IdKey, TypeKey, HiddenKey, BlocksKey];
 
     public static IList<PageDocumentChange> Compare(PageDocumentEditor before, PageDocumentEditor after)
     {
@@ -89,7 +88,7 @@ public static class PageDocumentChanges
     private static List<JsonObject> Items(JsonArray items) =>
         items?.OfType<JsonObject>().Where(x => !string.IsNullOrEmpty(GetId(x))).ToList() ?? [];
 
-    private static Dictionary<string, JsonNode> Flatten(JsonObject item, string[] skippedKeys)
+    private static Dictionary<string, JsonNode> Flatten(JsonObject item, IReadOnlyList<string> skippedKeys)
     {
         var values = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
         if (item != null)

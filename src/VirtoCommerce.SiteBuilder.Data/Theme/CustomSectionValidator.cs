@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Services;
 using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionFields;
 using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionText;
 
@@ -283,6 +284,13 @@ public class CustomSectionValidator(
         if (id == null || !SettingIdPattern.IsMatch(id))
         {
             check.AddError($"{setting} has no id of letters, digits and '_' that starts with a letter");
+            return null;
+        }
+
+        // the designer writes a value under the setting's id, next to the section's own keys
+        if (SiteBuilderPageItems.ItemKeys.Contains(id, StringComparer.Ordinal))
+        {
+            check.AddError($"{setting} has the id of a key a section holds itself: {JoinOr(SiteBuilderPageItems.ItemKeys)}");
             return null;
         }
 

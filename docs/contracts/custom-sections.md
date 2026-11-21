@@ -43,7 +43,8 @@ interface CustomSectionType {
 one level deep: the fields of a list's rows or of an object. `string` and `text` may be `"translatable": true`.
 
 A setting's `id` matches `^[A-Za-z][A-Za-z0-9_]*$` and is its own among its siblings; `header` and `paragraph` have
-none. A setting takes `id`, `type`, `label`, `default`, `translatable`, `tab`, `info`, `placeholder`, `required`,
+none. No setting, a row's field included, is named `id`, `type`, `hidden`, `blocks` or `__group`: the designer writes a
+setting's value next to these keys of the section itself. A setting takes `id`, `type`, `label`, `default`, `translatable`, `tab`, `info`, `placeholder`, `required`,
 `multiline`, `format`, `options`, `element`, `min`, `max` and `step`. `visibility` and `request` are refused, since the
 designer runs the one and sends the other, and so are `"multiple": true` and any other key. A `default` is one the
 setting takes, or empty: a `select`'s is one of its options, a link's follows the link rule, and an `images` one is a

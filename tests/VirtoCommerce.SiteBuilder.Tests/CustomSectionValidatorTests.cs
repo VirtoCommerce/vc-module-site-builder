@@ -853,6 +853,19 @@ public class CustomSectionValidatorTests
     }
 
     [Theory]
+    [InlineData("""{ "id": "type", "type": "string" }""", "setting 'type'")]
+    [InlineData("""{ "id": "id", "type": "string" }""", "setting 'id'")]
+    [InlineData("""{ "id": "blocks", "type": "list", "element": [ { "id": "title", "type": "string" } ] }""", "setting 'blocks'")]
+    [InlineData("""{ "id": "hidden", "type": "checkbox" }""", "setting 'hidden'")]
+    [InlineData("""{ "id": "items", "type": "list", "element": [ { "id": "type", "type": "string" } ] }""", "setting 'items.type'")]
+    public void Validate_SettingNamedAsAKeyOfTheSectionItself_IsRefused(string field, string setting)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), Catalog);
+
+        Assert.Equal([$"{setting} has the id of a key a section holds itself: id, type, hidden, blocks or __group"], result.Errors);
+    }
+
+    [Theory]
     [InlineData("""{ "id": "view", "type": "select", "options": [ { "value": "grid" } ], "default": "list" }""",
         "setting 'view' has a default that is not one of its options")]
     [InlineData("""{ "id": "link", "type": "string", "format": "url", "default": "javascript:alert(1)" }""",
