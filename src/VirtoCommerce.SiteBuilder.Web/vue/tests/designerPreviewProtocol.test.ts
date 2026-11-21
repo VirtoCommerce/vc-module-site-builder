@@ -287,6 +287,14 @@ test("the draft carries the brand and the palette the Theme tab has, whatever th
   assert.deepEqual(draftMessage({ look: {}, capabilities: [] }), { type: "draft", theme: {} });
 });
 
+test("the draft carries the theme's custom section types, whatever the storefront renders of the templates and groups", () => {
+  const customSections = {
+    "custom-hero": { format: 1 as const, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [] }, template: "<section></section>", css: "" },
+  };
+  assert.deepEqual(draftMessage({ customSections, capabilities: [] }), { type: "draft", theme: { customSections } });
+  assert.deepEqual(draftMessage({ capabilities: ["templates", "groups"] }), { type: "draft", theme: {} });
+});
+
 test("after loaded: who the preview renders as, the inspector, light or dark, the draft, the render", () => {
   const draft = draftMessage({ capabilities: [] });
   const render = renderMessage({ preview: { template: doc([]), sharedComponentBoundaries: [] }, cultureName: "en-US" });
@@ -446,6 +454,19 @@ test("on loaded: the schemas, the catalog, then auth, inspector, colorScheme, dr
   assert.equal(preview.connected.value, true);
   preview.send({ type: "hover", sectionId: "s1" });
   assert.deepEqual(preview.posted.at(-1), { type: "hover", sectionId: "s1" });
+});
+
+test("a loaded again, once the draft changed the storefront's custom types, brings the new catalog and the whole handshake again", async () => {
+  const preview = channel();
+  await preview.receive(fromPreview(loadedData()));
+  preview.log.length = 0;
+  preview.posted.length = 0;
+  const sections = { ...loadedData().sections, "custom-hero": { name: "Hero", custom: true, settings: [] } };
+
+  await preview.receive(fromPreview(loadedData({ hash: "5eedc0de", sections })));
+
+  assert.deepEqual(preview.log, ["loaded 5eedc0de", "catalog", "post auth", "post inspector", "post colorScheme", "post draft", "post render"]);
+  assert.equal(preview.connected.value, true);
 });
 
 test("nothing but the handshake goes out before it: it carries the state as it is when it goes", async () => {

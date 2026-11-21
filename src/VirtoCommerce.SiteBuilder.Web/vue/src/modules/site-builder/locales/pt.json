@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Seções",
+      "CUSTOM_SECTIONS": "Seções personalizadas",
       "GROUPS": {
         "HEADER": "Cabeçalho",
         "TEMPLATE": "Modelo",
@@ -330,6 +331,7 @@
       "ASSISTANT_CHANGED": "O assistente de IA alterou esta página. Suas alterações não salvas foram mantidas: copie o que precisar e reabra a página para ver as alterações do assistente.",
       "CATALOG_PENDING": "As alterações do tema são guardadas quando a pré-visualização da loja tiver carregado: ela indica os esquemas com que são verificadas.",
       "SAVE_FAILED": "A página não pôde ser salva.",
+      "SAVE_WARNINGS": "Salvo com avisos:",
       "SAVE_FORBIDDEN": "Você não tem permissão para salvar: {parts}. Nada foi salvo.",
       "SAVE_FORBIDDEN_ANY": "Você não tem permissão para salvar estas alterações. Nada foi salvo.",
       "PUBLISH_FAILED": "A página não pôde ser publicada.",

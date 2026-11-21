@@ -8,16 +8,18 @@ import type { ThemeStatus } from "./themePublication";
 export const draftedTemplateKeys = (status: ThemeStatus | undefined): string[] =>
   [...new Set((status?.drafts ?? []).map((x) => templateKeyOf(x)).filter((x): x is string => !!x))].sort(byCodeUnit);
 
-export interface TemplateSource {
+export interface ThemeFileSource<T> {
   keys: () => Promise<string[]>;
-  read: (key: string) => Promise<PageDocument | undefined>;
+  read: (key: string) => Promise<T | undefined>;
 }
 
+export type TemplateSource = ThemeFileSource<PageDocument>;
+
 /** Live files change only with a publication, so those without a draft are read once per publication. */
-export function savedTemplatesReader() {
-  let live: { scope: string; keys?: string[]; docs: Map<string, PageDocument | undefined> } | undefined;
-  return async function read(scope: string, status: ThemeStatus, source: TemplateSource): Promise<Record<string, PageDocument> | undefined> {
-    const drafted = draftedTemplateKeys(status);
+export function savedThemeFilesReader<T>(draftedKeys: (status: ThemeStatus) => string[], kept: (file: T) => T) {
+  let live: { scope: string; keys?: string[]; docs: Map<string, T | undefined> } | undefined;
+  return async function read(scope: string, status: ThemeStatus, source: ThemeFileSource<T>): Promise<Record<string, T> | undefined> {
+    const drafted = draftedKeys(status);
     if (!drafted.length) return undefined;
     const at = `${scope}#${status.publication ?? ""}`;
     if (live?.scope !== at) live = { scope: at, docs: new Map() };
@@ -31,14 +33,17 @@ export function savedTemplatesReader() {
         return cache.docs.get(key);
       }),
     );
-    const templates: Record<string, PageDocument> = {};
+    const files: Record<string, T> = {};
     keys.forEach((key, i) => {
       const doc = docs[i];
-      if (doc) templates[key] = { settings: doc.settings, content: doc.content };
+      if (doc) files[key] = kept(doc);
     });
-    return templates;
+    return files;
   };
 }
+
+export const savedTemplatesReader = () =>
+  savedThemeFilesReader<PageDocument>(draftedTemplateKeys, (doc) => ({ settings: doc.settings, content: doc.content }));
 
 export function draftTemplates(
   saved: Record<string, PageDocument> | undefined,

@@ -1,7 +1,8 @@
 import type { Item, PageDocument, SectionGroup } from "./types";
 import { fromDocument, toDocument } from "./document";
 import { templateKeyOf } from "./templates";
-import { byCodeUnit } from "./json";
+import { byCodeUnit, isRecord } from "./json";
+import { customSectionPath, customSectionTypeOf, type CustomSectionType } from "./customSections";
 import { groupPath, historyStatusUrl, historyUrl, parseHistoryPage, parseHistoryStatus, restoreUrl, versionUrl, type HistoryStatus } from "./history";
 import {
   CatalogPendingError,
@@ -282,14 +283,14 @@ export async function saveDesigner(
   storeId: string,
   save: { page?: DesignerSavePage; themeFiles: DesignerSaveFile[] },
   catalogHash?: string,
-): Promise<{ saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[] }> {
+): Promise<{ saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[]; warnings?: string[] }> {
   if (save.themeFiles.length && !catalogHash) throw new CatalogPendingError();
   const res = await call(designerSaveUrl(storeId, catalogHash), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(designerSaveBody(save)),
   });
-  return ((await res.json().catch(() => ({}))) ?? {}) as { saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[] };
+  return ((await res.json().catch(() => ({}))) ?? {}) as { saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[]; warnings?: string[] };
 }
 
 /** A file never published keeps its draft, its only copy. */
@@ -307,13 +308,22 @@ export async function storeMenus(storeId: string): Promise<unknown[]> {
   return Array.isArray(lists) ? lists : [];
 }
 
-export async function templateKeys(storeId: string, theme: string): Promise<string[]> {
-  const query = new URLSearchParams({ folderUrl: `${theme}/templates` });
+async function themeFolderKeys(storeId: string, theme: string, folder: string, keyOf: (path: string) => string | undefined): Promise<string[]> {
+  const query = new URLSearchParams({ folderUrl: `${theme}/${folder}` });
   const res = await find(`/api/content/themes/${encodeURIComponent(storeId)}/search?${query}`);
   if (!res) return [];
   const items = ((await res.json()) ?? []) as { name?: string }[];
-  // A template saved only as a draft is listed by its draft file.
-  return [...new Set(items.map((x) => templateKeyOf(`templates/${x.name ?? ""}`)).filter((x): x is string => !!x))].sort(byCodeUnit);
+  // A file saved only as a draft is listed by its draft file.
+  return [...new Set(items.map((x) => keyOf(`${folder}/${x.name ?? ""}`)).filter((x): x is string => !!x))].sort(byCodeUnit);
+}
+
+export const templateKeys = (storeId: string, theme: string) => themeFolderKeys(storeId, theme, "templates", templateKeyOf);
+
+export const customSectionTypes = (storeId: string, theme: string) => themeFolderKeys(storeId, theme, "custom-sections", customSectionTypeOf);
+
+export async function findCustomSection(storeId: string, theme: string, type: string): Promise<CustomSectionType | undefined> {
+  const { content } = await loadThemeFile(storeId, customSectionPath(theme, type));
+  return isRecord(content) ? (content as unknown as CustomSectionType) : undefined;
 }
 
 export async function gitFlowOf(storeId: string, theme: string): Promise<{ on: boolean }> {

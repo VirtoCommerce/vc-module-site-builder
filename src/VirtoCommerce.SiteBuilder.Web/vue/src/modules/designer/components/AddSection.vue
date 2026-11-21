@@ -17,7 +17,7 @@
       autofocus
       :placeholder="$t('SITE_BUILDER.DESIGNER.SEARCH_SECTIONS')"
     />
-    <template v-if="shared.length && designer.canPlaceShared.value && !group">
+    <template v-if="sharedShown">
       <div class="pd-add__group">{{ $t("SITE_BUILDER.DESIGNER.SHARED_COMPONENTS") }}</div>
       <ul class="pd-add__list">
         <li
@@ -39,37 +39,47 @@
           </button>
         </li>
       </ul>
-      <div class="pd-add__group">{{ $t("SITE_BUILDER.DESIGNER.SECTIONS") }}</div>
     </template>
-    <ul class="pd-add__list">
-      <li
-        v-for="{ type, schema } in shown"
-        :key="type"
+    <template
+      v-for="list in lists"
+      :key="list.id"
+    >
+      <div
+        v-if="list.heading"
+        class="pd-add__group"
       >
-        <button
-          type="button"
-          class="pd-add__item"
-          @click="add(type)"
-          @mouseenter="!group && emit('preview', type)"
-          @mouseleave="!group && emit('preview', null)"
-          @focus="!group && emit('preview', type)"
-          @blur="!group && emit('preview', null)"
+        {{ $t(list.heading) }}
+      </div>
+      <ul class="pd-add__list">
+        <li
+          v-for="{ type, schema } in list.types"
+          :key="type"
         >
-          <VcIcon
-            :icon="iconOf(schema)"
-            size="m"
-            class="pd-add__icon"
-          />
-          {{ schema.name ?? type }}
-        </button>
-      </li>
-      <li
-        v-if="!shown.length"
-        class="pd-add__empty"
-      >
-        {{ $t("SITE_BUILDER.DESIGNER.NO_SECTIONS") }}
-      </li>
-    </ul>
+          <button
+            type="button"
+            class="pd-add__item"
+            @click="add(type)"
+            @mouseenter="!group && emit('preview', type)"
+            @mouseleave="!group && emit('preview', null)"
+            @focus="!group && emit('preview', type)"
+            @blur="!group && emit('preview', null)"
+          >
+            <VcIcon
+              :icon="iconOf(schema)"
+              size="m"
+              class="pd-add__icon"
+            />
+            {{ schema.name ?? type }}
+          </button>
+        </li>
+        <li
+          v-if="!shown.length"
+          class="pd-add__empty"
+        >
+          {{ $t("SITE_BUILDER.DESIGNER.NO_SECTIONS") }}
+        </li>
+      </ul>
+    </template>
   </div>
 </template>
 
@@ -96,6 +106,18 @@ const { components: shared } = useSharedComponentSearch(
   () => (props.designer.canPlaceShared.value && !props.group ? props.designer.storeId.value : undefined),
   search,
 );
+const sharedShown = computed(() => !!shared.value.length && props.designer.canPlaceShared.value && !props.group);
+
+// The theme's own types follow the storefront's, under a heading of their own.
+const lists = computed(() => {
+  const custom = shown.value.filter((x) => x.schema.custom);
+  const builtIn = shown.value.filter((x) => !x.schema.custom);
+  const heading = sharedShown.value || custom.length ? "SITE_BUILDER.DESIGNER.SECTIONS" : undefined;
+  return [
+    ...(builtIn.length || !custom.length ? [{ id: "sections", heading, types: builtIn }] : []),
+    ...(custom.length ? [{ id: "custom", heading: "SITE_BUILDER.DESIGNER.CUSTOM_SECTIONS", types: custom }] : []),
+  ];
+});
 
 function addShared(component: SharedComponent) {
   props.designer.insertShared(component);

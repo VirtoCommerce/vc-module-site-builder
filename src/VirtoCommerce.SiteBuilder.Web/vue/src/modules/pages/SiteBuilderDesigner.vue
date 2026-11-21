@@ -646,6 +646,8 @@ import {
   templateKeys,
   findFilePage,
   findTemplate,
+  customSectionTypes,
+  findCustomSection,
   loadThemeFile,
   ApiError,
   type CatalogContext,
@@ -669,9 +671,10 @@ import {
   type ThemePart,
 } from "../designer/history";
 import { publishActions, themeErrors, themePublishButton } from "../designer/themePublication";
-import { CatalogPendingError } from "../designer/designerSave";
+import { CatalogPendingError, warningsByFile } from "../designer/designerSave";
 import type { Field, Item, PageDocument, SectionGroup, Selection } from "../designer/types";
 import { draftTemplates, savedTemplatesReader } from "../designer/templateDrafts";
+import { namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
 import TemplateSwitcher from "../designer/components/TemplateSwitcher.vue";
 import EntityPicker from "../designer/components/EntityPicker.vue";
 import RulesPanel from "../designer/components/RulesPanel.vue";
@@ -692,7 +695,7 @@ defineBlade({
   url: "/site-builder-designer",
 });
 
-const { t } = useI18n({ useScope: "global" });
+const { t, locale } = useI18n({ useScope: "global" });
 const { id: bladeId, param, query, onBeforeClose, openBlade } = useBlade();
 const { showConfirmation } = usePopup();
 const designer = useDesigner();
@@ -851,11 +854,13 @@ function draft(groups = designer.groupsPreview.value): DraftMessage {
     templates: draftedTemplates(templateKey),
     groups,
     look: look.draft.value,
+    customSections: savedCustomSections.value,
     capabilities: designer.handshake.value?.capabilities ?? [],
   });
 }
 
 const savedTemplates = shallowRef<Record<string, PageDocument>>();
+const savedCustomSections = shallowRef<Record<string, CustomSectionType>>();
 
 const colorScheme = ref<ColorScheme>("light");
 
@@ -879,9 +884,10 @@ const bridge = usePreviewBridge({
       builtInTemplates: loaded.builtInTemplates,
       paletteTokens: loaded.paletteTokens,
     };
+    const sections = namedSections(loaded.catalog.sections, locale.value, designer.languages.value.default ?? "");
     designer.schemas.value = {
       ...loaded.catalog,
-      sections: { [PAGE_CONTENT]: { name: t("SITE_BUILDER.DESIGNER.TEMPLATES.PAGE_CONTENT"), icon: "lucide-file-text", targetTemplates: ["page", "page-template"] }, ...loaded.catalog.sections },
+      sections: { [PAGE_CONTENT]: { name: t("SITE_BUILDER.DESIGNER.TEMPLATES.PAGE_CONTENT"), icon: "lucide-file-text", targetTemplates: ["page", "page-template"] }, ...sections },
     };
   },
   // Saves, publications and agents check the theme against the catalog of the storefront previewed.
@@ -1079,13 +1085,22 @@ const save = async () => {
 const reloadHistory = () => versionHistory.value?.reload().catch(() => undefined);
 
 // The toast is rendered by the shell, outside this blade's scoped styles.
-const ERROR_LIST_STYLE = { margin: "4px 0 0", paddingLeft: "18px", listStyle: "disc" };
+const LIST_STYLE = { margin: "4px 0 0", paddingLeft: "18px", listStyle: "disc" };
+const FILE_STYLE = { margin: "6px 0 0", fontWeight: "600" };
+const bullets = (items: string[]) => h("ul", { style: LIST_STYLE }, items.map((x) => h("li", x)));
+const listed = (heading: string, items: string[]) => h("div", [h("p", heading), bullets(items)]);
+
+// A custom type's checks can warn of several things at once, so each file is named once above its warnings.
+function notifyWarnings(warnings: string[]) {
+  const files = warningsByFile(warnings).flatMap((x) => [...(x.file ? [h("p", { style: FILE_STYLE }, x.file)] : []), bullets(x.warnings)]);
+  notification.warning(h("div", [h("p", t("SITE_BUILDER.DESIGNER.SAVE_WARNINGS")), ...files]), { timeout: false });
+}
 
 function notifyFailure(heading: string, e: unknown) {
   const pending = e instanceof CatalogPendingError ? [t("SITE_BUILDER.DESIGNER.CATALOG_PENDING")] : [];
   const errors = e instanceof ApiError ? themeErrors(e.status, e.body) : pending;
   if (!errors.length) notification.error(heading);
-  else notification.error(h("div", [h("p", heading), h("ul", { style: ERROR_LIST_STYLE }, errors.map((x) => h("li", x)))]), { timeout: false });
+  else notification.error(listed(heading, errors), { timeout: false });
 }
 
 async function saveChanges() {
@@ -1094,10 +1109,11 @@ async function saveChanges() {
   const pageChanged = designer.dirty.value;
   const changed: HistoryFile[] = [...designer.changedParts.value, ...parts.map((x) => x.part)];
   try {
-    const versions = await designer.save(parts.map((x) => x.file));
-    if (!versions) return;
-    for (const part of parts) part.saved(versions[part.file.path]);
+    const saved = await designer.save(parts.map((x) => x.file));
+    if (!saved) return;
+    for (const part of parts) part.saved(saved.versions[part.file.path]);
     if (pageChanged) notifyPagesChanged();
+    if (saved.warnings.length) notifyWarnings(saved.warnings);
   } catch (e) {
     if (e instanceof ApiError && e.status === 403) return notifyForbidden(changed);
     const messages: Record<number, string> = { 412: "SITE_BUILDER.DESIGNER.CONFLICT", 428: "SITE_BUILDER.DESIGNER.NO_VERSION" };
@@ -1787,23 +1803,36 @@ const themeName = ref<string>();
 const templateKeyList = ref<string[]>([]);
 const templateKeysNotice = ref<string>();
 const readSavedTemplates = savedTemplatesReader();
-let templatesRead = 0;
+const readSavedCustomSections = savedCustomSectionsReader();
+let themeFilesRead = 0;
 watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => {
-  const request = ++templatesRead;
+  const request = ++themeFilesRead;
   const storeId = designer.storeId.value;
   if (!status || !theme || !storeId) {
     savedTemplates.value = undefined;
+    savedCustomSections.value = undefined;
     return;
   }
-  try {
-    const templates = await readSavedTemplates(`${storeId}/${theme}`, status, {
+  const scope = `${storeId}/${theme}`;
+  // A failed read keeps the files read before.
+  await Promise.all([
+    readSavedTemplates(scope, status, {
       keys: () => templateKeys(storeId, theme),
       read: async (key) => (await findTemplate({ storeId, theme, type: "themes", path: templatePath(theme, key) })).doc,
-    });
-    if (request === templatesRead) savedTemplates.value = templates;
-  } catch {
-    // A failed read keeps the templates read before.
-  }
+    })
+      .then((templates) => {
+        if (request === themeFilesRead) savedTemplates.value = templates;
+      })
+      .catch(() => undefined),
+    readSavedCustomSections(scope, status, {
+      keys: () => customSectionTypes(storeId, theme),
+      read: (type) => findCustomSection(storeId, theme, type),
+    })
+      .then((types) => {
+        if (request === themeFilesRead) savedCustomSections.value = types;
+      })
+      .catch(() => undefined),
+  ]);
 });
 const catalog = ref<CatalogContext>();
 watchEffect(() => {

@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "区块",
+      "CUSTOM_SECTIONS": "自定义区块",
       "GROUPS": {
         "HEADER": "页眉",
         "TEMPLATE": "模板",
@@ -330,6 +331,7 @@
       "ASSISTANT_CHANGED": "AI 助手更改了此页面。您未保存的编辑仍然保留：请复制所需内容，然后重新打开页面以查看助手的更改。",
       "CATALOG_PENDING": "店铺前端预览加载后才会保存主题更改：预览会给出用于检查更改的架构。",
       "SAVE_FAILED": "无法保存页面。",
+      "SAVE_WARNINGS": "已保存，但有警告：",
       "SAVE_FORBIDDEN": "您没有保存以下内容的权限：{parts}。未保存任何内容。",
       "SAVE_FORBIDDEN_ANY": "您没有保存这些更改的权限。未保存任何内容。",
       "PUBLISH_FAILED": "无法发布页面。",

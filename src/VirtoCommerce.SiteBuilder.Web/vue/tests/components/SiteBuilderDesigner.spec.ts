@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
-import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, mount, shallowMount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import type { IBladeToolbar } from "@vc-shell/framework";
 import { VcBlade } from "@vc-shell/framework/ui";
@@ -632,5 +632,139 @@ describe("publishing a page at a permalink other pages have", () => {
     expect(notification.error).toHaveBeenCalledWith(
       'Already published at this permalink for the same visitors: "Old about" (en-US). They have unpublished changes, so publish or discard those changes first.',
     );
+  });
+});
+
+describe("the theme's custom section types", () => {
+  const SEARCH = `/api/content/themes/${STORE}/search`;
+  const HERO = { format: 1, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [{ id: "title", type: "string" }] }, template: "<section></section>", css: "" };
+  const PROMO = { ...HERO, name: "Promo" };
+  let platform: FakePlatform;
+
+  async function openPage(drafts: string[]) {
+    platform = fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
+      .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({ "default/custom-sections/custom-hero.json": HERO, "default/custom-sections/custom-promo.json": PROMO }))
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts })
+      .on("GET", "/api/site-builder/designer/storefront", { url: "https://shop.test", previewPath: "/designer-preview" })
+      .on("GET", "/api/site-builder/catalog", {})
+      .on("GET", SEARCH, (request: { query: Record<string, string> }) =>
+        request.query.folderUrl === "default/custom-sections" ? [{ name: "custom-hero.json-draft" }, { name: "custom-promo.json" }] : [],
+      )
+      .install();
+    blade.param.value = "g1";
+    const wrapper = shallowMount(SiteBuilderDesigner, { attachTo: document.body, global: { plugins: [await routerAt("/")], stubs: { VcBlade: false } } });
+    await flushPromises();
+    const frame = wrapper.find("iframe").element as HTMLIFrameElement;
+    const posted = vi.spyOn(frame.contentWindow!, "postMessage");
+    const load = async (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+      const data = { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [], ...extra };
+      window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data: { source: "preview", type: "loaded", data } }));
+      await flushPromises();
+    };
+    const lastDraft = () =>
+      posted.mock.calls
+        .map(([message]) => message as { type: string; theme?: Record<string, unknown> })
+        .filter((x) => x.type === "draft")
+        .at(-1);
+    return { load, lastDraft, designer: (wrapper.vm as unknown as { designer: Designer }).designer };
+  }
+
+  it("go to the preview in the draft, each as last saved, once one of them has a draft", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+  });
+
+  it("replace the picker's types when the storefront sends loaded again with a new set, each named in the admin's language and listed once", async () => {
+    const page = await openPage([]);
+    // Hashes no other test loads: the designer remembers the catalogs the server has for as long as it runs.
+    await page.load("c0ffee01", { text: { name: "Text" }, "custom-old": { name: "Old", custom: true, settings: [] } });
+    const sections = { text: { name: "Text" }, "custom-hero": { name: { "en-US": "Hero", "de-DE": "Held" }, custom: true, settings: [] } };
+
+    await page.load("c0ffee02", sections);
+    await page.load("c0ffee02", sections);
+
+    expect(page.designer.sectionTypes.value.map((x) => [x.type, x.schema.name])).toEqual([
+      ["custom-hero", "Hero"],
+      ["text", "Text"],
+    ]);
+    expect(platform.to("/api/site-builder/catalog").map((x) => x.query.hash)).toEqual(["c0ffee01", "c0ffee02"]);
+  });
+
+  it("leave the catalog the designer uploads as the storefront sent it, names by language and kit included", async () => {
+    const page = await openPage([]);
+    platform.on("GET", "/api/site-builder/catalog", status(404)).on("PUT", "/api/site-builder/catalog", "");
+    const sections = { "custom-hero": { name: { "en-US": "Hero", "de-DE": "Held" }, custom: true, settings: [] } };
+    const kit = { tags: { "vc-button": { attributes: { label: { type: "string" } } } }, behaviors: { inview: { options: {} } } };
+
+    await page.load("c0ffee03", sections, { kit });
+
+    const [upload] = platform.to("/api/site-builder/catalog", "PUT");
+    expect(upload.body).toMatchObject({ hash: "c0ffee03", sections, kit });
+    expect(page.designer.schemas.value.sections["custom-hero"].name).toBe("Hero");
+  });
+
+  it("are left to the published snapshot, and not read, while none has a draft", async () => {
+    const page = await openPage(["templates/product.json"]);
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme).not.toHaveProperty("customSections");
+    expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/custom-sections")).toEqual([]);
+  });
+});
+
+describe("the warnings a save answers with", () => {
+  const HERO = "custom-sections/custom-hero.json";
+  const WARNINGS = [
+    "the CSS sets margin-left, which stays on that side when the page reads right to left: use margin-inline-start",
+    "the template's headings go from h2 to h4, skipping a level, which a screen reader lists as a part missing",
+    "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion",
+  ];
+
+  async function saveAnswering(answer: unknown) {
+    fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
+      .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({}))
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: [] })
+      .on("POST", "/api/site-builder/designer/save", answer)
+      .install();
+    blade.param.value = "g1";
+    const wrapper = shallowMount(SiteBuilderDesigner, { global: { plugins: [await routerAt("/")], stubs: { VcBlade: false } } });
+    await flushPromises();
+    const designer = (wrapper.vm as unknown as { designer: Designer }).designer;
+    designer.doc.value = { ...designer.doc.value, content: designer.doc.value.content.map((x) => ({ ...x, title: "Mine" })) };
+
+    await toolbarItem(wrapper, "save").clickHandler!();
+    await flushPromises();
+    return designer;
+  }
+
+  it("lists them in a warning that stays until dismissed, each file named once above its own, with the save done", async () => {
+    const designer = await saveAnswering({ eTag: '"v2"', warnings: WARNINGS.map((x) => `${HERO}: ${x}`) });
+
+    expect(notification.warning).toHaveBeenCalledTimes(1);
+    const [content, options] = notification.warning.mock.calls[0];
+    const toast = mount({ render: () => content });
+    expect(toast.findAll("p").map((x) => x.text())).toEqual(["Saved with warnings:", HERO]);
+    expect(toast.findAll("li").map((x) => x.text())).toEqual(WARNINGS);
+    expect(options).toEqual({ timeout: false });
+    expect(notification.error).not.toHaveBeenCalled();
+    expect(designer.dirty.value).toBe(false);
+  });
+
+  it("shows nothing for a save without warnings", async () => {
+    await saveAnswering({ eTag: '"v2"', warnings: [] });
+
+    expect(notification.warning).not.toHaveBeenCalled();
   });
 });

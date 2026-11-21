@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Sections",
+      "CUSTOM_SECTIONS": "Sections personnalisées",
       "GROUPS": {
         "HEADER": "En-tête",
         "TEMPLATE": "Modèle",
@@ -330,6 +331,7 @@
       "ASSISTANT_CHANGED": "L'assistant IA a modifié cette page. Vos modifications non enregistrées sont conservées : copiez ce dont vous avez besoin, puis rouvrez la page pour voir ses modifications.",
       "CATALOG_PENDING": "Les modifications du thème sont enregistrées une fois l'aperçu de la boutique chargé : il indique les schémas par rapport auxquels elles sont vérifiées.",
       "SAVE_FAILED": "La page n'a pas pu être enregistrée.",
+      "SAVE_WARNINGS": "Enregistré avec des avertissements :",
       "SAVE_FORBIDDEN": "Vous n'avez pas l'autorisation d'enregistrer : {parts}. Rien n'a été enregistré.",
       "SAVE_FORBIDDEN_ANY": "Vous n'avez pas l'autorisation d'enregistrer ces modifications. Rien n'a été enregistré.",
       "PUBLISH_FAILED": "La page n'a pas pu être publiée.",

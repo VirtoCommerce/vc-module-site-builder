@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { designerDiscardBody, designerDiscardUrl, designerSaveBody, designerSaveUrl } from "../src/modules/designer/designerSave";
+import { designerDiscardBody, designerDiscardUrl, designerSaveBody, designerSaveUrl, warningsByFile } from "../src/modules/designer/designerSave";
 
 const query = (url: string) => Object.fromEntries(new URL(url, "https://admin.example").searchParams);
 
@@ -57,4 +57,28 @@ test("a Discard is one request naming the page and the theme files whose drafts 
     themeFiles: [],
   });
   assert.equal(JSON.stringify(designerDiscardBody({ themeFiles: ["default/templates/product.json"] })).includes('"page"'), false);
+});
+
+test("a save's warnings go by the file each names, in the server's order, the file said once", () => {
+  const hero = "custom-sections/custom-hero.json";
+  assert.deepEqual(
+    warningsByFile([
+      `${hero}: the CSS sets margin-left, which stays on that side when the page reads right to left: use margin-inline-start`,
+      "custom-sections/custom-promo.json: the template's headings go from h2 to h4, skipping a level",
+      `${hero}: the CSS animates with no @media (prefers-reduced-motion: reduce) block`,
+      "The theme has never been published.",
+    ]),
+    [
+      {
+        file: hero,
+        warnings: [
+          "the CSS sets margin-left, which stays on that side when the page reads right to left: use margin-inline-start",
+          "the CSS animates with no @media (prefers-reduced-motion: reduce) block",
+        ],
+      },
+      { file: "custom-sections/custom-promo.json", warnings: ["the template's headings go from h2 to h4, skipping a level"] },
+      { file: undefined, warnings: ["The theme has never been published."] },
+    ],
+  );
+  assert.deepEqual(warningsByFile([]), []);
 });
