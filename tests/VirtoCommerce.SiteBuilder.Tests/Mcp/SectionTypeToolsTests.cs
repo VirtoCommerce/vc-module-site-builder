@@ -18,8 +18,8 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
     private const string Type = "custom-stats";
     private const string File = "custom-sections/custom-stats.json";
     private const string Path = "default/custom-sections/custom-stats.json";
-    private const string Template = "<section class=\"stats\">\n  <h2>{{ settings.title }}</h2>\n  <span data-count-up=\"{{ settings.value }}\">0</span>\n</section>";
-    private const string Css = ":scope { padding: 2rem; }\n.stats h2 { color: var(--color-neutral-900); }";
+    private const string Template = "<section class=\"custom-stats\">\n  <h2>{{ settings.title }}</h2>\n  <span data-count-up=\"{{ settings.value }}\">0</span>\n</section>";
+    private const string Css = ":scope { padding: 2rem; }\n.custom-stats h2 { color: var(--color-neutral-900); }";
 
     private static readonly object[] Settings = [new { id = "title", type = "string", translatable = true }, new { id = "value", type = "number" }];
 
@@ -143,7 +143,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         await CallAsync(Create);
 
         var change = (await CallAsync(Change,
-                css: ":scope { padding: 4rem; }\n.stats h2 { color: var(--color-neutral-900); }",
+                css: ":scope { padding: 4rem; }\n.custom-stats h2 { color: var(--color-neutral-900); }",
                 settings: [.. Settings, new { id = "note", type = "string", translatable = true }]))
             .EnsureSucceeded().Read<ThemeFileChange>();
 

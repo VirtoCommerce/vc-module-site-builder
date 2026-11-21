@@ -184,6 +184,13 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Contains("section", rules.Elements);
         Assert.DoesNotContain("input", rules.Elements);
         Assert.Equal(rules.MaxPartSize, kit.GetProperty("limits").GetProperty("template_bytes").GetInt32());
+        Assert.Equal((32, 32, 4), (kit.GetProperty("limits").GetProperty("template_depth").GetInt32(), kit.GetProperty("limits").GetProperty("css_depth").GetInt32(),
+            kit.GetProperty("limits").GetProperty("at_rule_depth").GetInt32()));
+        Assert.Contains("'-' or '__'", kit.GetProperty("template").GetProperty("classes").GetString(), StringComparison.Ordinal);
+        Assert.Equal("target is _self or _blank, and rel does not hold opener; both are written as they are, with no binding.",
+            kit.GetProperty("template").GetProperty("link_targets").GetString());
+        Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
+            x => x.GetString()!.Contains("takes no on*, form*, style, id, is, class or srcdoc", StringComparison.Ordinal));
         Assert.StartsWith("The storefront's catalog names no kit", kit.GetProperty("kit").GetProperty("note").GetString(), StringComparison.Ordinal);
     }
 

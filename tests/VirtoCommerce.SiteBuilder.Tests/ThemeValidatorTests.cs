@@ -118,6 +118,28 @@ public class ThemeValidatorTests
     }
 
     [Fact]
+    public void Validate_CustomSectionInAHeaderOrFooterGroup_ReturnsErrorsWithOrWithoutCatalog()
+    {
+        // The storefront renders only a group's own sections, so the custom one would not show.
+        var catalog = JObject.Parse("""{ "sections": { "site-header": {}, "product-info": {} } }""");
+        var source = Source(
+            templates: new() { ["product"] = JObject.Parse("""{ "content": [ { "id": "s0", "type": "product-info" }, { "id": "s1", "type": "custom-hero" } ] }""") },
+            header: JObject.Parse("""{ "content": [ { "id": "h", "type": "site-header" }, { "id": "promo", "type": "custom-hero" } ] }"""),
+            footer: JObject.Parse("""{ "content": [ { "id": "news", "type": "custom-hero" } ] }"""));
+        source.CustomSections["custom-hero"] = JObject.Parse("""
+            { "format": 1, "name": "Hero", "schema": { "settings": [] }, "template": "<section></section>", "css": "" }
+            """);
+        string[] errors =
+        [
+            "sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold",
+            "sections/footer-group.json: 'news' places a custom section, which only a page or a template can hold",
+        ];
+
+        Assert.Equal(errors, _validator.Validate(source, catalog));
+        Assert.Equal(errors, _validator.Validate(source, null));
+    }
+
+    [Fact]
     public void Validate_BlockWithItsSchemaInSections_IsAccepted()
     {
         var header = JObject.Parse("""{ "content": [ { "id": "h", "type": "site-header", "blocks": [ { "id": "b", "type": "banner", "size": "s" } ] } ] }""");

@@ -30,8 +30,8 @@ public static class SectionKit
               }
             ]
           },
-          "template": "<section class=\"stats\" data-inview data-inview-once>\n  <h2 class=\"stats__heading\" data-if=\"settings.heading\">{{ settings.heading }}</h2>\n  <ul class=\"stats__list\">\n    <li class=\"stats__item\" data-each=\"settings.stats\">\n      <span class=\"stats__value\"><span data-count-up=\"{{ item.value }}\">0</span>{{ item.suffix }}</span>\n      <span class=\"stats__label\">{{ item.label }}</span>\n    </li>\n  </ul>\n</section>",
-          "css": ":scope { padding: 4rem 1.5rem; background: var(--setting-background); color: var(--color-neutral-900); }\n.stats__heading { margin: 0 0 2rem; text-align: center; }\n.stats__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 2rem; margin: 0; padding: 0; list-style: none; }\n.stats__item { text-align: center; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .stats__item { animation: custom-stats-band-rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.stats__value { display: block; font-size: 2.5rem; font-weight: 700; color: var(--color-primary-700); }\n@keyframes custom-stats-band-rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .stats__item { opacity: 1; transform: none; } :scope[data-visible] .stats__item { animation: none; } }"
+          "template": "<section class=\"custom-stats-band\" data-inview data-inview-once>\n  <h2 class=\"custom-stats-band__heading\" data-if=\"settings.heading\">{{ settings.heading }}</h2>\n  <ul class=\"custom-stats-band__list\">\n    <li class=\"custom-stats-band__item\" data-each=\"settings.stats\">\n      <span class=\"custom-stats-band__value\"><span data-count-up=\"{{ item.value }}\">0</span>{{ item.suffix }}</span>\n      <span class=\"custom-stats-band__label\">{{ item.label }}</span>\n    </li>\n  </ul>\n</section>",
+          "css": ":scope { padding: 4rem 1.5rem; background: var(--setting-background); color: var(--color-neutral-900); }\n.custom-stats-band__heading { margin: 0 0 2rem; text-align: center; }\n.custom-stats-band__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 2rem; margin: 0; padding: 0; list-style: none; }\n.custom-stats-band__item { text-align: center; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .custom-stats-band__item { animation: custom-stats-band-rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.custom-stats-band__value { display: block; font-size: 2.5rem; font-weight: 700; color: var(--color-primary-700); }\n@keyframes custom-stats-band-rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .custom-stats-band__item { opacity: 1; transform: none; } :scope[data-visible] .custom-stats-band__item { animation: none; } }"
         }
         """;
 
@@ -57,7 +57,8 @@ public static class SectionKit
                 "Write the type: every text a customer reads in a translatable setting, colors from the palette, motion from the kit's behaviors.",
                 "Call create_section_type with dryRun, fix every error and the warnings you can, and call it again until it answers no errors; then create it. " +
                     "Change a type with change_section_type: every page that places it changes with it.",
-                "Place it with edit_page_draft (add_section with the type and its settings); each page has its own settings.",
+                "Place it with edit_page_draft (add_section with the type and its settings), each page with its own settings, or in a template with " +
+                    "edit_template; a header or a footer cannot place a custom type.",
                 "Publish the theme first (publish_theme), then the page (publish_page): the storefront renders only a published type.",
             },
             File = new
@@ -80,13 +81,19 @@ public static class SectionKit
             },
             Template = new
             {
-                Root = "One root element, the section's root: the storefront adds data-sb-type, the preview's attributes and the setting variables in its style.",
+                Root = "One root element, the section's root: it keeps data-sb-type and the setting variables in its style. The storefront renders each " +
+                    "section in a wrapper of its own, with contain: paint and isolation: isolate, that holds the anchor id and the preview's attributes.",
+                Markup = $"HTML as written: markup a parser has to mend, such as an element left open or a /> on a kit tag, is refused, and so are " +
+                    $"elements nested more than {rules.MaxTemplateDepth} deep, the root counted.",
                 Elements = rules.Elements,
                 ElementsNote = "And the kit tags below. Anything else is refused, such as svg, script, style, iframe and form controls.",
                 Attributes = rules.Attributes,
                 AttributesNote = "And aria-*, the binding attributes and the behaviors below. No id (two sections on a page would share it), no style " +
                     "(the CSS styles it), no on* (script).",
+                Classes = $"class names the type's own classes only: the type itself, or a name starting with the type and {JoinOr(rules.ClassSeparators.Select(x => $"'{x}'").ToList())}, " +
+                    "such as custom-stats-band__value or custom-stats-band-dark. A binding in class names a select setting whose options are such classes.",
                 Links = $"href is a path starting with '/', a URL starting with {JoinOr(rules.LinkSchemes)}, or one binding of a string setting with \"format\": \"url\".",
+                LinkTargets = $"target is {JoinOr(rules.LinkTargets)}, and rel does not hold {JoinOr(rules.RefusedRels)}; both are written as they are, with no binding.",
                 Images = "src and srcset are a URL of the store's asset library (search_assets), or one binding of an images setting.",
                 Text = $"Text written into the template, or into {JoinOr(rules.TextAttributes)}, is the same in every language and saves with a " +
                     "warning: bind it to a translatable setting.",
@@ -109,7 +116,7 @@ public static class SectionKit
                 Rule = "The root's style sets --setting-<id>, with '_' written as '-', for these settings; the CSS reads them, such as background: var(--setting-background).",
                 Values = new Dictionary<string, string>
                 {
-                    ["color-token"] = "the token's variable, such as var(--color-primary-500) for color_primary_500",
+                    ["color-token"] = "the token's variable, such as var(--color-primary-500) for color_primary_500; color_ is put before a token without it",
                     ["images"] = "url(\"<url>\")",
                     ["number, slider"] = "the number",
                     ["checkbox"] = "1 or 0",
@@ -120,17 +127,21 @@ public static class SectionKit
                 Scope = "The storefront wraps the CSS in @layer sections { @scope ([data-sb-type=\"<type>\"]) { ... } }: it reaches only the type's sections, and :scope is the section's root.",
                 AtRules = rules.AtRules,
                 Keyframes = "A @keyframes name starts with the type, such as custom-stats-band-rise: names are not scoped.",
+                Reading = "The CSS is read as a browser reads it, from its tokens: a comment inside a string is text, and escapes are read.",
                 Refused = new[]
                 {
                     "any other at-rule, such as @import, @font-face, @layer or @property",
                     "a selector naming :root, html or body",
-                    "position: fixed",
-                    "url() of anything but the store's asset library",
-                    "expression(), behavior and -moz-binding",
+                    $"position: fixed, and {JoinOr(Functions(rules.LateValueFunctions))} in position",
+                    $"a URL other than one of the store's asset library in {JoinOr(Functions(rules.ImageFunctions))}, custom properties included, and " +
+                        $"{JoinOr(Functions(rules.LateValueFunctions))} inside them",
+                    $"expression(), and the properties {JoinOr(rules.ScriptProperties)}, which run script",
+                    "a string that a line break cuts off, and a url( whose unquoted URL holds a quote, a parenthesis or a space: quote the URL",
+                    $"a block left open or closed without its pair, blocks nested deeper than {rules.MaxCssDepth}, and at-rules nested deeper than {rules.MaxAtRuleDepth}",
                 },
                 Colors = "From the palette: var(--color-...) of the tokens below, a color-token setting's --setting-<id>, transparent or currentColor. A literal " +
                     "color saves with a warning: neither the palette nor the dark theme changes it.",
-                Classes = "The template's own classes: the storefront's utility classes are not available.",
+                Classes = "The type's own classes, as the template's class names them: the storefront's utility classes are not available.",
                 Motion = "With prefers-reduced-motion the behaviors show their end state at once; turn your own animations off in @media (prefers-reduced-motion: reduce).",
             },
             Palette = new
@@ -145,10 +156,16 @@ public static class SectionKit
                 Usage = new[]
                 {
                     "A kit tag renders a storefront component, such as <vc-button label=\"{{ settings.cta }}\" to=\"{{ settings.link }}\"></vc-button>. " +
-                        "It has no content, and takes its attributes, data-if and data-each.",
-                    "A behavior is switched on with data-<name>, whose value, when it takes one, may be a binding, and set with data-<name>-<option> on the " +
-                        "element or inside it. It writes what its writes names, such as data-visible, --scroll-progress or the text: style that in the CSS.",
-                    "An attribute's or an option's value is a literal its type takes, or one binding.",
+                        "It has no content and an end tag of its own, and takes its attributes, data-if and data-each.",
+                    $"Whatever the catalog declares, a kit tag takes no {JoinOr(rules.KitDeniedAttributes)}, and {JoinOr(rules.KitLinkAttributes)} follow the " +
+                        "link rule of href.",
+                    "A behavior is switched on with data-<name> and set with data-<name>-<option> on the element or inside it. Its own value is checked by " +
+                        "the type the kit declares under value, such as a number for count-up or a date for countdown; one that declares none takes any text. " +
+                        "It writes what its writes names, such as data-visible, --scroll-progress or the text: style that in the CSS.",
+                    $"An attribute's, an option's or a value's type is {JoinOr(rules.KitFieldTypes)}: a select takes one of its options, a number one from " +
+                        "min to max, a boolean true, false or no value, a date an ISO 8601 date or date and time, such as 2026-12-31, and a link follows " +
+                        "the link rule. Each is a literal of its type, or one binding.",
+                    "The storefront's own kit tags and behaviors keep their names: a module of the storefront cannot register one of the same name.",
                 },
                 Note = kit == null
                     ? "The storefront's catalog names no kit: a type that uses a kit tag or a behavior is refused."
@@ -159,6 +176,9 @@ public static class SectionKit
                 TemplateBytes = rules.MaxPartSize,
                 CssBytes = rules.MaxPartSize,
                 ThemeBytes = rules.MaxTotalSize,
+                TemplateDepth = rules.MaxTemplateDepth,
+                CssDepth = rules.MaxCssDepth,
+                AtRuleDepth = rules.MaxAtRuleDepth,
                 Note = "theme_bytes is the JSON of every type of the theme together: the snapshot carries them to every page.",
             },
             Example = new
@@ -172,6 +192,8 @@ public static class SectionKit
             },
         };
     }
+
+    private static List<string> Functions(IEnumerable<string> names) => names.Select(x => $"{x}()").ToList();
 
     private static string JoinOr(IList<string> items) =>
         items.Count > 1 ? $"{string.Join(", ", items.Take(items.Count - 1))} or {items[^1]}" : string.Join(string.Empty, items);

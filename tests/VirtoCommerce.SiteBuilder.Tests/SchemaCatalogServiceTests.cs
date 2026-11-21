@@ -77,5 +77,42 @@ public class SchemaCatalogServiceTests
         Assert.Null(await Service().GetAsync("s1", null, Ct));
     }
 
+    [Theory]
+    [InlineData("""[]""", "is not an object")]
+    [InlineData("""{ "tags": [] }""", "has tags that are not an object")]
+    [InlineData("""{ "tags": { "button": {} } }""", "has the tag 'button', which does not start with vc- and lowercase words joined by '-'")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "onclick": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'onclick', which no kit tag takes")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "content": { "type": "html" } } } } }""",
+        "has the tag 'vc-x', which has the attribute 'content', which has no type of string, number, boolean, select, date or link")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "label": "S" } ] } } } } }""",
+        "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values")]
+    [InlineData("""{ "behaviors": { "each": { "options": {} } } }""", "has the behavior 'each', which is the name of a binding")]
+    [InlineData("""{ "behaviors": { "count-up": { "value": { "type": "number", "min": "0" } } } }""",
+        "has the behavior 'count-up', which has a value that has a min, a max or a description of another kind")]
+    [InlineData("""{ "behaviors": { "tilt": { "options": { "max": { "type": "number", "script": "x" } } } } }""",
+        "has the behavior 'tilt', which has the option 'max', which has a key a kit field does not have, 'script'")]
+    public async Task SaveAsync_KitOfAnotherShape_ThrowsNamingItAndKeepsNothing(string kit, string error)
+    {
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct));
+
+        Assert.StartsWith($"The catalog's \"kit\" {error}.", exception.Message);
+        Assert.Null(await Service().GetAsync("s1", null, Ct));
+    }
+
+    [Fact]
+    public async Task SaveAsync_KitOfItsShape_IsKept()
+    {
+        const string kit = """
+            {
+              "tags": { "vc-button": { "description": "A button", "attributes": { "to": { "type": "link" }, "size": { "type": "select", "options": [ "sm", { "value": "lg", "label": "Large" } ] } } } },
+              "behaviors": { "count-up": { "value": { "type": "number" }, "options": { "duration": { "type": "number", "min": 0, "max": 5000 } }, "writes": [ "--count" ] } }
+            }
+            """;
+
+        await Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct);
+
+        Assert.NotNull(JObject.Parse(await Service().GetAsync("s1", null, Ct))["kit"]!["tags"]!["vc-button"]);
+    }
+
     private SchemaCatalogService Service() => new(new ThemeStorageFactory(_storage.StoreService, _storage, _storage, _storage));
 }

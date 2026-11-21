@@ -217,7 +217,10 @@ public class ThemeDraftService(
         }
     }
 
-    /// <summary>A draft of a file never published is its only copy and stays.</summary>
+    /// <summary>
+    /// A draft of a file never published is its only copy and stays, but for a custom section type's: discarding it is how a type that
+    /// was never published is removed.
+    /// </summary>
     protected virtual DraftDiscardStatus GetDiscardStatus(ThemeDraft draft, string publishedContent)
     {
         if (draft.Content == null)
@@ -225,7 +228,9 @@ public class ThemeDraftService(
             return DraftDiscardStatus.NoDraft;
         }
 
-        return publishedContent == null ? DraftDiscardStatus.OnlyCopy : DraftDiscardStatus.Discarded;
+        return publishedContent == null && ThemeCustomSections.GetSectionType(draft.Storage.GetLivePath(draft.File)) == null
+            ? DraftDiscardStatus.OnlyCopy
+            : DraftDiscardStatus.Discarded;
     }
 
     protected virtual async Task RestoreDraftsAsync(string storeId, IList<ThemeDraft> drafts)
