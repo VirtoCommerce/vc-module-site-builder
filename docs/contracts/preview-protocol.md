@@ -36,7 +36,8 @@ Designer to preview: `{ source: "builder", type, ...payload }`. Preview to desig
 1. The designer loads the iframe.
 2. On every iframe `load` the designer sends `connect`.
 3. The storefront answers `loaded` once its schemas are ready. It also sends `loaded` unasked when it starts, in case
-   `connect` came before its listener.
+   `connect` came before its listener, and again when a `draft` changes the set of custom section types, whose schemas
+   the catalog carries.
 4. On every `loaded` the designer uploads the catalog when the server does not have its `hash`, then sends `auth`,
    `inspector`, `colorScheme`, `draft` and `render`, in that order: after a reload the frame has lost them all.
 5. The storefront shows the page after the first `render`; until then the frame stays blank. Until told otherwise
@@ -100,6 +101,11 @@ interface Catalog {
   settingsSchema?: { settings_schema?: { name: string; icon?: string; settings: Field[] }[] };
   /** the token names a palette has, from the storefront's built-in presets */
   paletteTokens: { light: string[]; dark: string[] };
+  /**
+   * the kit tags, behaviors, icon names, design facts and guide a custom section type may use: see
+   * [Custom sections](custom-sections.md#catalog)
+   */
+  kit?: Kit;
 }
 ```
 
@@ -122,7 +128,7 @@ as it will once the theme is published. Each `draft` replaces the previous one e
 templates. Each is the template as last saved, its draft, else its live file; the open template is as the designer
 has it, saved or not, and is in `render` too. The designer leaves `templates` out while no template has a saved draft
 (the snapshot then holds them as they are live, and `render` carries the open one) and for a storefront without the
-`templates` capability.
+`templates` capability. It leaves `customSections` out the same way while no custom section type has a saved draft.
 
 ```ts
 interface Draft {
@@ -134,7 +140,7 @@ interface Draft {
     footer?: SectionGroup;
     brand?: Brand;
     palette?: Palette | null;
-    /** every custom section type, as last saved or as the designer has it; replaces the published ones */
+    /** every custom section type of the theme as last saved, its draft else its live file; replaces the published ones */
     customSections?: Record<string, CustomSectionType>;
   };
 }
@@ -203,7 +209,7 @@ before it expires.
 
 | Type | Data | When |
 |---|---|---|
-| `loaded` | see [Handshake](#handshake) | in answer to `connect`, and once unasked |
+| `loaded` | see [Handshake](#handshake) | in answer to `connect`, once unasked, and when a `draft` changes the set of custom section types |
 | `select` | `{ sectionId: string, blockId?: string }` | the visitor clicked a section or a block while the inspector is on |
 | `hover` | `{ sectionId: string \| null }` | the pointer entered or left a section |
 | `edit` | `{ itemId: string, path: (string \| number)[], value: string, cultureName?: string }` | a text edited in place changed |
