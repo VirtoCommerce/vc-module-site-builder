@@ -30,6 +30,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const int MaxScannedTemplateDepth = 256;
     private const int MaxAtRuleDepth = 4;
     private const string KeyframesAtRule = "keyframes";
+    private const string AllowedAtRulesText = "@media, @supports, @container, @starting-style and @keyframes";
 
     private const string DocumentStart = "<!DOCTYPE html><html><head></head><body>";
     private const string AssetProbe = "file";
@@ -106,7 +107,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
     };
 
-    private static readonly HashSet<string> AllowedAtRules = new(StringComparer.OrdinalIgnoreCase) { "media", "supports", "container", KeyframesAtRule };
+    private static readonly HashSet<string> AllowedAtRules = new(StringComparer.OrdinalIgnoreCase) { "media", "supports", "container", "starting-style", KeyframesAtRule };
 
     // the functions that load an image from a URL given as a string
     private static readonly HashSet<string> ImageFunctions = new(StringComparer.OrdinalIgnoreCase)
@@ -114,8 +115,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         "url", "src", "image", "image-set", "-webkit-image-set", "cross-fade", "-webkit-cross-fade",
     };
 
-    // the functions whose value is known only when the page is shown
-    private static readonly HashSet<string> LateValueFunctions = new(StringComparer.OrdinalIgnoreCase) { "var", "attr", "env" };
+    // the functions whose value is known only when the page is shown, with a custom --name() function
+    private static readonly HashSet<string> LateValueFunctions = new(StringComparer.OrdinalIgnoreCase) { "var", "attr", "env", "if" };
 
     private static readonly HashSet<string> ScriptProperties = new(StringComparer.OrdinalIgnoreCase) { "behavior", "-moz-binding" };
 
@@ -166,6 +167,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private static readonly Regex PathPattern = new(@"^(settings|item)\.([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$", RegexOptions.None, RegexTimeout);
     private static readonly Regex IsoDatePattern = new(@"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$", RegexOptions.None, RegexTimeout);
 
+    private static readonly Regex ImageDataUrlPattern = new("^data:image/[a-z0-9.+-]+[;,]", RegexOptions.IgnoreCase, RegexTimeout);
     private static readonly Regex CssDocumentSelectorPattern = new(@"(?:^|[\s,>+~(])(?:html|body)(?=$|[\s,>+~.#:\[)])|:root(?![\w-])", RegexOptions.IgnoreCase, RegexTimeout);
     private static readonly Regex CssLiteralColorPattern = new(@"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(", RegexOptions.IgnoreCase, RegexTimeout);
 
@@ -1154,10 +1156,14 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var errors = new List<string>();
         var directions = new List<string>();
-        // the function or the block each token is in, and whether each rule's block is for one direction, as :dir(rtl) { } is
+        // the function or the block each token is in, the functions that load an image it is in, and whether each rule's block is for one
+        // direction, as :dir(rtl) { } is
         var blocks = new Stack<CssTokenizer.Token>();
+        var imageFunctions = new Stack<string>();
         var directionRules = new Stack<bool>();
         var preludeNamesDirection = false;
+        // a declaration starts a block or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
+        var atDeclarationStart = false;
         for (var i = 0; i < tokens.Count; i++)
         {
             var token = tokens[i];
@@ -1176,19 +1182,23 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
                 case CssTokenizer.TokenKind.Url:
                     AddCssUrlError(check, token.Value, errors);
                     break;
-                case CssTokenizer.TokenKind.String when block.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(block.Value):
+                case CssTokenizer.TokenKind.String when imageFunctions.Count > 0:
                     AddCssUrlError(check, token.Value, errors);
                     break;
                 case CssTokenizer.TokenKind.Function when string.Equals(token.Value, "expression", StringComparison.OrdinalIgnoreCase):
                     errors.Add("the CSS has expression(), which runs script");
                     break;
-                case CssTokenizer.TokenKind.Function when LateValueFunctions.Contains(token.Value) && block.Kind == CssTokenizer.TokenKind.Function &&
-                    ImageFunctions.Contains(block.Value):
-                    errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {block.Value.ToLowerInvariant()}(), whose URL is then not known on save");
+                case CssTokenizer.TokenKind.Function when IsLateValueFunction(token.Value) && imageFunctions.Count > 0:
+                    errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {imageFunctions.Peek()}(), whose URL is then not known on save");
                     break;
-                case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly:
+                case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly && atDeclarationStart:
                     ValidateCssDeclaration(check, tokens, i, errors, directionRules.Peek() ? null : directions);
                     break;
+            }
+
+            if (token.Kind != CssTokenizer.TokenKind.Whitespace)
+            {
+                atDeclarationStart = token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly;
             }
 
             if (token.Kind == CssTokenizer.TokenKind.OpenCurly)
@@ -1201,10 +1211,19 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
                 CssTokenizer.TokenKind.Function)
             {
                 blocks.Push(token);
+                if (token.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(token.Value))
+                {
+                    imageFunctions.Push(token.Value.ToLowerInvariant());
+                }
             }
             else if (token.Kind is CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.CloseParen or CssTokenizer.TokenKind.CloseSquare)
             {
-                blocks.Pop();
+                var closed = blocks.Pop();
+                if (closed.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(closed.Value))
+                {
+                    imageFunctions.Pop();
+                }
+
                 if (token.Kind == CssTokenizer.TokenKind.CloseCurly)
                 {
                     directionRules.Pop();
@@ -1233,7 +1252,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         var name = tokens[index].Value;
         if (!AllowedAtRules.Contains(name))
         {
-            errors.Add($"the CSS has @{name}, and a custom section's CSS has only @media, @supports, @container and @keyframes");
+            errors.Add($"the CSS has @{name}, and a custom section's CSS has only {AllowedAtRulesText}");
             return;
         }
 
@@ -1242,12 +1261,16 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return;
         }
 
-        // keyframes names are not scoped, so the type's own start with the type
+        // keyframes names are not scoped, and a type's name may start another's, so the type's own start with the type and '__'
+        var prefix = check.Type + "__";
         var keyframes = tokens.Skip(index + 1).FirstOrDefault(x => x.Kind != CssTokenizer.TokenKind.Whitespace);
-        if (keyframes.Kind is not (CssTokenizer.TokenKind.Ident or CssTokenizer.TokenKind.String) ||
-            (keyframes.Value != check.Type && !keyframes.Value.StartsWith(check.Type + "-", StringComparison.Ordinal)))
+        if (keyframes.Kind is not (CssTokenizer.TokenKind.Ident or CssTokenizer.TokenKind.String))
         {
-            errors.Add($"the CSS names @keyframes '{Quote(keyframes.Value ?? string.Empty)}', which does not start with the type, '{check.Type}': names are not scoped");
+            errors.Add("the CSS has @keyframes without a name");
+        }
+        else if (keyframes.Value.Length <= prefix.Length || !keyframes.Value.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            errors.Add($"the CSS names @keyframes '{Quote(keyframes.Value)}', which does not start with '{prefix}': keyframes names are not scoped");
         }
     }
 
@@ -1312,18 +1335,19 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             {
                 errors.Add("the CSS has position: fixed, which puts the section over the page");
             }
-            else if (value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && LateValueFunctions.Contains(x.Value)) is { Value: { } function })
+            else if (value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && IsLateValueFunction(x.Value)) is { Value: { } function })
             {
                 errors.Add($"the CSS sets position with {function.ToLowerInvariant()}(), which could make it fixed");
             }
         }
     }
 
+    /// <summary>An image of the CSS may also be written into it as a data: URL, as an image loads no script and nothing else.</summary>
     protected virtual void AddCssUrlError(CustomSectionCheck check, string url, IList<string> errors)
     {
-        if (!IsAssetUrl(url))
+        if (!IsAssetUrl(url) && !ImageDataUrlPattern.IsMatch(url))
         {
-            errors.Add($"the CSS loads '{Quote(url)}', which is not a URL of the store's asset library");
+            errors.Add($"the CSS loads '{Quote(url)}', which is not a URL of the store's asset library or a data:image/ URL");
         }
     }
 
@@ -1350,8 +1374,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
                     }
 
                     break;
-                case ICssMediaRule or ICssSupportsRule or ICssContainerRule:
-                    ValidateCssRules(check, ((ICssGroupingRule)rule).Rules);
+                case ICssGroupingRule grouping:
+                    ValidateCssRules(check, grouping.Rules);
                     break;
             }
         }
@@ -1556,6 +1580,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         return side == null ? null : ($"{property}: {side}", $"{property}: {(side == "left" ? logicalValues.Left : logicalValues.Right)}");
     }
+
+    private static bool IsLateValueFunction(string name) => LateValueFunctions.Contains(name) || name.StartsWith("--", StringComparison.Ordinal);
 
     private static bool RemovesFocusRing(string name, List<CssTokenizer.Token> value) => name.ToLowerInvariant() switch
     {

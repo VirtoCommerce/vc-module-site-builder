@@ -147,13 +147,16 @@ The root's `style` sets a variable per setting the CSS can use, named `--setting
 The storefront applies a type's CSS once per page, wrapped so it reaches only the type's sections:
 `@layer sections { @scope ([data-sb-type="{type}"]) { … } }`. `:scope` is the section's root.
 
-- **At-rules**: `@media`, `@supports`, `@container` and `@keyframes`. A keyframes name starts with the type
-  (`@keyframes custom-hero-fade`), since names are not scoped.
+- **At-rules**: `@media`, `@supports`, `@container`, `@starting-style` and `@keyframes`. A keyframes name starts with
+  the type and `__` (`@keyframes custom-hero__fade`), since names are not scoped and one type's name may start
+  another's.
+- **Images**: a URL of the store's asset library, or a `data:image/…` URL, as an image loads no script and nothing
+  else; the data counts in the CSS's size.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
-  selector naming `:root`, `html` or `body`; `position: fixed`, and `var()`, `attr()` or `env()` in `position`; a URL
-  other than an asset library URL, in `url()` or as a string of `image-set()` and the other functions that load an
-  image, custom properties included, and `var()`, `attr()` or `env()` inside such a function; `expression()`,
-  `behavior` and `-moz-binding`.
+  selector naming `:root`, `html` or `body`; `position: fixed`, and `var()`, `attr()`, `env()`, `if()` or a custom
+  `--name()` function in `position`; any other URL, in `url()` or as a string anywhere inside `image-set()` and the
+  other functions that load an image, at any depth, custom properties included, and `var()`, `attr()`, `env()`, `if()`
+  or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`.
 - **Read as a browser reads it**, from its tokens: a comment inside a string is text, and escapes are read. A string
   that a line break cuts off, and a `url(` whose unquoted URL holds a quote, a parenthesis or a space, are refused, and
   so is a block left open or closed without its pair, since the storefront's wrapping would close with it. Blocks nest

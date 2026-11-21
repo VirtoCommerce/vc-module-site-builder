@@ -101,7 +101,7 @@ public sealed class CustomSectionPublishTests : IDisposable
 
         var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
 
-        Assert.Contains("custom-sections/custom-hero.json: the CSS has @import, and a custom section's CSS has only @media, @supports, @container and @keyframes",
+        Assert.Contains("custom-sections/custom-hero.json: the CSS has @import, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes",
             exception.Errors);
         Assert.False(_storage.Files.ContainsKey(Theme(Pointer)));
         Assert.False(_storage.Files.ContainsKey(Theme(Hero)));
