@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Sekcje",
+      "CUSTOM_SECTIONS": "Sekcje niestandardowe",
       "GROUPS": {
         "HEADER": "Nagłówek",
         "TEMPLATE": "Szablon",

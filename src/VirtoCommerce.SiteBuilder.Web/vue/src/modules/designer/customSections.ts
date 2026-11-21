@@ -1,5 +1,6 @@
-import type { Field } from "./types";
+import type { Field, ItemSchema } from "./types";
 import { byCodeUnit } from "./json";
+import { isTranslations, resolveTranslations } from "./translatable";
 import { savedThemeFilesReader } from "./templateDrafts";
 import type { ThemeStatus } from "./themePublication";
 
@@ -29,3 +30,14 @@ export const draftedCustomSectionTypes = (status: ThemeStatus | undefined): stri
 
 /** Like the templates: the storefront takes the draft's types in place of all the published ones. */
 export const savedCustomSectionsReader = () => savedThemeFilesReader<CustomSectionType>(draftedCustomSectionTypes, (type) => type);
+
+/** A custom type's name may be a dictionary by language; the designer shows the one for its own language. */
+export function namedSections(sections: Record<string, ItemSchema>, language: string, defaultLanguage: string): Record<string, ItemSchema> {
+  return Object.fromEntries(
+    Object.entries(sections).map(([type, schema]) => {
+      const name: unknown = schema.name;
+      if (name === undefined || typeof name === "string") return [type, schema];
+      return [type, { ...schema, name: isTranslations(name) ? resolveTranslations(name, language, defaultLanguage) : undefined }];
+    }),
+  );
+}

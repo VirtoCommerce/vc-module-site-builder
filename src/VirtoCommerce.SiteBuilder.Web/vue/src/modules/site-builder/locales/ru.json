@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Секции",
+      "CUSTOM_SECTIONS": "Пользовательские секции",
       "GROUPS": {
         "HEADER": "Шапка",
         "TEMPLATE": "Шаблон",

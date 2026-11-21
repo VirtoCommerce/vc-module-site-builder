@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Sezioni",
+      "CUSTOM_SECTIONS": "Sezioni personalizzate",
       "GROUPS": {
         "HEADER": "Intestazione",
         "TEMPLATE": "Modello",

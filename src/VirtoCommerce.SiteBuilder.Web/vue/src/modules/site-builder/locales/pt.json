@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Seções",
+      "CUSTOM_SECTIONS": "Seções personalizadas",
       "GROUPS": {
         "HEADER": "Cabeçalho",
         "TEMPLATE": "Modelo",

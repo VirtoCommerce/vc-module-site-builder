@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Osiot",
+      "CUSTOM_SECTIONS": "Mukautetut osiot",
       "GROUPS": {
         "HEADER": "Ylätunniste",
         "TEMPLATE": "Malli",

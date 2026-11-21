@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Sektioner",
+      "CUSTOM_SECTIONS": "Anpassade sektioner",
       "GROUPS": {
         "HEADER": "Sidhuvud",
         "TEMPLATE": "Mall",

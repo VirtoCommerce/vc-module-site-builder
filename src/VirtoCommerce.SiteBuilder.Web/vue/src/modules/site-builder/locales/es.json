@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Secciones",
+      "CUSTOM_SECTIONS": "Secciones personalizadas",
       "GROUPS": {
         "HEADER": "Encabezado",
         "TEMPLATE": "Plantilla",

@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "מקטעים",
+      "CUSTOM_SECTIONS": "מקטעים מותאמים אישית",
       "GROUPS": {
         "HEADER": "כותרת עליונה",
         "TEMPLATE": "תבנית",

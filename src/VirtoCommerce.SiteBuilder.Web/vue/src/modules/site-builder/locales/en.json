@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Sections",
+      "CUSTOM_SECTIONS": "Custom sections",
       "GROUPS": {
         "HEADER": "Header",
         "TEMPLATE": "Template",

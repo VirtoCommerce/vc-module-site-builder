@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Seksjoner",
+      "CUSTOM_SECTIONS": "Egendefinerte seksjoner",
       "GROUPS": {
         "HEADER": "Topptekst",
         "TEMPLATE": "Mal",

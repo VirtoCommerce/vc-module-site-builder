@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "区块",
+      "CUSTOM_SECTIONS": "自定义区块",
       "GROUPS": {
         "HEADER": "页眉",
         "TEMPLATE": "模板",

@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "الأقسام",
+      "CUSTOM_SECTIONS": "أقسام مخصصة",
       "GROUPS": {
         "HEADER": "الرأس",
         "TEMPLATE": "القالب",

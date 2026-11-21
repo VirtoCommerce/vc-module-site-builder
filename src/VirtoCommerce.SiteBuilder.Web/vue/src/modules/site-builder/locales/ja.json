@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "セクション",
+      "CUSTOM_SECTIONS": "カスタムセクション",
       "GROUPS": {
         "HEADER": "ヘッダー",
         "TEMPLATE": "テンプレート",

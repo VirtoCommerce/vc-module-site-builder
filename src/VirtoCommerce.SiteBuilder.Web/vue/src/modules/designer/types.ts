@@ -75,6 +75,8 @@ export interface ItemSchema {
   group?: string;
   hidden?: boolean;
   type?: string;
+  /** A section type of the theme's own, which an agent wrote. */
+  custom?: boolean;
 }
 
 export interface Schemas {

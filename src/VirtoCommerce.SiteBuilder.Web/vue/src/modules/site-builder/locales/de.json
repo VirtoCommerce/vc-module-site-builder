@@ -250,6 +250,7 @@
     },
     "DESIGNER": {
       "SECTIONS": "Abschnitte",
+      "CUSTOM_SECTIONS": "Benutzerdefinierte Abschnitte",
       "GROUPS": {
         "HEADER": "Kopfzeile",
         "TEMPLATE": "Vorlage",
