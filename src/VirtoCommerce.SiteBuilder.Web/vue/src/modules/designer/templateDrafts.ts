@@ -13,8 +13,6 @@ export interface ThemeFileSource<T> {
   read: (key: string) => Promise<T | undefined>;
 }
 
-export type TemplateSource = ThemeFileSource<PageDocument>;
-
 /** Live files change only with a publication, so those without a draft are read once per publication. */
 export function savedThemeFilesReader<T>(draftedKeys: (status: ThemeStatus) => string[], kept: (file: T) => T) {
   let live: { scope: string; keys?: string[]; docs: Map<string, T | undefined> } | undefined;

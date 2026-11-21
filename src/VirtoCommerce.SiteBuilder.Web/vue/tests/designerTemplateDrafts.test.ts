@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { draftTemplates, draftedTemplateKeys, savedTemplatesReader, type TemplateSource } from "../src/modules/designer/templateDrafts";
+import { draftTemplates, draftedTemplateKeys, savedTemplatesReader, type ThemeFileSource } from "../src/modules/designer/templateDrafts";
 import type { ThemeStatus } from "../src/modules/designer/themePublication";
 import type { Item, PageDocument } from "../src/modules/designer/types";
 
@@ -9,7 +9,7 @@ const status = (drafts: string[], publication?: number): ThemeStatus => ({ publi
 
 function source(files: Record<string, PageDocument | undefined>) {
   const requests: string[] = [];
-  const src: TemplateSource = {
+  const src: ThemeFileSource<PageDocument> = {
     keys: async () => {
       requests.push("keys");
       return Object.keys(files);

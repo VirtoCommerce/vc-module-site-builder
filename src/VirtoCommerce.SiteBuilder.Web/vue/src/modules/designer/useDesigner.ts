@@ -12,6 +12,7 @@ import {
   MAIN_SECTIONS,
   PAGE_CONTENT,
   hidingLosesMain,
+  isOffered,
   keptMainSection,
   mainSectionState,
   pageTypeOf,
@@ -165,7 +166,7 @@ export function useDesigner() {
         !schema.static &&
         !schema.groups?.length &&
         (type !== PAGE_CONTENT || pageContent) &&
-        (entry.sections ? entry.sections.includes(type) : !schema.targetTemplates?.length || schema.targetTemplates.includes(key)),
+        isOffered(key, entry, type, schema),
     );
   });
 

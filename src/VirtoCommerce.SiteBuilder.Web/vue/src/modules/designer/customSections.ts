@@ -4,7 +4,7 @@ import { isTranslations, resolveTranslations } from "./translatable";
 import { savedThemeFilesReader } from "./templateDrafts";
 import type { ThemeStatus } from "./themePublication";
 
-/** A section type an agent writes into the theme; the designer passes it to the preview as the file holds it. */
+/** custom-sections/{type}.json as the file holds it; the preview takes it as is. */
 export interface CustomSectionType {
   format: 1;
   name: string | Record<string, string>;
@@ -16,7 +16,7 @@ export interface CustomSectionType {
 const TYPE = /^custom-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TYPE_MAX_LENGTH = 64;
 
-export const isCustomSectionType = (type: string) => type.length <= TYPE_MAX_LENGTH && TYPE.test(type);
+const isCustomSectionType = (type: string) => type.length <= TYPE_MAX_LENGTH && TYPE.test(type);
 
 export const customSectionPath = (theme: string, type: string) => `${theme}/custom-sections/${type}.json`;
 
