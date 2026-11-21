@@ -16,6 +16,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 public class CustomSectionValidator(
     CustomSectionTemplateValidator templateValidator,
     CustomSectionCssValidator cssValidator,
+    CustomSectionUrlPolicy urlPolicy,
     IOptions<ThemeSnapshotOptions> options,
     ILogger<CustomSectionValidator> logger) : ICustomSectionValidator
 {
@@ -337,6 +338,40 @@ public class CustomSectionValidator(
         {
             check.AddError($"{setting} has an element, which only a list or an object has");
         }
+
+        if (field["default"] is { Type: not JTokenType.Null } value && GetDefaultError(type, field, value) is { } error)
+        {
+            check.AddError($"{setting} has a default {error}");
+        }
+    }
+
+    /// <summary>The storefront leaves out a default it does not take, so a save refuses it; an empty one is none.</summary>
+    /// <returns><c>null</c> for a default the setting takes.</returns>
+    protected virtual string GetDefaultError(string type, JObject field, JToken value)
+    {
+        if (value is JValue { Type: JTokenType.String } empty && ((string)empty).Length == 0)
+        {
+            return null;
+        }
+
+        if (type == SelectType)
+        {
+            var options = (field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).Where(x => x != null).ToList() ?? [];
+            return options.Exists(x => JToken.DeepEquals(x, value)) ? null : "that is not one of its options";
+        }
+
+        // a translatable value is a text per language
+        var texts = (value is JObject translations ? translations.Properties().Select(x => x.Value) : [value])
+            .Select(x => x is JValue { Type: JTokenType.String } text ? (string)text : null)
+            .ToList();
+        if (IsLink(type, field) && texts.Exists(x => x == null || (x.Length > 0 && !urlPolicy.IsLink(x, CustomSectionTemplateValidator.LinkSchemes))))
+        {
+            return $"that is not a path starting with '/', or an {JoinOr(CustomSectionTemplateValidator.LinkSchemes)} URL";
+        }
+
+        return type == ImagesType && texts.Exists(x => x == null || (x.Length > 0 && !urlPolicy.IsAssetUrl(x)))
+            ? "that is not a URL of the store's asset library"
+            : null;
     }
 
     protected virtual Dictionary<string, CustomSectionSetting> ReadElement(CustomSectionCheck check, JObject field, string id, string type, string setting)

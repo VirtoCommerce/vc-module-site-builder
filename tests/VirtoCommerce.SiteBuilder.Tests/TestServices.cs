@@ -40,7 +40,7 @@ internal static class TestServices
     {
         var urlPolicy = CustomSectionUrlPolicy(assetsUrl);
 
-        return new CustomSectionValidator(new CustomSectionTemplateValidator(urlPolicy), cssValidator ?? new CustomSectionCssValidator(urlPolicy),
+        return new CustomSectionValidator(new CustomSectionTemplateValidator(urlPolicy), cssValidator ?? new CustomSectionCssValidator(urlPolicy), urlPolicy,
             Options.Create(options ?? new ThemeSnapshotOptions()), NullLogger<CustomSectionValidator>.Instance);
     }
 

@@ -830,6 +830,33 @@ public class CustomSectionValidatorTests
         Assert.Empty(_validator.Validate(Type, Section(nested), Catalog).Errors);
     }
 
+    [Theory]
+    [InlineData("""{ "id": "view", "type": "select", "options": [ { "value": "grid" } ], "default": "list" }""",
+        "setting 'view' has a default that is not one of its options")]
+    [InlineData("""{ "id": "link", "type": "string", "format": "url", "default": "javascript:alert(1)" }""",
+        "setting 'link' has a default that is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""{ "id": "link", "type": "string", "format": "url", "translatable": true, "default": { "en-US": "/sale", "de-DE": "//evil.example" } }""",
+        "setting 'link' has a default that is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""{ "id": "image", "type": "images", "default": "https://evil.example/a.png" }""",
+        "setting 'image' has a default that is not a URL of the store's asset library")]
+    public void Validate_DefaultTheSettingDoesNotTake_IsRefused(string field, string error)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), Catalog);
+
+        Assert.Equal([error], result.Errors);
+    }
+
+    [Theory]
+    [InlineData("""{ "id": "view", "type": "select", "options": [ { "value": "grid" } ], "default": "grid" }""")]
+    [InlineData("""{ "id": "view", "type": "select", "options": [ { "value": "grid" } ], "default": "" }""")]
+    [InlineData("""{ "id": "link", "type": "string", "format": "url", "default": "/sale" }""")]
+    [InlineData("""{ "id": "image", "type": "images", "default": "https://cdn.example/assets/a.png" }""")]
+    [InlineData("""{ "id": "title", "type": "string", "default": "javascript: is fine as text" }""")]
+    public void Validate_DefaultTheSettingTakes_IsAccepted(string field)
+    {
+        Assert.Empty(_validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), Catalog).Errors);
+    }
+
     [Fact]
     public void ValidateTypes_TypesTogetherOverTheLimit_AddTheSizeErrorForTheFolder()
     {
