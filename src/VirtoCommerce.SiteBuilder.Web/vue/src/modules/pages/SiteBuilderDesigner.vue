@@ -646,6 +646,8 @@ import {
   templateKeys,
   findFilePage,
   findTemplate,
+  customSectionTypes,
+  findCustomSection,
   loadThemeFile,
   ApiError,
   type CatalogContext,
@@ -672,6 +674,7 @@ import { publishActions, themeErrors, themePublishButton } from "../designer/the
 import { CatalogPendingError } from "../designer/designerSave";
 import type { Field, Item, PageDocument, SectionGroup, Selection } from "../designer/types";
 import { draftTemplates, savedTemplatesReader } from "../designer/templateDrafts";
+import { savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
 import TemplateSwitcher from "../designer/components/TemplateSwitcher.vue";
 import EntityPicker from "../designer/components/EntityPicker.vue";
 import RulesPanel from "../designer/components/RulesPanel.vue";
@@ -851,11 +854,13 @@ function draft(groups = designer.groupsPreview.value): DraftMessage {
     templates: draftedTemplates(templateKey),
     groups,
     look: look.draft.value,
+    customSections: savedCustomSections.value,
     capabilities: designer.handshake.value?.capabilities ?? [],
   });
 }
 
 const savedTemplates = shallowRef<Record<string, PageDocument>>();
+const savedCustomSections = shallowRef<Record<string, CustomSectionType>>();
 
 const colorScheme = ref<ColorScheme>("light");
 
@@ -1787,23 +1792,36 @@ const themeName = ref<string>();
 const templateKeyList = ref<string[]>([]);
 const templateKeysNotice = ref<string>();
 const readSavedTemplates = savedTemplatesReader();
-let templatesRead = 0;
+const readSavedCustomSections = savedCustomSectionsReader();
+let themeFilesRead = 0;
 watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => {
-  const request = ++templatesRead;
+  const request = ++themeFilesRead;
   const storeId = designer.storeId.value;
   if (!status || !theme || !storeId) {
     savedTemplates.value = undefined;
+    savedCustomSections.value = undefined;
     return;
   }
-  try {
-    const templates = await readSavedTemplates(`${storeId}/${theme}`, status, {
+  const scope = `${storeId}/${theme}`;
+  // A failed read keeps the files read before.
+  await Promise.all([
+    readSavedTemplates(scope, status, {
       keys: () => templateKeys(storeId, theme),
       read: async (key) => (await findTemplate({ storeId, theme, type: "themes", path: templatePath(theme, key) })).doc,
-    });
-    if (request === templatesRead) savedTemplates.value = templates;
-  } catch {
-    // A failed read keeps the templates read before.
-  }
+    })
+      .then((templates) => {
+        if (request === themeFilesRead) savedTemplates.value = templates;
+      })
+      .catch(() => undefined),
+    readSavedCustomSections(scope, status, {
+      keys: () => customSectionTypes(storeId, theme),
+      read: (type) => findCustomSection(storeId, theme, type),
+    })
+      .then((types) => {
+        if (request === themeFilesRead) savedCustomSections.value = types;
+      })
+      .catch(() => undefined),
+  ]);
 });
 const catalog = ref<CatalogContext>();
 watchEffect(() => {

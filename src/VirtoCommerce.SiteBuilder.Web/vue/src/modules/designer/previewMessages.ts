@@ -4,6 +4,7 @@ import { isRecord, isText, isTextList } from "./json";
 import { rulesOf, type TemplateRules } from "./rules";
 import { PAGE_TYPES, type PageType } from "./templates";
 import type { Brand, Palette } from "./themeLook";
+import type { CustomSectionType } from "./customSections";
 
 export const PREVIEW_PROTOCOL = 2;
 
@@ -50,6 +51,7 @@ export interface ThemeDraft {
   brand?: Brand;
   /** null: the theme has no palette, so the storefront's preset shows. */
   palette?: Palette | null;
+  customSections?: Record<string, CustomSectionType>;
 }
 
 export interface DraftMessage {
@@ -261,6 +263,7 @@ export interface DraftInput {
   groups?: Partial<Record<SectionGroup, Item[]>>;
   templates?: Record<string, PageDocument>;
   look?: { brand?: Brand; palette?: Palette | null };
+  customSections?: Record<string, CustomSectionType>;
   capabilities: string[];
 }
 
@@ -276,6 +279,7 @@ export function draftMessage(input: DraftInput): DraftMessage {
       ...(groups?.footer ? { footer: { content: groups.footer } } : {}),
       ...(input.look?.brand ? { brand: input.look.brand } : {}),
       ...(input.look?.palette !== undefined ? { palette: input.look.palette } : {}),
+      ...(input.customSections ? { customSections: input.customSections } : {}),
     },
   };
 }
