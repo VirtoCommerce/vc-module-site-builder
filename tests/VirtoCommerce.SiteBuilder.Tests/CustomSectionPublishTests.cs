@@ -230,6 +230,28 @@ public sealed class CustomSectionPublishTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstPublication_LeavesOutATypeThatIsNotJson()
+    {
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/custom-sections/custom-broken.json")] = "{ \"format\": 1,";
+
+        var snapshot = await SnapshotAsync("en-US");
+
+        Assert.Equal(["custom-hero"], ((JObject)snapshot["customSections"]!).Properties().Select(x => x.Name));
+    }
+
+    [Fact]
+    public async Task PublishAsync_TypeDraftThatIsNotJson_IsRefused()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme("default/custom-sections/custom-broken.json-draft")] = "{ \"format\": 1,";
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Contains("custom-sections/custom-broken.json: not valid JSON", exception.Errors);
+    }
+
+    [Fact]
     public async Task FirstPublication_ChecksTheTypesAgainstTheCurrentCatalog()
     {
         await SaveCatalogAsync(kit: Kit);

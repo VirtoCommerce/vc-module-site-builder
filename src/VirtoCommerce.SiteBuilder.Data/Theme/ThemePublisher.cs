@@ -245,11 +245,17 @@ public class ThemePublisher(
 
     /// <summary>
     /// A first publication puts the live files out as they are, and a failure keeps the store's storefront from any theme: a custom section
-    /// type that fails against the current catalog, or uses the kit when there is none, is left out, as a shared component is, and so are
-    /// the largest types until the rest fit the size the snapshot carries.
+    /// type that is not JSON, fails against the current catalog, or uses the kit when there is none, is left out, as a shared component is,
+    /// and so are the largest types until the rest fit the size the snapshot carries.
     /// </summary>
     protected virtual void LeaveOutFailingCustomSections(string storeId, ThemeSource source, JObject catalog)
     {
+        foreach (var file in source.InvalidFiles.Where(x => ThemeCustomSections.GetCustomSectionType(x) != null).ToList())
+        {
+            source.InvalidFiles.Remove(file);
+            logger.LogWarning("The first theme publication of store {StoreId} leaves out the custom section type of {File}: not valid JSON", storeId, file);
+        }
+
         foreach (var (type, content) in source.CustomSections.ToList())
         {
             var result = customSectionValidator.Validate(type, content, catalog);
