@@ -12,6 +12,7 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Moq;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.CustomerModule.Core.Model;
 using VirtoCommerce.CustomerModule.Core.Model.Search;
 using VirtoCommerce.MCP.Core;
@@ -22,6 +23,7 @@ using VirtoCommerce.Platform.Core;
 using VirtoCommerce.Platform.Core.Settings;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -42,7 +44,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     public void ThePrompts_OfBothRolesAndTheReviewer_AreListed_ForAReader()
     {
         Assert.Equal(
-            ["launch_landing_page", "rebrand_site", "review_site_change", "review_template_rules", "review_theme_release", "translate_site", "weekly_content_review"],
+            ["design_custom_section", "launch_landing_page", "rebrand_site", "review_site_change", "review_template_rules", "review_theme_release", "translate_site", "weekly_content_review"],
             VisiblePrompts(StoreAReader()));
         Assert.Empty(VisiblePrompts(McpTestUser.Create("none").WithPermissions(AssetRead)));
     }
@@ -73,8 +75,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     [Fact]
     public void TheResources_FollowTheirPermissions()
     {
-        Assert.Equal(["section_schema", "section_schemas", "template_rule_conditions"], VisibleResources(Reader()));
-        Assert.Equal(["section_schema", "section_schemas", "store_settings", "template_rule_conditions", "user_groups"],
+        Assert.Equal(["custom_section", "section_kit", "section_schema", "section_schemas", "template_rule_conditions"], VisibleResources(Reader()));
+        Assert.Equal(["custom_section", "section_kit", "section_schema", "section_schemas", "store_settings", "template_rule_conditions", "user_groups"],
             VisibleResources(McpTestUser.Create("settings").WithPermissions(Permissions.Read, SettingQuery)));
         Assert.Contains("organizations", VisibleResources(McpTestUser.Create("customers").WithPermissions(Permissions.Read, CustomerPermissions.Read)));
         Assert.Empty(VisibleResources(McpTestUser.Create("settings-only").WithPermissions(SettingQuery, CustomerPermissions.Read)));
@@ -118,6 +120,104 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         await _context.SeedCatalogAsync(StoreB, ["hero-banner"]);
 
         await Assert.ThrowsAnyAsync<McpException>(() => ReadAsync(StoreAReader(), "site-builder://stores/store-b/schemas"));
+    }
+
+    [Fact]
+    public async Task TheSchemas_ListTheThemesCustomSectionTypes_MarkedCustom()
+    {
+        await _context.SeedCatalogAsync(StoreA, ["hero-banner"]);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+
+        var schemas = await ReadAsync(Reader(), "site-builder://stores/store-a/schemas");
+        var schema = await ReadAsync(Reader(), "site-builder://stores/store-a/schemas/sections/custom-stats");
+
+        var sections = schemas.GetProperty("kinds").GetProperty("sections").EnumerateArray().ToList();
+        Assert.Equal(["custom-stats", "hero-banner"], sections.Select(x => x.GetProperty("key").GetString()));
+        Assert.Equal(("Stats", true), (sections[0].GetProperty("name").GetString(), sections[0].GetProperty("custom").GetBoolean()));
+        Assert.False(sections[1].TryGetProperty("custom", out _));
+        Assert.Equal("title", schema.GetProperty("schema").GetProperty("settings")[0].GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task ACustomSectionType_IsReadAsItsDraft_WithItsVersion()
+    {
+        await _context.SeedCatalogAsync(StoreA, ["hero-banner"]);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+
+        var type = await ReadAsync(Reader(), "site-builder://stores/store-a/custom-sections/custom-stats");
+        var missing = await ReadAsync(Reader(), "site-builder://stores/store-a/custom-sections/custom-gallery");
+
+        Assert.True(type.GetProperty("available").GetBoolean());
+        Assert.Equal((false, true), (type.GetProperty("published").GetBoolean(), type.GetProperty("has_draft").GetBoolean()));
+        Assert.Equal("<section><h2>{{ settings.title }}</h2></section>", type.GetProperty("template").GetString());
+        Assert.Equal("title", type.GetProperty("schema").GetProperty("settings")[0].GetProperty("id").GetString());
+        Assert.False(string.IsNullOrEmpty(type.GetProperty("version_token").GetString()));
+        Assert.False(missing.GetProperty("available").GetBoolean());
+    }
+
+    [Fact]
+    public async Task TheSectionKit_ListsTheStorefrontsKit_AndThePaletteTokens()
+    {
+        await _context.SeedThemeAsync(StoreA, StorefrontKit);
+
+        var kit = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
+
+        Assert.True(kit.GetProperty("available").GetBoolean());
+        Assert.Equal(["count-up", "inview"], kit.GetProperty("kit").GetProperty("behaviors").EnumerateObject().Select(x => x.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("link", kit.GetProperty("kit").GetProperty("tags").GetProperty("vc-button").GetProperty("attributes").GetProperty("to").GetProperty("type").GetString());
+        Assert.Contains(kit.GetProperty("palette").GetProperty("tokens").EnumerateArray(),
+            x => x.GetProperty("token").GetString() == "color_primary_500" && x.GetProperty("variable").GetString() == "--color-primary-500");
+    }
+
+    [Fact]
+    public async Task TheSectionKit_ListsWhatTheValidatorChecks()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        var rules = new CustomSectionValidator().GetRules();
+
+        var kit = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
+
+        Assert.Equal(rules.Elements, Strings(kit.GetProperty("template").GetProperty("elements")));
+        Assert.Equal(rules.Attributes, Strings(kit.GetProperty("template").GetProperty("attributes")));
+        Assert.Equal(rules.FieldTypes, Strings(kit.GetProperty("file").GetProperty("field_types")));
+        Assert.Equal(rules.AtRules, Strings(kit.GetProperty("css").GetProperty("at_rules")));
+        Assert.Contains("section", rules.Elements);
+        Assert.DoesNotContain("input", rules.Elements);
+        Assert.Equal(rules.MaxPartSize, kit.GetProperty("limits").GetProperty("template_bytes").GetInt32());
+        Assert.StartsWith("The storefront's catalog names no kit", kit.GetProperty("kit").GetProperty("note").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheSectionKit_WithoutACatalog_IsNotAvailable_WithTheReason()
+    {
+        var kit = await ReadAsync(Reader(), "site-builder://stores/store-b/section-kit");
+
+        Assert.False(kit.GetProperty("available").GetBoolean());
+        Assert.Contains("schema catalog", kit.GetProperty("reason").GetString(), StringComparison.Ordinal);
+        Assert.NotEmpty(Strings(kit.GetProperty("template").GetProperty("elements")));
+    }
+
+    [Fact]
+    public void TheSectionKitsExample_PassesEveryRule_WithTheStorefrontsKit()
+    {
+        var catalog = JObject.Parse($$"""{ "kit": {{StorefrontKit}} }""");
+
+        var result = new CustomSectionValidator().Validate(SectionKit.ExampleType, ThemeJson.Parse(SectionKit.ExampleFile), catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public async Task TheCustomSectionPrompt_ReadsTheKitFirst_AndPublishesTheThemeBeforeThePage()
+    {
+        var prompt = Prompts().Single(x => x.ProtocolPrompt.Name == "design_custom_section");
+
+        var text = await GetPromptAsync(prompt, new Dictionary<string, JsonElement> { ["store_id"] = JsonSerializer.SerializeToElement(StoreA) });
+
+        Assert.Contains("site-builder://stores/store-a/section-kit", text, StringComparison.Ordinal);
+        Assert.Contains("save_section_type with dryRun", text, StringComparison.Ordinal);
+        Assert.Contains("publish_theme first and then publish_page", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -179,6 +279,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal("Contoso", organizations.GetProperty("items")[0].GetProperty("name").GetString());
         Assert.DoesNotContain("organizations", VisibleResources(someOrganizations));
     }
+
+    private static List<string> Strings(JsonElement list) => list.EnumerateArray().Select(x => x.GetString()).ToList();
 
     private IEnumerable<McpServerPrompt> Prompts() =>
         _context.Harness.Services.GetServices<McpServerPrompt>().Where(x => x.IsInMcpScope(McpScopes.Admin));

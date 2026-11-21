@@ -194,6 +194,35 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APageThatPlacesACustomSectionTypeOnlyInDraft_IsWarned_ToPublishTheThemeFirst()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.True(readiness.Ready);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-unpublished");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task APageThatPlacesAPublishedCustomSectionType_IsNotWarned()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.DoesNotContain(readiness.Findings, x => x.Id == "section-type-unpublished");
+    }
+
+    [Fact]
     public async Task TheThemeOfAnotherStore_IsRefused()
     {
         var result = await _context.CallAsync(StoreAReader(), Tool, new { theme = true, store_id = StoreB });

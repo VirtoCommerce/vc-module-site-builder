@@ -55,6 +55,18 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheDryRun_ListsACustomSectionTypeDraft_AmongTheDrafts()
+    {
+        await SeedAsync();
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+
+        var preview = await DryRunAsync();
+
+        Assert.Equal(["default/custom-sections/custom-stats.json", "default/templates/product.bicycles.json"], preview.Drafts.Select(x => x.Path).Order(StringComparer.Ordinal));
+        Assert.Contains(preview.Changes, x => x.Field == "default/custom-sections/custom-stats.json" && x.To?.ToString() == "published");
+    }
+
+    [Fact]
     public async Task ACallWithTheVersions_WaitsForApproval_AndPublishesNothing()
     {
         await SeedAsync();
