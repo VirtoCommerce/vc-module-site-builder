@@ -886,7 +886,7 @@ public class DesignerSaveTests
         const string header = """{ "content": [ { "id": "h", "type": "notice", "text": { "markdown": "x", "html": "<p>x</p><svg onload=alert(1)>" } } ] }""";
 
         await TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
-                catalogs: new SchemaCatalogService(_themes))
+                catalogs: new SchemaCatalogService(_themes), themes: _themes)
             .RestoreAsync(new ContentRestoreCommand
             {
                 StoreId = "s1",
@@ -1286,7 +1286,7 @@ public class DesignerSaveTests
                 contentPermissionService: TestServices.Permissions(authorization),
                 requestValidator: RequestValidators.Content("s1"),
                 designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(),
-                    new SchemaCatalogService(_themes)),
+                    new SchemaCatalogService(_themes), _themes),
                 themeDraftService: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance),
                 groupedPageService: _pages,
                 sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization)),

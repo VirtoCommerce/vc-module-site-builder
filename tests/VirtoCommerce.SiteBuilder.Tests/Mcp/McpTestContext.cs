@@ -444,7 +444,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             var filePages = TestServices.FilePageDrafts(Options.Create(new GitContentOptions()), connection: null, policy: new FakeGitContentPolicy(enabled: false),
                 storeService: Stores, pathResolver: Blobs, blobs: Blobs, publishing: Blobs, events: Blobs);
             _designer = (TestServices.Designer(SavedVersions, filePageDrafts: filePages, themeDrafts: themes, pages: PageStore, themePublisher: CreateThemePublisher(),
-                catalogs: new SchemaCatalogService(ThemeStorage)), themes);
+                catalogs: new SchemaCatalogService(ThemeStorage), themes: ThemeStorage), themes);
         }
 
         return _designer;

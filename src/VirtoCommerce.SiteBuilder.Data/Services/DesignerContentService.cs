@@ -27,7 +27,9 @@ public class DesignerContentService(
     IFilePageDraftService filePageDraftService,
     IContentHistory contentHistory,
     ISiteBuilderContentGuard contentGuard,
-    ISchemaCatalogService schemaCatalogService) : IDesignerContentService
+    ISchemaCatalogService schemaCatalogService,
+    IThemeStorageFactory themeStorageFactory,
+    ICustomSectionValidator customSectionValidator) : IDesignerContentService
 {
     private const string NeverPublishedError = "This page has never been published, so there is no published version to go back to.";
     private const string PageName = "page";
@@ -50,8 +52,31 @@ public class DesignerContentService(
         }
 
         var catalog = await GetCatalogAsync(storeId, catalogHash, cancellationToken);
+        // each theme folder on its own: two themes may hold a file of the same name
+        var themes = new Dictionary<string, IDictionary<string, JToken>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, content) in files)
+        {
+            var themeName = SiteBuilderContentPaths.GetThemeName(path);
+            if (!themes.TryGetValue(themeName, out var contents))
+            {
+                themes[themeName] = contents = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            contents[SiteBuilderContentPaths.GetPathInTheme(path)] = content;
+        }
+
+        var customSections = new Dictionary<string, IDictionary<string, JToken>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (themeName, contents) in themes)
+        {
+            customSections[themeName] = catalog != null || contents.Keys.Any(IsCustomSectionFile)
+                ? await GetCustomSectionsAsync(storeId, themeName, contents, cancellationToken)
+                : new Dictionary<string, JToken>();
+        }
+
+        var catalogs = customSections.ToDictionary(x => x.Key, x => ThemeCustomSections.AddToCatalog(catalog, x.Value), StringComparer.OrdinalIgnoreCase);
         var errors = files
-            .SelectMany(x => contentGuard.GuardThemeFile(SiteBuilderContentPaths.GetPathInTheme(x.Key), x.Value, catalog).Errors)
+            .SelectMany(x => contentGuard.GuardThemeFile(SiteBuilderContentPaths.GetPathInTheme(x.Key), x.Value, catalogs[SiteBuilderContentPaths.GetThemeName(x.Key)]).Errors)
+            .Concat(themes.SelectMany(x => GetCustomSectionErrors(x.Value, customSections[x.Key])))
             .ToList();
         if (errors.Count > 0)
         {
@@ -64,7 +89,12 @@ public class DesignerContentService(
             throw new ThemeValidationException([.. mainSectionErrors]);
         }
 
-        var sectionErrors = await GetSectionErrorsAsync(storeId, files, catalog, cancellationToken);
+        var sectionErrors = new List<string>();
+        foreach (var theme in files.GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key), StringComparer.OrdinalIgnoreCase))
+        {
+            sectionErrors.AddRange(await GetSectionErrorsAsync(storeId, theme.ToDictionary(x => x.Key, x => x.Value), catalogs[theme.Key], cancellationToken));
+        }
+
         if (sectionErrors.Count > 0)
         {
             throw new ThemeValidationException([.. sectionErrors]);
@@ -75,13 +105,96 @@ public class DesignerContentService(
             return;
         }
 
-        // each theme folder on its own: two themes may hold a file of the same name
-        foreach (var theme in files.GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key), StringComparer.OrdinalIgnoreCase))
+        foreach (var (themeName, contents) in themes)
         {
-            var contents = theme.ToDictionary(x => SiteBuilderContentPaths.GetPathInTheme(x.Key), x => x.Value, StringComparer.OrdinalIgnoreCase);
+            // with the theme's other custom types, which a template may place
+            foreach (var (type, content) in customSections[themeName])
+            {
+                contents.TryAdd(ThemeStorage.GetCustomSectionFile(type), content);
+            }
+
             await themePublisher.ValidateFilesAsync(storeId, catalogHash, contents, cancellationToken);
         }
     }
+
+    /// <summary>The types the files save, and the size of the theme's types together once they are saved.</summary>
+    /// <param name="files">Contents by the path in the theme.</param>
+    /// <param name="customSections">The theme's types with those of the files over them.</param>
+    protected virtual IList<string> GetCustomSectionErrors(IDictionary<string, JToken> files, IDictionary<string, JToken> customSections)
+    {
+        var saved = files
+            .Select(x => (Type: ThemeCustomSections.GetSectionType(x.Key), Content: x.Value))
+            .Where(x => x.Type != null)
+            .ToList();
+        var errors = saved.SelectMany(x => customSectionValidator.Validate(x.Type, x.Content).Errors).ToList();
+        if (saved.Count > 0 && customSectionValidator.GetSizeError(customSections) is { } sizeError)
+        {
+            errors.Add(sizeError);
+        }
+
+        return errors;
+    }
+
+    /// <summary>What the custom section types the files save are saved with, such as text their template holds in one language only.</summary>
+    protected virtual IList<string> GetCustomSectionWarnings(IEnumerable<DesignerSaveFile> files) =>
+        files
+            .Select(x => (Type: ThemeCustomSections.GetSectionType(SiteBuilderContentPaths.GetPathInTheme(x.Path)), Content: ParseOrNull(x.Content)))
+            .Where(x => x.Type != null && x.Content != null)
+            .SelectMany(x => customSectionValidator.Validate(x.Type, x.Content).Warnings)
+            .ToList();
+
+    /// <summary>The theme's custom section types by type, each as its draft holds it, else as it is live, with those of <paramref name="files"/> over them.</summary>
+    /// <param name="files">Contents by the path in the theme.</param>
+    protected virtual async Task<IDictionary<string, JToken>> GetCustomSectionsAsync(string storeId, string themeName, IDictionary<string, JToken> files,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, JToken>();
+        var storage = themeStorageFactory.Open(storeId, themeName);
+        foreach (var type in await ThemeCustomSections.GetTypesAsync(storage))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var file = ThemeStorage.GetCustomSectionFile(type);
+            if (ParseOrNull(await storage.ReadAsync(storage.GetDraftPath(file)) ?? await storage.ReadAsync(file)) is { } content)
+            {
+                result[type] = content;
+            }
+        }
+
+        foreach (var (file, content) in files)
+        {
+            if (ThemeCustomSections.GetSectionType(file) is { } type)
+            {
+                result[type] = content;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The catalog with the custom section types of the store's theme added, as its drafts hold them with those of <paramref name="files"/> over
+    /// them: content is checked against the types the theme publishes, which the storefront's preview may not have seen yet. Null for no catalog.
+    /// </summary>
+    /// <param name="files">Contents by the path with the theme folder; those of another theme are left out.</param>
+    protected virtual async Task<JObject> GetThemeCatalogAsync(string storeId, JObject catalog, IEnumerable<KeyValuePair<string, string>> files,
+        CancellationToken cancellationToken)
+    {
+        if (catalog == null)
+        {
+            return null;
+        }
+
+        var themeName = await themeStorageFactory.GetThemeNameAsync(storeId);
+        var contents = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, content) in files.Where(x => string.Equals(SiteBuilderContentPaths.GetThemeName(x.Key), themeName, StringComparison.OrdinalIgnoreCase)))
+        {
+            contents[SiteBuilderContentPaths.GetPathInTheme(path)] = ParseOrNull(content);
+        }
+
+        return ThemeCustomSections.AddToCatalog(catalog, await GetCustomSectionsAsync(storeId, themeName, contents, cancellationToken));
+    }
+
+    private static bool IsCustomSectionFile(string file) => ThemeCustomSections.GetSectionType(file) != null;
 
     /// <summary>
     /// A template draft may not lose the main section the template shows: removed, or hidden where it was not hidden already.
@@ -153,16 +266,18 @@ public class DesignerContentService(
         return errors;
     }
 
-    private static JToken ParseOrNull(ThemeFileContent file)
+    private static JToken ParseOrNull(ThemeFileContent file) => ParseOrNull(file?.Content);
+
+    private static JToken ParseOrNull(string content)
     {
-        if (string.IsNullOrEmpty(file?.Content))
+        if (string.IsNullOrEmpty(content))
         {
             return null;
         }
 
         try
         {
-            return ThemeJson.Parse(file.Content);
+            return ThemeJson.Parse(content);
         }
         catch (JsonReaderException)
         {
@@ -190,6 +305,7 @@ public class DesignerContentService(
             token => SavePageAsync(command, user, token),
             cancellationToken);
         result.ThemeFiles = command.ThemeFiles.Select(x => CreateThemeFileVersion(command.StoreId, x)).ToList();
+        result.Warnings = GetCustomSectionWarnings(command.ThemeFiles);
 
         var record = CreateHistoryRecord(ModuleConstants.GitHistory.SavedSummary, command.SaveId, user);
         if (command.Group != null)
@@ -235,6 +351,11 @@ public class DesignerContentService(
         {
             var current = await themeDraftService.ReadAsync(command.StoreId, file.Path, cancellationToken);
             preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, file.Path, current.ETag, current.Content, file.Content));
+        }
+
+        foreach (var warning in GetCustomSectionWarnings(command.ThemeFiles))
+        {
+            preview.Warnings.Add(warning);
         }
 
         return preview;
@@ -444,7 +565,8 @@ public class DesignerContentService(
     /// <exception cref="InvalidDataException">Something in it can run script.</exception>
     protected virtual async Task GuardAsync(DesignerSaveCommand command, CancellationToken cancellationToken)
     {
-        var catalog = await GetCatalogAsync(command.StoreId, command.CatalogHash, cancellationToken);
+        var catalog = await GetThemeCatalogAsync(command.StoreId, await GetCatalogAsync(command.StoreId, command.CatalogHash, cancellationToken),
+            command.ThemeFiles.Select(x => KeyValuePair.Create(x.Path, x.Content)), cancellationToken);
         var errors = new List<string>();
 
         command.PageContent = contentGuard.GuardPageContent(command.PageContent, PageName, catalog, errors);
@@ -464,7 +586,8 @@ public class DesignerContentService(
     /// <summary>A version restored is checked against the store's current catalog, as it is saved again.</summary>
     protected virtual async Task GuardAsync(ContentRestoreCommand command, CancellationToken cancellationToken)
     {
-        var catalog = await ReadCatalogAsync(command.StoreId, hash: null, cancellationToken);
+        var catalog = await GetThemeCatalogAsync(command.StoreId, await ReadCatalogAsync(command.StoreId, hash: null, cancellationToken),
+            command.Contents.Where(x => x.Key.Type == HistoryItemType.Theme).Select(x => KeyValuePair.Create(x.Key.Key, x.Value)), cancellationToken);
         var errors = new List<string>();
 
         foreach (var (item, content) in command.Contents.ToList())

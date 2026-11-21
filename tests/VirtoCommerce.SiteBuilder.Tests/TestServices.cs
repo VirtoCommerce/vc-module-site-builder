@@ -56,7 +56,8 @@ internal static class TestServices
         Fakes.FakeGroupedPageService pages = null,
         IEventPublisher events = null,
         IThemePublisher themePublisher = null,
-        ISchemaCatalogService catalogs = null)
+        ISchemaCatalogService catalogs = null,
+        IThemeStorageFactory themes = null)
     {
         var contentGuard = ContentGuard;
         var contentWriter = pages == null
@@ -64,7 +65,7 @@ internal static class TestServices
             : new GroupedPageContentWriter(pages, new Fakes.FakeSiteBuilderPageService(pages), events ?? new Fakes.NoopEventPublisher(), contentGuard);
 
         return new DesignerContentService(themeDrafts, themePublisher, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
-            pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs());
+            pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs(), themes, new CustomSectionValidator());
     }
 
     public static DesignerOperationService DesignerOperations(
