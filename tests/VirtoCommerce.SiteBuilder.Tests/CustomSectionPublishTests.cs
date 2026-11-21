@@ -39,6 +39,16 @@ public sealed class CustomSectionPublishTests : IDisposable
 
     private const string Kit = """, "kit": { "tags": { "vc-button": { "attributes": { "label": { "type": "string" } } } }, "behaviors": {} }""";
 
+    private const string CtaFile = """
+        {
+          "format": 1,
+          "name": "Call to action",
+          "schema": { "settings": [ { "id": "label", "type": "string", "translatable": true } ] },
+          "template": "<section><vc-button label=\"{{ settings.label }}\"></vc-button></section>",
+          "css": ""
+        }
+        """;
+
     private readonly FakeBlobStorage _storage = new();
     private readonly TestPlatformMemoryCache _cache = new();
     private readonly InProcessDistributedLock _lock = new();
@@ -178,6 +188,30 @@ public sealed class CustomSectionPublishTests : IDisposable
 
         Assert.Equal("<p>Sale</p><img src=\"x\">", JObject.Parse(_storage.Files[Theme(Product)])["content"]![0]!.Value<string>("body"));
         Assert.Equal("<p>Sale</p><img src=\"x\">", (await SnapshotAsync("en-US"))["templates"]!["product"]!["content"]![0]!.Value<string>("body"));
+    }
+
+    [Fact]
+    public async Task FirstPublication_WithoutACatalog_LeavesOutATypeThatUsesTheKit()
+    {
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/custom-sections/custom-cta.json")] = CtaFile;
+
+        var snapshot = await SnapshotAsync("en-US");
+
+        Assert.Equal(["custom-hero"], ((JObject)snapshot["customSections"]!).Properties().Select(x => x.Name));
+    }
+
+    [Fact]
+    public async Task FirstPublication_ChecksTheTypesAgainstTheCurrentCatalog()
+    {
+        await SaveCatalogAsync(kit: Kit);
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/custom-sections/custom-cta.json")] = CtaFile;
+        _storage.Files[Theme("default/custom-sections/custom-badge.json")] = CtaFile.Replace("vc-button", "vc-badge", StringComparison.Ordinal);
+
+        var snapshot = await SnapshotAsync("en-US");
+
+        Assert.Equal(["custom-cta", "custom-hero"], ((JObject)snapshot["customSections"]!).Properties().Select(x => x.Name).Order(StringComparer.Ordinal));
     }
 
     [Fact]

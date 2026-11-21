@@ -86,7 +86,7 @@ public class ThemePublisher(
         var source = await GetThemeSourceAsync(storage, includeDrafts: true);
         var result = AbstractTypeFactory<ThemePublicationPreview>.TryCreateInstance();
         result.Drafts = GetDraftVersions(storeId, storage, source);
-        var errors = ValidateThemeSource(source, catalog, includeDrafts: true);
+        var errors = ValidateThemeSource(source, catalog, includeDrafts: true).Concat(themeValidator.ValidateCustomSections(source, catalog)).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -167,7 +167,12 @@ public class ThemePublisher(
         // before the drafts are sanitized: a version is of the draft as it is stored
         CheckDraftVersions(expectedVersions, GetDraftVersions(storeId, storage, source));
         var validationCatalog = catalogHash == null ? null : catalog;
-        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts);
+        if (catalogHash == null)
+        {
+            LeaveOutFailingCustomSections(storeId, source, catalog);
+        }
+
+        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts).Concat(themeValidator.ValidateCustomSections(source, catalog)).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -224,14 +229,33 @@ public class ThemePublisher(
     protected virtual IList<string> ValidateThemeSource(ThemeSource source, JObject catalog, bool includeDrafts)
     {
         var errors = GuardThemeSource(source, ThemeCustomSections.AddToCatalog(catalog, source.CustomSections))
-            .Concat(themeValidator.Validate(source, catalog))
-            .Concat(themeValidator.ValidateCustomSections(source, catalog));
+            .Concat(themeValidator.Validate(source, catalog));
 
         // A palette is refused when it is published: a live palette that fails stays live whatever else is published, and a first
         // publication puts the live files out as they are.
         return (includeDrafts && HasPaletteDraft(source) ? errors.Concat(ValidatePalette(source, catalog)) : errors)
             .Concat(includeDrafts ? ValidateSectionColors(source) : [])
             .ToList();
+    }
+
+    /// <summary>
+    /// A first publication puts the live files out as they are, and a failure keeps the store's storefront from any theme: a custom section
+    /// type that fails against the current catalog, or uses the kit when there is none, is left out, as a shared component is.
+    /// </summary>
+    protected virtual void LeaveOutFailingCustomSections(string storeId, ThemeSource source, JObject catalog)
+    {
+        foreach (var (type, content) in source.CustomSections.ToList())
+        {
+            var single = AbstractTypeFactory<ThemeSource>.TryCreateInstance();
+            single.CustomSections[type] = content;
+            var errors = themeValidator.ValidateCustomSections(single, catalog);
+            if (errors.Count > 0)
+            {
+                source.CustomSections.Remove(type);
+                logger.LogWarning("The first theme publication of store {StoreId} leaves out the custom section type {Type}: {Errors}", storeId, type,
+                    string.Join("; ", errors));
+            }
+        }
     }
 
     /// <summary>
