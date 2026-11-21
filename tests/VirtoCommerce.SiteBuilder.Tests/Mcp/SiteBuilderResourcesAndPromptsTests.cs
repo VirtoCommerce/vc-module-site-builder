@@ -224,6 +224,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
             section.GetProperty("storefront_design").GetProperty("tokens").GetProperty("--vc-radius").GetProperty("description").GetString());
         Assert.Contains(Strings(section.GetProperty("design_rules")), x => x.Contains("@container sb-section", StringComparison.Ordinal));
         Assert.Contains(Strings(section.GetProperty("design_rules")), x => x.Contains("spacing is rem", StringComparison.Ordinal));
+        Assert.Contains(Strings(section.GetProperty("design_rules")), x => x.Contains(":dir(rtl)", StringComparison.Ordinal));
         Assert.StartsWith("Not available:", withoutGuide.GetProperty("storefront_guide").GetString(), StringComparison.Ordinal);
         Assert.StartsWith("Not available:", withoutGuide.GetProperty("storefront_design").GetString(), StringComparison.Ordinal);
     }
@@ -248,6 +249,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Contains("@container sb-section (min-width:", css, StringComparison.Ordinal);
         Assert.DoesNotContain("@media (min-width", css, StringComparison.Ordinal);
         Assert.Contains("@media (prefers-reduced-motion: reduce)", css, StringComparison.Ordinal);
+        Assert.DoesNotMatch("left|right", css);
         Assert.NotEmpty(tokens);
         Assert.All(tokens, x => Assert.Contains(x.Name, new[] { "--vc-radius", "--vc-base-font-family", "--vc-heading-font-family" }));
         Assert.All(tokens, x => Assert.True(x.HasFallback, x.Name));
