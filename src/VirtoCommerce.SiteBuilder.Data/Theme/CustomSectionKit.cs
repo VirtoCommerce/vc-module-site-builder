@@ -301,7 +301,7 @@ public static class CustomSectionKit
         ?? new Dictionary<string, KitField>(StringComparer.Ordinal);
 
     private static KitField ReadField(JObject field) => new(
-        ThemeContentReader.GetString(field, "type"),
+        ThemeJson.GetString(field, "type"),
         (field["options"] as JArray)?
             .Select(GetOptionValue)
             .Where(x => x != null)
@@ -309,7 +309,7 @@ public static class CustomSectionKit
             .ToList(),
         GetNumber(field, "min"),
         GetNumber(field, "max"),
-        ThemeContentReader.GetString(field, "optionsFrom"));
+        ThemeJson.GetString(field, "optionsFrom"));
 
     private static decimal? GetNumber(JObject item, string name) =>
         item[name] is JValue { Type: JTokenType.Integer or JTokenType.Float } value ? value.Value<decimal>() : null;

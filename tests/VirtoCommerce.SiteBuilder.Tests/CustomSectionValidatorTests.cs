@@ -382,8 +382,6 @@ public class CustomSectionValidatorTests
         "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion")]
     [InlineData("<section></section>", """.a { animation-name: custom-hero-fade; } @media (prefers-reduced-motion: no-change) { .a { animation: none; } }""",
         "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion")]
-    [InlineData("""<section><vc-button to="/catalog"></vc-button></section>""", "",
-        "<vc-button> at line 1 has no label, so a screen reader names the button by its icon or not at all")]
     public void Validate_TypeHarderToUseWithoutTheScreen_IsSavedWithAWarning(string template, string css, string warning)
     {
         var result = _validator.Validate(Type, Section(template, css), Catalog);
@@ -617,7 +615,7 @@ public class CustomSectionValidatorTests
     [Fact]
     public void Validate_FaultOfTheCheck_RefusesTheTypeInsteadOfFailing()
     {
-        var result = new FailingValidator().Validate(Type, Section("<section></section>", ".a { color: var(--color-primary-500); }"), Catalog);
+        var result = TestServices.CustomSectionValidator(Assets, cssValidator: new FailingCss()).Validate(Type, Section("<section></section>", ".a { color: var(--color-primary-500); }"), Catalog);
 
         Assert.Equal([$"the type could not be checked, so it is not saved: the platform's log has the cause"], result.Errors);
     }
@@ -814,11 +812,8 @@ public class CustomSectionValidatorTests
         return file;
     }
 
-    private sealed class FailingValidator() : CustomSectionValidator(new CustomSectionTemplateValidator(Urls), new CustomSectionCssValidator(Urls),
-        Options.Create(new ThemeSnapshotOptions()), NullLogger<CustomSectionValidator>.Instance)
+    private sealed class FailingCss() : CustomSectionCssValidator(TestServices.CustomSectionUrlPolicy(Assets))
     {
-        private static readonly CustomSectionUrlPolicy Urls = TestServices.CustomSectionUrlPolicy(Assets);
-
-        protected override void ValidateCss(CustomSectionCheck check, string css) => throw new NullReferenceException();
+        public override void Validate(CustomSectionCheck check, string css) => throw new NullReferenceException();
     }
 }

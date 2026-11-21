@@ -21,4 +21,7 @@ public static class ThemeJson
 
     public static JObject ParseObject(string json) =>
         Parse(json) as JObject ?? throw new JsonReaderException("The JSON document is not an object.");
+
+    /// <returns><c>null</c> for no value, or one that is not a text.</returns>
+    public static string GetString(JObject item, string name) => item[name] is JValue { Type: JTokenType.String } value ? (string)value : null;
 }

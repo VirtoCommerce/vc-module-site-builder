@@ -183,7 +183,7 @@ public class SiteBuilderResources(
             {
                 StoreId = store_id,
                 Available = false,
-                Reason = $"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType(customSectionValidator.GetRules())}.",
+                Reason = $"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType()}.",
             });
         }
 

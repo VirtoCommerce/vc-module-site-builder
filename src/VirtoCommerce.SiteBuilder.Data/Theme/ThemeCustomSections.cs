@@ -16,8 +16,8 @@ public static class ThemeCustomSections
     private static readonly string[] CatalogSchemaKeys = ["settings", "targetTemplates", "limit", "icon"];
 
     /// <summary>The rule a type's name follows, for a text that tells it.</summary>
-    public static string DescribeType(CustomSectionRules rules) =>
-        string.Create(CultureInfo.InvariantCulture, $"matches {rules.TypePattern} and has at most {rules.MaxTypeLength} characters");
+    public static string DescribeType() =>
+        string.Create(CultureInfo.InvariantCulture, $"matches {ThemeStorage.CustomSectionTypePattern} and has at most {ThemeStorage.CustomSectionTypeMaxLength} characters");
 
     /// <summary>Each error after the file it is of, as a theme's errors are written.</summary>
     public static IEnumerable<string> GetErrors(IEnumerable<CustomSectionValidationResult> results) =>

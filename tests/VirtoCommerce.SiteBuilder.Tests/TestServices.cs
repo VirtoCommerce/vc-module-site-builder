@@ -35,11 +35,12 @@ internal static class TestServices
     public static ContentPermissionService Permissions(IAuthorizationService authorizationService) => new(authorizationService);
 
     /// <param name="assetsUrl">The asset library's public address; <c>null</c> for a library that gives none.</param>
-    public static CustomSectionValidator CustomSectionValidator(string assetsUrl = AssetsUrl, ThemeSnapshotOptions options = null)
+    public static CustomSectionValidator CustomSectionValidator(string assetsUrl = AssetsUrl, ThemeSnapshotOptions options = null,
+        CustomSectionCssValidator cssValidator = null)
     {
         var urlPolicy = CustomSectionUrlPolicy(assetsUrl);
 
-        return new CustomSectionValidator(new CustomSectionTemplateValidator(urlPolicy), new CustomSectionCssValidator(urlPolicy),
+        return new CustomSectionValidator(new CustomSectionTemplateValidator(urlPolicy), cssValidator ?? new CustomSectionCssValidator(urlPolicy),
             Options.Create(options ?? new ThemeSnapshotOptions()), NullLogger<CustomSectionValidator>.Instance);
     }
 

@@ -3,6 +3,8 @@ using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom.Events;
 using AngleSharp.Html.Parser;
+using VirtoCommerce.SiteBuilder.Data.Validation;
+using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionFields;
 using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionText;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
@@ -19,20 +21,55 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     // no doctype, as the storefront's sanitizer parses: a document without one is read in quirks mode, where a table may stay in a p
     private const string DocumentStart = "<html><head></head><body>";
 
-    private const string SettingsKey = "settings";
-    private const string StringFieldType = "string";
-    private const string TextFieldType = "text";
-    private const string ImagesFieldType = "images";
-    private const string SelectFieldType = "select";
-    private const string ListFieldType = CustomSectionSetting.ListType;
-    private const string ObjectFieldType = "object";
-
     private const string EachAttribute = "data-each";
     private const string IfAttribute = "data-if";
     private const string HtmlAttribute = "data-html";
     private const string AltAttribute = "alt";
-    private const string LabelAttribute = "label";
     private const string DataPrefix = "data-";
+
+    private static readonly HashSet<string> FormControls = new(StringComparer.Ordinal)
+    {
+        "form", "input", "select", "textarea", "button", "option", "optgroup", "datalist", "fieldset", "legend", "label", "output",
+    };
+
+    /// <summary>The root counts as 1.</summary>
+    public const int MaxDepth = 32;
+
+    /// <summary>Besides the kit tags the catalog names.</summary>
+    public static IReadOnlySet<string> Elements { get; } =
+        SiteBuilderHtmlSanitizer.AllowedTags.Where(x => !FormControls.Contains(x)).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>Of any element, besides aria-*, the binding attributes and the catalog's behaviors.</summary>
+    public static IReadOnlySet<string> Attributes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "class", "role", "alt", "title", "lang", "dir", "hidden", "href", "target", "rel", "src", "srcset", "sizes", "loading", "decoding",
+        "width", "height", "datetime", "colspan", "rowspan", "scope",
+    };
+
+    /// <summary>By element: the attributes only it takes.</summary>
+    public static IReadOnlyDictionary<string, IReadOnlySet<string>> ElementAttributes { get; } = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
+    {
+        ["video"] = new HashSet<string>(StringComparer.Ordinal) { "autoplay", "muted", "loop", "playsinline", "controls", "preload", "poster" },
+        ["source"] = new HashSet<string>(StringComparer.Ordinal) { "type", "media" },
+        ["details"] = new HashSet<string>(StringComparer.Ordinal) { "open" },
+        ["blockquote"] = new HashSet<string>(StringComparer.Ordinal) { "cite" },
+        ["q"] = new HashSet<string>(StringComparer.Ordinal) { "cite" },
+    };
+
+    public static IReadOnlyList<string> BindingAttributes { get; } = [EachAttribute, IfAttribute, HtmlAttribute];
+
+    /// <summary>Read by people, so a literal value is untranslated text.</summary>
+    public static IReadOnlySet<string> TextAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "alt", "aria-label", "label", "title" };
+
+    /// <summary>Besides a path starting with '/'.</summary>
+    public static IReadOnlyList<string> LinkSchemes { get; } = ["https:", "mailto:", "tel:"];
+
+    public static IReadOnlyList<string> LinkTargets { get; } = ["_self", "_blank"];
+
+    public static IReadOnlyList<string> RefusedRels { get; } = ["opener"];
+
+    /// <summary>What follows the type in a class of the type's own; the type itself is one too.</summary>
+    public static IReadOnlyList<string> ClassSeparators { get; } = ["-", "__"];
 
     private static readonly HashSet<string> VoidElements = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -49,7 +86,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
     public virtual void Validate(CustomSectionCheck check, string template)
     {
-        var depthError = string.Create(CultureInfo.InvariantCulture, $"the template nests elements deeper than {check.Rules.MaxTemplateDepth}");
+        var depthError = string.Create(CultureInfo.InvariantCulture, $"the template nests elements deeper than {MaxDepth}");
         if (GetScannedDepth(template) > MaxScannedTemplateDepth)
         {
             check.AddError(depthError);
@@ -61,15 +98,15 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         parser.Error += (_, error) => parseErrors.Add((HtmlErrorEvent)error);
 
         using var document = parser.ParseDocument(DocumentStart + template);
-        check.Template = template;
-        // the missing doctype is the document's, not the template's
+        var context = new TemplateContext(template);
+        // skip the wrapper's own errors, such as its missing doctype
         var templateErrors = parseErrors.Where(x => x.Position.Position > DocumentStart.Length).ToList();
         if (templateErrors.Count > 0)
         {
             // the parser has mended what it reports, so the elements are not what was written
             foreach (var error in templateErrors.Take(MaxParseErrors))
             {
-                var (line, column) = GetLocation(check, GetIndex(check, error.Position.Position));
+                var (line, column) = GetLocation(context, GetIndex(context, error.Position.Position));
                 check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template does not read as HTML at line {line}, column {column}: {error.Message}"));
             }
 
@@ -97,21 +134,21 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         // before the recursive walk, so a deep template cannot exhaust the stack
-        if (GetDepth(roots[0]) > check.Rules.MaxTemplateDepth)
+        if (GetDepth(roots[0]) > MaxDepth)
         {
             check.AddError(depthError);
             return;
         }
 
-        ValidateElement(check, roots[0], new TemplateScope(Each: null, IsRoot: true));
+        ValidateElement(check, roots[0], new TemplateScope(Each: null, IsRoot: true, context));
         ValidateHeadings(check, roots[0]);
-        AddTextWarning(check);
+        AddTextWarning(check, context);
     }
 
     protected virtual void ValidateElement(CustomSectionCheck check, IElement element, TemplateScope scope)
     {
         var tag = element.LocalName;
-        var where = string.Create(CultureInfo.InvariantCulture, $"<{tag}> at line {GetLine(check, element)}");
+        var where = string.Create(CultureInfo.InvariantCulture, $"<{tag}> at line {GetLine(scope.Context, element)}");
         IReadOnlyDictionary<string, KitField> kitAttributes = null;
         if (tag.StartsWith(CustomSectionKit.TagPrefix, StringComparison.Ordinal))
         {
@@ -123,13 +160,13 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
             kitAttributes = check.Kit.Tags[tag];
         }
-        else if (!check.Rules.Elements.Contains(tag))
+        else if (!Elements.Contains(tag))
         {
             check.AddError($"{where} is not an element a custom section can hold");
             return;
         }
 
-        ValidateAccessibility(check, element, kitAttributes, where);
+        ValidateAccessibility(check, element, where);
 
         var each = element.GetAttribute(EachAttribute) is { } eachPath ? ValidateEach(check, eachPath, where, scope) : scope.Each;
         var elementScope = scope with { Each = each };
@@ -138,7 +175,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             ValidateAttribute(check, element, attribute.Name, attribute.Value, kitAttributes, where, elementScope);
         }
 
-        var childScope = new TemplateScope(each, IsRoot: false);
+        var childScope = scope with { Each = each, IsRoot = false };
         var holdsNothing = kitAttributes != null || element.HasAttribute(HtmlAttribute);
         var hasContent = false;
         foreach (var node in element.ChildNodes)
@@ -156,7 +193,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
                 hasContent = true;
                 if (!holdsNothing)
                 {
-                    AddText(check, ValidateBindings(check, text.Data, where, childScope));
+                    AddText(childScope.Context, ValidateBindings(check, text.Data, where, childScope));
                 }
             }
         }
@@ -183,7 +220,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     }
 
     /// <summary>Elements a screen reader cannot name.</summary>
-    protected virtual void ValidateAccessibility(CustomSectionCheck check, IElement element, IReadOnlyDictionary<string, KitField> kitAttributes, string where)
+    protected virtual void ValidateAccessibility(CustomSectionCheck check, IElement element, string where)
     {
         switch (element.LocalName)
         {
@@ -195,9 +232,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
                 break;
             case "a" when !HasName(element):
                 check.AddError($"{where} is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt");
-                break;
-            case "vc-button" when kitAttributes?.ContainsKey(LabelAttribute) == true && string.IsNullOrWhiteSpace(element.GetAttribute(LabelAttribute)):
-                check.AddWarning($"{where} has no label, so a screen reader names the button by its icon or not at all");
                 break;
         }
     }
@@ -220,7 +254,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         // an older catalog may hold a kit its upload would refuse now
-        return GetUnknownField(check, attributes) is { } unknown
+        return GetUnknownField(attributes) is { } unknown
             ? $"is a kit tag the catalog declares with the attribute '{unknown.Key}' of a type the server does not know, '{unknown.Value.Type}'"
             : null;
     }
@@ -241,9 +275,17 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
                 return;
         }
 
+        // before the kit's names: a catalog may name a behavior or an attribute as the storefront's own
+        if (IsReservedDataAttribute(name))
+        {
+            check.AddError($"{where} has an attribute a custom section cannot use, '{name}': the storefront writes " +
+                $"{JoinAnd(CustomSectionKit.ReservedBehaviorPrefixes.Select(x => DataPrefix + x))} attributes itself");
+            return;
+        }
+
         if (kitAttributes != null)
         {
-            if (IsDeniedKitAttribute(check, name))
+            if (CustomSectionKit.IsDeniedAttribute(name))
             {
                 check.AddError($"{where} has '{name}', which no kit tag takes, whatever the catalog declares");
             }
@@ -267,7 +309,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         {
             ValidateLink(check, name, value, where, scope);
         }
-        else if (check.Rules.ElementAttributes.TryGetValue(element.LocalName, out var own) && own.Contains(name))
+        else if (ElementAttributes.TryGetValue(element.LocalName, out var own) && own.Contains(name))
         {
             switch (name)
             {
@@ -298,12 +340,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         {
             ValidateAlt(check, value, where, scope);
         }
-        else if (check.Rules.Attributes.Contains(name) || name.StartsWith("aria-", StringComparison.Ordinal))
+        else if (Attributes.Contains(name) || name.StartsWith("aria-", StringComparison.Ordinal))
         {
             var text = ValidateBindings(check, value, where, scope);
-            if (check.Rules.TextAttributes.Contains(name))
+            if (TextAttributes.Contains(name))
             {
-                AddText(check, text);
+                AddText(scope.Context, text);
             }
         }
         else
@@ -318,8 +360,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         "style" => ": the section's CSS styles it",
         _ when name.StartsWith("on", StringComparison.Ordinal) => ": it runs script",
         _ when !name.StartsWith(DataPrefix, StringComparison.Ordinal) => string.Empty,
-        _ when check.Rules.ReservedDataPrefixes.Any(x => name.StartsWith(x, StringComparison.Ordinal)) =>
-            $": the storefront writes {JoinAnd(check.Rules.ReservedDataPrefixes)} attributes itself",
         _ when !check.Kit.HasCatalog => ": it is no binding, and no schema catalog names the storefront's behaviors",
         _ when check.Kit.Behaviors == null => ": it is no binding, and the storefront offers no behaviors, as its catalog has no kit",
         _ => ": it is no binding and no behavior the storefront offers",
@@ -351,7 +391,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return CustomSectionSetting.UnknownList;
         }
 
-        if (setting.Type != ListFieldType)
+        if (setting.Type != ListType)
         {
             check.AddError($"{where} repeats for '{id}', a {setting.Type} and not a list");
             return CustomSectionSetting.UnknownList;
@@ -375,7 +415,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         var path = value.Trim();
-        if (ResolvePath(check, path, where, scope) is { } setting && setting.Type != TextFieldType)
+        if (ResolvePath(check, path, where, scope) is { } setting && setting.Type != TextType)
         {
             check.AddError($"{where} has data-html=\"{Quote(path)}\", a {setting.Type}; it names a text setting, whose value is HTML");
         }
@@ -385,7 +425,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     protected virtual void ValidateKitValue(CustomSectionCheck check, string owner, KitField field, string name, string value, string where,
         TemplateScope scope)
     {
-        if (field.Type == CustomSectionKit.LinkType || check.Rules.KitLinkAttributes.Contains(name, StringComparer.OrdinalIgnoreCase))
+        if (field.Type == CustomSectionKit.LinkType || CustomSectionKit.LinkAttributes.Contains(name.ToLowerInvariant()))
         {
             ValidateLink(check, name, value, where, scope);
             return;
@@ -394,9 +434,9 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         if (field.Type is not (CustomSectionKit.NumberType or CustomSectionKit.BooleanType or CustomSectionKit.SelectType or CustomSectionKit.DateType))
         {
             var text = ValidateBindings(check, value, where, scope);
-            if (check.Rules.TextAttributes.Contains(name))
+            if (TextAttributes.Contains(name))
             {
-                AddText(check, text);
+                AddText(scope.Context, text);
             }
 
             return;
@@ -445,7 +485,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         var attribute = DataPrefix + behavior;
         var kitBehavior = check.Kit.Behaviors[behavior];
         var fields = kitBehavior.Value == null ? kitBehavior.Options : kitBehavior.Options.Append(KeyValuePair.Create("value", kitBehavior.Value));
-        if (GetUnknownField(check, fields) is { } unknown)
+        if (GetUnknownField(fields) is { } unknown)
         {
             check.AddError($"{where} has {name}, and the catalog declares {attribute} with '{unknown.Key}' of a type the server does not know, '{unknown.Value.Type}'");
             return;
@@ -527,26 +567,17 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     /// </summary>
     protected virtual void ValidateClass(CustomSectionCheck check, string value, string where, TemplateScope scope)
     {
-        var literal = BindingPattern.Replace(value, match =>
+        var literal = ValidateBindings(check, value, where, scope, (setting, path) =>
         {
-            var path = match.Groups[1].Value.Trim();
-            if (ResolveValue(check, path, where, scope) is { } setting &&
-                (setting.Type != SelectFieldType || setting.Options == null || !setting.Options.All(x => IsOwnClasses(check, x))))
+            if (setting.Type != SelectType || setting.Options == null || !setting.Options.All(x => IsOwnClasses(check, x)))
             {
                 check.AddError($"{where} binds class to '{path}', which is not a select whose options are the type's own classes");
             }
-
-            return " ";
         });
-
-        if (HasBinding(literal) || literal.Contains("}}", StringComparison.Ordinal))
-        {
-            check.AddError($"{where} has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}");
-        }
 
         foreach (var name in literal.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).Where(x => !IsOwnClasses(check, x)).Distinct(StringComparer.Ordinal))
         {
-            var own = JoinOr(check.Rules.ClassSeparators.Select(x => $"'{check.Type}{x}'"));
+            var own = JoinOr(ClassSeparators.Select(x => $"'{check.Type}{x}'"));
             check.AddError($"{where} has the class '{Quote(name)}', which is not the type's own: '{check.Type}', or a name starting with {own}");
         }
     }
@@ -554,23 +585,15 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     /// <summary>An image's alt is read in the page's language, so it binds a string setting; a literal alt is saved with the text warning.</summary>
     protected virtual void ValidateAlt(CustomSectionCheck check, string value, string where, TemplateScope scope)
     {
-        var literal = BindingPattern.Replace(value, match =>
+        var literal = ValidateBindings(check, value, where, scope, (setting, path) =>
         {
-            var path = match.Groups[1].Value.Trim();
-            if (ResolveValue(check, path, where, scope) is { } setting && setting.Type != StringFieldType)
+            if (setting.Type != StringType)
             {
                 check.AddError($"{where} has alt bound to '{path}', a {setting.Type} and not a string setting");
             }
-
-            return " ";
         });
 
-        if (HasBinding(literal) || literal.Contains("}}", StringComparison.Ordinal))
-        {
-            check.AddError($"{where} has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}");
-        }
-
-        AddText(check, literal);
+        AddText(scope.Context, literal);
     }
 
     /// <summary>target and rel are written as they are, with no binding; rel never holds opener.</summary>
@@ -580,11 +603,11 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         {
             check.AddError($"{where} has {name}=\"{Quote(value)}\", which is written as it is, without a binding");
         }
-        else if (name == "target" && !check.Rules.LinkTargets.Contains(value, StringComparer.OrdinalIgnoreCase))
+        else if (name == "target" && !LinkTargets.Contains(value, StringComparer.OrdinalIgnoreCase))
         {
-            check.AddError($"{where} has target=\"{Quote(value)}\", which is not {JoinOr(check.Rules.LinkTargets)}");
+            check.AddError($"{where} has target=\"{Quote(value)}\", which is not {JoinOr(LinkTargets)}");
         }
-        else if (name == "rel" && value.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(x => check.Rules.RefusedRels.Contains(x, StringComparer.OrdinalIgnoreCase)) is { } refused)
+        else if (name == "rel" && value.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(x => RefusedRels.Contains(x, StringComparer.OrdinalIgnoreCase)) is { } refused)
         {
             check.AddError($"{where} has rel=\"{Quote(value)}\" with {refused.ToLowerInvariant()}, which gives the page it opens a hold on the storefront's window");
         }
@@ -603,9 +626,9 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         {
             check.AddError($"{where} has {name}=\"{Quote(value)}\", which is a link or one binding of a link setting");
         }
-        else if (!urlPolicy.IsLink(value, check.Rules.LinkSchemes))
+        else if (!urlPolicy.IsLink(value, LinkSchemes))
         {
-            check.AddError($"{where} has {name}=\"{Quote(value)}\", which is not a path starting with '/', or an {JoinOr(check.Rules.LinkSchemes)} URL");
+            check.AddError($"{where} has {name}=\"{Quote(value)}\", which is not a path starting with '/', or an {JoinOr(LinkSchemes)} URL");
         }
     }
 
@@ -613,7 +636,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     {
         if (GetSingleBinding(value) is { } path)
         {
-            if (ResolveValue(check, path, where, scope) is { } setting && setting.Type != ImagesFieldType)
+            if (ResolveValue(check, path, where, scope) is { } setting && setting.Type != ImagesType)
             {
                 check.AddError($"{where} has {name} bound to '{path}', a {setting.Type} and not an images setting");
             }
@@ -627,7 +650,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return;
         }
 
-        // a srcset is a list of URLs, each with its width or density after it
         var urls = name == "srcset"
             ? value.Split(',').Select(x => x.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty)
             : [value];
@@ -638,11 +660,18 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     }
 
     /// <summary>Checks the bindings in a text or an attribute value; returns the text without them.</summary>
-    protected virtual string ValidateBindings(CustomSectionCheck check, string text, string where, TemplateScope scope)
+    /// <param name="checkSetting">Checks the setting a binding names, with its path, when the setting is known.</param>
+    protected virtual string ValidateBindings(CustomSectionCheck check, string text, string where, TemplateScope scope,
+        Action<CustomSectionSetting, string> checkSetting = null)
     {
         var literal = BindingPattern.Replace(text, match =>
         {
-            ResolveValue(check, match.Groups[1].Value.Trim(), where, scope);
+            var path = match.Groups[1].Value.Trim();
+            if (ResolveValue(check, path, where, scope) is { } setting)
+            {
+                checkSetting?.Invoke(setting, path);
+            }
+
             return " ";
         });
 
@@ -660,7 +689,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         var setting = ResolvePath(check, path, where, scope);
         if (setting?.Element != null)
         {
-            check.AddError(setting.Type == ListFieldType
+            check.AddError(setting.Type == ListType
                 ? $"{where} binds '{path}', a list, which data-each repeats an element for"
                 : $"{where} binds '{path}', an object, whose fields are bound one by one");
         }
@@ -718,7 +747,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return setting;
         }
 
-        if (setting.Type != ObjectFieldType)
+        if (setting.Type != ObjectType)
         {
             check.AddError($"{where} binds '{path}', but '{id}' is a {setting.Type} and not an object");
             return null;
@@ -732,21 +761,21 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         return objectField;
     }
 
-    protected virtual void AddTextWarning(CustomSectionCheck check)
+    protected virtual void AddTextWarning(CustomSectionCheck check, TemplateContext context)
     {
-        if (check.Texts.Count > 0)
+        if (context.Texts.Count > 0)
         {
-            var texts = string.Join(", ", check.Texts.Distinct(StringComparer.Ordinal).Take(MaxSamples).Select(x => $"'{Quote(x)}'"));
+            var texts = string.Join(", ", context.Texts.Distinct(StringComparer.Ordinal).Take(MaxSamples).Select(x => $"'{Quote(x)}'"));
             check.AddWarning($"the template holds text of its own ({texts}), which is the same in every language: bind it to a translatable setting");
         }
     }
 
-    private static void AddText(CustomSectionCheck check, string text)
+    private static void AddText(TemplateContext context, string text)
     {
         // text without a letter, such as '+' after a number, reads the same in every language
         if (text.Any(char.IsLetter))
         {
-            check.Texts.Add(string.Join(' ', text.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)));
+            context.Texts.Add(string.Join(' ', text.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)));
         }
     }
 
@@ -808,6 +837,10 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             {
                 open.Push(name);
                 deepest = Math.Max(deepest, open.Count);
+                if (deepest > MaxScannedTemplateDepth)
+                {
+                    return deepest;
+                }
             }
 
             start = tagEnd;
@@ -841,13 +874,10 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
     private static bool IsOwnClasses(CustomSectionCheck check, string classes) =>
         classes.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)
-            .All(x => x == check.Type || check.Rules.ClassSeparators.Any(separator => x.StartsWith(check.Type + separator, StringComparison.Ordinal)));
+            .All(x => x == check.Type || ClassSeparators.Any(separator => x.StartsWith(check.Type + separator, StringComparison.Ordinal)));
 
-    // a name ending with '*' is a start of names
-    private static bool IsDeniedKitAttribute(CustomSectionCheck check, string name) =>
-        check.Rules.KitDeniedAttributes.Any(x => x.EndsWith('*')
-            ? name.StartsWith(x[..^1], StringComparison.OrdinalIgnoreCase)
-            : string.Equals(name, x, StringComparison.OrdinalIgnoreCase));
+    private static bool IsReservedDataAttribute(string name) =>
+        name.StartsWith(DataPrefix, StringComparison.Ordinal) && CustomSectionKit.IsReservedBehavior(name[DataPrefix.Length..]);
 
     private static string GetSingleBinding(string value)
     {
@@ -859,7 +889,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     private static bool HasBinding(string value) => value.Contains("{{", StringComparison.Ordinal);
 
     // an element of SVG keeps no place of its own, so it is looked for after its parent's
-    private static int GetLine(CustomSectionCheck check, IElement element)
+    private static int GetLine(TemplateContext context, IElement element)
     {
         var placed = element;
         while (placed.SourceReference == null && placed.ParentElement != null)
@@ -867,29 +897,29 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             placed = placed.ParentElement;
         }
 
-        var index = GetIndex(check, placed.SourceReference?.Position.Position ?? 0);
-        if (placed != element && check.Template.IndexOf("<" + element.LocalName, index, StringComparison.OrdinalIgnoreCase) is >= 0 and var found)
+        var index = GetIndex(context, placed.SourceReference?.Position.Position ?? 0);
+        if (placed != element && context.Template.IndexOf("<" + element.LocalName, index, StringComparison.OrdinalIgnoreCase) is >= 0 and var found)
         {
             index = found;
         }
 
-        return GetLocation(check, index).Line;
+        return GetLocation(context, index).Line;
     }
 
     // the parser counts lines without the line breaks of indentation, while its place in the text is right
-    private static int GetIndex(CustomSectionCheck check, int position) => Math.Clamp(position - 1 - DocumentStart.Length, 0, check.Template.Length);
+    private static int GetIndex(TemplateContext context, int position) => Math.Clamp(position - 1 - DocumentStart.Length, 0, context.Template.Length);
 
-    private static (int Line, int Column) GetLocation(CustomSectionCheck check, int index)
+    private static (int Line, int Column) GetLocation(TemplateContext context, int index)
     {
-        var lineStarts = check.LineStarts;
+        var lineStarts = context.LineStarts;
         var found = lineStarts.BinarySearch(index);
         var line = found >= 0 ? found : ~found - 1;
 
         return (line + 1, index - lineStarts[line] + 1);
     }
 
-    private static KeyValuePair<string, KitField>? GetUnknownField(CustomSectionCheck check, IEnumerable<KeyValuePair<string, KitField>> fields) =>
-        fields.Where(x => !check.Rules.KitFieldTypes.Contains(x.Value.Type ?? string.Empty)).Cast<KeyValuePair<string, KitField>?>().FirstOrDefault();
+    private static KeyValuePair<string, KitField>? GetUnknownField(IEnumerable<KeyValuePair<string, KitField>> fields) =>
+        fields.Where(x => !CustomSectionKit.FieldTypes.Contains(x.Value.Type ?? string.Empty)).Cast<KeyValuePair<string, KitField>?>().FirstOrDefault();
 
     // text or a binding, which the storefront fills with text, an aria-label, rich text, or an image whose alt names it
     private static bool HasName(IElement link) =>
@@ -926,5 +956,15 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     private static string FormatNumber(decimal number) => number.ToString("0.##########", CultureInfo.InvariantCulture);
 
     /// <param name="Each">The list the element repeats for, or one of its ancestors does.</param>
-    protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot);
+    protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot, TemplateContext Context);
+
+    /// <summary>The template as written, for the line numbers of errors, and the text it holds of its own, for the warning.</summary>
+    protected sealed class TemplateContext(string template)
+    {
+        public string Template { get; } = template;
+
+        public List<int> LineStarts { get; } = [0, .. template.Select((x, i) => (x, i)).Where(x => x.x == '\n').Select(x => x.i + 1)];
+
+        public IList<string> Texts { get; } = [];
+    }
 }

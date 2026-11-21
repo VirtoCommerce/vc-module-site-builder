@@ -7,9 +7,8 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Theme;
-using VirtoCommerce.SiteBuilder.Data.Validation;
+using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionFields;
 using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionText;
-using static VirtoCommerce.SiteBuilder.Data.Theme.ThemeContentReader;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
@@ -20,118 +19,45 @@ public class CustomSectionValidator(
     IOptions<ThemeSnapshotOptions> options,
     ILogger<CustomSectionValidator> logger) : ICustomSectionValidator
 {
-    private const int MaxPartSize = 64 * 1024;
-    private const int MaxCssDepth = 32;
-    private const int MaxTemplateDepth = 32;
-    private const int MaxAtRuleDepth = 4;
-    private const string KeyframesSeparator = "__";
+    /// <summary>UTF-8 bytes, for the template and the CSS each.</summary>
+    public const int MaxPartSize = 64 * 1024;
 
-    private const string FormatKey = "format";
     private const string NameKey = "name";
     private const string SchemaKey = "schema";
     private const string TemplateKey = "template";
     private const string CssKey = "css";
-    private const string SettingsKey = "settings";
+    private const string HeaderType = "header";
+    private const string ParagraphType = "paragraph";
 
-    private const string StringFieldType = "string";
-    private const string TextFieldType = "text";
-    private const string ImagesFieldType = "images";
-    private const string SelectFieldType = "select";
-    private const string ListFieldType = CustomSectionSetting.ListType;
-    private const string ObjectFieldType = "object";
-    private const string UrlFormat = "url";
+    public static IReadOnlyList<string> SchemaKeys { get; } = [SettingsKey, "targetTemplates", "limit", "icon"];
 
-    private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
-
-    // no 'visibility' and no 'request': the designer runs the one and sends the other
-    private static readonly string[] FieldKeys =
+    public static IReadOnlyList<string> FieldKeys { get; } =
     [
-        "id", "type", "label", "default", "translatable", "tab", "info", "placeholder", "required", "multiline", "multiple", "format", "options",
+        "id", "type", "label", "default", "translatable", "tab", "info", "placeholder", "required", "multiline", "multiple", FormatKey, "options",
         "element", "min", "max", "step",
     ];
 
+    public static IReadOnlyList<string> FieldTypes { get; } =
+    [
+        HeaderType, ParagraphType, StringType, TextType, "number", "slider", "checkbox", SelectType, "color-token", ImagesType, "calendar", ListType,
+        ObjectType,
+    ];
+
+    private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
+
     // the fields the designer shows as text to read, which hold no value
-    private static readonly HashSet<string> LabelFieldTypes = new(StringComparer.Ordinal) { "header", "paragraph" };
+    private static readonly HashSet<string> LabelFieldTypes = new(StringComparer.Ordinal) { HeaderType, ParagraphType };
 
-    private static readonly string[] ValueFieldTypes =
-    [
-        StringFieldType, TextFieldType, "number", "slider", "checkbox", SelectFieldType, "color-token", ImagesFieldType, "calendar",
-    ];
+    private static readonly Regex SettingIdPattern = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
-    private static readonly HashSet<string> FormControls = new(StringComparer.Ordinal)
-    {
-        "form", "input", "select", "textarea", "button", "option", "optgroup", "datalist", "fieldset", "legend", "label", "output",
-    };
-
-    private static readonly string[] AllowedAttributes =
-    [
-        "class", "role", "alt", "title", "lang", "dir", "hidden", "href", "target", "rel", "src", "srcset", "sizes", "loading", "decoding",
-        "width", "height", "datetime", "colspan", "rowspan", "scope",
-    ];
-
-    private static readonly Dictionary<string, string[]> ElementAttributes = new(StringComparer.Ordinal)
-    {
-        ["video"] = ["autoplay", "muted", "loop", "playsinline", "controls", "preload", "poster"],
-        ["source"] = ["type", "media"],
-        ["details"] = ["open"],
-        ["blockquote"] = ["cite"],
-        ["q"] = ["cite"],
-    };
-
-    private static readonly Dictionary<string, string> LogicalProperties = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["margin-left"] = "margin-inline-start",
-        ["margin-right"] = "margin-inline-end",
-        ["padding-left"] = "padding-inline-start",
-        ["padding-right"] = "padding-inline-end",
-        ["left"] = "inset-inline-start",
-        ["right"] = "inset-inline-end",
-        ["border-left"] = "border-inline-start",
-        ["border-right"] = "border-inline-end",
-        ["border-left-width"] = "border-inline-start-width",
-        ["border-right-width"] = "border-inline-end-width",
-        ["border-left-style"] = "border-inline-start-style",
-        ["border-right-style"] = "border-inline-end-style",
-        ["border-left-color"] = "border-inline-start-color",
-        ["border-right-color"] = "border-inline-end-color",
-        ["border-top-left-radius"] = "border-start-start-radius",
-        ["border-top-right-radius"] = "border-start-end-radius",
-        ["border-bottom-left-radius"] = "border-end-start-radius",
-        ["border-bottom-right-radius"] = "border-end-end-radius",
-        ["scroll-margin-left"] = "scroll-margin-inline-start",
-        ["scroll-margin-right"] = "scroll-margin-inline-end",
-        ["scroll-padding-left"] = "scroll-padding-inline-start",
-        ["scroll-padding-right"] = "scroll-padding-inline-end",
-    };
-
-    private static readonly Dictionary<string, (string Left, string Right)> LogicalValues = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["text-align"] = ("start", "end"),
-        ["float"] = ("inline-start", "inline-end"),
-        ["clear"] = ("inline-start", "inline-end"),
-    };
-
-    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
-
-    private static readonly Regex SettingIdPattern = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.None, RegexTimeout);
-
-    private CustomSectionRules _rules;
-    private Regex _typePattern;
-
-    protected CustomSectionRules Rules => _rules ??= CreateRules();
-
-    private Regex TypePattern => _typePattern ??= new Regex(Rules.TypePattern, RegexOptions.None, RegexTimeout);
-
-    public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog) =>
-        Validate(type, content, CustomSectionKit.Read(catalog));
+    public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog) => ValidateType(type, content, catalog);
 
     public virtual IList<CustomSectionValidationResult> ValidateTypes(IDictionary<string, JToken> types, ICollection<string> checkedTypes, JObject catalog)
     {
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(checkedTypes);
 
-        var kit = CustomSectionKit.Read(catalog);
-        var results = checkedTypes.Select(x => Validate(x, types.TryGetValue(x, out var content) ? content : null, kit)).ToList();
+        var results = checkedTypes.Select(x => ValidateType(x, types.TryGetValue(x, out var content) ? content : null, catalog)).ToList();
         if (GetSizeError(types) is { } sizeError)
         {
             var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
@@ -143,14 +69,57 @@ public class CustomSectionValidator(
         return results;
     }
 
-    protected virtual CustomSectionValidationResult Validate(string type, JToken content, StorefrontKit kit)
+    public virtual CustomSectionRules GetRules()
+    {
+        var result = AbstractTypeFactory<CustomSectionRules>.TryCreateInstance();
+        result.TypePattern = ThemeStorage.CustomSectionTypePattern;
+        result.MaxTypeLength = ThemeStorage.CustomSectionTypeMaxLength;
+        result.Elements = CustomSectionTemplateValidator.Elements.Order(StringComparer.Ordinal).ToList();
+        result.Attributes = CustomSectionTemplateValidator.Attributes.Order(StringComparer.Ordinal).ToList();
+        result.BindingAttributes = [.. CustomSectionTemplateValidator.BindingAttributes];
+        result.TextAttributes = CustomSectionTemplateValidator.TextAttributes.Order(StringComparer.Ordinal).ToList();
+        result.LinkSchemes = [.. CustomSectionTemplateValidator.LinkSchemes];
+        result.LinkTargets = [.. CustomSectionTemplateValidator.LinkTargets];
+        result.RefusedRels = [.. CustomSectionTemplateValidator.RefusedRels];
+        result.ClassSeparators = [.. CustomSectionTemplateValidator.ClassSeparators];
+        result.ElementAttributes = CustomSectionTemplateValidator.ElementAttributes
+            .ToDictionary(x => x.Key, x => (IList<string>)[.. x.Value], StringComparer.Ordinal);
+        result.ReservedDataPrefixes = [.. CustomSectionKit.ReservedBehaviorPrefixes.Select(x => "data-" + x)];
+        result.SchemaKeys = [.. SchemaKeys];
+        result.FieldTypes = [.. FieldTypes];
+        result.FieldKeys = [.. FieldKeys];
+        result.AtRules = [.. CustomSectionCssValidator.AtRules];
+        result.KeyframesSeparator = CustomSectionCssValidator.KeyframesSeparator;
+        result.ScriptProperties = CustomSectionCssValidator.ScriptProperties.Order(StringComparer.Ordinal).ToList();
+        result.ImageFunctions = [.. CustomSectionCssValidator.ImageFunctions];
+        result.LateValueFunctions = [.. CustomSectionCssValidator.LateValueFunctions];
+        result.LogicalProperties = CustomSectionCssValidator.LogicalProperties
+            .Concat(CustomSectionCssValidator.LogicalValues.SelectMany(x => new[]
+            {
+                KeyValuePair.Create($"{x.Key}: left", $"{x.Key}: {x.Value.Left}"),
+                KeyValuePair.Create($"{x.Key}: right", $"{x.Key}: {x.Value.Right}"),
+            }))
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+        result.KitFieldTypes = [.. CustomSectionKit.FieldTypes];
+        result.KitDeniedAttributes = [.. CustomSectionKit.DeniedAttributePrefixes.Select(x => x + "*"), .. CustomSectionKit.DeniedAttributes];
+        result.KitLinkAttributes = [.. CustomSectionKit.LinkAttributes];
+        result.MaxTemplateDepth = CustomSectionTemplateValidator.MaxDepth;
+        result.MaxCssDepth = CustomSectionCssValidator.MaxDepth;
+        result.MaxAtRuleDepth = CustomSectionCssValidator.MaxAtRuleDepth;
+        result.MaxPartSize = MaxPartSize;
+        result.MaxTotalSize = options.Value.CustomSectionsMaxSize;
+
+        return result;
+    }
+
+    protected virtual CustomSectionValidationResult ValidateType(string type, JToken content, JObject catalog)
     {
         var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
-        var check = new CustomSectionCheck(type, Rules, kit, result);
+        var check = new CustomSectionCheck(type, result);
         result.File = check.File;
-        if (type.Length > Rules.MaxTypeLength || !TypePattern.IsMatch(type))
+        if (!ThemeStorage.IsCustomSectionType(type))
         {
-            check.AddError($"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType(Rules)}");
+            check.AddError($"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType()}");
             return result;
         }
 
@@ -160,26 +129,24 @@ public class CustomSectionValidator(
             return result;
         }
 
-        ValidateShape(check, file);
-
-        // every pattern has a timeout, which refuses the type rather than fails the request
         try
         {
+            check.Kit = CustomSectionKit.Read(catalog);
+            ValidateShape(check, file);
             if (GetPart(check, file, TemplateKey) is { } template && check.Settings != null)
             {
-                ValidateTemplate(check, template);
+                templateValidator.Validate(check, template);
             }
 
             if (GetPart(check, file, CssKey) is { } css)
             {
-                ValidateCss(check, css);
+                cssValidator.Validate(check, css);
             }
         }
         catch (RegexMatchTimeoutException)
         {
             check.AddError("the type takes too long to check: write its template and its CSS plainer");
         }
-        // a fault of the check refuses the type it could not check, rather than the request
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "The custom section type {Type} could not be checked.", type);
@@ -193,57 +160,14 @@ public class CustomSectionValidator(
     protected virtual string GetSizeError(IDictionary<string, JToken> types)
     {
         var size = types.Values.Where(x => x != null).Sum(x => (long)Encoding.UTF8.GetByteCount(x.ToString(Formatting.None)));
-        if (size <= Rules.MaxTotalSize)
+        var maxSize = options.Value.CustomSectionsMaxSize;
+        if (size <= maxSize)
         {
             return null;
         }
 
         return string.Create(CultureInfo.InvariantCulture,
-            $"the custom section types are {FormatSize(size)} of JSON together, more than {FormatSize(Rules.MaxTotalSize)}: the snapshot carries every type to every page");
-    }
-
-    public virtual CustomSectionRules GetRules() => Rules;
-
-    protected virtual CustomSectionRules CreateRules()
-    {
-        var result = AbstractTypeFactory<CustomSectionRules>.TryCreateInstance();
-        result.TypePattern = ThemeStorage.CustomSectionTypePattern;
-        result.MaxTypeLength = ThemeStorage.CustomSectionTypeMaxLength;
-        result.Elements = SiteBuilderHtmlSanitizer.AllowedTags.Where(x => !FormControls.Contains(x)).Order(StringComparer.Ordinal).ToList();
-        result.Attributes = AllowedAttributes.Order(StringComparer.Ordinal).ToList();
-        result.BindingAttributes = ["data-each", "data-if", "data-html"];
-        result.TextAttributes = ["alt", "aria-label", "label", "title"];
-        result.LinkSchemes = ["https:", "mailto:", "tel:"];
-        result.LinkTargets = ["_self", "_blank"];
-        result.RefusedRels = ["opener"];
-        result.ClassSeparators = ["-", "__"];
-        result.SchemaKeys = [SettingsKey, "targetTemplates", "limit", "icon"];
-        result.FieldTypes = [.. LabelFieldTypes, .. ValueFieldTypes, ListFieldType, ObjectFieldType];
-        result.FieldKeys = [.. FieldKeys];
-        result.AtRules = ["media", "supports", "container", "starting-style", "keyframes"];
-        result.KeyframesSeparator = KeyframesSeparator;
-        result.ElementAttributes = ElementAttributes.ToDictionary(x => x.Key, x => (IList<string>)[.. x.Value], StringComparer.Ordinal);
-        result.ReservedDataPrefixes = [.. CustomSectionKit.ReservedBehaviorPrefixes.Select(x => "data-" + x)];
-        result.ScriptProperties = ["-moz-binding", "behavior"];
-        result.ImageFunctions = ["url", "src", "image", "image-set", "-webkit-image-set", "cross-fade", "-webkit-cross-fade"];
-        result.LateValueFunctions = ["var", "attr", "env", "if"];
-        result.LogicalProperties = LogicalProperties
-            .Concat(LogicalValues.SelectMany(x => new[]
-            {
-                KeyValuePair.Create($"{x.Key}: left", $"{x.Key}: {x.Value.Left}"),
-                KeyValuePair.Create($"{x.Key}: right", $"{x.Key}: {x.Value.Right}"),
-            }))
-            .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
-        result.KitFieldTypes = [.. CustomSectionKit.FieldTypes];
-        result.KitDeniedAttributes = [.. CustomSectionKit.DeniedAttributePrefixes.Select(x => x + "*"), .. CustomSectionKit.DeniedAttributes];
-        result.KitLinkAttributes = [.. CustomSectionKit.LinkAttributes];
-        result.MaxTemplateDepth = MaxTemplateDepth;
-        result.MaxCssDepth = MaxCssDepth;
-        result.MaxAtRuleDepth = MaxAtRuleDepth;
-        result.MaxPartSize = MaxPartSize;
-        result.MaxTotalSize = options.Value.CustomSectionsMaxSize;
-
-        return result;
+            $"the custom section types are {FormatSize(size)} of JSON together, more than {FormatSize(maxSize)}: the snapshot carries every type to every page");
     }
 
     protected virtual void ValidateShape(CustomSectionCheck check, JObject file)
@@ -253,7 +177,7 @@ public class CustomSectionValidator(
             check.AddError($"'{key}' is not a key of a custom section type, which has format, name, schema, template and css");
         }
 
-        if (file[FormatKey] is not JValue { Type: JTokenType.Integer } format || format.Value<long>() != 1)
+        if (file[FormatKey] is not JValue { Value: 1L })
         {
             check.AddError("'format' is not 1");
         }
@@ -275,9 +199,9 @@ public class CustomSectionValidator(
 
     protected virtual void ValidateSchema(CustomSectionCheck check, JObject schema)
     {
-        foreach (var key in schema.Properties().Select(x => x.Name).Where(x => !check.Rules.SchemaKeys.Contains(x)))
+        foreach (var key in schema.Properties().Select(x => x.Name).Where(x => !SchemaKeys.Contains(x)))
         {
-            check.AddError($"'schema.{key}' is not a key of a custom section's schema, which has {JoinAnd(check.Rules.SchemaKeys)}");
+            check.AddError($"'schema.{key}' is not a key of a custom section's schema, which has {JoinAnd(SchemaKeys)}");
         }
 
         if (schema[SettingsKey] is JArray settings)
@@ -294,7 +218,7 @@ public class CustomSectionValidator(
             check.AddError("'schema.targetTemplates' is not a list of template names");
         }
 
-        if (schema["limit"] is { } limit && !(limit is JValue { Type: JTokenType.Integer } count && count.Value<long>() >= 1))
+        if (schema["limit"] is { } limit && limit is not JValue { Value: >= 1L })
         {
             check.AddError("'schema.limit' is not a whole number from 1");
         }
@@ -329,16 +253,16 @@ public class CustomSectionValidator(
             return null;
         }
 
-        var id = GetString(field, "id");
-        var type = GetString(field, "type");
+        var id = ThemeJson.GetString(field, "id");
+        var type = ThemeJson.GetString(field, "type");
         var setting = DescribeSetting(parent, id, index);
-        foreach (var key in field.Properties().Select(x => x.Name).Where(x => !check.Rules.FieldKeys.Contains(x)))
+        foreach (var key in field.Properties().Select(x => x.Name).Where(x => !FieldKeys.Contains(x)))
         {
             check.AddError($"{setting} has a key a custom section's setting does not take, '{key}'");
         }
 
-        var isGroup = type is ListFieldType or ObjectFieldType;
-        if (type == null || !check.Rules.FieldTypes.Contains(type))
+        var isGroup = type is ListType or ObjectType;
+        if (type == null || !FieldTypes.Contains(type))
         {
             check.AddError($"{setting} has a type a custom section does not take, '{type}'");
             return null;
@@ -370,9 +294,9 @@ public class CustomSectionValidator(
         ValidateSettingKeys(check, field, type, setting);
 
         var element = isGroup ? ReadElement(check, field, id, type, setting) : null;
-        var isLink = type == StringFieldType && GetString(field, FormatKey) == UrlFormat;
+        var isLink = IsLink(type, field);
 
-        var options = type == SelectFieldType
+        var options = type == SelectType
             ? (field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).OfType<JValue>()
                 .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture)).ToList()
             : null;
@@ -382,12 +306,12 @@ public class CustomSectionValidator(
 
     protected virtual void ValidateSettingKeys(CustomSectionCheck check, JObject field, string type, string setting)
     {
-        if (IsSet(field, "translatable") && type is not (StringFieldType or TextFieldType))
+        if (IsSet(field, "translatable") && type is not (StringType or TextType))
         {
             check.AddError($"{setting} is translatable, which only a string or a text is");
         }
 
-        if (field[FormatKey] is { } format && !(type == StringFieldType && format is JValue { Type: JTokenType.String } url && (string)url == UrlFormat))
+        if (field[FormatKey] is { } format && !(type == StringType && format is JValue { Type: JTokenType.String } url && (string)url == UrlFormat))
         {
             check.AddError($"{setting} has a format other than the \"url\" of a string that holds a link");
         }
@@ -397,7 +321,7 @@ public class CustomSectionValidator(
             check.AddError($"{setting} is multiple, and a custom section's setting holds one value");
         }
 
-        if (type == SelectFieldType)
+        if (type == SelectType)
         {
             if (field["options"] is not JArray { Count: > 0 } options || !options.All(IsSettingOption))
             {
@@ -409,7 +333,7 @@ public class CustomSectionValidator(
             check.AddError($"{setting} has options, which only a select has");
         }
 
-        if (type is not (ListFieldType or ObjectFieldType) && field["element"] != null)
+        if (type is not (ListType or ObjectType) && field["element"] != null)
         {
             check.AddError($"{setting} has an element, which only a list or an object has");
         }
@@ -422,14 +346,10 @@ public class CustomSectionValidator(
             return ReadSettings(check, fields, id);
         }
 
-        check.AddError($"{setting} is {(type == ListFieldType ? "a list without the fields of its rows" : "an object without its fields")} under 'element'");
+        check.AddError($"{setting} is {(type == ListType ? "a list without the fields of its rows" : "an object without its fields")} under 'element'");
 
         return new Dictionary<string, CustomSectionSetting>(StringComparer.Ordinal);
     }
-
-    protected virtual void ValidateTemplate(CustomSectionCheck check, string template) => templateValidator.Validate(check, template);
-
-    protected virtual void ValidateCss(CustomSectionCheck check, string css) => cssValidator.Validate(check, css);
 
     private static string GetPart(CustomSectionCheck check, JObject file, string key)
     {
@@ -441,14 +361,16 @@ public class CustomSectionValidator(
 
         var text = (string)value;
         var size = Encoding.UTF8.GetByteCount(text);
-        if (size > check.Rules.MaxPartSize)
+        if (size > MaxPartSize)
         {
-            check.AddError(string.Create(CultureInfo.InvariantCulture, $"'{key}' is {FormatSize(size)}, more than {FormatSize(check.Rules.MaxPartSize)}"));
+            check.AddError(string.Create(CultureInfo.InvariantCulture, $"'{key}' is {FormatSize(size)}, more than {FormatSize(MaxPartSize)}"));
             return null;
         }
 
         return text;
     }
+
+    private static bool IsLink(string type, JObject field) => type == StringType && ThemeJson.GetString(field, FormatKey) == UrlFormat;
 
     private static bool IsName(JToken name) => name switch
     {

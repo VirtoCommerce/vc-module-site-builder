@@ -22,8 +22,7 @@ public class SectionTypeTools(
     IAuthorizationService authorizationService,
     IDesignerOperationService designerOperationService,
     IThemeStorageFactory themeStorageFactory,
-    ISchemaCatalogService schemaCatalogService,
-    ICustomSectionValidator customSectionValidator)
+    ISchemaCatalogService schemaCatalogService)
 {
     private const string CreateAction = "create_section_type";
     private const string ChangeAction = "change_section_type";
@@ -102,7 +101,7 @@ public class SectionTypeTools(
         var key = request.Type?.Trim();
         if (string.IsNullOrEmpty(key) || !ThemeStorage.IsCustomSectionType(key))
         {
-            throw new McpException($"type is not a custom section type, which {ThemeCustomSections.DescribeType(customSectionValidator.GetRules())}, " +
+            throw new McpException($"type is not a custom section type, which {ThemeCustomSections.DescribeType()}, " +
                 "for example 'custom-stats-band'.");
         }
 

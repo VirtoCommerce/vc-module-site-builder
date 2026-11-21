@@ -197,7 +197,7 @@ A section is used with a keyboard and a screen reader as well as with a mouse. A
 
 It saves with a warning a heading level skipped on the way down (`h2`, then `h4`), CSS with an `animation`,
 `animation-name` or `transition` and no `@media (prefers-reduced-motion: reduce)` or `(prefers-reduced-motion:
-no-preference)` block, and a `vc-button` without a `label` when the kit declares one. The template runs no code and
+no-preference)` block. The template runs no code and
 holds no form controls, so a section is used from the keyboard only through its links, its kit tags and its behaviors.
 
 ## Validation

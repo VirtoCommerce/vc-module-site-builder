@@ -1,10 +1,11 @@
 using System.Text.Json.Nodes;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
+using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionText;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// The section_kit resource: the lists come from ICustomSectionValidator.GetRules and the catalog; the prose follows docs/contracts/custom-sections.md.
+// The section_kit resource; its prose follows docs/contracts/custom-sections.md.
 public static class SectionKitGuide
 {
     public const string ExampleType = "custom-stats-band";
@@ -89,7 +90,7 @@ public static class SectionKitGuide
             File = new
             {
                 Path = $"{ThemeStorage.CustomSectionsFolder}/{{type}}.json in the theme; create_section_type and change_section_type write its draft.",
-                Type = $"The type {ThemeCustomSections.DescribeType(rules)}, such as {ExampleType}. Keep the type of one a page places.",
+                Type = $"The type {ThemeCustomSections.DescribeType()}, such as {ExampleType}. Keep the type of one a page places.",
                 Name = "A text, or a text per language: the name in the designer's section picker.",
                 SchemaKeys = rules.SchemaKeys,
                 FieldTypes = rules.FieldTypes,
@@ -245,9 +246,6 @@ public static class SectionKitGuide
     private static string GetString(JsonNode node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
     private static List<string> Functions(IEnumerable<string> names) => names.Select(x => $"{x}()").ToList();
-
-    private static string JoinOr(IList<string> items) =>
-        items.Count > 1 ? $"{string.Join(", ", items.Take(items.Count - 1))} or {items[^1]}" : string.Join(string.Empty, items);
 
     // A token's variable is the token with '_' written as '-': color_primary_500 is --color-primary-500.
     private static List<PaletteTokenRow> GetPaletteTokens(JsonObject catalog, ThemePalette palette)

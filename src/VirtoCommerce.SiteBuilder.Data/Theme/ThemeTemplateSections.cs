@@ -37,7 +37,7 @@ public static class ThemeTemplateSections
         };
 
         return content.OfType<JObject>()
-            .Select(x => new Section(GetText(x, "id"), GetText(x, "type")))
+            .Select(x => new Section(ThemeJson.GetString(x, "id"), ThemeJson.GetString(x, "type")))
             .Where(x => !string.IsNullOrWhiteSpace(x.Id) && !string.IsNullOrWhiteSpace(x.Type))
             .ToList();
     }
@@ -59,8 +59,6 @@ public static class ThemeTemplateSections
 
     private static bool IsTargeted(JObject schema, string templateKey) =>
         schema["targetTemplates"] is not JArray { Count: > 0 } targets || targets.Any(x => IsText(x, templateKey));
-
-    private static string GetText(JObject item, string name) => item[name] is JValue { Type: JTokenType.String } value ? (string)value : null;
 
     private static bool IsText(JToken token, string text) => token is JValue { Type: JTokenType.String } value && (string)value == text;
 }
