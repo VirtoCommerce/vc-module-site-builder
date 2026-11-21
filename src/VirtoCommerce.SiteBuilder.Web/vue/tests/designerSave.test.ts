@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { designerDiscardBody, designerDiscardUrl, designerSaveBody, designerSaveUrl, fileWarnings } from "../src/modules/designer/designerSave";
+import { designerDiscardBody, designerDiscardUrl, designerSaveBody, designerSaveUrl } from "../src/modules/designer/designerSave";
 
 const query = (url: string) => Object.fromEntries(new URL(url, "https://admin.example").searchParams);
 
@@ -57,24 +57,4 @@ test("a Discard is one request naming the page and the theme files whose drafts 
     themeFiles: [],
   });
   assert.equal(JSON.stringify(designerDiscardBody({ themeFiles: ["default/templates/product.json"] })).includes('"page"'), false);
-});
-
-test("a save's warnings go by the file the server saved them with, named in the theme, in its order", () => {
-  const hero = [
-    "the CSS sets margin-left, which stays on that side when the page reads right to left: use margin-inline-start",
-    "the CSS animates with no @media (prefers-reduced-motion: reduce) block",
-  ];
-  assert.deepEqual(
-    fileWarnings([
-      { path: "default/custom-sections/custom-hero.json", eTag: '"h1"', warnings: hero },
-      { path: "default/templates/product.json", eTag: '"p1"', warnings: [] },
-      { path: "default/custom-sections/custom-promo.json", eTag: '"p2"', warnings: ["the template's headings go from h2 to h4, skipping a level"] },
-      { path: "default/sections/header-group.json", eTag: '"g1"' },
-    ]),
-    [
-      { file: "custom-sections/custom-hero.json", warnings: hero },
-      { file: "custom-sections/custom-promo.json", warnings: ["the template's headings go from h2 to h4, skipping a level"] },
-    ],
-  );
-  assert.deepEqual(fileWarnings(), []);
 });

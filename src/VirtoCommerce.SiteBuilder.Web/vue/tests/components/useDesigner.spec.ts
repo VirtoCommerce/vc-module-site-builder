@@ -183,7 +183,7 @@ describe("useDesigner: editing and saving", () => {
     designer.setField("announcement", "Free returns");
     const rules = { path: "default/config/template_rules.json", eTag: '"r1"', content: { version: 2, conditions: [] } };
 
-    expect(await designer.save([rules])).toEqual({ versions: {}, warnings: [] });
+    expect(await designer.save([rules])).toEqual({});
 
     expect(saves()).toHaveLength(1);
     const [save] = saves();
@@ -243,7 +243,7 @@ describe("useDesigner: editing and saving", () => {
     expect(designer.busy.value).toBeUndefined();
 
     platform.on("POST", "/api/site-builder/designer/save", { eTag: '"v9"' });
-    expect(await designer.save()).toEqual({ versions: {}, warnings: [] });
+    expect(await designer.save()).toEqual({});
     expect((saves()[1].body as { page: { eTag: string } }).page.eTag).toBe('"v1"');
   });
 
@@ -256,7 +256,7 @@ describe("useDesigner: editing and saving", () => {
     platform.on("POST", "/api/site-builder/designer/save", { themeFiles: [{ path: header, eTag: '"h2"' }] });
     const rules = { path: "default/config/template_rules.json", eTag: '"r1"', content: { version: 2, conditions: [] } };
 
-    expect(await designer.save([rules])).toEqual({ versions: { [header]: '"h2"' }, warnings: [] });
+    expect(await designer.save([rules])).toEqual({ [header]: '"h2"' });
 
     const sent = (n: number) => (saves()[n].body as { themeFiles: { path: string; eTag: string }[] }).themeFiles.map((x) => [x.path, x.eTag]);
     expect(sent(0)).toEqual([
@@ -273,21 +273,6 @@ describe("useDesigner: editing and saving", () => {
       [header, '"h2"'],
       [footer, themeETag(footer, false)],
     ]);
-  });
-
-  it("passes on the warnings the server saved the files with", async () => {
-    const warning = "the template's own text is the same in every language";
-    const hero = "default/custom-sections/custom-hero.json";
-    await openDatabasePage();
-    platform.on("POST", "/api/site-builder/designer/save", { eTag: '"v2"', themeFiles: [{ path: hero, eTag: '"h2"', warnings: [warning] }] });
-    designer.selection.value = { kind: "section", id: "hero-1" };
-    designer.setField("title", "Mine");
-
-    expect(await designer.save()).toEqual({
-      versions: { [hero]: '"h2"' },
-      warnings: [{ file: "custom-sections/custom-hero.json", warnings: [warning] }],
-    });
-    expect(designer.dirty.value).toBe(false);
   });
 
   it("keeps the theme files' versions when someone else saved one meanwhile (412): opening again reads them anew", async () => {
@@ -354,7 +339,7 @@ describe("useDesigner: editing and saving", () => {
     designer.undo();
     designer.selection.value = { kind: "section", id: "hero-1" };
     designer.setField("title", "Mine");
-    expect(await designer.save()).toEqual({ versions: {}, warnings: [] });
+    expect(await designer.save()).toEqual({});
     expect(saves()[0].query).toEqual({ storeId: STORE });
   });
 

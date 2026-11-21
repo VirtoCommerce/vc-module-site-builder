@@ -331,7 +331,6 @@
       "ASSISTANT_CHANGED": "AI-assistenten ändrade sidan. Dina osparade ändringar finns kvar: kopiera det du behöver och öppna sedan sidan igen för att se assistentens ändringar.",
       "CATALOG_PENDING": "Temaändringar sparas när förhandsvisningen av butiken har laddats: den anger de scheman som de kontrolleras mot.",
       "SAVE_FAILED": "Sidan kunde inte sparas.",
-      "SAVE_WARNINGS": "Sparat med varningar:",
       "SAVE_FORBIDDEN": "Du har inte behörighet att spara: {parts}. Inget sparades.",
       "SAVE_FORBIDDEN_ANY": "Du har inte behörighet att spara de här ändringarna. Inget sparades.",
       "PUBLISH_FAILED": "Sidan kunde inte publiceras.",

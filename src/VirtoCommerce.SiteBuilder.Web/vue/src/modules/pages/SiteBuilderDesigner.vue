@@ -671,7 +671,7 @@ import {
   type ThemePart,
 } from "../designer/history";
 import { publishActions, themeErrors, themePublishButton } from "../designer/themePublication";
-import { CatalogPendingError, type FileWarnings } from "../designer/designerSave";
+import { CatalogPendingError } from "../designer/designerSave";
 import type { Field, Item, PageDocument, SectionGroup, Selection } from "../designer/types";
 import { draftTemplates, savedTemplatesReader } from "../designer/templateDrafts";
 import { namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
@@ -1085,21 +1085,13 @@ const save = async () => {
 const reloadHistory = () => versionHistory.value?.reload().catch(() => undefined);
 
 // The toast is rendered by the shell, outside this blade's scoped styles.
-const LIST_STYLE = { margin: "4px 0 0", paddingLeft: "18px", listStyle: "disc" };
-const FILE_STYLE = { margin: "6px 0 0", fontWeight: "600" };
-const bullets = (items: string[]) => h("ul", { style: LIST_STYLE }, items.map((x) => h("li", x)));
-const listed = (heading: string, items: string[]) => h("div", [h("p", heading), bullets(items)]);
-
-function notifyWarnings(warnings: FileWarnings[]) {
-  const files = warnings.flatMap((x) => [h("p", { style: FILE_STYLE }, x.file), bullets(x.warnings)]);
-  notification.warning(h("div", [h("p", t("SITE_BUILDER.DESIGNER.SAVE_WARNINGS")), ...files]), { timeout: false });
-}
+const ERROR_LIST_STYLE = { margin: "4px 0 0", paddingLeft: "18px", listStyle: "disc" };
 
 function notifyFailure(heading: string, e: unknown) {
   const pending = e instanceof CatalogPendingError ? [t("SITE_BUILDER.DESIGNER.CATALOG_PENDING")] : [];
   const errors = e instanceof ApiError ? themeErrors(e.status, e.body) : pending;
   if (!errors.length) notification.error(heading);
-  else notification.error(listed(heading, errors), { timeout: false });
+  else notification.error(h("div", [h("p", heading), h("ul", { style: ERROR_LIST_STYLE }, errors.map((x) => h("li", x)))]), { timeout: false });
 }
 
 async function saveChanges() {
@@ -1108,11 +1100,10 @@ async function saveChanges() {
   const pageChanged = designer.dirty.value;
   const changed: HistoryFile[] = [...designer.changedParts.value, ...parts.map((x) => x.part)];
   try {
-    const saved = await designer.save(parts.map((x) => x.file));
-    if (!saved) return;
-    for (const part of parts) part.saved(saved.versions[part.file.path]);
+    const versions = await designer.save(parts.map((x) => x.file));
+    if (!versions) return;
+    for (const part of parts) part.saved(versions[part.file.path]);
     if (pageChanged) notifyPagesChanged();
-    if (saved.warnings.length) notifyWarnings(saved.warnings);
   } catch (e) {
     if (e instanceof ApiError && e.status === 403) return notifyForbidden(changed);
     const messages: Record<number, string> = { 412: "SITE_BUILDER.DESIGNER.CONFLICT", 428: "SITE_BUILDER.DESIGNER.NO_VERSION" };

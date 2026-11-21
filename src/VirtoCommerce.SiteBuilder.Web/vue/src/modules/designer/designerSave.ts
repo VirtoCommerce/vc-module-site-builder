@@ -1,4 +1,4 @@
-import type { DesignerDiscardRequest, DesignerSaveRequest, ThemeFileVersion } from "../../api_client/virtocommerce.sitebuilder";
+import type { DesignerDiscardRequest, DesignerSaveRequest } from "../../api_client/virtocommerce.sitebuilder";
 import type { ThemePart } from "./history";
 
 export type DesignerSavePage = { groupId: string; eTag: string; content: unknown } | { path: string; type: string; content: unknown };
@@ -45,14 +45,3 @@ export const designerDiscardUrl = (storeId: string) => `/api/site-builder/design
 export function designerDiscardBody(discard: { page?: DesignerDiscardPage; themeFiles: string[] }): DesignerDiscardRequest {
   return { ...(discard.page ? { page: discard.page } : {}), themeFiles: [...new Set(discard.themeFiles)] };
 }
-
-export interface FileWarnings {
-  /** The path in the theme, without the theme folder. */
-  file: string;
-  warnings: string[];
-}
-
-export const fileWarnings = (themeFiles: ThemeFileVersion[] = []): FileWarnings[] =>
-  themeFiles
-    .filter((x) => x.path && x.warnings?.length)
-    .map((x) => ({ file: x.path!.slice(x.path!.indexOf("/") + 1), warnings: x.warnings! }));

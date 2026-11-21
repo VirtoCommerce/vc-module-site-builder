@@ -331,7 +331,6 @@
       "ASSISTANT_CHANGED": "Der KI-Assistent hat diese Seite geändert. Ihre nicht gespeicherten Änderungen bleiben erhalten: Kopieren Sie, was Sie brauchen, und öffnen Sie die Seite dann erneut, um seine Änderungen zu sehen.",
       "CATALOG_PENDING": "Theme-Änderungen werden gespeichert, sobald die Storefront-Vorschau geladen ist: Sie nennt die Schemas, mit denen sie geprüft werden.",
       "SAVE_FAILED": "Die Seite konnte nicht gespeichert werden.",
-      "SAVE_WARNINGS": "Mit Warnungen gespeichert:",
       "SAVE_FORBIDDEN": "Sie haben keine Berechtigung zum Speichern von: {parts}. Es wurde nichts gespeichert.",
       "SAVE_FORBIDDEN_ANY": "Sie haben keine Berechtigung, diese Änderungen zu speichern. Es wurde nichts gespeichert.",
       "PUBLISH_FAILED": "Die Seite konnte nicht veröffentlicht werden.",

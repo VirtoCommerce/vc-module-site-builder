@@ -24,22 +24,9 @@ import { resolveTranslations, type Translating } from "./translatable";
 import { moveItem } from "./rules";
 import type { Capability, Handshake } from "./previewMessages";
 import { hasThemeDraft, isNewThemeDraft, templateStatus, type ThemeStatus } from "./themePublication";
-import {
-  CatalogPendingError,
-  fileWarnings,
-  type DesignerDiscardPage,
-  type DesignerSaveFile,
-  type DesignerSavePage,
-  type FileWarnings,
-} from "./designerSave";
+import { CatalogPendingError, type DesignerDiscardPage, type DesignerSaveFile, type DesignerSavePage } from "./designerSave";
 
 const EMPTY_SCHEMAS: Schemas = { sections: {}, blocks: {}, shared: {}, objects: {} };
-/** The saved theme files' new versions by path, and the save's warnings. */
-export interface DesignerSaveOutcome {
-  versions: Record<string, string>;
-  warnings: FileWarnings[];
-}
-
 export interface PageRow {
   key: string;
   name: string;
@@ -660,13 +647,13 @@ export function useDesigner() {
     return { path: file.value!.path, type: file.value!.type, content: api.filePageContent(sent) };
   }
 
-  async function saveFiles(page: DesignerSavePage | undefined, files: DesignerSaveFile[]): Promise<DesignerSaveOutcome> {
+  async function saveFiles(page: DesignerSavePage | undefined, files: DesignerSaveFile[]): Promise<Record<string, string>> {
     const versions: Record<string, string> = {};
     const saved = await api.saveDesigner(storeId.value!, { page, themeFiles: files }, handshake.value?.hash);
     if (groupId.value) eTag.value = saved.eTag ?? eTag.value;
     for (const x of saved.themeFiles ?? []) if (x.path && x.eTag) versions[x.path] = x.eTag;
     for (const path of Object.keys(themeETags.value)) if (versions[path]) themeETags.value[path] = versions[path];
-    return { versions, warnings: fileWarnings(saved.themeFiles) };
+    return versions;
   }
 
   function markSaved(sent: PageDocument, groups: Partial<Record<SectionGroup, Item[]>>, pageChanged: boolean) {
@@ -675,7 +662,7 @@ export function useDesigner() {
     for (const [g, items] of Object.entries(groups)) savedGroupsJson.value[g as SectionGroup] = JSON.stringify(items);
   }
 
-  async function save(themeFiles: DesignerSaveFile[] = []): Promise<DesignerSaveOutcome | false> {
+  async function save(themeFiles: DesignerSaveFile[] = []): Promise<Record<string, string> | false> {
     if ((!groupId.value && !file.value && !shared.value) || busy.value || loadError.value) return false;
     const sent = pageOnly(doc.value);
     const pageChanged = JSON.stringify(sent) !== savedJson.value;
@@ -688,10 +675,10 @@ export function useDesigner() {
     busy.value = "saving";
     try {
       if (pageChanged && shared.value) await api.saveSharedComponentContent(shared.value.id, sent);
-      const saved = page || files.length ? await saveFiles(page, files) : { versions: {}, warnings: [] };
+      const versions = page || files.length ? await saveFiles(page, files) : {};
       markSaved(sent, groups, pageChanged);
       await Promise.all([refreshStatus(), loadComponents(true)]);
-      return saved;
+      return versions;
     } finally {
       busy.value = undefined;
     }

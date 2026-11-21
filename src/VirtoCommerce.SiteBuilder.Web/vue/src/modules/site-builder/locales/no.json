@@ -331,7 +331,6 @@
       "ASSISTANT_CHANGED": "AI-assistenten endret denne siden. Endringene dine som ikke er lagret, beholdes: kopier det du trenger, og åpne siden på nytt for å se assistentens endringer.",
       "CATALOG_PENDING": "Temaendringer lagres når forhåndsvisningen av nettbutikken er lastet inn: den angir skjemaene de kontrolleres mot.",
       "SAVE_FAILED": "Siden kunne ikke lagres.",
-      "SAVE_WARNINGS": "Lagret med advarsler:",
       "SAVE_FORBIDDEN": "Du har ikke tilgang til å lagre: {parts}. Ingenting ble lagret.",
       "SAVE_FORBIDDEN_ANY": "Du har ikke tilgang til å lagre disse endringene. Ingenting ble lagret.",
       "PUBLISH_FAILED": "Siden kunne ikke publiseres.",
