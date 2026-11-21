@@ -1,0 +1,195 @@
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
+using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.Data.Validation;
+using VirtoCommerce.StoreModule.Core.Model;
+using Xunit;
+
+namespace VirtoCommerce.SiteBuilder.Tests;
+
+public sealed class CustomSectionPublishTests : IDisposable
+{
+    // The snapshot cache region is static and keyed by store id, and other classes publish for "s1" in parallel.
+    private const string StoreId = "custom-sections";
+    private const string Catalog = "abc12345";
+    private const string Product = "default/templates/product.json";
+    private const string Hero = "default/custom-sections/custom-hero.json";
+    private const string Pointer = "default/snapshots/current.json";
+    private const string HeroFile = """
+        {
+          "format": 1,
+          "name": { "en-US": "Hero", "de-DE": "Held" },
+          "schema": {
+            "settings": [
+              { "id": "title", "type": "string", "translatable": true, "default": { "en-US": "Welcome", "de-DE": "Willkommen" } },
+              { "id": "body", "type": "text" }
+            ],
+            "limit": 1
+          },
+          "template": "<section><h2>{{ settings.title }}</h2><div data-html=\"settings.body\"></div></section>",
+          "css": ":scope { color: var(--color-neutral-900); }"
+        }
+        """;
+
+    private const string Kit = """, "kit": { "tags": { "vc-button": { "attributes": { "label": { "type": "string" } } } }, "behaviors": {} }""";
+
+    private readonly FakeBlobStorage _storage = new();
+    private readonly TestPlatformMemoryCache _cache = new();
+    private readonly InProcessDistributedLock _lock = new();
+    private readonly FakeStoreService _stores = new(new Store { Id = StoreId, DefaultLanguage = "en-US", Languages = ["en-US", "de-DE"], DynamicProperties = [] });
+    private readonly ThemeStorageFactory _storageFactory;
+    private readonly ThemePublisher _publisher;
+    private readonly ThemeSnapshotService _snapshots;
+
+    public CustomSectionPublishTests()
+    {
+        _storageFactory = new ThemeStorageFactory(_stores, _storage, _storage, _storage);
+        _publisher = new ThemePublisher(_storageFactory, new ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory), _lock,
+            _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
+            new ThemePaletteService());
+        _snapshots = new ThemeSnapshotService(_stores, _storageFactory, _publisher, _cache, Options.Create(new ThemeSnapshotOptions()));
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    public void Dispose() => _cache.Dispose();
+
+    [Fact]
+    public async Task PublishAsync_CustomSectionDraft_GoesLiveAndIntoTheSnapshotOfEachLanguage()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme($"{Hero}-draft")] = HeroFile;
+        _storage.Files[Theme($"{Product}-draft")] = TemplateOf("product-info", "custom-hero");
+
+        await _publisher.PublishAsync(StoreId, Catalog, null, Ct);
+
+        Assert.Equal(HeroFile, _storage.Files[Theme(Hero)]);
+        Assert.False(_storage.Files.ContainsKey(Theme($"{Hero}-draft")));
+        var english = await SnapshotAsync("en-US");
+        var german = await SnapshotAsync("de-DE");
+        Assert.Equal(["custom-hero"], ((JObject)english["customSections"]!).Properties().Select(x => x.Name));
+        Assert.Equal(("Hero", "Welcome"), NameAndDefault(english));
+        Assert.Equal(("Held", "Willkommen"), NameAndDefault(german));
+        Assert.Equal(JObject.Parse(HeroFile)["template"], english["customSections"]!["custom-hero"]!["template"]);
+        Assert.Equal(["product-info", "custom-hero"], english["templates"]!["product"]!["content"]!.Select(x => x.Value<string>("type")));
+    }
+
+    [Fact]
+    public async Task PublishAsync_ThemeWithoutCustomSections_LeavesThemOutOfTheSnapshot()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme($"{Product}-draft")] = TemplateOf("product-info");
+
+        await _publisher.PublishAsync(StoreId, Catalog, null, Ct);
+
+        Assert.False((await SnapshotAsync("en-US")).ContainsKey("customSections"));
+    }
+
+    [Fact]
+    public async Task PublishAsync_CustomSectionDraftThatBreaksARule_IsRefusedAndPublishesNothing()
+    {
+        await SaveCatalogAsync();
+        var hero = JObject.Parse(HeroFile);
+        hero["css"] = "@import url(\"https://evil.example/x.css\");";
+        _storage.Files[Theme($"{Hero}-draft")] = hero.ToString();
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Contains("custom-sections/custom-hero.json: the CSS has @import, and a custom section's CSS has only @media, @supports, @container and @keyframes",
+            exception.Errors);
+        Assert.False(_storage.Files.ContainsKey(Theme(Pointer)));
+        Assert.False(_storage.Files.ContainsKey(Theme(Hero)));
+    }
+
+    [Theory]
+    [InlineData(Kit, null)]
+    [InlineData("", "custom-sections/custom-hero.json: <vc-button> at line 1 is a kit tag, and the storefront offers none: its catalog has no kit")]
+    public async Task PublishAsync_KitTag_IsCheckedAgainstTheKitOfTheCatalogItPublishesWith(string kit, string error)
+    {
+        await SaveCatalogAsync(kit: kit);
+        var hero = JObject.Parse(HeroFile);
+        hero["template"] = "<section><vc-button label=\"{{ settings.title }}\"></vc-button></section>";
+        _storage.Files[Theme($"{Hero}-draft")] = hero.ToString();
+
+        var exception = await Record.ExceptionAsync(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Equal(error, (exception as ThemeValidationException)?.Errors.Single());
+    }
+
+    [Fact]
+    public async Task PublishAsync_FileOfTheFolderNamedAsNoType_IsRefused()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme("default/custom-sections/Hero.json-draft")] = HeroFile;
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Equal(
+            ["custom-sections/Hero.json: 'Hero' is not a custom section type, which is 'custom-' and lowercase words joined by '-', at most 64 characters"],
+            exception.Errors);
+    }
+
+    [Fact]
+    public async Task PublishAsync_TemplatePlacingACustomTypeOnlyThePreviewSaw_IsRefused()
+    {
+        await SaveCatalogAsync(""", "custom-old": { "settings": [], "custom": true }""");
+        _storage.Files[Theme($"{Product}-draft")] = TemplateOf("product-info", "custom-old");
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Equal(["templates/product.json: 's1' has a type the storefront does not have, 'custom-old'"], exception.Errors);
+    }
+
+    [Fact]
+    public async Task PublishAsync_RichTextOfACustomSection_GoesLiveSanitized()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme($"{Product}-draft")] =
+            """{ "settings": {}, "content": [ { "id": "h", "type": "custom-hero", "body": "<p>Sale</p><img src=x onerror=alert(1)>" } ] }""";
+
+        await _publisher.PublishAsync(StoreId, Catalog, null, Ct);
+
+        Assert.Equal("<p>Sale</p><img src=\"x\">", JObject.Parse(_storage.Files[Theme(Product)])["content"]![0]!.Value<string>("body"));
+        Assert.Equal("<p>Sale</p><img src=\"x\">", (await SnapshotAsync("en-US"))["templates"]!["product"]!["content"]![0]!.Value<string>("body"));
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_CustomSectionDraft_IsListedAsANewDraft()
+    {
+        _storage.Files[Theme($"{Hero}-draft")] = HeroFile;
+
+        var status = await _publisher.GetStatusAsync(StoreId, Ct);
+
+        Assert.Equal(["custom-sections/custom-hero.json"], status.Drafts);
+        Assert.Equal(["custom-sections/custom-hero.json"], status.NewDrafts);
+    }
+
+    private async Task<JObject> SnapshotAsync(string language) => JObject.Parse((await _snapshots.GetPublishedAsync(StoreId, language, Ct)).Content);
+
+    private static (string Name, string Default) NameAndDefault(JObject snapshot)
+    {
+        var hero = snapshot["customSections"]!["custom-hero"]!;
+
+        return (hero.Value<string>("name"), hero["schema"]!["settings"]![0]!.Value<string>("default"));
+    }
+
+    private Task<string> SaveCatalogAsync(string sections = "", string kit = "") =>
+        new SchemaCatalogService(_storageFactory).SaveAsync(StoreId,
+            $$"""{ "hash": "{{Catalog}}", "sections": { "product-info": {}{{sections}} }, "blocks": {}, "shared": {}{{kit}} }""", Ct);
+
+    private static string Theme(string path) => $"themes/{StoreId}/{path}";
+
+    private static string TemplateOf(params string[] types) =>
+        new JObject
+        {
+            ["settings"] = new JObject(),
+            ["content"] = new JArray(types.Select((x, i) => new JObject { ["id"] = $"s{i}", ["type"] = x })),
+        }.ToString(Newtonsoft.Json.Formatting.None);
+}
