@@ -228,7 +228,7 @@ public class ThemeDraftService(
             return DraftDiscardStatus.NoDraft;
         }
 
-        return publishedContent == null && ThemeCustomSections.GetSectionType(draft.Storage.GetLivePath(draft.File)) == null
+        return publishedContent == null && ThemeCustomSections.GetCustomSectionType(draft.Storage.GetLivePath(draft.File)) == null
             ? DraftDiscardStatus.OnlyCopy
             : DraftDiscardStatus.Discarded;
     }

@@ -64,7 +64,6 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     // a rel that gives the page a link opens a hold on the storefront's window
     private const string OpenerRel = "opener";
 
-    private const string KitKey = "kit";
 
     private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
 
@@ -964,7 +963,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     /// <summary>The kit of the storefront's catalog: its kit tags, which start with vc-, and its behaviors, each with the fields it takes.</summary>
     protected virtual StorefrontKit ReadKit(JObject catalog)
     {
-        if (catalog?[KitKey] is not JObject kit)
+        if (catalog?[CustomSectionKit.KitKey] is not JObject kit)
         {
             return new StorefrontKit(catalog != null, Tags: null, Behaviors: null);
         }

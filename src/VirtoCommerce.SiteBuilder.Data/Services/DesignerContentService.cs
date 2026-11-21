@@ -124,7 +124,7 @@ public class DesignerContentService(
     protected virtual IList<string> GetCustomSectionErrors(IDictionary<string, JToken> files, IDictionary<string, JToken> customSections, JObject catalog)
     {
         var saved = files
-            .Select(x => (Type: ThemeCustomSections.GetSectionType(x.Key), Content: x.Value))
+            .Select(x => (Type: ThemeCustomSections.GetCustomSectionType(x.Key), Content: x.Value))
             .Where(x => x.Type != null)
             .ToList();
         var errors = saved.SelectMany(x => customSectionValidator.Validate(x.Type, x.Content, catalog).Errors).ToList();
@@ -140,7 +140,7 @@ public class DesignerContentService(
     protected virtual async Task<IList<string>> GetCustomSectionWarningsAsync(DesignerSaveCommand command, CancellationToken cancellationToken)
     {
         var saved = command.ThemeFiles
-            .Select(x => (Type: ThemeCustomSections.GetSectionType(SiteBuilderContentPaths.GetPathInTheme(x.Path)), Content: ParseOrNull(x.Content)))
+            .Select(x => (Type: ThemeCustomSections.GetCustomSectionType(SiteBuilderContentPaths.GetPathInTheme(x.Path)), Content: ParseOrNull(x.Content)))
             .Where(x => x.Type != null && x.Content != null)
             .ToList();
         if (saved.Count == 0)
@@ -172,7 +172,7 @@ public class DesignerContentService(
 
         foreach (var (file, content) in files)
         {
-            if (ThemeCustomSections.GetSectionType(file) is { } type)
+            if (ThemeCustomSections.GetCustomSectionType(file) is { } type)
             {
                 result[type] = content;
             }
@@ -221,7 +221,7 @@ public class DesignerContentService(
         return errors;
     }
 
-    private static bool IsCustomSectionFile(string file) => ThemeCustomSections.GetSectionType(file) != null;
+    private static bool IsCustomSectionFile(string file) => ThemeCustomSections.GetCustomSectionType(file) != null;
 
     /// <summary>
     /// A template draft may not lose the main section the template shows: removed, or hidden where it was not hidden already.

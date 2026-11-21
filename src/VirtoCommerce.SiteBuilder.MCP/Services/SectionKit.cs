@@ -35,7 +35,6 @@ public static class SectionKit
         }
         """;
 
-    private const string KitKey = "kit";
     private const string DesignKey = "design";
     private const string GuideKey = "guide";
 
@@ -62,7 +61,7 @@ public static class SectionKit
     /// <param name="palette">The colors of the theme's palette, light and dark; a token either leaves out keeps the storefront preset's.</param>
     public static object Describe(string storeId, JsonObject catalog, CustomSectionRules rules, ThemePalette palette)
     {
-        var kit = catalog?[KitKey] as JsonObject;
+        var kit = catalog?[CustomSectionKit.KitKey] as JsonObject;
         var example = (JsonObject)JsonNode.Parse(ExampleFile)!;
 
         return new

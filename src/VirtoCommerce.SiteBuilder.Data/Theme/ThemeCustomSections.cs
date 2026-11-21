@@ -7,7 +7,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 /// <summary>A theme's custom section types: its files in <see cref="ThemeStorage.CustomSectionsFolder"/>, and the schemas they add to the catalog.</summary>
 public static class ThemeCustomSections
 {
-    private const string CustomKey = "custom";
+    public const string CustomKey = "custom";
     private const string NameKey = "name";
     private const string SchemaKey = "schema";
 
@@ -27,11 +27,11 @@ public static class ThemeCustomSections
     }
 
     /// <summary>The type of a file by its path in the theme, valid or not; null for a file outside the folder or one that is not JSON.</summary>
-    public static string GetSectionType(string file)
+    public static string GetCustomSectionType(string pathInTheme)
     {
         var folder = ThemeStorage.CustomSectionsFolder + "/";
 
-        return file.StartsWith(folder, StringComparison.OrdinalIgnoreCase) ? ThemeStorage.GetCustomSectionType(file[folder.Length..]) : null;
+        return pathInTheme.StartsWith(folder, StringComparison.OrdinalIgnoreCase) ? ThemeStorage.GetCustomSectionType(pathInTheme[folder.Length..]) : null;
     }
 
     /// <summary>

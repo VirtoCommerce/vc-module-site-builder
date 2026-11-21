@@ -127,7 +127,7 @@ public static class ThemeFileEdits
             return CompareRules(before, after);
         }
 
-        if (ThemeCustomSections.GetSectionType(file) != null)
+        if (ThemeCustomSections.GetCustomSectionType(file) != null)
         {
             return CompareSectionType(before, after);
         }

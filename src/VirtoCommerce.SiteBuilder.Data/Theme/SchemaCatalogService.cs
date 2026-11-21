@@ -93,7 +93,7 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
             throw new ArgumentException($"The catalog's \"{malformed}\" must name a schema object for each key.", nameof(catalogJson));
         }
 
-        if (CustomSectionKit.GetShapeError(catalog["kit"]) is { } kitError)
+        if (CustomSectionKit.GetShapeError(catalog[CustomSectionKit.KitKey]) is { } kitError)
         {
             throw new ArgumentException($"The catalog's \"kit\" {kitError}.", nameof(catalogJson));
         }

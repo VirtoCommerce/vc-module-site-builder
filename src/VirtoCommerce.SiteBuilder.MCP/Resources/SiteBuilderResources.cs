@@ -52,7 +52,6 @@ public class SiteBuilderResources(
 
     private const string JsonMimeType = "application/json";
     private const string NameKey = "name";
-    private const string CustomKey = "custom";
 
     private static readonly string[] SchemaKindsListed = [SchemaKinds.Sections, SchemaKinds.Blocks, SchemaKinds.Objects, SchemaKinds.Templates];
 
@@ -336,7 +335,7 @@ public class SiteBuilderResources(
         _ => null,
     };
 
-    private static bool IsCustom(JsonObject schema) => schema?[CustomKey] is JsonValue custom && custom.TryGetValue<bool>(out var value) && value;
+    private static bool IsCustom(JsonObject schema) => schema?[ThemeCustomSections.CustomKey] is JsonValue custom && custom.TryGetValue<bool>(out var value) && value;
 
     private static JsonObject ParseObject(string content)
     {

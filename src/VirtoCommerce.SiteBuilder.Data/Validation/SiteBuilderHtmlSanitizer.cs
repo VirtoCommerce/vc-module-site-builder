@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using AngleSharp.Dom;
 using Ganss.Xss;
 using VirtoCommerce.SiteBuilder.Core.Services;
@@ -7,7 +8,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Validation;
 /// <summary>The storefront's sanitizer profile, with fewer elements and an allowlist of URL schemes.</summary>
 public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
 {
-    internal static readonly HashSet<string> AllowedTags = new(StringComparer.OrdinalIgnoreCase)
+    public static IReadOnlySet<string> AllowedTags { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "a", "abbr", "acronym", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "big", "blink", "blockquote", "br",
         "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "data", "datalist", "dd", "del", "details", "dfn",
@@ -16,7 +17,7 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
         "menuitem", "meter", "nav", "nobr", "ol", "optgroup", "option", "output", "p", "picture", "pre", "progress", "q", "rp", "rt",
         "ruby", "s", "samp", "section", "select", "small", "source", "spacer", "span", "strike", "strong", "sub", "summary", "sup",
         "table", "tbody", "td", "textarea", "tfoot", "th", "thead", "time", "tr", "track", "tt", "u", "ul", "var", "video", "wbr",
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> AllowedAttributes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -68,7 +69,7 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
     {
         var sanitizer = new HtmlSanitizer(new HtmlSanitizerOptions
         {
-            AllowedTags = AllowedTags,
+            AllowedTags = new HashSet<string>(AllowedTags, StringComparer.OrdinalIgnoreCase),
             AllowedAttributes = AllowedAttributes,
             UriAttributes = UriAttributes,
             AllowedSchemes = AllowedSchemes,

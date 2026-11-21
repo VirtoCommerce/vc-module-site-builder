@@ -9,6 +9,9 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 /// </summary>
 public static class CustomSectionKit
 {
+    /// <summary>The key of the kit in the storefront's schema catalog.</summary>
+    public const string KitKey = "kit";
+
     public const string StringType = "string";
     public const string NumberType = "number";
     public const string BooleanType = "boolean";

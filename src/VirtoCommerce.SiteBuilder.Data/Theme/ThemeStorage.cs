@@ -27,7 +27,7 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
 
     private const string FolderType = "folder";
     private const string JsonExtension = ".json";
-    private const int CustomSectionTypeMaxLength = 64;
+    public const int CustomSectionTypeMaxLength = 64;
 
     private static readonly Regex TemplateKeyPattern = new("^(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?$", RegexOptions.None, TimeSpan.FromSeconds(1));
 

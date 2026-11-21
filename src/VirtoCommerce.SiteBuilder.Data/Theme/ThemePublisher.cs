@@ -477,7 +477,7 @@ public class ThemePublisher(
         {
             source.Templates[key] = content;
         }
-        else if (content != null && ThemeCustomSections.GetSectionType(file) is { } type)
+        else if (content != null && ThemeCustomSections.GetCustomSectionType(file) is { } type)
         {
             source.CustomSections[type] = content;
         }
