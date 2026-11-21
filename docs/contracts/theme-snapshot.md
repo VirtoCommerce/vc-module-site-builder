@@ -17,6 +17,7 @@ store's `DefaultThemeName` property, `default` when it is empty. Paths below are
 | `templates/{key}.json` | a template document, one per template key |
 | `config/template_rules.json` | the template rules |
 | `sections/header-group.json`, `sections/footer-group.json` | the header and footer groups |
+| `custom-sections/{type}.json` | a [custom section](custom-sections.md) type, one per type |
 | `config/brand.json` | the logos and the favicon |
 | `config/palette.json`, `config/palette.dark.json` | the light and the dark palette |
 | `config/settings_data.json` | the theme settings; see [Theme settings](#theme-settings) |
@@ -253,6 +254,8 @@ interface ThemeSnapshot {
   footer?: SectionGroup;
   brand: Brand;
   palette?: Palette;
+  /** the theme's custom section types, by type; see [Custom sections](custom-sections.md) */
+  customSections?: Record<string, CustomSectionType>;
   /** the names held by `menu` settings of the header and footer */
   menus: string[];
 }
@@ -282,7 +285,8 @@ interface SectionGroup {
 }
 ```
 
-The storefront renders only section types it registered and passes a section only the settings its schema declares.
+The storefront renders only section types it registered, and the custom section types of the snapshot, and passes a
+section only the settings its schema declares.
 A snapshot never holds a shared component (`componentRef`): shared components are page content. A publication refuses a
 theme file that places one; the first publication, from the live files, leaves it out. The header group holds
 `site-header` and the announcement bar, the footer group holds `site-footer`; neither has a logo setting of its own:

@@ -134,6 +134,8 @@ interface Draft {
     footer?: SectionGroup;
     brand?: Brand;
     palette?: Palette | null;
+    /** every custom section type, as last saved or as the designer has it; replaces the published ones */
+    customSections?: Record<string, CustomSectionType>;
   };
 }
 ```
