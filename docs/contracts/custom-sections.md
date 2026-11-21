@@ -132,8 +132,14 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
 - **At-rules**: `@media`, `@supports`, `@container` and `@keyframes`. A keyframes name starts with the type
   (`@keyframes custom-hero-fade`), since names are not scoped.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
-  selector naming `:root`, `html` or `body`; `position: fixed`; `url()` other than an asset library URL; `expression()`,
+  selector naming `:root`, `html` or `body`; `position: fixed`, and `var()`, `attr()` or `env()` in `position`; a URL
+  other than an asset library URL, in `url()` or as a string of `image-set()` and the other functions that load an
+  image, custom properties included, and `var()`, `attr()` or `env()` inside such a function; `expression()`,
   `behavior` and `-moz-binding`.
+- **Read as a browser reads it**, from its tokens: a comment inside a string is text, and escapes are read. A string
+  that a line break cuts off, and a `url(` whose unquoted URL holds a quote, a parenthesis or a space, are refused, and
+  so is a block left open or closed without its pair, since the storefront's wrapping would close with it. Blocks nest
+  at most 32 deep, and at-rules at most 4.
 - **Colors** come from the palette: `var(--color-…)`, a `color-token` setting's variable, or `transparent` and
   `currentColor`. A literal color is saved with a warning.
 - **Classes** are the template's own. Utility classes of the storefront's build are not available.

@@ -302,7 +302,20 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { behavior: url(https://cdn.example/assets/x.htc); }""", "the CSS sets behavior, which runs script")]
     [InlineData(""".a { -moz-binding: url(https://cdn.example/assets/x.xml#y); }""", "the CSS sets -moz-binding, which runs script")]
     [InlineData("""@keyframes fade { from { opacity: 0; } }""", "the CSS names @keyframes 'fade', which does not start with the type, 'custom-hero': names are not scoped")]
-    [InlineData("""} body { display: none; } .a {""", "the CSS has a '{' or a '}' without its pair")]
+    [InlineData("""} body { display: none; } .a {""", "the CSS has a '}' without its pair")]
+    [InlineData(""".a { color: red; """, "the CSS has a '{' without its pair")]
+    [InlineData(""".a { background: rgb(0 0 0 }""", "the CSS has a '}' without its pair")]
+    [InlineData(""".a{background:url(x')}}} *{display:none!important} .b{content:'}""", "the CSS has a url( whose URL a quote, a parenthesis or a space breaks: quote the URL")]
+    [InlineData(".a{content:'x\r}}} *{display:none}\n}", "the CSS has a string that a line break cuts off")]
+    [InlineData(".a{content:'x\f}}} *{display:none}\n}", "the CSS has a string that a line break cuts off")]
+    [InlineData(""":scope{--a:"/*";position:fixed;inset:0;z-index:2147483647;--b:"*/"}""", "the CSS has position: fixed, which puts the section over the page")]
+    [InlineData(""":scope{--a:"/*";background:url(https://evil.example/t.gif);--b:"*/"}""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library")]
+    [InlineData(""".a { background: url("https://evil.example/t.gif\"") }""", "the CSS loads 'https://evil.example/t.gif\"', which is not a URL of the store's asset library")]
+    [InlineData(""":scope { --u: url(https://evil.example/t.gif); }""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library")]
+    [InlineData(""":scope { --p: fixed; position: var(--p); }""", "the CSS sets position with var(), which could make it fixed")]
+    [InlineData(""".a { posit\69 on: fi\78 ed; }""", "the CSS has position: fixed, which puts the section over the page")]
+    [InlineData(""".a { background-image: image-set(var(--u) 1x); }""", "the CSS has var() inside image-set(), whose URL is then not known on save")]
+    [InlineData("""@media a { @media b { @media c { @media d { @media e { .a { margin: 0; } } } } } }""", "the CSS nests at-rules deeper than 4")]
     public void Validate_CssThatBreaksARule_IsRefusedWithTheRule(string css, string error)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
@@ -311,11 +324,13 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
-    public void Validate_CssTheParserCannotBuild_IsRefused()
+    public void Validate_CssNestedDeeperThanTheLimit_IsRefusedBeforeItIsWalked()
     {
-        var result = _validator.Validate(Type, Section("<section></section>", """.a { margin: 0; } @namespace svg "http://www.w3.org/2000/svg";"""), Catalog);
+        var css = string.Concat(Enumerable.Repeat(".a { ", 5000)) + string.Concat(Enumerable.Repeat("} ", 5000));
 
-        Assert.StartsWith($"{File}: the CSS does not read: ", Assert.Single(result.Errors));
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Equal([$"{File}: the CSS nests blocks deeper than 32"], result.Errors);
     }
 
     [Fact]
