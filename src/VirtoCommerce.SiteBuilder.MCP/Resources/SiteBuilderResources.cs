@@ -22,6 +22,7 @@ using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using VirtoCommerce.StoreModule.Core.Services;
@@ -42,23 +43,28 @@ public class SiteBuilderResources(
     IMemberSearchService memberSearchService,
     ISiteBuilderPublishStatusQueryService publishStatusQueryService,
     IMcpPageSizeResolver pageSizeResolver,
+    IThemeStorageFactory themeStorageFactory,
+    IDesignerOperationService designerOperationService,
+    ICustomSectionValidator customSectionValidator,
     ILogger<SiteBuilderResources> logger)
 {
     public const string SchemasUri = "site-builder://stores/{store_id}/schemas";
 
     private const string JsonMimeType = "application/json";
     private const string NameKey = "name";
+    private const string CustomKey = "custom";
 
     private static readonly string[] SchemaKindsListed = [SchemaKinds.Sections, SchemaKinds.Blocks, SchemaKinds.Objects, SchemaKinds.Templates];
 
     [McpServerResource(UriTemplate = SchemasUri, Name = "section_schemas", MimeType = JsonMimeType)]
     [McpPermission(Read)]
-    [Description("The schemas the store's storefront sent: the section, block, object and template types with their names. " +
-        "Read one schema in full at site-builder://stores/{store_id}/schemas/{kind}/{key}. Until the storefront has sent its " +
-        "catalog (the designer's preview sends it), the answer says the schemas are not available.")]
+    [Description("The schemas the store's storefront sent: the section, block, object and template types with their names, " +
+        "and the custom section types of the store's theme among the sections, marked custom. Read one schema in full at " +
+        "site-builder://stores/{store_id}/schemas/{kind}/{key}. Until the storefront has sent its catalog (the designer's preview " +
+        "sends it), the answer says the schemas are not available.")]
     public async Task<string> SectionSchemas(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
     {
-        var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
+        var catalog = await ReadThemeCatalogAsync(context.User, store_id, cancellationToken);
         if (catalog == null)
         {
             return Serialize(NoCatalog(store_id));
@@ -72,16 +78,19 @@ public class SiteBuilderResources(
             Available = true,
             CatalogHash = ThemeFiles.GetCatalogHash(catalog),
             Kinds = kinds,
-            Note = $"Read one schema with its settings at site-builder://stores/{store_id}/schemas/{{kind}}/{{key}}, for example .../schemas/sections/hero-banner.",
+            Note = $"Read one schema with its settings at site-builder://stores/{store_id}/schemas/{{kind}}/{{key}}, for example .../schemas/sections/hero-banner. " +
+                $"A custom section type is the theme's own: read it whole at site-builder://stores/{store_id}/custom-sections/{{type}}, and write one with save_section_type " +
+                $"after reading site-builder://stores/{store_id}/section-kit.",
         });
     }
 
     [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/schemas/{kind}/{key}", Name = "section_schema", MimeType = JsonMimeType)]
     [McpPermission(Read)]
-    [Description("One schema the store's storefront sent, with its settings and blocks: kind is sections, blocks, objects or templates; key is the type.")]
+    [Description("One schema the store's storefront sent, or of a custom section type of the store's theme, with its settings and blocks: " +
+        "kind is sections, blocks, objects or templates; key is the type.")]
     public async Task<string> SectionSchema(RequestContext<ReadResourceRequestParams> context, string store_id, string kind, string key, CancellationToken cancellationToken)
     {
-        var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
+        var catalog = await ReadThemeCatalogAsync(context.User, store_id, cancellationToken);
         if (catalog == null)
         {
             return Serialize(NoCatalog(store_id));
@@ -98,6 +107,68 @@ public class SiteBuilderResources(
         }
 
         return Serialize(new { StoreId = store_id, Available = true, Kind = kind, Key = key, Schema = schema.DeepClone() });
+    }
+
+    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit", Name = "section_kit", MimeType = JsonMimeType)]
+    [McpPermission(Read)]
+    [Description("Everything to write a custom section type with save_section_type: the elements and attributes a template may hold, " +
+        "the bindings, the setting types, the setting variables, the CSS rules, the store's palette tokens, the kit tags and behaviors " +
+        "the storefront offers, the size limits and a complete example. Read it before writing a type.")]
+    public async Task<string> ReadSectionKit(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
+    {
+        var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
+
+        return Serialize(SectionKit.Describe(store_id, catalog, customSectionValidator.GetRules()));
+    }
+
+    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/custom-sections/{type}", Name = "custom_section", MimeType = JsonMimeType)]
+    [McpPermission(Read)]
+    [Description("A custom section type of the store's theme as save_section_type takes it: name, schema, template and css, as its draft " +
+        "holds them, else as they are live, with its version_token and whether it is published. A type only in draft shows nothing " +
+        "on the storefront until the theme is published.")]
+    public async Task<string> ReadCustomSection(RequestContext<ReadResourceRequestParams> context, string store_id, string type, CancellationToken cancellationToken)
+    {
+        await EnsureStoreAsync(context.User, store_id);
+        if (string.IsNullOrEmpty(type) || !ThemeStorage.IsCustomSectionType(type))
+        {
+            return Serialize(new
+            {
+                StoreId = store_id,
+                Available = false,
+                Reason = $"'{type}' is not a custom section type, which is 'custom-' and lowercase words joined by '-'.",
+            });
+        }
+
+        var path = await ThemeFiles.GetPathAsync(themeStorageFactory, store_id, ThemeStorage.GetCustomSectionFile(type));
+        var file = await ThemeFiles.ReadAsync(designerOperationService, context.User, store_id, path, cancellationToken);
+        if (file.Content == null)
+        {
+            return Serialize(new
+            {
+                StoreId = store_id,
+                Available = false,
+                Reason = $"The theme has no custom section type '{type}'. {SchemasUri.Replace("{store_id}", store_id, StringComparison.Ordinal)} lists its types, marked custom; save_section_type creates one.",
+            });
+        }
+
+        var state = await ThemeSectionTypes.ReadAsync(await themeStorageFactory.OpenAsync(store_id), type);
+        var content = ParseObject(file.Content);
+
+        return Serialize(new
+        {
+            StoreId = store_id,
+            Available = true,
+            Type = type,
+            Path = path,
+            VersionToken = file.ETag,
+            state.Published,
+            state.HasDraft,
+            Name = content?[NameKey]?.DeepClone(),
+            Schema = content?["schema"]?.DeepClone(),
+            Template = content?["template"]?.DeepClone(),
+            Css = content?["css"]?.DeepClone(),
+            Content = content == null ? file.Content : null,
+        });
     }
 
     [McpServerResource(UriTemplate = "site-builder://template-rule-conditions", Name = "template_rule_conditions", MimeType = JsonMimeType)]
@@ -203,6 +274,14 @@ public class SiteBuilderResources(
         return await ThemeFiles.GetCatalogAsync(schemaCatalogService, storeId, cancellationToken);
     }
 
+    // With the theme's custom section types, which the storefront's preview may not have seen yet.
+    private async Task<JsonObject> ReadThemeCatalogAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
+    {
+        var catalog = await ReadCatalogAsync(user, storeId, cancellationToken);
+
+        return catalog == null ? null : ThemeSectionTypes.AddToCatalog(catalog, await ThemeSectionTypes.ListAsync(themeStorageFactory, storeId));
+    }
+
     private Task EnsureStoreAsync(ClaimsPrincipal user, string storeId)
     {
         if (string.IsNullOrWhiteSpace(storeId))
@@ -221,13 +300,35 @@ public class SiteBuilderResources(
     };
 
     private static List<SchemaRow> ListSchemas(JsonObject schemas) =>
-        schemas?.Select(x => new SchemaRow(x.Key, (x.Value as JsonObject)?[NameKey] is JsonValue name && name.TryGetValue<string>(out var text) ? text : x.Key))
+        schemas?.Select(x => new SchemaRow(x.Key, GetName((x.Value as JsonObject)?[NameKey]) ?? x.Key, IsCustom(x.Value as JsonObject) ? true : null))
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .ToList() ?? [];
+
+    // A custom section type may name itself per language.
+    private static string GetName(JsonNode name) => name switch
+    {
+        JsonValue value when value.TryGetValue<string>(out var text) => text,
+        JsonObject translations => translations.Select(x => GetName(x.Value)).FirstOrDefault(x => x != null),
+        _ => null,
+    };
+
+    private static bool IsCustom(JsonObject schema) => schema?[CustomKey] is JsonValue custom && custom.TryGetValue<bool>(out var value) && value;
+
+    private static JsonObject ParseObject(string content)
+    {
+        try
+        {
+            return JsonNode.Parse(content) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static string Serialize(object value) => JsonSerializer.Serialize(value, McpSerialization.Options);
 }
 
-public sealed record SchemaRow(string Key, string Name);
+public sealed record SchemaRow(string Key, string Name, bool? Custom = null);
 
 public sealed record OrganizationRow(string Id, string Name);
