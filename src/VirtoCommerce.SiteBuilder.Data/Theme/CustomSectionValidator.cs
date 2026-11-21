@@ -310,7 +310,12 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         var element = isGroup ? ReadElement(check, field, id, type, setting) : null;
         var isLink = type == StringFieldType && GetString(field, FormatKey) == UrlFormat;
 
-        return new CustomSectionSetting(id, type, isLink, element);
+        var options = type == SelectFieldType
+            ? (field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).OfType<JValue>()
+                .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture)).ToList()
+            : null;
+
+        return new CustomSectionSetting(id, type, isLink, element, options);
     }
 
     protected virtual void ValidateSettingKeys(CustomSectionCheck check, JObject field, string type, string setting)
@@ -522,6 +527,14 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         {
             ValidateLink(check, name, value, where, scope);
         }
+        else if (name is "class")
+        {
+            ValidateClass(check, value, where, scope);
+        }
+        else if (name is "target" or "rel")
+        {
+            ValidateLinkTarget(check, name, value, where);
+        }
         else if (name is "src" or "srcset")
         {
             ValidateImage(check, name, value, where, scope);
@@ -730,6 +743,52 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             x => new KitBehavior(x["value"] is JObject value ? ReadKitField(value) : null, ReadKitFields(x["options"])));
 
         return new StorefrontKit(true, tags, behaviors);
+    }
+
+    /// <summary>
+    /// A class is the type's own: the storefront's utility classes would style the section from outside its CSS, such as fixed over the
+    /// page. A binding names a select whose options are the type's own classes.
+    /// </summary>
+    protected virtual void ValidateClass(CustomSectionCheck check, string value, string where, TemplateScope scope)
+    {
+        var literal = BindingPattern.Replace(value, match =>
+        {
+            var path = match.Groups[1].Value;
+            if (ResolveValue(check, path, where, scope) is { } setting &&
+                (setting.Type != SelectFieldType || setting.Options == null || !setting.Options.All(x => IsOwnClasses(check.Type, x))))
+            {
+                check.AddError($"{where} binds class to '{path}', which is not a select whose options are the type's own classes");
+            }
+
+            return " ";
+        });
+
+        if (HasBinding(literal) || literal.Contains("}}", StringComparison.Ordinal))
+        {
+            check.AddError($"{where} has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}");
+        }
+
+        foreach (var name in literal.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).Where(x => !IsOwnClasses(check.Type, x)).Distinct(StringComparer.Ordinal))
+        {
+            check.AddError($"{where} has the class '{Quote(name)}', which is not the type's own: '{check.Type}', or a name starting with '{check.Type}-' or '{check.Type}__'");
+        }
+    }
+
+    /// <summary>A link opens a page in this window or a new one, and gives it no hold on the storefront's window; the value is written as it is.</summary>
+    protected virtual void ValidateLinkTarget(CustomSectionCheck check, string name, string value, string where)
+    {
+        if (HasBinding(value))
+        {
+            check.AddError($"{where} has {name}=\"{Quote(value)}\", which is written as it is, without a binding");
+        }
+        else if (name == "target" && !(string.Equals(value, "_self", StringComparison.OrdinalIgnoreCase) || string.Equals(value, "_blank", StringComparison.OrdinalIgnoreCase)))
+        {
+            check.AddError($"{where} has target=\"{Quote(value)}\", which is not _self or _blank");
+        }
+        else if (name == "rel" && value.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).Contains("opener", StringComparer.OrdinalIgnoreCase))
+        {
+            check.AddError($"{where} has rel=\"{Quote(value)}\" with opener, which gives the page it opens a hold on the storefront's window");
+        }
     }
 
     protected virtual void ValidateLink(CustomSectionCheck check, string name, string value, string where, TemplateScope scope)
@@ -1316,6 +1375,10 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         return template.Length;
     }
 
+    private static bool IsOwnClasses(string type, string classes) =>
+        classes.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)
+            .All(x => x == type || x.StartsWith(type + "-", StringComparison.Ordinal) || x.StartsWith(type + "__", StringComparison.Ordinal));
+
     private static char GetOpener(CssTokenizer.TokenKind closer) => closer switch
     {
         CssTokenizer.TokenKind.CloseCurly => '{',
@@ -1445,7 +1508,9 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     }
 
     /// <summary>A setting a binding can name; <see cref="Element"/> holds the fields of a list's rows or of an object.</summary>
-    protected sealed record CustomSectionSetting(string Id, string Type, bool IsLink, IReadOnlyDictionary<string, CustomSectionSetting> Element)
+    /// <param name="Options">The values of a select's options.</param>
+    protected sealed record CustomSectionSetting(string Id, string Type, bool IsLink, IReadOnlyDictionary<string, CustomSectionSetting> Element,
+        IReadOnlyList<string> Options = null)
     {
         /// <summary>The list of a data-each that names none: the items of its rows are not checked.</summary>
         public static CustomSectionSetting UnknownList { get; } = new(string.Empty, ListFieldType, IsLink: false, Element: null);

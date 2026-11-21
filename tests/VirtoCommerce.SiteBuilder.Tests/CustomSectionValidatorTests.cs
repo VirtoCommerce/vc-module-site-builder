@@ -25,6 +25,7 @@ public class CustomSectionValidatorTests
           { "id": "tone", "type": "color-token" },
           { "id": "show", "type": "checkbox" },
           { "id": "view", "type": "select", "options": [ { "value": "grid", "label": "Grid" }, { "value": "carousel" } ] },
+          { "id": "layout", "type": "select", "options": [ { "value": "custom-hero--wide" }, { "value": "custom-hero--narrow custom-hero--dark" }, { "value": "" } ] },
           { "id": "items", "type": "list", "element": [
             { "id": "title", "type": "string" }, { "id": "image", "type": "images" }, { "id": "link", "type": "string", "format": "url" }, { "id": "body", "type": "text" }
           ] },
@@ -33,12 +34,12 @@ public class CustomSectionValidatorTests
         """;
 
     private const string ValidTemplate = """
-        <section class="hero {{ settings.view }}" data-inview data-inview-threshold="0.3" data-inview-once data-pointer>
+        <section class="custom-hero {{ settings.layout }}" data-inview data-inview-threshold="0.3" data-inview-once data-pointer>
           <h2 data-if="settings.title">{{ settings.title }}</h2>
-          <div class="hero__body" data-html="settings.body"></div>
+          <div class="custom-hero__body" data-html="settings.body"></div>
           <img src="{{ settings.image }}" alt="{{ settings.title }}" loading="lazy">
           <img src="https://cdn.example/assets/stores/s1/hero.png" srcset="https://cdn.example/assets/a.png 1x, https://cdn.example/assets/b.png 2x" alt="">
-          <ul class="hero__items" data-marquee>
+          <ul class="custom-hero__items" data-marquee>
             <li data-each="settings.items" data-if="!item.title" aria-label="{{ item.title }}">
               <a href="{{ item.link }}"><img src="{{ item.image }}" alt=""></a>
               <div data-html="item.body"></div>
@@ -61,15 +62,15 @@ public class CustomSectionValidatorTests
 
     private const string ValidCss = """
         :scope { color: var(--color-neutral-900); background: var(--setting-image) center / cover; position: relative; }
-        :scope[data-visible] .hero__items { opacity: 1; transform: translateY(calc(var(--scroll-progress) * 10px)); }
-        .hero__items > li { animation: custom-hero-fade 1s calc(var(--i) * 100ms) both; border-color: transparent; color: currentColor; }
-        .hero__body { background-image: url("https://cdn.example/assets/stores/s1/texture.png"); }
-        .hero__button { & .icon { opacity: .5; } }
-        @media (width >= 600px) { .hero__items { display: grid; grid-template-columns: repeat(var(--n), 1fr); } }
-        @supports (display: grid) { .hero__items { gap: 1rem; } }
-        @container (min-width: 400px) { .hero__body { font-size: 1.25rem; } }
+        :scope[data-visible] .custom-hero__items { opacity: 1; transform: translateY(calc(var(--scroll-progress) * 10px)); }
+        .custom-hero__items > li { animation: custom-hero-fade 1s calc(var(--i) * 100ms) both; border-color: transparent; color: currentColor; }
+        .custom-hero__body { background-image: url("https://cdn.example/assets/stores/s1/texture.png"); }
+        .custom-hero__button { & .icon { opacity: .5; } }
+        @media (width >= 600px) { .custom-hero__items { display: grid; grid-template-columns: repeat(var(--n), 1fr); } }
+        @supports (display: grid) { .custom-hero__items { gap: 1rem; } }
+        @container (min-width: 400px) { .custom-hero__body { font-size: 1.25rem; } }
         @keyframes custom-hero-fade { from { opacity: 0; } to { opacity: 1; } }
-        @media (prefers-reduced-motion: reduce) { .hero__items > li { animation: none; } }
+        @media (prefers-reduced-motion: reduce) { .custom-hero__items > li { animation: none; } }
         """;
 
     // the built-in kit tags and behaviors, as the storefront announces them in its catalog
@@ -150,6 +151,13 @@ public class CustomSectionValidatorTests
     [InlineData("""<section data-visible></section>""", "<section> at line 1 has an attribute a custom section cannot use, 'data-visible': it is no binding and no behavior the storefront offers")]
     [InlineData("""<section></section><div></div>""", "the template has 2 root elements, and has one: the section's root")]
     [InlineData("""text <section></section>""", "the template has text outside its root element")]
+    [InlineData("""<section class="fixed top-0 z-50 size-full"></section>""", "<section> at line 1 has the class 'fixed', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
+    [InlineData("""<section class="custom-hero custom-heroic"></section>""", "<section> at line 1 has the class 'custom-heroic', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
+    [InlineData("""<section class="custom-hero {{ settings.view }}"></section>""", "<section> at line 1 binds class to 'settings.view', which is not a select whose options are the type's own classes")]
+    [InlineData("""<section class="{{ settings.title }}"></section>""", "<section> at line 1 binds class to 'settings.title', which is not a select whose options are the type's own classes")]
+    [InlineData("""<section><a href="/x" target="storefront">x</a></section>""", "<a> at line 1 has target=\"storefront\", which is not _self or _blank")]
+    [InlineData("""<section><a href="/x" target="{{ settings.title }}">x</a></section>""", "<a> at line 1 has target=\"{{ settings.title }}\", which is written as it is, without a binding")]
+    [InlineData("""<section><a href="/x" target="_blank" rel="noreferrer opener">x</a></section>""", "<a> at line 1 has rel=\"noreferrer opener\" with opener, which gives the page it opens a hold on the storefront's window")]
     [InlineData("""<section data-each="settings.items"></section>""", "<section> at line 1 is the root and has data-each, which repeats an element inside the root")]
     [InlineData("""<section><ul data-each="settings.items"><li data-each="settings.items"></li></ul></section>""", "<li> at line 1 has data-each inside an element that has one")]
     [InlineData("""<section><ul><li data-each="settings.title"></li></ul></section>""", "<li> at line 1 repeats for 'title', a string and not a list")]
@@ -462,7 +470,7 @@ public class CustomSectionValidatorTests
         var error = _validator.GetSizeError(types);
         types.Remove("custom-hero-5");
 
-        Assert.Equal("custom-sections: the custom section types are 304.2 KB of JSON together, more than 256 KB: the snapshot carries every type to every page", error);
+        Assert.Equal("custom-sections: the custom section types are 304.9 KB of JSON together, more than 256 KB: the snapshot carries every type to every page", error);
         Assert.Null(_validator.GetSizeError(types));
     }
 

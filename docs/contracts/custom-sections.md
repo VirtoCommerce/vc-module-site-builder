@@ -56,6 +56,11 @@ left open or a `/>` on a kit tag, is refused, and so are elements nested more th
   `srcset`, `sizes`, `loading`, `decoding`, `width`, `height`, `datetime`, `colspan`, `rowspan`, `scope`,
   `data-each`, `data-if`, `data-html`, and the [behavior](#behaviors) attributes. No `id` (two instances on a page would
   share it), no `style`, no `on*`.
+- **Classes**: `class` names the type's own classes only: the type itself, or a name starting with `{type}-` or
+  `{type}__` (`custom-hero__title`, `custom-hero--dark`). A binding in it names a `select` setting whose options are such
+  classes.
+- **Link targets**: `target` is `_self` or `_blank`, and `rel` does not hold `opener`; both are written as they are, with
+  no binding.
 - **Links and images**: `href` is a path starting with `/`, an `https:`, `mailto:` or `tel:` URL, or a binding of a
   `"format": "url"` field. `src` and `srcset` are a URL of the store's asset library or a binding of an `images`
   field. A bound value that breaks the rule renders without the attribute.
@@ -143,7 +148,8 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
   at most 32 deep, and at-rules at most 4.
 - **Colors** come from the palette: `var(--color-…)`, a `color-token` setting's variable, or `transparent` and
   `currentColor`. A literal color is saved with a warning.
-- **Classes** are the template's own. Utility classes of the storefront's build are not available.
+- **Classes** are the type's own, as the template's `class` names them. The storefront's utility classes are not
+  available: they would style the section from outside its CSS, such as fixed over the page.
 
 ## Validation
 
