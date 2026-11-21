@@ -116,14 +116,37 @@ public class SiteBuilderResources(
         "the bindings, the setting types, the setting variables, the CSS rules, the store's palette tokens, the kit tags and behaviors " +
         "the storefront offers, the storefront's own guide and design tokens, the design rules, the size limits and a complete example. " +
         "Read it before writing a type.")]
-    public async Task<string> ReadSectionKit(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
+    public async Task<string> SectionKit(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
     {
         var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
         var palette = AbstractTypeFactory<ThemePalette>.TryCreateInstance();
         palette.Light = await ReadPaletteColorsAsync(context.User, store_id, ThemeStorage.PaletteFile, cancellationToken);
         palette.Dark = await ReadPaletteColorsAsync(context.User, store_id, ThemeStorage.DarkPaletteFile, cancellationToken);
 
-        return Serialize(SectionKit.Describe(store_id, catalog, customSectionValidator.GetRules(), palette));
+        return Serialize(SectionKitGuide.Describe(store_id, catalog, customSectionValidator.GetRules(), palette));
+    }
+
+    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit/icons", Name = "section_kit_icons", MimeType = JsonMimeType)]
+    [McpPermission(Read)]
+    [Description("Every icon name the storefront draws, as its catalog lists them: the values of a kit attribute whose field has " +
+        "\"optionsFrom\": \"icons\", such as vc-icon's name or vc-button's prepend-icon. A name the list does not hold is refused.")]
+    public async Task<string> SectionKitIcons(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
+    {
+        var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
+        if (catalog == null)
+        {
+            return Serialize(NoCatalog(store_id));
+        }
+
+        var icons = catalog[CustomSectionKit.KitKey]?[CustomSectionKit.IconsKey] as JsonArray;
+
+        return Serialize(new
+        {
+            StoreId = store_id,
+            Available = icons != null,
+            Reason = icons == null ? "The storefront's catalog lists no icon names, so an icon name is not checked." : null,
+            Icons = icons?.DeepClone(),
+        });
     }
 
     // a palette file as its draft holds it, else as it is live; none for no file or one that is not a palette
@@ -151,7 +174,7 @@ public class SiteBuilderResources(
     [Description("A custom section type of the store's theme as change_section_type takes it: name, schema, template and css, as its draft " +
         "holds them, else as they are live, with its version_token and whether it is published. A type only in draft shows nothing " +
         "on the storefront until the theme is published.")]
-    public async Task<string> ReadCustomSection(RequestContext<ReadResourceRequestParams> context, string store_id, string type, CancellationToken cancellationToken)
+    public async Task<string> CustomSection(RequestContext<ReadResourceRequestParams> context, string store_id, string type, CancellationToken cancellationToken)
     {
         await EnsureStoreAsync(context.User, store_id);
         if (string.IsNullOrEmpty(type) || !ThemeStorage.IsCustomSectionType(type))
@@ -160,7 +183,7 @@ public class SiteBuilderResources(
             {
                 StoreId = store_id,
                 Available = false,
-                Reason = $"'{type}' is not a custom section type, which is 'custom-' and lowercase words joined by '-'.",
+                Reason = $"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType(customSectionValidator.GetRules())}.",
             });
         }
 

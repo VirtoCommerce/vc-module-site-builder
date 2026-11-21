@@ -75,8 +75,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     [Fact]
     public void TheResources_FollowTheirPermissions()
     {
-        Assert.Equal(["custom_section", "section_kit", "section_schema", "section_schemas", "template_rule_conditions"], VisibleResources(Reader()));
-        Assert.Equal(["custom_section", "section_kit", "section_schema", "section_schemas", "store_settings", "template_rule_conditions", "user_groups"],
+        Assert.Equal(["custom_section", "section_kit", "section_kit_icons", "section_schema", "section_schemas", "template_rule_conditions"], VisibleResources(Reader()));
+        Assert.Equal(["custom_section", "section_kit", "section_kit_icons", "section_schema", "section_schemas", "store_settings", "template_rule_conditions", "user_groups"],
             VisibleResources(McpTestUser.Create("settings").WithPermissions(Permissions.Read, SettingQuery)));
         Assert.Contains("organizations", VisibleResources(McpTestUser.Create("customers").WithPermissions(Permissions.Read, CustomerPermissions.Read)));
         Assert.Empty(VisibleResources(McpTestUser.Create("settings-only").WithPermissions(SettingQuery, CustomerPermissions.Read)));
@@ -228,6 +228,25 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheSectionKit_CountsTheIcons_WhichTheirOwnResourceLists()
+    {
+        var kit = JObject.Parse(McpTestContext.StorefrontKit);
+        kit["icons"] = new JArray("arrow-right", "star");
+        await _context.SeedThemeAsync(StoreA, kit.ToString());
+        await _context.SeedThemeAsync(StoreB, McpTestContext.StorefrontKit);
+
+        var icons = (await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit")).GetProperty("kit").GetProperty("icons");
+        var list = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit/icons");
+        var none = await ReadAsync(Reader(), "site-builder://stores/store-b/section-kit/icons");
+
+        Assert.Equal(2, icons.GetProperty("count").GetInt32());
+        Assert.Contains("site-builder://stores/store-a/section-kit/icons", icons.GetProperty("names").GetString(), StringComparison.Ordinal);
+        Assert.True(list.GetProperty("available").GetBoolean());
+        Assert.Equal(["arrow-right", "star"], Strings(list.GetProperty("icons")));
+        Assert.False(none.GetProperty("available").GetBoolean());
+    }
+
+    [Fact]
     public async Task TheSectionKit_StartsWithTheStorefrontsGuideAndDesign_ThenTheDesignRules()
     {
         var kit = JObject.Parse(McpTestContext.StorefrontKit);
@@ -241,8 +260,11 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         var section = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
         var withoutGuide = await ReadAsync(Reader(), "site-builder://stores/store-b/section-kit");
 
-        Assert.Equal(["store_id", "available", "storefront_guide", "storefront_design", "design_rules"], section.EnumerateObject().Take(5).Select(x => x.Name));
+        Assert.Equal(["store_id", "available", "storefront_guide", "storefront_guide_note", "storefront_design", "design_rules"],
+            section.EnumerateObject().Take(6).Select(x => x.Name));
         Assert.Equal("# Writing a section\n\nUse the heading font for headings.", section.GetProperty("storefront_guide").GetString());
+        Assert.Contains("the storefront's own notes on its design", section.GetProperty("storefront_guide_note").GetString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("the storefront's own notes on its design", Strings(section.GetProperty("design_rules"))[0], StringComparison.Ordinal);
         Assert.Equal("The default corner radius of controls.",
             section.GetProperty("storefront_design").GetProperty("tokens").GetProperty("--vc-radius").GetProperty("description").GetString());
         Assert.Contains(Strings(section.GetProperty("design_rules")), x => x.Contains("@container sb-section", StringComparison.Ordinal));
@@ -257,7 +279,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     {
         var catalog = JObject.Parse($$"""{ "kit": {{McpTestContext.StorefrontKit}} }""");
 
-        var result = TestServices.CustomSectionValidator().Validate(SectionKit.ExampleType, ThemeJson.Parse(SectionKit.ExampleFile), catalog);
+        var result = TestServices.CustomSectionValidator().Validate(SectionKitGuide.ExampleType, ThemeJson.Parse(SectionKitGuide.ExampleFile), catalog);
 
         Assert.Empty(result.Errors);
         Assert.Empty(result.Warnings);
@@ -266,7 +288,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     [Fact]
     public void TheSectionKitsExample_IsMobileFirst_AndUsesOnlyTokensThatExist_WithFallbacks()
     {
-        var css = ThemeJson.Parse(SectionKit.ExampleFile)["css"]!.ToString();
+        var css = ThemeJson.Parse(SectionKitGuide.ExampleFile)["css"]!.ToString();
         var tokens = System.Text.RegularExpressions.Regex.Matches(css, @"var\((--vc-[\w-]+)(,?)").Select(x => (Name: x.Groups[1].Value, HasFallback: x.Groups[2].Value == ",")).ToList();
 
         Assert.Contains("@container sb-section (min-width:", css, StringComparison.Ordinal);
@@ -276,7 +298,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.NotEmpty(tokens);
         Assert.All(tokens, x => Assert.Contains(x.Name, new[] { "--vc-radius", "--vc-base-font-family", "--vc-heading-font-family" }));
         Assert.All(tokens, x => Assert.True(x.HasFallback, x.Name));
-        Assert.DoesNotContain("<h1", ThemeJson.Parse(SectionKit.ExampleFile)["template"]!.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("<h1", ThemeJson.Parse(SectionKitGuide.ExampleFile)["template"]!.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

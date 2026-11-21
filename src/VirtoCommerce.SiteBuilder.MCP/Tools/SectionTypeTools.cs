@@ -22,12 +22,13 @@ public class SectionTypeTools(
     IAuthorizationService authorizationService,
     IDesignerOperationService designerOperationService,
     IThemeStorageFactory themeStorageFactory,
-    ISchemaCatalogService schemaCatalogService)
+    ISchemaCatalogService schemaCatalogService,
+    ICustomSectionValidator customSectionValidator)
 {
     private const string CreateAction = "create_section_type";
     private const string ChangeAction = "change_section_type";
 
-    private const string TypeDescription = "The type: 'custom-' and lowercase words joined by '-', at most 64 characters, for example 'custom-stats-band'.";
+    private const string TypeDescription = $"The type, matching {ThemeStorage.CustomSectionTypePattern}, for example 'custom-stats-band'.";
     private const string NameDescription = "The name in the designer's section picker: a text, or a text per language such as { \"en-US\": \"Stats band\" }.";
     private const string SchemaDescription = "The settings schema: { \"settings\": [fields], \"targetTemplates\"?: [template keys], \"limit\"?: number, \"icon\"?: text }.";
     private const string TemplateDescription = "The HTML template: one root element, the section's root, with the settings bound into it.";
@@ -82,8 +83,8 @@ public class SectionTypeTools(
         [Description(SchemaDescription)] JsonObject schema,
         [Description(TemplateDescription)] string template,
         [Description(CssDescription)] string css = null,
-        [Description("The version token of the type, from its resource or from version_tokens of the last answer; when given, a type " +
-            "changed since is refused.")] string version_token = null,
+        [Description("The version token of the type, from its resource or from version_tokens of the last answer: a type changed since " +
+            "is refused.")] string version_token = null,
         [Description(DryRunDescription)] bool dryRun = false,
         CancellationToken cancellationToken = default) =>
         SaveAsync(context.User, new SectionTypeRequest(store_id, type, name, schema, template, css, version_token, Create: false), dryRun, cancellationToken);
@@ -101,7 +102,8 @@ public class SectionTypeTools(
         var key = request.Type?.Trim();
         if (string.IsNullOrEmpty(key) || !ThemeStorage.IsCustomSectionType(key))
         {
-            throw new McpException("type must be 'custom-' and lowercase words joined by '-', at most 64 characters, for example 'custom-stats-band'.");
+            throw new McpException($"type is not a custom section type, which {ThemeCustomSections.DescribeType(customSectionValidator.GetRules())}, " +
+                "for example 'custom-stats-band'.");
         }
 
         if (request.Name == null || request.Schema == null || request.Template == null)
@@ -121,6 +123,12 @@ public class SectionTypeTools(
         if (!request.Create && current.Content == null)
         {
             throw new McpException($"The theme has no custom section type '{key}', so nothing was saved. Create it with create_section_type.");
+        }
+
+        if (!request.Create && string.IsNullOrWhiteSpace(request.VersionToken))
+        {
+            throw new McpException($"Pass version_token: the call replaces the whole type, so it has to be of the version you read. Read the type at {resource}, " +
+                "make the change on it, and pass its version_token.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.VersionToken) && request.VersionToken.Trim() != current.ETag)
@@ -148,11 +156,12 @@ public class SectionTypeTools(
 
         var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, storeId, cancellationToken);
         await ThemeFileEdits.SaveAsync(change, designerOperationService, user, storeId, catalogHash, [new ThemeFileEdit(path, current, content)],
-            dryRun, Theme, $"Read it again at {resource} and repeat the change on that version.", answerErrors: true, cancellationToken);
+            dryRun, Theme, $"Read it again at {resource} and repeat the change on that version.", cancellationToken);
 
         if (request.Create && change.Errors == null)
         {
-            change.AddNextStep($"Place it with edit_page_draft (add_section, type '{key}', with its settings); a page shows it only once the theme is published.");
+            change.NextStep = string.Join(' ', new[] { $"Place it with edit_page_draft (add_section, type '{key}', with its settings).", change.NextStep }
+                .Where(x => x != null));
         }
 
         return change;

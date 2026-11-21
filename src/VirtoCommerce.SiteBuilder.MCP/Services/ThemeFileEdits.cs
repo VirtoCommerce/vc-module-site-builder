@@ -34,15 +34,13 @@ public sealed class ThemeFileChange : McpChangePreview
     [JsonPropertyName("contrast_failures")]
     public IList<ContrastFailureRow> ContrastFailures { get; set; }
 
-    // What refuses the change, on a dry run that answers them instead of failing.
+    // Only on a dry run: what refuses the change.
     [JsonPropertyName("errors")]
     public IList<string> Errors { get; set; }
 
     // What to do once the change is saved, such as publishing the theme; the warnings are about the change itself.
-    [JsonPropertyName("next_steps")]
-    public IList<string> NextSteps { get; set; }
-
-    public void AddNextStep(string step) => (NextSteps ??= []).Add(step);
+    [JsonPropertyName("next_step")]
+    public string NextStep { get; set; }
 }
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
@@ -54,15 +52,10 @@ public static class ThemeFileEdits
     // A custom section type's texts, compared by the lines that changed.
     private static readonly string[] SectionTypeTexts = ["template", "css"];
 
-    public static Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
-        string storeId, string catalogHash, IList<ThemeFileEdit> edits, bool dryRun, string permission, string readAgain,
-        CancellationToken cancellationToken) =>
-        SaveAsync(change, designerOperationService, user, storeId, catalogHash, edits, dryRun, permission, readAgain, answerErrors: false, cancellationToken);
-
-    // The diff is of the content as stored: on a dry run, the sanitized content the save would write. With answerErrors, a dry run
-    // the save refuses answers the errors in the change, with the diff of the content sent.
+    // The diff is of the content as stored: on a dry run, the sanitized content the save would write. A dry run the save refuses
+    // answers the errors in the change, with the diff of the content sent.
     public static async Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
-        string storeId, string catalogHash, IList<ThemeFileEdit> edits, bool dryRun, string permission, string readAgain, bool answerErrors,
+        string storeId, string catalogHash, IList<ThemeFileEdit> edits, bool dryRun, string permission, string readAgain,
         CancellationToken cancellationToken)
     {
         change.DryRun = dryRun;
@@ -80,7 +73,7 @@ public static class ThemeFileEdits
 
         var files = changed.Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
         var result = await ThemeFiles.SaveAsync(designerOperationService, user, storeId, catalogHash, files, dryRun, cancellationToken);
-        var refused = dryRun && answerErrors && result.Status == SiteBuilderOperationStatus.Invalid;
+        var refused = dryRun && result.Status == SiteBuilderOperationStatus.Invalid;
         if (refused)
         {
             change.Errors = result.Errors?.Count > 0 ? [.. result.Errors] : [result.Error];
@@ -118,7 +111,7 @@ public static class ThemeFileEdits
 
         if (!refused)
         {
-            change.AddNextStep("Customers see this change only after the theme is published (publish_theme), which a second person approves.");
+            change.NextStep = "Customers see this change only after the theme is published (publish_theme), which a second person approves.";
         }
     }
 

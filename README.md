@@ -112,7 +112,7 @@ For each user: connect the agent to `https://<platform>/admin/mcp` with the clie
 | Content | `reset_language_overrides` | Language versions take the values of the Multilanguage Page again | `builder:update` | Approval bound to the reviewed versions; none with `unpublished_only` when no version is published |
 | Content | `publish_page`, `unpublish_page` | Publish a draft, or take a page off the storefront; in git the requester's draft branch is shipped | `builder:publish` | Approval bound to the reviewed versions (of a database page: its draft and its settings) and, in git, the draft owner |
 | Content | `restore_version` | A saved version of a page or of theme files becomes the draft | `builder:update` and the part's permission | Confirmation, expected versions |
-| Content | `discard_draft` | Drop the draft of a page or of a theme file | `builder:update` and the part's permission | Confirmation, expected versions |
+| Content | `discard_draft` | Drop the draft of a page or of a theme file; a custom section type never published is removed | `builder:update` and the part's permission | Confirmation, expected versions |
 | Bulk | `set_translations` | Translations of many pages, bound to the source version | `builder:update` | Background job, dry run |
 | Bulk | `update_sections_bulk` | One change of a section on every page of a filter; the pages are fixed when the job is queued | `builder:update` | Background job, dry run |
 | Design | `edit_template` | Create a template as a copy, edit its sections and layout; the main section stays | `builder:update`, `builder:templates` | Dry run, version token |
@@ -146,6 +146,7 @@ MCP clients show the prompts as slash commands, for example `/mcp__virto__weekly
 | `site-builder://stores/{store_id}/schemas` | Section, block, object and template types the storefront sent, and the theme's custom section types; not available until the storefront has sent its catalog | `builder:read` |
 | `site-builder://stores/{store_id}/schemas/{kind}/{key}` | One schema with its settings | `builder:read` |
 | `site-builder://stores/{store_id}/section-kit` | What a custom section type may hold: elements, bindings, setting types, CSS rules, palette tokens, the storefront's kit tags and behaviors, its guide and design tokens, the design rules, and an example | `builder:read` |
+| `site-builder://stores/{store_id}/section-kit/icons` | The storefront's icon names, which a kit attribute with `optionsFrom: "icons"` takes | `builder:read` |
 | `site-builder://stores/{store_id}/custom-sections/{type}` | A custom section type as its draft holds it, else as it is live, with its version token | `builder:read` |
 | `site-builder://template-rule-conditions` | The conditions a template rule can use, and the shape of their values | `builder:read` |
 | `site-builder://stores/{store_id}/settings` | Languages, time zone and publication flow (git or blob) of a store | `builder:read`, `platform:setting:read` |

@@ -195,7 +195,7 @@ public sealed class TemplateToolsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ASectionTheTemplateDoesNotTake_IsRefusedOnTheDryRun()
+    public async Task ASectionTheTemplateDoesNotTake_IsAnsweredAsAnErrorOfTheDryRun()
     {
         await SeedAsync();
         await new SchemaCatalogService(_context.ThemeStorage).SaveAsync(StoreA,
@@ -216,9 +216,9 @@ public sealed class TemplateToolsTests : IAsyncDisposable
             dryRun = true,
         });
 
-        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("a product template cannot hold", result.Error, StringComparison.Ordinal);
-        Assert.Contains("'announcement-bar'", result.Error, StringComparison.Ordinal);
+        var change = result.EnsureSucceeded().Read<ThemeFileChange>();
+        Assert.Contains(change.Errors, x => x.Contains("a product template cannot hold", StringComparison.Ordinal) && x.Contains("'announcement-bar'", StringComparison.Ordinal));
+        Assert.Null(change.NextStep);
     }
 
     [Fact]

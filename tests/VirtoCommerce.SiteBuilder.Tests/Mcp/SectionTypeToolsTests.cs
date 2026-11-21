@@ -84,7 +84,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
                 $"{File}: <h2> at line 1 binds 'settings.subtitle', a setting the schema does not declare",
             ],
             change.Errors);
-        Assert.Null(change.NextSteps);
+        Assert.Null(change.NextStep);
         Assert.Null(_context.ReadThemeFile(StoreA, File, draft: true));
     }
 
@@ -120,25 +120,26 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.Equal(Create, change.Action);
         Assert.False(string.IsNullOrEmpty(change.VersionTokens[Path]));
         Assert.Empty(change.Warnings);
-        Assert.Contains(change.NextSteps, x => x.Contains("edit_page_draft", StringComparison.Ordinal));
-        Assert.Contains(change.NextSteps, x => x.Contains("publish_theme", StringComparison.Ordinal));
+        Assert.Contains("edit_page_draft", change.NextStep, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", change.NextStep, StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData(Create)]
     [InlineData(Change)]
-    public async Task ADryRunOfACleanType_AnswersNoWarnings_AndTheNextStepsApart(string tool)
+    public async Task ADryRunOfACleanType_AnswersNoWarnings_AndTheNextStepApart(string tool)
     {
         await SeedAsync();
+        string versionToken = null;
         if (tool == Change)
         {
-            await CallAsync(Create, css: ":scope { padding: 1rem; }");
+            versionToken = (await CallAsync(Create, css: ":scope { padding: 1rem; }")).EnsureSucceeded().Read<ThemeFileChange>().VersionTokens[Path];
         }
 
-        var change = (await CallAsync(tool, dryRun: true)).EnsureSucceeded().Read<ThemeFileChange>();
+        var change = (await CallAsync(tool, versionToken: versionToken, dryRun: true)).EnsureSucceeded().Read<ThemeFileChange>();
 
         Assert.Empty(change.Warnings);
-        Assert.Contains(change.NextSteps, x => x.Contains("publish_theme", StringComparison.Ordinal));
+        Assert.Contains("publish_theme", change.NextStep, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -158,11 +159,11 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
     public async Task AChange_ReplacesTheType_AndListsWhatChanged()
     {
         await SeedAsync();
-        await CallAsync(Create);
+        var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
 
         var change = (await CallAsync(Change,
                 css: ":scope { padding: 4rem; }\n.custom-stats h2 { color: var(--color-neutral-900); }",
-                settings: [.. Settings, new { id = "note", type = "string", translatable = true }]))
+                settings: [.. Settings, new { id = "note", type = "string", translatable = true }], versionToken: created.VersionTokens[Path]))
             .EnsureSucceeded().Read<ThemeFileChange>();
 
         Assert.Equal(Change, change.Action);
@@ -184,11 +185,25 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AChange_WithoutAVersionToken_IsRefused_AndTheTypeStaysAsItIs()
+    {
+        await SeedAsync();
+        await CallAsync(Create);
+
+        var result = await CallAsync(Change, css: ":scope { padding: 4rem; }");
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("Pass version_token", result.Error, StringComparison.Ordinal);
+        Assert.Contains($"site-builder://stores/{StoreA}/custom-sections/{Type}", result.Error, StringComparison.Ordinal);
+        Assert.Contains("padding: 2rem", _context.ReadThemeFile(StoreA, File, draft: true), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AVersionTokenOfAnOlderVersion_IsRefused()
     {
         await SeedAsync();
         var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
-        await CallAsync(Change, css: ":scope { padding: 3rem; }");
+        (await CallAsync(Change, css: ":scope { padding: 3rem; }", versionToken: created.VersionTokens[Path])).EnsureSucceeded();
 
         var result = await CallAsync(Change, css: ":scope { padding: 4rem; }", versionToken: created.VersionTokens[Path]);
 
@@ -230,7 +245,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         var result = await CallAsync(Create, type: type);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("type must be 'custom-'", result.Error, StringComparison.Ordinal);
+        Assert.Contains("is not a custom section type, which matches ^custom-", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
