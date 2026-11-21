@@ -39,8 +39,13 @@ interface CustomSectionType {
 
 `Field` is a field of a section schema ([Schemas](preview-protocol.md#schemas)). The types a custom section takes are
 `header`, `paragraph`, `string` (a link is `"format": "url"`), `text` (rich text), `number`, `slider`, `checkbox`,
-`select` with `options`, `color-token`, `images` (single), `calendar` and `list` with `element` of these, one level
-deep. `string` and `text` may be `"translatable": true`.
+`select` with `options`, `color-token`, `images` (single), `calendar`, and `list` and `object` with `element` of these,
+one level deep: the fields of a list's rows or of an object. `string` and `text` may be `"translatable": true`.
+
+A setting's `id` matches `^[A-Za-z][A-Za-z0-9_]*$` and is its own among its siblings; `header` and `paragraph` have
+none. A setting takes `id`, `type`, `label`, `default`, `translatable`, `tab`, `info`, `placeholder`, `required`,
+`multiline`, `format`, `options`, `element`, `min`, `max` and `step`. `visibility` and `request` are refused, since the
+designer runs the one and sends the other, and so are `"multiple": true` and any other key.
 
 ## Template
 
