@@ -79,8 +79,8 @@ public class SiteBuilderResources(
             CatalogHash = ThemeFiles.GetCatalogHash(catalog),
             Kinds = kinds,
             Note = $"Read one schema with its settings at site-builder://stores/{store_id}/schemas/{{kind}}/{{key}}, for example .../schemas/sections/hero-banner. " +
-                $"A custom section type is the theme's own: read it whole at site-builder://stores/{store_id}/custom-sections/{{type}}, and write one with save_section_type " +
-                $"after reading site-builder://stores/{store_id}/section-kit.",
+                $"A custom section type is the theme's own: read it whole at site-builder://stores/{store_id}/custom-sections/{{type}} and change it with change_section_type; " +
+                $"create one with create_section_type after reading site-builder://stores/{store_id}/section-kit.",
         });
     }
 
@@ -111,7 +111,7 @@ public class SiteBuilderResources(
 
     [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit", Name = "section_kit", MimeType = JsonMimeType)]
     [McpPermission(Read)]
-    [Description("Everything to write a custom section type with save_section_type: the elements and attributes a template may hold, " +
+    [Description("Everything to write a custom section type with create_section_type or change_section_type: the elements and attributes a template may hold, " +
         "the bindings, the setting types, the setting variables, the CSS rules, the store's palette tokens, the kit tags and behaviors " +
         "the storefront offers, the size limits and a complete example. Read it before writing a type.")]
     public async Task<string> ReadSectionKit(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
@@ -123,7 +123,7 @@ public class SiteBuilderResources(
 
     [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/custom-sections/{type}", Name = "custom_section", MimeType = JsonMimeType)]
     [McpPermission(Read)]
-    [Description("A custom section type of the store's theme as save_section_type takes it: name, schema, template and css, as its draft " +
+    [Description("A custom section type of the store's theme as change_section_type takes it: name, schema, template and css, as its draft " +
         "holds them, else as they are live, with its version_token and whether it is published. A type only in draft shows nothing " +
         "on the storefront until the theme is published.")]
     public async Task<string> ReadCustomSection(RequestContext<ReadResourceRequestParams> context, string store_id, string type, CancellationToken cancellationToken)
@@ -147,7 +147,7 @@ public class SiteBuilderResources(
             {
                 StoreId = store_id,
                 Available = false,
-                Reason = $"The theme has no custom section type '{type}'. {SchemasUri.Replace("{store_id}", store_id, StringComparison.Ordinal)} lists its types, marked custom; save_section_type creates one.",
+                Reason = $"The theme has no custom section type '{type}'. {SchemasUri.Replace("{store_id}", store_id, StringComparison.Ordinal)} lists its types, marked custom; create_section_type creates one.",
             });
         }
 

@@ -5,16 +5,16 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.MCP.Services;
-using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
 using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-public sealed class SaveSectionTypeToolTests : IAsyncDisposable
+public sealed class SectionTypeToolsTests : IAsyncDisposable
 {
-    private const string Tool = "save_section_type";
+    private const string Create = "create_section_type";
+    private const string Change = "change_section_type";
     private const string Type = "custom-stats";
     private const string File = "custom-sections/custom-stats.json";
     private const string Path = "default/custom-sections/custom-stats.json";
@@ -25,7 +25,7 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
 
     private readonly McpTestContext _context = new();
 
-    public SaveSectionTypeToolTests()
+    public SectionTypeToolsTests()
     {
         _context.UsePageStore();
     }
@@ -36,24 +36,33 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
 
     private Task SeedAsync() => _context.SeedThemeAsync(StoreA, StorefrontKit);
 
-    private Task<McpToolCallResult> SaveAsync(McpTestUser user = null, string template = Template, string css = Css, object[] settings = null,
-        string type = Type, string storeId = StoreA, string versionToken = null, bool dryRun = false) =>
-        _context.CallAsync(user ?? Designer(), Tool, new
-        {
-            store_id = storeId,
-            type,
-            name = new Dictionary<string, string> { ["en-US"] = "Stats" },
-            schema = new { settings = settings ?? Settings },
-            template,
-            css,
-            version_token = versionToken,
-            dryRun,
-        });
-
-    [Fact]
-    public void TheTool_NeedsBuilderUpdateAndTheme()
+    private Task<McpToolCallResult> CallAsync(string tool, McpTestUser user = null, string template = Template, string css = Css, object[] settings = null,
+        string type = Type, string storeId = StoreA, string versionToken = null, bool dryRun = false)
     {
-        var tool = _context.Harness.GetTool(Tool);
+        var arguments = new Dictionary<string, object>
+        {
+            ["store_id"] = storeId,
+            ["type"] = type,
+            ["name"] = new Dictionary<string, string> { ["en-US"] = "Stats" },
+            ["schema"] = new { settings = settings ?? Settings },
+            ["template"] = template,
+            ["css"] = css,
+            ["dryRun"] = dryRun,
+        };
+        if (versionToken != null)
+        {
+            arguments["version_token"] = versionToken;
+        }
+
+        return _context.CallAsync(user ?? Designer(), tool, arguments);
+    }
+
+    [Theory]
+    [InlineData(Create)]
+    [InlineData(Change)]
+    public void TheTools_NeedBuilderUpdateAndTheme(string name)
+    {
+        var tool = _context.Harness.GetTool(name);
 
         Assert.True(_context.Harness.IsVisible(tool, Designer()));
         Assert.False(_context.Harness.IsVisible(tool, McpTestUser.Create("templates").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Templates)));
@@ -65,7 +74,7 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
     {
         await SeedAsync();
 
-        var change = (await SaveAsync(template: "<section onclick=\"go()\"><h2>{{ settings.subtitle }}</h2></section>", dryRun: true))
+        var change = (await CallAsync(Create, template: "<section onclick=\"go()\"><h2>{{ settings.subtitle }}</h2></section>", dryRun: true))
             .EnsureSucceeded().Read<ThemeFileChange>();
 
         Assert.True(change.DryRun);
@@ -84,7 +93,7 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
     {
         await SeedAsync();
 
-        var change = (await SaveAsync(template: "<section><h2>Our numbers</h2><p>{{ settings.title }}</p></section>", css: ":scope { color: #000; }", dryRun: true))
+        var change = (await CallAsync(Create, template: "<section><h2>Our numbers</h2><p>{{ settings.title }}</p></section>", css: ":scope { color: #000; }", dryRun: true))
             .EnsureSucceeded().Read<ThemeFileChange>();
 
         Assert.True(change.DryRun);
@@ -97,48 +106,73 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task TheSave_WritesTheTypeAsADraftOfTheTheme()
+    public async Task TheCreation_WritesTheTypeAsADraftOfTheTheme()
     {
         await SeedAsync();
 
-        var change = (await SaveAsync()).EnsureSucceeded().Read<ThemeFileChange>();
+        var change = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
 
         var saved = JsonNode.Parse(_context.ReadThemeFile(StoreA, File, draft: true)!)!;
         Assert.Equal((1, "Stats", Template, Css), (saved["format"]!.GetValue<int>(), saved["name"]!["en-US"]!.GetValue<string>(),
             saved["template"]!.GetValue<string>(), saved["css"]!.GetValue<string>()));
         Assert.Null(_context.ReadThemeFile(StoreA, File));
         Assert.False(change.DryRun);
-        Assert.Equal("create_section_type", change.Action);
+        Assert.Equal(Create, change.Action);
         Assert.False(string.IsNullOrEmpty(change.VersionTokens[Path]));
         Assert.Contains(change.Warnings, x => x.Contains("edit_page_draft", StringComparison.Ordinal));
         Assert.Contains(change.Warnings, x => x.Contains("publish_theme", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task ASecondSave_ReplacesTheType_AndListsWhatChanged()
+    public async Task ACreation_OfATypeTheThemeHas_IsRefused_AndTheTypeStaysAsItIs()
     {
         await SeedAsync();
-        await SaveAsync();
+        await CallAsync(Create);
 
-        var change = (await SaveAsync(
+        var result = await CallAsync(Create, css: ":scope { padding: 4rem; }");
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("change_section_type", result.Error, StringComparison.Ordinal);
+        Assert.Contains("padding: 2rem", _context.ReadThemeFile(StoreA, File, draft: true), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AChange_ReplacesTheType_AndListsWhatChanged()
+    {
+        await SeedAsync();
+        await CallAsync(Create);
+
+        var change = (await CallAsync(Change,
                 css: ":scope { padding: 4rem; }\n.stats h2 { color: var(--color-neutral-900); }",
                 settings: [.. Settings, new { id = "note", type = "string", translatable = true }]))
             .EnsureSucceeded().Read<ThemeFileChange>();
 
-        Assert.Equal("save_section_type", change.Action);
+        Assert.Equal(Change, change.Action);
         Assert.Equal(["schema.settings.note", "css line 1"], change.Changes.Select(x => x.Field));
         Assert.Equal((":scope { padding: 2rem; }", ":scope { padding: 4rem; }"), (change.Changes[1].From?.ToString(), change.Changes[1].To?.ToString()));
         Assert.Contains("padding: 4rem", JsonNode.Parse(_context.ReadThemeFile(StoreA, File, draft: true)!)!["css"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
     [Fact]
+    public async Task AChange_OfATypeTheThemeDoesNotHave_IsRefused()
+    {
+        await SeedAsync();
+
+        var result = await CallAsync(Change);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("create_section_type", result.Error, StringComparison.Ordinal);
+        Assert.Null(_context.ReadThemeFile(StoreA, File, draft: true));
+    }
+
+    [Fact]
     public async Task AVersionTokenOfAnOlderVersion_IsRefused()
     {
         await SeedAsync();
-        var first = (await SaveAsync()).EnsureSucceeded().Read<ThemeFileChange>();
-        await SaveAsync(css: ":scope { padding: 3rem; }");
+        var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
+        await CallAsync(Change, css: ":scope { padding: 3rem; }");
 
-        var result = await SaveAsync(css: ":scope { padding: 4rem; }", versionToken: first.VersionTokens[Path]);
+        var result = await CallAsync(Change, css: ":scope { padding: 4rem; }", versionToken: created.VersionTokens[Path]);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("changed since you read it", result.Error, StringComparison.Ordinal);
@@ -146,11 +180,11 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ABrokenType_IsRefusedWhenSaved_AndNothingIsWritten()
+    public async Task ABrokenType_IsRefusedWhenCreated_AndNothingIsWritten()
     {
         await SeedAsync();
 
-        var result = await SaveAsync(template: "<section onclick=\"go()\"></section>");
+        var result = await CallAsync(Create, template: "<section onclick=\"go()\"></section>");
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("'onclick': it runs script", result.Error, StringComparison.Ordinal);
@@ -162,7 +196,7 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
     {
         await SeedAsync();
 
-        var change = (await SaveAsync(template: "<section data-marquee><h2>{{ settings.title }}</h2></section>", dryRun: true)).EnsureSucceeded().Read<ThemeFileChange>();
+        var change = (await CallAsync(Create, template: "<section data-marquee><h2>{{ settings.title }}</h2></section>", dryRun: true)).EnsureSucceeded().Read<ThemeFileChange>();
 
         Assert.Contains(change.Errors, x => x.Contains("'data-marquee'", StringComparison.Ordinal));
     }
@@ -175,30 +209,30 @@ public sealed class SaveSectionTypeToolTests : IAsyncDisposable
     {
         await SeedAsync();
 
-        var result = await SaveAsync(type: type);
+        var result = await CallAsync(Create, type: type);
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("type must be 'custom-'", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task AUserOfStoreA_CannotSaveATypeOfStoreB()
+    public async Task AUserOfStoreA_CannotCreateATypeInStoreB()
     {
         await SeedAsync();
         await _context.SeedThemeAsync(StoreB, StorefrontKit);
         var user = McpTestUser.Create("store-a-designer").WithScopedPermission(Permissions.Read, StoreScope, StoreA).WithPermissions(Permissions.Update, Permissions.Theme);
 
-        var result = await SaveAsync(user, storeId: StoreB);
+        var result = await CallAsync(Create, user, storeId: StoreB);
 
         Assert.Equal(McpToolCallOutcome.Forbidden, result.Outcome);
         Assert.Null(_context.ReadThemeFile(StoreB, File, draft: true));
     }
 
     [Fact]
-    public async Task ASavedType_IsPlacedOnAPage_WithItsOwnSettings()
+    public async Task ACreatedType_IsPlacedOnAPage_WithItsOwnSettings()
     {
         await SeedAsync();
-        await SaveAsync();
+        await CallAsync(Create);
         _context.SeedDraft("landing", StoreA, """{ "settings": { "name": "Landing" }, "content": [] }""");
         var editor = McpTestUser.Create("editor").WithPermissions(Permissions.Read, Permissions.Update);
 

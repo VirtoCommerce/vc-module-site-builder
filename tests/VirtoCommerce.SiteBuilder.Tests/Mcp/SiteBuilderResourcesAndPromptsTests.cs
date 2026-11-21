@@ -216,7 +216,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         var text = await GetPromptAsync(prompt, new Dictionary<string, JsonElement> { ["store_id"] = JsonSerializer.SerializeToElement(StoreA) });
 
         Assert.Contains("site-builder://stores/store-a/section-kit", text, StringComparison.Ordinal);
-        Assert.Contains("save_section_type with dryRun", text, StringComparison.Ordinal);
+        Assert.Contains("create_section_type with dryRun", text, StringComparison.Ordinal);
         Assert.Contains("publish_theme first and then publish_page", text, StringComparison.Ordinal);
     }
 

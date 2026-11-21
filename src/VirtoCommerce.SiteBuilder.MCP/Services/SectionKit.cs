@@ -4,7 +4,7 @@ using VirtoCommerce.SiteBuilder.Data.Theme;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
-// What an agent needs to write a custom section type that save_section_type takes: the lists come from the validator and the
+// What an agent needs to write a custom section type that create_section_type and change_section_type take: the lists come from the validator and the
 // storefront's catalog, the rest is the contract in prose (docs/contracts/custom-sections.md).
 public static class SectionKit
 {
@@ -47,21 +47,22 @@ public static class SectionKit
             StoreId = storeId,
             Available = catalog != null,
             Reason = catalog == null
-                ? "The storefront has not sent its schema catalog yet: its kit tags, behaviors and palette tokens are not known, and save_section_type " +
-                  "saves nothing until it has. Open the store once in the designer; its preview sends the catalog."
+                ? "The storefront has not sent its schema catalog yet: its kit tags, behaviors and palette tokens are not known, and a type " +
+                  "is not saved until it has. Open the store once in the designer; its preview sends the catalog."
                 : null,
             Workflow = new[]
             {
                 $"Read site-builder://stores/{storeId}/schemas first: a built-in section may do it already, or a custom type (custom: true) may be close; " +
                     $"read one at site-builder://stores/{storeId}/custom-sections/{{type}}.",
                 "Write the type: every text a customer reads in a translatable setting, colors from the palette, motion from the kit's behaviors.",
-                "Call save_section_type with dryRun, fix every error and the warnings you can, and call it again until it answers no errors; then save it.",
+                "Call create_section_type with dryRun, fix every error and the warnings you can, and call it again until it answers no errors; then create it. " +
+                    "Change a type with change_section_type: every page that places it changes with it.",
                 "Place it with edit_page_draft (add_section with the type and its settings); each page has its own settings.",
                 "Publish the theme first (publish_theme), then the page (publish_page): the storefront renders only a published type.",
             },
             File = new
             {
-                Path = $"{ThemeStorage.CustomSectionsFolder}/{{type}}.json in the theme; save_section_type writes its draft.",
+                Path = $"{ThemeStorage.CustomSectionsFolder}/{{type}}.json in the theme; create_section_type and change_section_type write its draft.",
                 Type = "'custom-' and lowercase words joined by '-', at most 64 characters, such as custom-stats-band. Keep the type of one a page places.",
                 Name = "A text, or a text per language: the name in the designer's section picker.",
                 SchemaKeys = rules.SchemaKeys,
@@ -163,7 +164,7 @@ public static class SectionKit
             Example = new
             {
                 Type = ExampleType,
-                Note = "The arguments of save_section_type for a band of numbers that count up as it scrolls into view; it uses the behaviors inview and count-up.",
+                Note = "The arguments of create_section_type for a band of numbers that count up as it scrolls into view; it uses the behaviors inview and count-up.",
                 Name = example["name"]?.DeepClone(),
                 Schema = example["schema"]?.DeepClone(),
                 Template = example["template"]?.DeepClone(),

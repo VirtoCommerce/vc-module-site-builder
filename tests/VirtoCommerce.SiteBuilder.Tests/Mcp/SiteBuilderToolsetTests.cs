@@ -30,7 +30,7 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
             .Ignore(McpConventionRules.Safeguard, "edit_template", DraftOnly)
             .Ignore(McpConventionRules.Safeguard, "edit_template_rules", DraftOnly)
             .Ignore(McpConventionRules.Safeguard, "edit_theme_draft", DraftOnly)
-            .Ignore(McpConventionRules.Safeguard, "save_section_type", DraftOnly)
+            .Ignore(McpConventionRules.Safeguard, "change_section_type", DraftOnly)
             .Ignore(McpConventionRules.Safeguard, "set_translations", DraftOnly + " A background job saves the pages, after a dry run of every item.")
             .Ignore(McpConventionRules.Safeguard, "update_sections_bulk", DraftOnly + " A background job saves the pages, after a dry run of the first ones."));
     }
@@ -41,7 +41,7 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     [InlineData("edit_template")]
     [InlineData("edit_template_rules")]
     [InlineData("edit_theme_draft")]
-    [InlineData("save_section_type")]
+    [InlineData("change_section_type")]
     [InlineData("set_translations")]
     [InlineData("change_page_settings")]
     [InlineData("discard_draft")]
@@ -65,6 +65,7 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     [Theory]
     [InlineData("create_page")]
     [InlineData("create_shared_component")]
+    [InlineData("create_section_type")]
     public void AToolThatOnlyAdds_IsNotDestructive(string name)
     {
         var annotations = _context.Harness.GetTool(name).ProtocolTool.Annotations;
@@ -79,9 +80,10 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
     {
         string[] writes =
         [
-            "change_page_settings", "change_shared_component", "convert_page_to_multilanguage", "create_page", "create_shared_component", "discard_draft",
+            "change_page_settings", "change_section_type", "change_shared_component", "convert_page_to_multilanguage", "create_page", "create_section_type",
+            "create_shared_component", "discard_draft",
             "edit_page_draft", "edit_template", "edit_template_rules", "edit_theme_draft", "link_page_language", "publish_page", "publish_theme",
-            "reset_language_overrides", "restore_version", "save_section_type", "set_translations", "unlink_page_language", "unpublish_page", "update_sections_bulk",
+            "reset_language_overrides", "restore_version", "set_translations", "unlink_page_language", "unpublish_page", "update_sections_bulk",
         ];
 
         var readOnly = _context.Harness.Tools.Where(x => x.ProtocolTool.Annotations?.ReadOnlyHint == true).Select(x => x.ProtocolTool.Name).ToList();
@@ -133,9 +135,9 @@ public sealed class SiteBuilderToolsetTests : IAsyncDisposable
         var theme = McpTestUser.Create("theme").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Theme);
         var withoutUpdate = McpTestUser.Create("no-update").WithPermissions(Permissions.Read, Permissions.Templates, Permissions.Theme);
 
-        string[] designTools = ["edit_template", "edit_template_rules", "edit_theme_draft", "publish_theme", "save_section_type"];
+        string[] designTools = ["change_section_type", "create_section_type", "edit_template", "edit_template_rules", "edit_theme_draft", "publish_theme"];
         Assert.Equal(["edit_template", "edit_template_rules"], _context.Harness.GetVisibleToolNames(templates).Intersect(designTools));
-        Assert.Equal(["edit_theme_draft", "save_section_type"], _context.Harness.GetVisibleToolNames(theme).Intersect(designTools));
+        Assert.Equal(["change_section_type", "create_section_type", "edit_theme_draft"], _context.Harness.GetVisibleToolNames(theme).Intersect(designTools));
         Assert.Empty(_context.Harness.GetVisibleToolNames(withoutUpdate).Intersect(designTools));
     }
 
