@@ -44,7 +44,8 @@ internal static class TestServices
             Options.Create(options ?? new ThemeSnapshotOptions()), NullLogger<CustomSectionValidator>.Instance);
     }
 
-    public static CustomSectionUrlPolicy CustomSectionUrlPolicy(string assetsUrl = AssetsUrl) => new(new AssetUrls(assetsUrl));
+    public static CustomSectionUrlPolicy CustomSectionUrlPolicy(string assetsUrl = AssetsUrl) =>
+        new(new AssetUrls(assetsUrl), NullLogger<CustomSectionUrlPolicy>.Instance);
 
     public static ThemeSnapshotBuilder ThemeSnapshotBuilder(string assetsUrl = AssetsUrl) => new(CustomSectionUrlPolicy(assetsUrl));
 

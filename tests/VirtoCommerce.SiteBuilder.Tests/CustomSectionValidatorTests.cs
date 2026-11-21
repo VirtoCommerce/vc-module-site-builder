@@ -800,6 +800,15 @@ public class CustomSectionValidatorTests
         Assert.Equal([$"<img> at line 1 has src with 'https://cdn.example/assets/a.png', which is not a URL of the store's asset library"], result.Errors);
     }
 
+    [Fact]
+    public void GetAssetsBaseUrl_OfALibraryThatFails_IsNone_AndNoImageIsAnAsset()
+    {
+        var policy = new CustomSectionUrlPolicy(new FailingAssetUrls(), NullLogger<CustomSectionUrlPolicy>.Instance);
+
+        Assert.Null(policy.GetAssetsBaseUrl());
+        Assert.False(policy.IsAssetUrl("https://cdn.example/assets/a.png"));
+    }
+
     [Theory]
     [InlineData("https://cdn.example%2Fassets%2F@evil.example/x.png", false)]
     [InlineData("https://cdn.example/assets/a%2Fb.png", false)]
@@ -954,5 +963,10 @@ public class CustomSectionValidatorTests
     private sealed class FailingCss() : CustomSectionCssValidator(TestServices.CustomSectionUrlPolicy(Assets))
     {
         public override void Validate(CustomSectionCheck check, string css) => throw new NullReferenceException();
+    }
+
+    private sealed class FailingAssetUrls : VirtoCommerce.AssetsModule.Core.Assets.IBlobUrlResolver
+    {
+        public string GetAbsoluteUrl(string blobKey) => throw new InvalidOperationException("The asset provider is not configured.");
     }
 }

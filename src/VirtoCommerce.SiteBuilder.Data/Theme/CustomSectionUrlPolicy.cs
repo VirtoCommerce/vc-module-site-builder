@@ -1,11 +1,12 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using VirtoCommerce.AssetsModule.Core.Assets;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
 /// <summary>The URLs a custom section type may write: an image of the store's asset library, and a link the storefront opens safely.</summary>
-public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver)
+public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<CustomSectionUrlPolicy> logger)
 {
     private const string AssetProbe = "file";
 
@@ -67,8 +68,10 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver)
         {
             url = blobUrlResolver.GetAbsoluteUrl(AssetProbe);
         }
-        catch (UriFormatException)
+        // every publication reads it: a fault of the asset provider leaves custom sections without images, not the store without a theme
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            logger.LogWarning(ex, "The asset library gives no public address, so custom sections show no image.");
             return null;
         }
 
