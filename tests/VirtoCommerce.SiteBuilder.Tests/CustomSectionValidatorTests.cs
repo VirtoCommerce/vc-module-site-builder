@@ -501,50 +501,34 @@ public class CustomSectionValidatorTests
     }
 
     [Theory]
-    [InlineData("q", 21000, false)]
-    [InlineData("div", 33, true)]
-    [InlineData("span", 300, true)]
-    public void Validate_TemplateNestedDeeperThanTheLimit_IsRefusedBeforeItIsWalked(string tag, int depth, bool closed)
+    [InlineData("div", 33)]
+    [InlineData("span", 300)]
+    [InlineData("div", 1500)]
+    public void Validate_TemplateNestedDeeperThanTheLimit_IsRefusedBeforeItIsWalked(string tag, int depth)
     {
-        var template = string.Concat(Enumerable.Repeat($"<{tag}>", depth)) + (closed ? string.Concat(Enumerable.Repeat($"</{tag}>", depth)) : string.Empty);
+        var template = string.Concat(Enumerable.Repeat($"<{tag}>", depth)) + string.Concat(Enumerable.Repeat($"</{tag}>", depth));
 
         var result = _validator.Validate(Type, Section(template), Catalog);
 
         Assert.Equal([$"the template nests elements deeper than 32"], result.Errors);
     }
 
-    [Fact]
-    public void Validate_HtmlElementsWrittenAsSelfClosing_CountAsOpenBeforeTheTemplateIsParsed()
+    [Theory]
+    [InlineData("<section>", "<div/>", 10000, "</section>")]
+    [InlineData("<section><svg>", "<div/>", 10900, "</svg></section>")]
+    [InlineData("<section><!-->", "<div>", 13000, "</section>")]
+    [InlineData("<section><div x\">", "<div>", 13000, "\"></div></section>")]
+    [InlineData("", "<div></i>", 7200, "")]
+    [InlineData("<section>", "<q>", 21000, "</section>")]
+    public void Validate_TemplateOfMoreTagsThanTheCap_IsRefusedBeforeItIsParsed(string start, string tag, int count, string end)
     {
-        var template = "<section>" + string.Concat(Enumerable.Repeat("<div/>", 10000)) + "</section>";
+        var template = start + string.Concat(Enumerable.Repeat(tag, count)) + end;
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
         var result = _validator.Validate(Type, Section(template), Catalog);
 
-        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
-        Assert.Equal([$"the template nests elements deeper than 32"], result.Errors);
-    }
-
-    [Fact]
-    public void Validate_SelfClosingElementsOfSvg_DoNotCountAsOpen()
-    {
-        var template = "<section><svg>" + string.Concat(Enumerable.Repeat("<path/>", 300)) + "</svg></section>";
-
-        var result = _validator.Validate(Type, Section(template), Catalog);
-
-        Assert.Equal(["<svg> at line 1 is not an element a custom section can hold"], result.Errors);
-    }
-
-    [Fact]
-    public void Validate_TemplateOfEndTagsThatCloseNothing_IsRefusedBeforeItIsParsed()
-    {
-        var template = string.Concat(Enumerable.Repeat("<div></i>", 7200));
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-
-        var result = _validator.Validate(Type, Section(template), Catalog);
-
-        Assert.Equal([$"the template nests elements deeper than 32"], result.Errors);
-        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
+        Assert.Equal(["the template has more than 1500 tags, counting each '<' followed by a letter as written"], result.Errors);
+        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
     }
 
     [Fact]

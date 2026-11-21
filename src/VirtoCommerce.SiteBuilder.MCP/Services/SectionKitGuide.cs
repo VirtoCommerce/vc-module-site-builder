@@ -111,7 +111,8 @@ public static class SectionKitGuide
                     "storefront renders each section in a wrapper of its own, with contain: paint and isolation: isolate, that holds the anchor id and " +
                     "the preview's attributes.",
                 Markup = $"HTML as written: markup a parser has to mend, such as an element left open or a /> on a kit tag, is refused, and so are " +
-                    $"elements nested more than {rules.MaxTemplateDepth} deep, the root counted.",
+                    $"elements nested more than {rules.MaxTemplateDepth} deep, the root counted, and a template of more than {rules.MaxTemplateTags} " +
+                    "tags, counting each '<' followed by a letter as written, in comments and attribute values too.",
                 Elements = rules.Elements,
                 ElementsNote = "And the kit tags below. Anything else is refused, such as svg, script, style, iframe and form controls.",
                 Attributes = rules.Attributes,
@@ -228,6 +229,7 @@ public static class SectionKitGuide
                 CssBytes = rules.MaxPartSize,
                 ThemeBytes = rules.MaxTotalSize,
                 TemplateDepth = rules.MaxTemplateDepth,
+                TemplateTags = rules.MaxTemplateTags,
                 CssDepth = rules.MaxCssDepth,
                 AtRuleDepth = rules.MaxAtRuleDepth,
                 Note = "theme_bytes is the JSON of every type of the theme together: the snapshot carries them to every page.",

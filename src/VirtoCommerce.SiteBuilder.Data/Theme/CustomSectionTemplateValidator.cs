@@ -15,9 +15,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     private const int MaxParseErrors = 3;
     private const int MaxSamples = 3;
 
-    // the HTML parser takes seconds over thousands of nested elements, so a template far deeper than the limit is not parsed at all
-    private const int MaxScannedTemplateDepth = 256;
-
     // no doctype, as the storefront's sanitizer parses: a document without one is read in quirks mode, where a table may stay in a p
     private const string DocumentStart = "<html><head></head><body>";
 
@@ -34,6 +31,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
     /// <summary>The root counts as 1.</summary>
     public const int MaxDepth = 32;
+
+    /// <summary>
+    /// Each '&lt;' followed by a letter, counted in the template as written, in comments and attribute values too: the HTML parser takes
+    /// seconds over thousands of nested elements, so a template over this count is not parsed at all.
+    /// </summary>
+    public const int MaxTags = 1500;
 
     /// <summary>Besides the kit tags the catalog names.</summary>
     public static IReadOnlySet<string> Elements { get; } =
@@ -71,11 +74,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     /// <summary>What follows the type in a class of the type's own; the type itself is one too.</summary>
     public static IReadOnlyList<string> ClassSeparators { get; } = ["-", "__"];
 
-    private static readonly HashSet<string> VoidElements = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
-    };
-
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
     // the path is trimmed after the match: a pattern that trims it backtracks over a long run of spaces
@@ -86,10 +84,9 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
     public virtual void Validate(CustomSectionCheck check, string template)
     {
-        var depthError = string.Create(CultureInfo.InvariantCulture, $"the template nests elements deeper than {MaxDepth}");
-        if (GetScannedDepth(template) > MaxScannedTemplateDepth)
+        if (CountTags(template) > MaxTags)
         {
-            check.AddError(depthError);
+            check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template has more than {MaxTags} tags, counting each '<' followed by a letter as written"));
             return;
         }
 
@@ -136,7 +133,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         // before the recursive walk, so a deep template cannot exhaust the stack
         if (GetDepth(roots[0]) > MaxDepth)
         {
-            check.AddError(depthError);
+            check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template nests elements deeper than {MaxDepth}"));
             return;
         }
 
@@ -795,90 +792,15 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         return deepest;
     }
 
-    // the depth of the tags as written, without the parser: an element whose end tag is left out counts as open, and so does one of
-    // HTML written with '/>', which HTML ignores outside svg and math
-    private static int GetScannedDepth(string template)
+    private static int CountTags(string template)
     {
-        var open = new Stack<string>();
-        var foreign = 0;
-        var deepest = 0;
-        for (var start = template.IndexOf('<'); start >= 0 && start < template.Length; start = template.IndexOf('<', start))
+        var count = 0;
+        for (var i = template.IndexOf('<'); i >= 0 && i < template.Length - 1; i = template.IndexOf('<', i + 1))
         {
-            if (template.AsSpan(start).StartsWith("<!--"))
-            {
-                var commentEnd = template.IndexOf("-->", start + 4, StringComparison.Ordinal);
-                start = commentEnd < 0 ? template.Length : commentEnd + 3;
-                continue;
-            }
-
-            var isEndTag = start + 1 < template.Length && template[start + 1] == '/';
-            var nameStart = start + (isEndTag ? 2 : 1);
-            var nameEnd = nameStart;
-            while (nameEnd < template.Length && (char.IsAsciiLetterOrDigit(template[nameEnd]) || template[nameEnd] == '-'))
-            {
-                nameEnd++;
-            }
-
-            if (nameEnd == nameStart || !char.IsAsciiLetter(template[nameStart]))
-            {
-                start++;
-                continue;
-            }
-
-            var tagEnd = FindTagEnd(template, nameEnd);
-            var name = template[nameStart..nameEnd].ToLowerInvariant();
-            var isSelfClosing = tagEnd >= 2 && template[tagEnd - 1] == '>' && template[tagEnd - 2] == '/' && (foreign > 0 || IsForeignRoot(name));
-            // an end tag closes the element it names and those left open inside it; one that names no open element closes nothing
-            if (isEndTag && open.Contains(name))
-            {
-                string closed;
-                do
-                {
-                    closed = open.Pop();
-                    foreign -= IsForeignRoot(closed) ? 1 : 0;
-                }
-                while (closed != name);
-            }
-            else if (!isEndTag && !isSelfClosing && !VoidElements.Contains(name))
-            {
-                open.Push(name);
-                foreign += IsForeignRoot(name) ? 1 : 0;
-                deepest = Math.Max(deepest, open.Count);
-                if (deepest > MaxScannedTemplateDepth)
-                {
-                    return deepest;
-                }
-            }
-
-            start = tagEnd;
+            count += char.IsAsciiLetter(template[i + 1]) ? 1 : 0;
         }
 
-        return deepest;
-    }
-
-    private static bool IsForeignRoot(string name) => name is "svg" or "math";
-
-    // past the '>' that ends a tag, outside its quoted attribute values
-    private static int FindTagEnd(string template, int start)
-    {
-        var quote = '\0';
-        for (var i = start; i < template.Length; i++)
-        {
-            if (quote != '\0')
-            {
-                quote = template[i] == quote ? '\0' : quote;
-            }
-            else if (template[i] is '"' or '\'')
-            {
-                quote = template[i];
-            }
-            else if (template[i] == '>')
-            {
-                return i + 1;
-            }
-        }
-
-        return template.Length;
+        return count;
     }
 
     private static bool IsOwnClasses(CustomSectionCheck check, string classes) =>

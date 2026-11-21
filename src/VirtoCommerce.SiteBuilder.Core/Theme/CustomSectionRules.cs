@@ -68,6 +68,9 @@ public class CustomSectionRules
     /// <summary>The root counts as 1.</summary>
     public int MaxTemplateDepth { get; set; }
 
+    /// <summary>Each '&lt;' followed by a letter in the template as written, in comments and attribute values too.</summary>
+    public int MaxTemplateTags { get; set; }
+
     public int MaxCssDepth { get; set; }
 
     public int MaxAtRuleDepth { get; set; }
