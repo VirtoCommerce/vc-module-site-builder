@@ -9,6 +9,12 @@ public class CustomSectionRules
     /// <summary>The attributes of an HTML element, besides aria-*, the binding attributes and the behaviors the storefront's catalog names.</summary>
     public IList<string> Attributes { get; set; } = [];
 
+    /// <summary>The attributes only these elements take, by the element.</summary>
+    public IDictionary<string, IList<string>> ElementAttributes { get; set; } = new Dictionary<string, IList<string>>();
+
+    /// <summary>The starts of the data- attributes the storefront writes itself, which no template and no behavior names.</summary>
+    public IList<string> ReservedDataPrefixes { get; set; } = [];
+
     /// <summary>The attributes that bind settings to elements: repeat, show and insert HTML.</summary>
     public IList<string> BindingAttributes { get; set; } = [];
 
@@ -35,13 +41,19 @@ public class CustomSectionRules
 
     public IList<string> AtRules { get; set; } = [];
 
+    /// <summary>What follows the type in a keyframes name, which is not scoped.</summary>
+    public string KeyframesSeparator { get; set; }
+
     /// <summary>The CSS properties that run script.</summary>
     public IList<string> ScriptProperties { get; set; } = [];
 
     /// <summary>The CSS functions that load an image, whose URL is one of the asset library.</summary>
     public IList<string> ImageFunctions { get; set; } = [];
 
-    /// <summary>The CSS functions whose value is known only when the page is shown: not inside an image function, not in position.</summary>
+    /// <summary>
+    /// The CSS functions whose value is known only when the page is shown, as a custom function (--name()) is too: not inside an image function,
+    /// not in position.
+    /// </summary>
     public IList<string> LateValueFunctions { get; set; } = [];
 
     /// <summary>The logical property or value for each physical one, which a save warns of outside a rule for one direction such as :dir(rtl).</summary>

@@ -63,13 +63,13 @@ public class CustomSectionValidatorTests
     private const string ValidCss = """
         :scope { color: var(--color-neutral-900); background: var(--setting-image) center / cover; position: relative; }
         :scope[data-visible] .custom-hero__items { opacity: 1; transform: translateY(calc(var(--scroll-progress) * 10px)); }
-        .custom-hero__items > li { animation: custom-hero-fade 1s calc(var(--i) * 100ms) both; border-color: transparent; color: currentColor; }
+        .custom-hero__items > li { animation: custom-hero__fade 1s calc(var(--i) * 100ms) both; border-color: transparent; color: currentColor; }
         .custom-hero__body { background-image: url("https://cdn.example/assets/stores/s1/texture.png"); }
         .custom-hero__button { & .icon { opacity: .5; } }
         @media (width >= 600px) { .custom-hero__items { display: grid; grid-template-columns: repeat(var(--n), 1fr); } }
         @supports (display: grid) { .custom-hero__items { gap: 1rem; } }
         @container (min-width: 400px) { .custom-hero__body { font-size: 1.25rem; } }
-        @keyframes custom-hero-fade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes custom-hero__fade { from { opacity: 0; } to { opacity: 1; } }
         @media (prefers-reduced-motion: reduce) { .custom-hero__items > li { animation: none; } }
         """;
 
@@ -151,6 +151,16 @@ public class CustomSectionValidatorTests
     [InlineData("""<section data-visible></section>""", "<section> at line 1 has an attribute a custom section cannot use, 'data-visible': it is no binding and no behavior the storefront offers")]
     [InlineData("""<section></section><div></div>""", "the template has 2 root elements, and has one: the section's root")]
     [InlineData("""text <section></section>""", "the template has text outside its root element")]
+    [InlineData("""<vc-button label="Go"></vc-button>""", "the template's root is <vc-button>, a kit tag, which renders a component and not the section: the root is an element of HTML")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/../other/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/../other/x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/%2e%2e/other/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/%2e%2e/other/x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/%2E%2e%2Fother/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/%2E%2e%2Fother/x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets\..\other\x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets\\..\\other\\x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><a href="#1st">x</a></section>""", "<a> at line 1 has href=\"#1st\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><q cite="javascript:x()">{{ settings.title }}</q></section>""", "<q> at line 1 has cite=\"javascript:x()\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><video poster="https://evil.example/p.png"></video></section>""", "<video> at line 1 has poster with 'https://evil.example/p.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><div open></div></section>""", "<div> at line 1 has an attribute a custom section cannot use, 'open'")]
+    [InlineData("""<section><img alt="" src="{{ settings.image }}" poster="{{ settings.image }}"></section>""", "<img> at line 1 has an attribute a custom section cannot use, 'poster'")]
     [InlineData("""<section><h1>{{ settings.title }}</h1></section>""", "<h1> at line 1 is an h1, which the page holds: a section's headings start at h2")]
     [InlineData("""<section><img src="{{ settings.image }}"></section>""", "<img> at line 1 has no alt: bind it to a string setting, or write alt=\"\" for an image that only decorates")]
     [InlineData("""<section><img src="{{ settings.image }}" alt="{{ settings.count }}"></section>""", "<img> at line 1 has alt bound to 'settings.count', a number and not a string setting")]
@@ -281,6 +291,12 @@ public class CustomSectionValidatorTests
     [InlineData("formaction", "https://evil.example")]
     [InlineData("is", "x-evil")]
     [InlineData("id", "x")]
+    [InlineData("ping", "https://evil.example/track")]
+    [InlineData("srcset", "https://evil.example/x.png 1x")]
+    [InlineData("poster", "https://evil.example/x.png")]
+    [InlineData("popover", "")]
+    [InlineData("popovertarget", "x")]
+    [InlineData("action", "https://evil.example")]
     public void Validate_KitAttributeTheCatalogDeclaresButNoKitTagTakes_IsRefused(string name, string value)
     {
         var catalog = (JObject)Catalog.DeepClone();
@@ -289,6 +305,22 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="{value}"></vc-button></section>"""), catalog);
 
         Assert.Equal([$"{File}: <vc-button> at line 1 has '{name}', which no kit tag takes, whatever the catalog declares"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_BehaviorNamedAsTheStorefrontsOwnAttributes_IsRefused()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["behaviors"]!["sb-anchor"] = JObject.Parse("""{ "options": {} }""");
+
+        var result = _validator.Validate(Type, Section("""<section data-sb-anchor><p data-pb-id="x">{{ settings.title }}</p></section>"""), catalog);
+
+        Assert.Equal(
+            [
+                $"{File}: <section> at line 1 has an attribute a custom section cannot use, 'data-sb-anchor': the storefront writes data-sb- and data-pb- attributes itself",
+                $"{File}: <p> at line 1 has an attribute a custom section cannot use, 'data-pb-id': the storefront writes data-sb- and data-pb- attributes itself",
+            ],
+            result.Errors);
     }
 
     [Theory]
@@ -426,6 +458,40 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
+    public void Validate_TemplateOfEndTagsThatCloseNothing_IsRefusedBeforeItIsParsed()
+    {
+        var template = string.Concat(Enumerable.Repeat("<div></i>", 7200));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal([$"{File}: the template nests elements deeper than 32"], result.Errors);
+        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
+    }
+
+    [Fact]
+    public void Validate_BindingLeftOpenOverALongRun_IsRefusedWithoutTimingOut()
+    {
+        var template = "<section><p>{{" + new string(' ', 60000) + "</p></section>";
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal([$"{File}: <p> at line 1 has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}"], result.Errors);
+    }
+
+    [Theory]
+    [InlineData("""<section><p><table><tr><td>{{ settings.title }}</td></tr></table></p></section>""")]
+    [InlineData("""<section><a href="#custom-hero__reviews">{{ settings.title }}</a></section>""")]
+    [InlineData("""<section><video src="{{ settings.image }}" poster="{{ settings.image }}" autoplay muted loop playsinline controls preload="metadata"><source src="https://cdn.example/assets/a.mp4" type="video/mp4" media="(width >= 600px)"></video></section>""")]
+    [InlineData("""<section><details open><summary>{{ settings.title }}</summary><p>{{ settings.title }}</p></details></section>""")]
+    [InlineData("""<section><blockquote cite="https://example.com/review">{{ settings.title }}</blockquote><q cite="/reviews">{{ settings.title }}</q></section>""")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/stores/s1/../s1/x.png"></section>""")]
+    public void Validate_TemplateTheStorefrontRendersAsWritten_IsTaken(string template)
+    {
+        Assert.Empty(_validator.Validate(Type, Section(template), Catalog).Errors);
+    }
+
+    [Fact]
     public void Validate_TemplateNestedToTheLimit_IsTaken()
     {
         var template = "<section>" + string.Concat(Enumerable.Repeat("<div>", 31)) + string.Concat(Enumerable.Repeat("</div>", 31)) + "</section>";
@@ -444,22 +510,22 @@ public class CustomSectionValidatorTests
     }
 
     [Theory]
-    [InlineData("""@import url("https://cdn.example/assets/a.css");""", "the CSS has @import, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
-    [InlineData("""@font-face { font-family: x; }""", "the CSS has @font-face, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
-    [InlineData(""".a { color: var(--color-primary-500); } @layer base { .a { margin: 0; } }""", "the CSS has @layer, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
-    [InlineData("""@scope (.a) { .b { margin: 0; } }""", "the CSS has @scope, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
-    [InlineData("""@property --x { syntax: '<length>'; inherits: false; initial-value: 0px; }""", "the CSS has @property, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
-    [InlineData("""@page { margin: 0; }""", "the CSS has @page, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
-    [InlineData("""@namespace svg url(http://www.w3.org/2000/svg);""", "the CSS has @namespace, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
-    [InlineData("""@media (width >= 600px) { @font-face { font-family: x; } }""", "the CSS has @font-face, and a custom section's CSS has only @media, @supports, @container and @keyframes")]
+    [InlineData("""@import url("https://cdn.example/assets/a.css");""", "the CSS has @import, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
+    [InlineData("""@font-face { font-family: x; }""", "the CSS has @font-face, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
+    [InlineData(""".a { color: var(--color-primary-500); } @layer base { .a { margin: 0; } }""", "the CSS has @layer, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
+    [InlineData("""@scope (.a) { .b { margin: 0; } }""", "the CSS has @scope, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
+    [InlineData("""@property --x { syntax: '<length>'; inherits: false; initial-value: 0px; }""", "the CSS has @property, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
+    [InlineData("""@page { margin: 0; }""", "the CSS has @page, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
+    [InlineData("""@namespace svg url(http://www.w3.org/2000/svg);""", "the CSS has @namespace, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
+    [InlineData("""@media (width >= 600px) { @font-face { font-family: x; } }""", "the CSS has @font-face, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
     [InlineData(""":root { --x: 1; }""", "the CSS selector ':root' reaches :root, html or body, outside the section")]
     [InlineData("""body .a { margin: 0; }""", "the CSS selector 'body .a' reaches :root, html or body, outside the section")]
     [InlineData(""".a, html { margin: 0; }""", "the CSS selector '.a, html' reaches :root, html or body, outside the section")]
     [InlineData(""".a { position: fixed; }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { & .b { POSITION:FIXED } }""", "the CSS has position: fixed, which puts the section over the page")]
-    [InlineData(""".a { background: url(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library")]
-    [InlineData(""".a { background-image: image-set("https://evil.example/x.png" 1x); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library")]
-    [InlineData(""".a { background: u\72l(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library")]
+    [InlineData(""".a { background: url(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { background-image: image-set("https://evil.example/x.png" 1x); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { background: u\72l(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL")]
     [InlineData(""".a:focus { outline: none; }""", "the CSS sets outline to none or 0, which hides where the keyboard is on the page")]
     [InlineData(""".a:focus-visible { OUTLINE: 0 }""", "the CSS sets outline to none or 0, which hides where the keyboard is on the page")]
     [InlineData(""".a { outline-style: none; }""", "the CSS sets outline-style to none or 0, which hides where the keyboard is on the page")]
@@ -467,7 +533,19 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { width: expression(alert(1)); }""", "the CSS has expression(), which runs script")]
     [InlineData(""".a { behavior: url(https://cdn.example/assets/x.htc); }""", "the CSS sets behavior, which runs script")]
     [InlineData(""".a { -moz-binding: url(https://cdn.example/assets/x.xml#y); }""", "the CSS sets -moz-binding, which runs script")]
-    [InlineData("""@keyframes fade { from { opacity: 0; } }""", "the CSS names @keyframes 'fade', which does not start with the type, 'custom-hero': names are not scoped")]
+    [InlineData("""@keyframes fade { from { opacity: 0; } }""", "the CSS names @keyframes 'fade', which does not start with 'custom-hero__': keyframes names are not scoped")]
+    [InlineData("""@keyframes custom-hero-banner-fade { from { opacity: 0; } }""", "the CSS names @keyframes 'custom-hero-banner-fade', which does not start with 'custom-hero__': keyframes names are not scoped")]
+    [InlineData("""@keyframes custom-hero__ { from { opacity: 0; } }""", "the CSS names @keyframes 'custom-hero__', which does not start with 'custom-hero__': keyframes names are not scoped")]
+    [InlineData("""@keyframes""", "the CSS has @keyframes without a name")]
+    [InlineData(""".custom-x { background-image: image-s\65t(if(else: "https://evil.example/p.png")); }""", "the CSS has if() inside image-set(), whose URL is then not known on save")]
+    [InlineData(""".custom-x { background-image: image-s\65t(if(else: "https://evil.example/p.png")); }""", "the CSS loads 'https://evil.example/p.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""":scope { --u: "https://evil.example/p.png"; background-image: image-set(if(else: var(--u))); }""", "the CSS has var() inside image-set(), whose URL is then not known on save")]
+    [InlineData(""".a { background-image: image-set(--pick() 1x); }""", "the CSS has --pick() inside image-set(), whose URL is then not known on save")]
+    [InlineData(""".a { background-image: cross-fade(image-set(url(https://evil.example/a.png) 1x), 50%); }""", "the CSS loads 'https://evil.example/a.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { position: if(style(--x: 1): fixed; else: static); }""", "the CSS has position: fixed, which puts the section over the page")]
+    [InlineData(""".a { position: if(style(--x: 1): var(--p)); }""", "the CSS sets position with if(), which could make it fixed")]
+    [InlineData(""".a { position: --where(); }""", "the CSS sets position with --where(), which could make it fixed")]
+    [InlineData(""".a { background: url("data:text/html,<script>x()</script>"); }""", "the CSS loads 'data:text/html,<script>x()</script>', which is not a URL of the store's asset library or a data:image/ URL")]
     [InlineData("""} body { display: none; } .a {""", "the CSS has a '}' without its pair")]
     [InlineData(""".a { color: red; """, "the CSS has a '{' without its pair")]
     [InlineData(""".a { background: rgb(0 0 0 }""", "the CSS has a '}' without its pair")]
@@ -475,9 +553,9 @@ public class CustomSectionValidatorTests
     [InlineData(".a{content:'x\r}}} *{display:none}\n}", "the CSS has a string that a line break cuts off")]
     [InlineData(".a{content:'x\f}}} *{display:none}\n}", "the CSS has a string that a line break cuts off")]
     [InlineData(""":scope{--a:"/*";position:fixed;inset:0;z-index:2147483647;--b:"*/"}""", "the CSS has position: fixed, which puts the section over the page")]
-    [InlineData(""":scope{--a:"/*";background:url(https://evil.example/t.gif);--b:"*/"}""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library")]
-    [InlineData(""".a { background: url("https://evil.example/t.gif\"") }""", "the CSS loads 'https://evil.example/t.gif\"', which is not a URL of the store's asset library")]
-    [InlineData(""":scope { --u: url(https://evil.example/t.gif); }""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library")]
+    [InlineData(""":scope{--a:"/*";background:url(https://evil.example/t.gif);--b:"*/"}""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { background: url("https://evil.example/t.gif\"") }""", "the CSS loads 'https://evil.example/t.gif\"', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""":scope { --u: url(https://evil.example/t.gif); }""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library or a data:image/ URL")]
     [InlineData(""":scope { --p: fixed; position: var(--p); }""", "the CSS sets position with var(), which could make it fixed")]
     [InlineData(""".a { posit\69 on: fi\78 ed; }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { background-image: image-set(var(--u) 1x); }""", "the CSS has var() inside image-set(), whose URL is then not known on save")]
@@ -487,6 +565,28 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
         Assert.Contains($"{File}: {error}", result.Errors);
+    }
+
+    [Theory]
+    [InlineData("""@starting-style { .a { opacity: 0; } } .b { @starting-style { opacity: 0; } }""")]
+    [InlineData(""".a { -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'/>") center / contain; }""")]
+    [InlineData(""".a { background-image: image-set(url(data:image/png;base64,iVBORw0KGgo=) 1x, "data:image/webp;base64,UklGR" 2x); }""")]
+    public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public void Validate_CssOfOneLongDeclaration_IsCheckedInLinearTime()
+    {
+        var css = "a{" + string.Concat(Enumerable.Repeat("b:", 32766)) + "}";
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(2), $"took {watch.Elapsed}");
     }
 
     [Fact]

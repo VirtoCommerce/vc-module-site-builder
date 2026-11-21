@@ -14,6 +14,8 @@ public static class CssTokenizer
 
     public enum TokenKind
     {
+        /// <summary>No token, as a token of its default value is.</summary>
+        None,
         Ident,
         Function,
         AtKeyword,

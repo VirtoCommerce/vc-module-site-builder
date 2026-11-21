@@ -181,6 +181,10 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal(rules.Attributes, Strings(kit.GetProperty("template").GetProperty("attributes")));
         Assert.Equal(rules.FieldTypes, Strings(kit.GetProperty("file").GetProperty("field_types")));
         Assert.Equal(rules.AtRules, Strings(kit.GetProperty("css").GetProperty("at_rules")));
+        Assert.Contains("starting-style", rules.AtRules);
+        Assert.Contains("custom-stats-band__rise", kit.GetProperty("css").GetProperty("keyframes").GetString(), StringComparison.Ordinal);
+        Assert.Contains("autoplay", Strings(kit.GetProperty("template").GetProperty("element_attributes").GetProperty("video")));
+        Assert.Contains("data-sb-*", kit.GetProperty("template").GetProperty("attributes_note").GetString(), StringComparison.Ordinal);
         Assert.Equal("margin-inline-start", kit.GetProperty("css").GetProperty("logical_properties").GetProperty("margin-left").GetString());
         Assert.Equal("text-align: end", kit.GetProperty("css").GetProperty("logical_properties").GetProperty("text-align: right").GetString());
         Assert.Contains("section", rules.Elements);
@@ -192,7 +196,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal("target is _self or _blank, and rel does not hold opener; both are written as they are, with no binding.",
             kit.GetProperty("template").GetProperty("link_targets").GetString());
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
-            x => x.GetString()!.Contains("takes no on*, form*, style, id, is, class or srcdoc", StringComparison.Ordinal));
+            x => x.GetString()!.Contains("takes no on*, form*, popover*, style, id, is, class, srcdoc, ping, srcset, poster or action", StringComparison.Ordinal));
         Assert.StartsWith("The storefront's catalog names no kit", kit.GetProperty("kit").GetProperty("note").GetString(), StringComparison.Ordinal);
     }
 

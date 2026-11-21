@@ -31,7 +31,7 @@ public static class SectionKit
             ]
           },
           "template": "<section class=\"custom-stats-band\" data-inview data-inview-once>\n  <h2 class=\"custom-stats-band__heading\" data-if=\"settings.heading\">{{ settings.heading }}</h2>\n  <ul class=\"custom-stats-band__list\">\n    <li class=\"custom-stats-band__item\" data-each=\"settings.stats\">\n      <span class=\"custom-stats-band__value\"><span data-count-up=\"{{ item.value }}\">0</span>{{ item.suffix }}</span>\n      <span class=\"custom-stats-band__label\">{{ item.label }}</span>\n    </li>\n  </ul>\n</section>",
-          "css": ":scope { padding-block: 2.5rem; padding-inline: 1rem; background: var(--setting-background); color: var(--color-neutral-900); font-family: var(--vc-base-font-family, inherit); }\n.custom-stats-band__heading { margin-block: 0 1.5rem; margin-inline: 0; font-family: var(--vc-heading-font-family, inherit); font-size: 1.5rem; line-height: 1.25; text-align: center; }\n.custom-stats-band__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; margin: 0; padding: 0; list-style: none; }\n.custom-stats-band__item { padding: 1rem; border-radius: var(--vc-radius, 0.5rem); background: var(--color-additional-50); text-align: center; overflow-wrap: anywhere; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .custom-stats-band__item { animation: custom-stats-band-rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.custom-stats-band__value { display: block; font-family: var(--vc-heading-font-family, inherit); font-size: 2.25rem; font-weight: 700; line-height: 1.1; color: var(--color-primary-700); }\n@container sb-section (min-width: 40rem) { :scope { padding-block: 4rem; } .custom-stats-band__list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; } }\n@container sb-section (min-width: 64rem) { .custom-stats-band__heading { font-size: 1.875rem; } .custom-stats-band__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }\n@keyframes custom-stats-band-rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .custom-stats-band__item { opacity: 1; transform: none; } :scope[data-visible] .custom-stats-band__item { animation: none; } }"
+          "css": ":scope { padding-block: 2.5rem; padding-inline: 1rem; background: var(--setting-background); color: var(--color-neutral-900); font-family: var(--vc-base-font-family, inherit); }\n.custom-stats-band__heading { margin-block: 0 1.5rem; margin-inline: 0; font-family: var(--vc-heading-font-family, inherit); font-size: 1.5rem; line-height: 1.25; text-align: center; }\n.custom-stats-band__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; margin: 0; padding: 0; list-style: none; }\n.custom-stats-band__item { padding: 1rem; border-radius: var(--vc-radius, 0.5rem); background: var(--color-additional-50); text-align: center; overflow-wrap: anywhere; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .custom-stats-band__item { animation: custom-stats-band__rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.custom-stats-band__value { display: block; font-family: var(--vc-heading-font-family, inherit); font-size: 2.25rem; font-weight: 700; line-height: 1.1; color: var(--color-primary-700); }\n@container sb-section (min-width: 40rem) { :scope { padding-block: 4rem; } .custom-stats-band__list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; } }\n@container sb-section (min-width: 64rem) { .custom-stats-band__heading { font-size: 1.875rem; } .custom-stats-band__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }\n@keyframes custom-stats-band__rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .custom-stats-band__item { opacity: 1; transform: none; } :scope[data-visible] .custom-stats-band__item { animation: none; } }"
         }
         """;
 
@@ -108,18 +108,23 @@ public static class SectionKit
             },
             Template = new
             {
-                Root = "One root element, the section's root: it keeps data-sb-type and the setting variables in its style. The storefront renders each " +
-                    "section in a wrapper of its own, with contain: paint and isolation: isolate, that holds the anchor id and the preview's attributes.",
+                Root = "One root element of HTML, the section's root, never a kit tag: it keeps data-sb-type and the setting variables in its style. The " +
+                    "storefront renders each section in a wrapper of its own, with contain: paint and isolation: isolate, that holds the anchor id and " +
+                    "the preview's attributes.",
                 Markup = $"HTML as written: markup a parser has to mend, such as an element left open or a /> on a kit tag, is refused, and so are " +
                     $"elements nested more than {rules.MaxTemplateDepth} deep, the root counted.",
                 Elements = rules.Elements,
                 ElementsNote = "And the kit tags below. Anything else is refused, such as svg, script, style, iframe and form controls.",
                 Attributes = rules.Attributes,
-                AttributesNote = "And aria-*, the binding attributes and the behaviors below. No id (two sections on a page would share it), no style " +
-                    "(the CSS styles it), no on* (script).",
+                AttributesNote = $"And aria-*, the binding attributes, the behaviors below and element_attributes. No id (two sections on a page would " +
+                    $"share it), no style (the CSS styles it), no on* (script), and no {JoinOr(rules.ReservedDataPrefixes.Select(x => x + "*").ToList())}, " +
+                    "which the storefront writes itself.",
+                ElementAttributes = rules.ElementAttributes,
+                ElementAttributesNote = "Attributes only these elements take. cite is a link and poster an image, by the rules below.",
                 Classes = $"class names the type's own classes only: the type itself, or a name starting with the type and {JoinOr(rules.ClassSeparators.Select(x => $"'{x}'").ToList())}, " +
                     "such as custom-stats-band__value or custom-stats-band-dark. A binding in class names a select setting whose options are such classes.",
-                Links = $"href is a path starting with '/', a URL starting with {JoinOr(rules.LinkSchemes)}, or one binding of a string setting with \"format\": \"url\".",
+                Links = $"href is a path starting with '/', a URL starting with {JoinOr(rules.LinkSchemes)}, an anchor on the page such as #reviews " +
+                    "(a letter, then letters, digits, '-' and '_'), or one binding of a string setting with \"format\": \"url\".",
                 LinkTargets = $"target is {JoinOr(rules.LinkTargets)}, and rel does not hold {JoinOr(rules.RefusedRels)}; both are written as they are, with no binding.",
                 Images = "src and srcset are a URL of the store's asset library (search_assets), or one binding of an images setting.",
                 Text = $"Text written into the template, or into {JoinOr(rules.TextAttributes)}, is the same in every language and saves with a " +
@@ -153,15 +158,16 @@ public static class SectionKit
             {
                 Scope = "The storefront wraps the CSS in @layer sections { @scope ([data-sb-type=\"<type>\"]) { ... } }: it reaches only the type's sections, and :scope is the section's root.",
                 AtRules = rules.AtRules,
-                Keyframes = "A @keyframes name starts with the type, such as custom-stats-band-rise: names are not scoped.",
+                Keyframes = $"A @keyframes name is the type, {rules.KeyframesSeparator} and a name, such as custom-stats-band{rules.KeyframesSeparator}rise: " +
+                    "keyframes names are not scoped.",
                 Reading = "The CSS is read as a browser reads it, from its tokens: a comment inside a string is text, and escapes are read.",
                 Refused = new[]
                 {
-                    "any other at-rule, such as @import, @font-face, @layer or @property",
+                    "any other at-rule than at_rules, such as @import, @font-face, @layer or @property",
                     "a selector naming :root, html or body",
-                    $"position: fixed, and {JoinOr(Functions(rules.LateValueFunctions))} in position",
-                    $"a URL other than one of the store's asset library in {JoinOr(Functions(rules.ImageFunctions))}, custom properties included, and " +
-                        $"{JoinOr(Functions(rules.LateValueFunctions))} inside them",
+                    $"position: fixed, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} in position",
+                    $"a URL other than one of the store's asset library or a data:image/ URL in {JoinOr(Functions(rules.ImageFunctions))}, custom " +
+                        $"properties included, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} inside them",
                     $"expression(), and the properties {JoinOr(rules.ScriptProperties)}, which run script",
                     "a string that a line break cuts off, and a url( whose unquoted URL holds a quote, a parenthesis or a space: quote the URL",
                     $"a block left open or closed without its pair, blocks nested deeper than {rules.MaxCssDepth}, and at-rules nested deeper than {rules.MaxAtRuleDepth}",

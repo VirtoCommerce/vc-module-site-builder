@@ -23,11 +23,20 @@ public static class CustomSectionKit
         StringType, NumberType, BooleanType, SelectType, DateType, LinkType,
     };
 
-    /// <summary>The starts of the names of attributes no kit tag takes: those that run script and those that reach a form.</summary>
-    public static IReadOnlyList<string> DeniedAttributePrefixes { get; } = ["on", "form"];
+    /// <summary>The starts of the names of attributes no kit tag takes: those that run script, reach a form or open a popover.</summary>
+    public static IReadOnlyList<string> DeniedAttributePrefixes { get; } = ["on", "form", "popover"];
 
-    /// <summary>The attributes no kit tag takes besides <see cref="DeniedAttributePrefixes"/>: they style or name the element, or hold a document.</summary>
-    public static IReadOnlySet<string> DeniedAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "style", "id", "is", "class", "srcdoc" };
+    /// <summary>
+    /// The attributes no kit tag takes besides <see cref="DeniedAttributePrefixes"/>: they style or name the element, hold a document, or load or
+    /// ping a URL outside the link and image rules.
+    /// </summary>
+    public static IReadOnlySet<string> DeniedAttributes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "style", "id", "is", "class", "srcdoc", "ping", "srcset", "poster", "action",
+    };
+
+    /// <summary>The starts of the names no behavior takes, after data-: the attributes the storefront writes itself.</summary>
+    public static IReadOnlyList<string> ReservedBehaviorPrefixes { get; } = ["sb-", "pb-"];
 
     public static IReadOnlySet<string> LinkAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "to", "href", "src" };
 
@@ -40,9 +49,16 @@ public static class CustomSectionKit
     private static readonly Regex TagNamePattern = new("^vc-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex NamePattern = new("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
 
-    /// <summary>An attribute that runs script, names the element or reaches a form, which no kit tag takes whatever the catalog declares.</summary>
+    /// <summary>
+    /// An attribute that runs script, names the element, reaches a form or a popover, or loads or pings a URL outside the link and image
+    /// rules, which no kit tag takes whatever the catalog declares.
+    /// </summary>
     public static bool IsDeniedAttribute(string name) =>
         DeniedAttributePrefixes.Any(x => name.StartsWith(x, StringComparison.OrdinalIgnoreCase)) || DeniedAttributes.Contains(name.ToLowerInvariant());
+
+    /// <summary>A name no behavior takes: a binding's, or one of the attributes the storefront writes itself, data-sb- and data-pb-.</summary>
+    public static bool IsReservedBehavior(string name) =>
+        BindingNames.Contains(name) || ReservedBehaviorPrefixes.Any(x => name.StartsWith(x, StringComparison.Ordinal));
 
     /// <summary>An attribute a component reads as a link, which follows the link rule whatever type the catalog declares.</summary>
     public static bool IsLinkAttribute(string name) => LinkAttributes.Contains(name.ToLowerInvariant());
@@ -92,7 +108,9 @@ public static class CustomSectionKit
         GetFieldsError(tag["attributes"], "attribute", x => IsDeniedAttribute(x) ? "no kit tag takes" : null);
 
     private static string GetBehaviorNameError(string name) =>
-        !NamePattern.IsMatch(name) ? "is not lowercase words joined by '-'" : BindingNames.Contains(name) ? "is the name of a binding" : null;
+        !NamePattern.IsMatch(name) ? "is not lowercase words joined by '-'"
+        : IsReservedBehavior(name) ? "is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do"
+        : null;
 
     private static string GetBehaviorError(JObject behavior)
     {
