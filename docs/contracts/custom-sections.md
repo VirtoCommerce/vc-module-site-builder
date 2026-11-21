@@ -168,8 +168,9 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
   that a line break cuts off, and a `url(` whose unquoted URL holds a quote, a parenthesis or a space, are refused, and
   so is a block left open or closed without its pair, since the storefront's wrapping would close with it. Blocks nest
   at most 32 deep, and at-rules at most 4.
-- **Colors** come from the palette: `var(--color-…)`, a `color-token` setting's variable, or `transparent` and
-  `currentColor`. A literal color is saved with a warning.
+- **Colors** come from the palette: `var(--color-…)`, a `color-token` setting's variable, a relative color from one of
+  them (`rgb(from var(--color-neutral-950) r g b / 0.25)`), `color-mix()` of them, or `transparent` and `currentColor`.
+  A literal color is saved with a warning; a mask's colors, which give only its alpha, are not colors of the design.
 - **Classes** are the type's own, as the template's `class` names them. The storefront's utility classes are not
   available: they would style the section from outside its CSS, such as fixed over the page.
 - **Right to left**: a page in a right-to-left language mirrors a section through logical properties and values only.

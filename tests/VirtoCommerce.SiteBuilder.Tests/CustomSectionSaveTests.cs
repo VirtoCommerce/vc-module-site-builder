@@ -87,6 +87,19 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task SaveAsync_DryRunOfAMaskFromAGradient_AnswersWithNoWarning()
+    {
+        await SaveCatalogAsync();
+        var request = SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { mask-image: linear-gradient(to bottom, black 60%, transparent); }"))));
+        request.DryRun = true;
+
+        var result = await Operations().SaveAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Empty(result.Preview.Warnings);
+    }
+
+    [Fact]
     public async Task SaveAsync_CustomSectionTypeThatBreaksARule_IsInvalidAndWritesNothing()
     {
         await SaveCatalogAsync();

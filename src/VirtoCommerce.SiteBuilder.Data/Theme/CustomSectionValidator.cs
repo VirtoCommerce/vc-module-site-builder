@@ -1,11 +1,11 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using AngleSharp.Css.Dom;
-using AngleSharp.Css.Parser;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom.Events;
 using AngleSharp.Html.Parser;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.AssetsModule.Core.Assets;
@@ -16,7 +16,7 @@ using VirtoCommerce.Platform.Core.Common;
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
 /// <summary>The rules of <c>docs/contracts/custom-sections.md</c>: what the storefront would leave out of a type is refused here, with the rule it breaks.</summary>
-public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomSectionValidator
+public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver, ILogger<CustomSectionValidator> logger) : ICustomSectionValidator
 {
     private const int MaxPartSize = 64 * 1024;
     private const int MaxTotalSize = 256 * 1024;
@@ -40,7 +40,6 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const string AssetProbe = "file";
 
     // the CSS parser writes 'transparent' so
-    private const string TransparentColor = "rgba(0, 0, 0, 0)";
 
     private const string FormatKey = "format";
     private const string NameKey = "name";
@@ -142,6 +141,31 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     private static readonly HashSet<string> ScriptProperties = new(StringComparer.OrdinalIgnoreCase) { "behavior", "-moz-binding" };
 
+    private static readonly HashSet<string> ColorFunctions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color",
+    };
+
+    // CSS Color 4's named colors, without transparent and currentcolor, which are not literal colors of a palette
+    private static readonly HashSet<string> NamedColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure", "beige", "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
+        "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue", "cornsilk", "crimson", "cyan", "darkblue", "darkcyan",
+        "darkgoldenrod", "darkgray", "darkgreen", "darkgrey", "darkkhaki", "darkmagenta", "darkolivegreen", "darkorange", "darkorchid", "darkred",
+        "darksalmon", "darkseagreen", "darkslateblue", "darkslategray", "darkslategrey", "darkturquoise", "darkviolet", "deeppink", "deepskyblue",
+        "dimgray", "dimgrey", "dodgerblue", "firebrick", "floralwhite", "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
+        "gray", "green", "greenyellow", "grey", "honeydew", "hotpink", "indianred", "indigo", "ivory", "khaki", "lavender", "lavenderblush",
+        "lawngreen", "lemonchiffon", "lightblue", "lightcoral", "lightcyan", "lightgoldenrodyellow", "lightgray", "lightgreen", "lightgrey",
+        "lightpink", "lightsalmon", "lightseagreen", "lightskyblue", "lightslategray", "lightslategrey", "lightsteelblue", "lightyellow", "lime",
+        "limegreen", "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid", "mediumpurple", "mediumseagreen",
+        "mediumslateblue", "mediumspringgreen", "mediumturquoise", "mediumvioletred", "midnightblue", "mintcream", "mistyrose", "moccasin",
+        "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange", "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise",
+        "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue", "purple", "rebeccapurple", "red", "rosybrown",
+        "royalblue", "saddlebrown", "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue", "slateblue", "slategray",
+        "slategrey", "snow", "springgreen", "steelblue", "tan", "teal", "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke",
+        "yellow", "yellowgreen",
+    };
+
     private static readonly HashSet<string> MotionProperties = new(StringComparer.OrdinalIgnoreCase) { "animation", "animation-name", "transition" };
 
     private static readonly HashSet<string> ReducedMotionValues = new(StringComparer.OrdinalIgnoreCase) { "reduce", "no-preference" };
@@ -193,12 +217,18 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     // an escaped dot, slash or backslash, which a URL resolves as the character
     private static readonly Regex EscapedPathPattern = new("%(?:2[eEfF]|5[cC])", RegexOptions.None, RegexTimeout);
     private static readonly Regex AnchorPattern = new("^#[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.None, RegexTimeout);
+    // the properties whose value may hold a color by its name; anywhere else a name such as tan may be anything
+    private static readonly Regex ColorPropertyPattern = new("color|^background|^border|^outline|^column-rule|^text-decoration|shadow$|^fill$|^stroke$|^filter$",
+        RegexOptions.None, RegexTimeout);
     private static readonly Regex ImageDataUrlPattern = new("^data:image/[a-z0-9.+-]+[;,]", RegexOptions.IgnoreCase, RegexTimeout);
-    private static readonly Regex CssDocumentSelectorPattern = new(@"(?:^|[\s,>+~(])(?:html|body)(?=$|[\s,>+~.#:\[)])|:root(?![\w-])", RegexOptions.IgnoreCase, RegexTimeout);
-    private static readonly Regex CssLiteralColorPattern = new(@"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(", RegexOptions.IgnoreCase, RegexTimeout);
 
     public CustomSectionValidator()
         : this(blobUrlResolver: null)
+    {
+    }
+
+    public CustomSectionValidator(IBlobUrlResolver blobUrlResolver)
+        : this(blobUrlResolver, NullLogger<CustomSectionValidator>.Instance)
     {
     }
 
@@ -236,6 +266,12 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         catch (RegexMatchTimeoutException)
         {
             check.AddError("the type takes too long to check: write its template and its CSS plainer");
+        }
+        // a fault of the check refuses the type it could not check, rather than the request
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "The custom section type {Type} could not be checked.", type);
+            check.AddError("the type could not be checked, so it is not saved: the platform's log has the cause");
         }
 
         AddWarnings(check);
@@ -1173,27 +1209,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return;
         }
 
-        var errors = check.ErrorCount;
         ValidateCssTokens(check, tokens);
-        if (check.ErrorCount > errors)
-        {
-            return;
-        }
-
-        // the selectors and the colors as the rules read them; AngleSharp leaves out what it does not know, so only they are read from it
-        ICssStyleSheet sheet;
-        try
-        {
-            sheet = new CssParser(new CssParserOptions { IsIncludingUnknownDeclarations = true, IsIncludingUnknownRules = true, IsToleratingInvalidSelectors = true })
-                .ParseStyleSheet(css);
-        }
-        catch (DomException ex)
-        {
-            check.AddError($"the CSS does not read: {ex.Message}");
-            return;
-        }
-
-        ValidateCssRules(check, sheet.Rules);
     }
 
     /// <returns>The error of a token no browser reads as written, of a block without its pair or nested too deep; <c>null</c> for none.</returns>
@@ -1265,6 +1281,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         var preludeNamesDirection = false;
         // a declaration starts a block or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
         var atDeclarationStart = false;
+        // the tokens since the last block or ';': a rule's selector, or an at-rule's prelude, once a '{' follows
+        var prelude = new List<CssTokenizer.Token>();
         for (var i = 0; i < tokens.Count; i++)
         {
             var token = tokens[i];
@@ -1306,6 +1324,16 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             {
                 directionRules.Push((directionRules.Count > 0 && directionRules.Peek()) || preludeNamesDirection);
                 preludeNamesDirection = false;
+                ValidateCssSelector(prelude, errors);
+            }
+
+            if (token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.Semicolon)
+            {
+                prelude.Clear();
+            }
+            else
+            {
+                prelude.Add(token);
             }
 
             if (token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.OpenParen or CssTokenizer.TokenKind.OpenSquare or
@@ -1345,6 +1373,36 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         if (check.Animates && !HasReducedMotionQuery(tokens))
         {
             check.AddWarning("the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion");
+        }
+    }
+
+    /// <summary>
+    /// A rule's selector may not name :root, html or body. The storefront scopes the CSS to the section, where they match nothing, but a
+    /// browser without @scope would apply them to the page.
+    /// </summary>
+    protected virtual void ValidateCssSelector(IList<CssTokenizer.Token> prelude, IList<string> errors)
+    {
+        var first = prelude.FirstOrDefault(x => x.Kind != CssTokenizer.TokenKind.Whitespace);
+        if (first.Kind is CssTokenizer.TokenKind.None or CssTokenizer.TokenKind.AtKeyword)
+        {
+            return;
+        }
+
+        var attributes = 0;
+        var previous = default(CssTokenizer.Token);
+        foreach (var token in prelude.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace))
+        {
+            attributes += token.Kind switch { CssTokenizer.TokenKind.OpenSquare => 1, CssTokenizer.TokenKind.CloseSquare => -1, _ => 0 };
+            var isDocument = attributes == 0 && token.Kind == CssTokenizer.TokenKind.Ident && (previous.Kind == CssTokenizer.TokenKind.Colon
+                ? string.Equals(token.Value, "root", StringComparison.OrdinalIgnoreCase)
+                : !(previous.Kind == CssTokenizer.TokenKind.Delim && previous.Value is "." or "|") && token.Value.ToLowerInvariant() is "html" or "body");
+            if (isDocument)
+            {
+                errors.Add($"the CSS selector '{Quote(WriteCss(prelude))}' reaches :root, html or body, outside the section");
+                return;
+            }
+
+            previous = token;
         }
     }
 
@@ -1417,6 +1475,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         var name = tokens[index].Value;
         check.Animates |= MotionProperties.Contains(name);
+        if (HasLiteralColor(name, value))
+        {
+            check.ColorProperties.Add(name.ToLowerInvariant());
+        }
+
         if (directions != null && GetLogicalDirection(name, value) is { } logical)
         {
             directions.Add($"the CSS sets {logical.Physical}, which stays on that side when the page reads right to left: use {logical.Logical}");
@@ -1449,47 +1512,6 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         if (!IsAssetUrl(url) && !ImageDataUrlPattern.IsMatch(url))
         {
             errors.Add($"the CSS loads '{Quote(url)}', which is not a URL of the store's asset library or a data:image/ URL");
-        }
-    }
-
-    /// <summary>The selectors and the colors of the rules; the at-rules and the declarations that are refused are read from the tokens.</summary>
-    protected virtual void ValidateCssRules(CustomSectionCheck check, ICssRuleList rules)
-    {
-        foreach (var rule in rules ?? Enumerable.Empty<ICssRule>())
-        {
-            switch (rule)
-            {
-                case ICssStyleRule style:
-                    if (CssDocumentSelectorPattern.IsMatch(style.SelectorText ?? string.Empty))
-                    {
-                        check.AddError($"the CSS selector '{Quote(style.SelectorText)}' reaches :root, html or body, outside the section");
-                    }
-
-                    CollectColors(check, style.Style);
-                    ValidateCssRules(check, style.Rules);
-                    break;
-                case ICssKeyframesRule keyframes:
-                    foreach (var keyframe in keyframes.Rules.OfType<ICssKeyframeRule>())
-                    {
-                        CollectColors(check, keyframe.Style);
-                    }
-
-                    break;
-                case ICssGroupingRule grouping:
-                    ValidateCssRules(check, grouping.Rules);
-                    break;
-            }
-        }
-    }
-
-    protected virtual void CollectColors(CustomSectionCheck check, ICssStyleDeclaration style)
-    {
-        foreach (var property in style ?? Enumerable.Empty<ICssProperty>())
-        {
-            if (property.Value != TransparentColor && CssLiteralColorPattern.IsMatch(property.Value ?? string.Empty))
-            {
-                check.ColorProperties.Add(property.Name);
-            }
         }
     }
 
@@ -1706,6 +1728,66 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         return side == null ? null : ($"{property}: {side}", $"{property}: {(side == "left" ? logicalValues.Left : logicalValues.Right)}");
     }
+
+    // a mask takes only the alpha of its colors, so black and transparent there are no colors of the design
+    private static bool HasLiteralColor(string name, List<CssTokenizer.Token> value)
+    {
+        var property = name.ToLowerInvariant();
+        if ((property.StartsWith("-webkit-", StringComparison.Ordinal) ? property[8..] : property).StartsWith("mask", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var takesNamedColors = !property.StartsWith("--", StringComparison.Ordinal) && ColorPropertyPattern.IsMatch(property);
+        for (var i = 0; i < value.Count; i++)
+        {
+            var token = value[i];
+            var isLiteral = token.Kind switch
+            {
+                CssTokenizer.TokenKind.Hash => true,
+                CssTokenizer.TokenKind.Function => ColorFunctions.Contains(token.Value) && !IsPaletteRelativeColor(value, i),
+                CssTokenizer.TokenKind.Ident => takesNamedColors && NamedColors.Contains(token.Value),
+                _ => false,
+            };
+            if (isLiteral)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // a relative color from the palette, rgb(from var(--color-primary-500) r g b / 0.25), changes with it
+    private static bool IsPaletteRelativeColor(List<CssTokenizer.Token> value, int function)
+    {
+        var arguments = value.Skip(function + 1).Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).Take(3).ToList();
+        if (arguments.Count < 2 || arguments[0].Kind != CssTokenizer.TokenKind.Ident || !string.Equals(arguments[0].Value, "from", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return arguments[1] switch
+        {
+            { Kind: CssTokenizer.TokenKind.Ident } origin => origin.Value.ToLowerInvariant() is "currentcolor" or "transparent",
+            { Kind: CssTokenizer.TokenKind.Function } origin when string.Equals(origin.Value, "var", StringComparison.OrdinalIgnoreCase) =>
+                arguments.Count > 2 && arguments[2].Kind == CssTokenizer.TokenKind.Ident &&
+                (arguments[2].Value.StartsWith("--color-", StringComparison.Ordinal) || arguments[2].Value.StartsWith("--setting-", StringComparison.Ordinal)),
+            _ => false,
+        };
+    }
+
+    // the tokens as CSS, for an error to quote
+    private static string WriteCss(IEnumerable<CssTokenizer.Token> tokens) =>
+        string.Concat(tokens.Select(x => x.Kind switch
+        {
+            CssTokenizer.TokenKind.Function => x.Value + "(",
+            CssTokenizer.TokenKind.AtKeyword => "@" + x.Value,
+            CssTokenizer.TokenKind.Hash => "#" + x.Value,
+            CssTokenizer.TokenKind.String => $"\"{x.Value}\"",
+            CssTokenizer.TokenKind.Url => $"url({x.Value})",
+            _ => x.Value,
+        })).Trim();
 
     private static bool IsLateValueFunction(string name) => LateValueFunctions.Contains(name) || name.StartsWith("--", StringComparison.Ordinal);
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -520,6 +521,9 @@ public class CustomSectionValidatorTests
     [InlineData("""@media (width >= 600px) { @font-face { font-family: x; } }""", "the CSS has @font-face, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes")]
     [InlineData(""":root { --x: 1; }""", "the CSS selector ':root' reaches :root, html or body, outside the section")]
     [InlineData("""body .a { margin: 0; }""", "the CSS selector 'body .a' reaches :root, html or body, outside the section")]
+    [InlineData(""".a > body { margin: 0; }""", "the CSS selector '.a > body' reaches :root, html or body, outside the section")]
+    [InlineData(""":is(html) .a { margin: 0; }""", "the CSS selector ':is(html) .a' reaches :root, html or body, outside the section")]
+    [InlineData(""".a { :ROOT & { margin: 0; } }""", "the CSS selector ':ROOT &' reaches :root, html or body, outside the section")]
     [InlineData(""".a, html { margin: 0; }""", "the CSS selector '.a, html' reaches :root, html or body, outside the section")]
     [InlineData(""".a { position: fixed; }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { & .b { POSITION:FIXED } }""", "the CSS has position: fixed, which puts the section over the page")]
@@ -571,11 +575,44 @@ public class CustomSectionValidatorTests
     [InlineData("""@starting-style { .a { opacity: 0; } } .b { @starting-style { opacity: 0; } }""")]
     [InlineData(""".a { -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'/>") center / contain; }""")]
     [InlineData(""".a { background-image: image-set(url(data:image/png;base64,iVBORw0KGgo=) 1x, "data:image/webp;base64,UklGR" 2x); }""")]
+    [InlineData(""".a { mask-image: linear-gradient(to bottom, black 60%, transparent); }""")]
+    [InlineData(""".a { mask-image: linear-gradient(to bottom, currentColor 60%, transparent); }""")]
+    [InlineData(""".a { -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent); }""")]
+    [InlineData(""".a { mask-image: url(https://cdn.example/assets/stores/s1/fade.png); }""")]
+    [InlineData(""".a { mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><rect width='1' height='1'/></svg>"); }""")]
+    [InlineData(""".a { box-shadow: 0 1px 2px rgb(from var(--color-additional-950) r g b / 0.25); }""")]
+    [InlineData(""".a { text-shadow: 0 0 2px hsl(from var(--color-primary-500) h s l / 0.5); }""")]
+    [InlineData(""".a { border-color: oklch(from var(--setting-tone) l c h); outline-color: color(from currentColor srgb r g b / 0.5); }""")]
+    [InlineData(""".a { background: color-mix(in srgb, var(--color-primary-500) 40%, transparent); }""")]
+    [InlineData(""".html, [data-tone="body"] .a { font-family: Tan, serif; grid-area: navy; }""")]
     public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
         Assert.Empty(result.Errors);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Theory]
+    [InlineData(""".a { box-shadow: 0 1px 2px rgb(from #000 r g b / 0.25); }""", "box-shadow")]
+    [InlineData(""".a { border: 1px solid red; }""", "border")]
+    [InlineData(""".a { --accent: #ff0000; }""", "--accent")]
+    public void Validate_CssColorNotOfThePalette_IsSavedWithAWarning(string css, string property)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(
+            [$"{File}: the CSS sets literal colors ({property}), which the palette does not change: use var(--color-…) or a color-token setting's variable"],
+            result.Warnings);
+    }
+
+    [Fact]
+    public void Validate_FaultOfTheCheck_RefusesTheTypeInsteadOfFailing()
+    {
+        var result = new FailingValidator().Validate(Type, Section("<section></section>", ".a { color: var(--color-primary-500); }"), Catalog);
+
+        Assert.Equal([$"{File}: the type could not be checked, so it is not saved: the platform's log has the cause"], result.Errors);
     }
 
     [Fact]
@@ -611,7 +648,7 @@ public class CustomSectionValidatorTests
         Assert.Equal(
             [
                 $"{File}: the template holds text of its own ('Free shipping', 'Truck'), which is the same in every language: bind it to a translatable setting",
-                $"{File}: the CSS sets literal colors (color, background-color), which the palette does not change: use var(--color-…) or a color-token setting's variable",
+                $"{File}: the CSS sets literal colors (color, background), which the palette does not change: use var(--color-…) or a color-token setting's variable",
             ],
             result.Warnings);
     }
@@ -718,6 +755,11 @@ public class CustomSectionValidatorTests
         file["css"] = css;
 
         return file;
+    }
+
+    private sealed class FailingValidator() : CustomSectionValidator(new AssetUrls(Assets))
+    {
+        protected override void ValidateCss(CustomSectionCheck check, string css) => throw new NullReferenceException();
     }
 
     private sealed class AssetUrls(string publicUrl) : IBlobUrlResolver
