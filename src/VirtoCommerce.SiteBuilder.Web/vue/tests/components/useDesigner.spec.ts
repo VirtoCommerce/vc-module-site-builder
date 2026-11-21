@@ -275,6 +275,17 @@ describe("useDesigner: editing and saving", () => {
     ]);
   });
 
+  it("passes on the warnings the server saved the files with", async () => {
+    const warning = "custom-sections/custom-hero.json: the template's own text is the same in every language";
+    await openDatabasePage();
+    platform.on("POST", "/api/site-builder/designer/save", { eTag: '"v2"', warnings: [warning] });
+    designer.selection.value = { kind: "section", id: "hero-1" };
+    designer.setField("title", "Mine");
+
+    expect(await designer.save()).toEqual({ versions: {}, warnings: [warning] });
+    expect(designer.dirty.value).toBe(false);
+  });
+
   it("keeps the theme files' versions when someone else saved one meanwhile (412): opening again reads them anew", async () => {
     const header = "default/sections/header-group.json";
     await openDatabasePage();

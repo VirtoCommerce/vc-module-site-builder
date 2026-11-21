@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
-import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, mount, shallowMount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import type { IBladeToolbar } from "@vc-shell/framework";
 import { VcBlade } from "@vc-shell/framework/ui";
@@ -704,5 +704,49 @@ describe("the theme's custom section types", () => {
 
     expect(page.lastDraft()?.theme).not.toHaveProperty("customSections");
     expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/custom-sections")).toEqual([]);
+  });
+});
+
+describe("the warnings a save answers with", () => {
+  const WARNING = "custom-sections/custom-hero.json: the template's own text is the same in every language";
+
+  async function saveAnswering(answer: unknown) {
+    fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
+      .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({}))
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: [] })
+      .on("POST", "/api/site-builder/designer/save", answer)
+      .install();
+    blade.param.value = "g1";
+    const wrapper = shallowMount(SiteBuilderDesigner, { global: { plugins: [await routerAt("/")], stubs: { VcBlade: false } } });
+    await flushPromises();
+    const designer = (wrapper.vm as unknown as { designer: Designer }).designer;
+    designer.doc.value = { ...designer.doc.value, content: designer.doc.value.content.map((x) => ({ ...x, title: "Mine" })) };
+
+    await toolbarItem(wrapper, "save").clickHandler!();
+    await flushPromises();
+    return designer;
+  }
+
+  it("lists them in a warning that stays until dismissed, with the save done", async () => {
+    const designer = await saveAnswering({ eTag: '"v2"', warnings: [WARNING] });
+
+    expect(notification.warning).toHaveBeenCalledTimes(1);
+    const [content, options] = notification.warning.mock.calls[0];
+    const toast = mount({ render: () => content });
+    expect(toast.find("p").text()).toBe("Saved with warnings:");
+    expect(toast.findAll("li").map((x) => x.text())).toEqual([WARNING]);
+    expect(options).toEqual({ timeout: false });
+    expect(notification.error).not.toHaveBeenCalled();
+    expect(designer.dirty.value).toBe(false);
+  });
+
+  it("shows nothing for a save without warnings", async () => {
+    await saveAnswering({ eTag: '"v2"', warnings: [] });
+
+    expect(notification.warning).not.toHaveBeenCalled();
   });
 });
