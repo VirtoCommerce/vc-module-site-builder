@@ -145,6 +145,20 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task SaveAsync_HeaderGroupPlacingACustomType_IsInvalidAndWritesNothing()
+    {
+        await SaveCatalogAsync(""", "site-header": {}""");
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        const string header = """{ "content": [ { "id": "h", "type": "site-header" }, { "id": "promo", "type": "custom-hero" } ] }""";
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", header))), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], result.Errors);
+        Assert.False(_live.Files.ContainsKey(Theme("default/sections/header-group.json-draft")));
+    }
+
+    [Fact]
     public async Task SaveAsync_TemplatePlacingACustomTypeOnlyThePreviewSaw_IsInvalid()
     {
         await SaveCatalogAsync(""", "custom-old": { "settings": [], "custom": true }""");

@@ -85,7 +85,15 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
             return;
         }
 
-        ValidateItems(content, ModuleConstants.SchemaKinds.Sections, file, catalog, errors, allowPageContent: false);
+        // the storefront renders the group's own sections there, not the section registry a custom type is in
+        var customSections = content.OfType<JObject>().Where(IsCustomSection).ToList();
+        foreach (var item in customSections)
+        {
+            errors.Add($"{file}: '{GetString(item, "id")}' places a custom section, which only a page or a template can hold");
+        }
+
+        var sections = customSections.Count == 0 ? content : new JArray(content.Except(customSections));
+        ValidateItems(sections, ModuleConstants.SchemaKinds.Sections, file, catalog, errors, allowPageContent: false);
     }
 
     protected virtual void ValidateItems(JArray items, string kind, string file, JObject catalog, IList<string> errors, bool allowPageContent)
@@ -173,6 +181,9 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
 
         return !string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(type);
     }
+
+    private static bool IsCustomSection(JObject item) =>
+        !string.IsNullOrWhiteSpace(GetString(item, "id")) && GetString(item, "type") is { } type && ThemeStorage.IsCustomSectionType(type);
 
     private static bool IsKnownType(JObject catalog, string kind, string type, bool allowPageContent) =>
         catalog == null || GetItemSchema(catalog, kind, type) != null || IsPageContent(kind, type, allowPageContent);

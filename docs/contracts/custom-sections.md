@@ -141,9 +141,10 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
 ## Validation
 
 A save and a publication check every custom section type of the theme and refuse a type that breaks a rule above with
-`custom-sections/{type}.json: …`, naming the rule; nothing is removed silently. Warnings do not refuse. A template, a
-header or footer group, or a page may place a custom type the theme holds: a save checks the theme's drafts, a
-publication the theme it publishes. Kit tags and behaviors are checked against the `kit` of the catalog the save names,
+`custom-sections/{type}.json: …`, naming the rule; nothing is removed silently. Warnings do not refuse. A template or a
+page may place a custom type the theme holds: a save checks the theme's drafts, a publication the theme it publishes. A
+header or footer group may not, since the storefront renders only the group's own sections there: a save and a
+publication refuse it. Kit tags and behaviors are checked against the `kit` of the catalog the save names,
 or the publication publishes with; with no catalog, or a catalog without `kit`, a type that uses one is refused.
 
 The storefront checks again when it renders, since the preview's draft comes from the designer: an element, attribute,
@@ -152,7 +153,8 @@ binding or rule the lists above do not allow is left out.
 ## Catalog
 
 The storefront adds each custom type to the catalog's `sections` under its type, with its `name`, `settings`,
-`targetTemplates`, `limit` and `icon`, and `"custom": true`. It sends `loaded` again when the draft changes the set of
+`targetTemplates`, `limit` and `icon`, and `"custom": true`. The `name` is as the type stores it: a text, or a text per
+language. It sends `loaded` again when the draft changes the set of
 custom types.
 
 The catalog's `kit` names the kit tags and the behaviors the storefront offers, its own and those its modules add:
