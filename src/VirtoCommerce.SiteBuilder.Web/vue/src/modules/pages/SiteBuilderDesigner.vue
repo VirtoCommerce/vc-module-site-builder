@@ -1085,13 +1085,14 @@ const save = async () => {
 const reloadHistory = () => versionHistory.value?.reload().catch(() => undefined);
 
 // The toast is rendered by the shell, outside this blade's scoped styles.
-const ERROR_LIST_STYLE = { margin: "4px 0 0", paddingLeft: "18px", listStyle: "disc" };
+const LIST_STYLE = { margin: "4px 0 0", paddingLeft: "18px", listStyle: "disc" };
+const listed = (heading: string, items: string[]) => h("div", [h("p", heading), h("ul", { style: LIST_STYLE }, items.map((x) => h("li", x)))]);
 
 function notifyFailure(heading: string, e: unknown) {
   const pending = e instanceof CatalogPendingError ? [t("SITE_BUILDER.DESIGNER.CATALOG_PENDING")] : [];
   const errors = e instanceof ApiError ? themeErrors(e.status, e.body) : pending;
   if (!errors.length) notification.error(heading);
-  else notification.error(h("div", [h("p", heading), h("ul", { style: ERROR_LIST_STYLE }, errors.map((x) => h("li", x)))]), { timeout: false });
+  else notification.error(listed(heading, errors), { timeout: false });
 }
 
 async function saveChanges() {
@@ -1100,10 +1101,11 @@ async function saveChanges() {
   const pageChanged = designer.dirty.value;
   const changed: HistoryFile[] = [...designer.changedParts.value, ...parts.map((x) => x.part)];
   try {
-    const versions = await designer.save(parts.map((x) => x.file));
-    if (!versions) return;
-    for (const part of parts) part.saved(versions[part.file.path]);
+    const saved = await designer.save(parts.map((x) => x.file));
+    if (!saved) return;
+    for (const part of parts) part.saved(saved.versions[part.file.path]);
     if (pageChanged) notifyPagesChanged();
+    if (saved.warnings.length) notification.warning(listed(t("SITE_BUILDER.DESIGNER.SAVE_WARNINGS"), saved.warnings), { timeout: false });
   } catch (e) {
     if (e instanceof ApiError && e.status === 403) return notifyForbidden(changed);
     const messages: Record<number, string> = { 412: "SITE_BUILDER.DESIGNER.CONFLICT", 428: "SITE_BUILDER.DESIGNER.NO_VERSION" };

@@ -331,6 +331,7 @@
       "ASSISTANT_CHANGED": "The AI assistant changed this page. Your unsaved edits are kept: copy what you need, then reopen the page to see its changes.",
       "CATALOG_PENDING": "Theme changes are saved once the storefront preview has loaded: it names the schemas they are checked against.",
       "SAVE_FAILED": "The page couldn't be saved.",
+      "SAVE_WARNINGS": "Saved with warnings:",
       "SAVE_FORBIDDEN": "You don't have permission to save: {parts}. Nothing was saved.",
       "SAVE_FORBIDDEN_ANY": "You don't have permission to save these changes. Nothing was saved.",
       "PUBLISH_FAILED": "The page couldn't be published.",

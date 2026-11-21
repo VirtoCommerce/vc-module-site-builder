@@ -331,6 +331,7 @@
       "ASSISTANT_CHANGED": "L’assistente IA ha modificato questa pagina. Le tue modifiche non salvate sono state mantenute: copia ciò che ti serve, poi riapri la pagina per vedere le sue modifiche.",
       "CATALOG_PENDING": "Le modifiche al tema vengono salvate quando l'anteprima dello storefront è stata caricata: indica gli schemi con cui vengono verificate.",
       "SAVE_FAILED": "Impossibile salvare la pagina.",
+      "SAVE_WARNINGS": "Salvato con avvisi:",
       "SAVE_FORBIDDEN": "Non hai l'autorizzazione per salvare: {parts}. Non è stato salvato nulla.",
       "SAVE_FORBIDDEN_ANY": "Non hai l'autorizzazione per salvare queste modifiche. Non è stato salvato nulla.",
       "PUBLISH_FAILED": "Impossibile pubblicare la pagina.",

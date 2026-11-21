@@ -283,14 +283,14 @@ export async function saveDesigner(
   storeId: string,
   save: { page?: DesignerSavePage; themeFiles: DesignerSaveFile[] },
   catalogHash?: string,
-): Promise<{ saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[] }> {
+): Promise<{ saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[]; warnings?: string[] }> {
   if (save.themeFiles.length && !catalogHash) throw new CatalogPendingError();
   const res = await call(designerSaveUrl(storeId, catalogHash), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(designerSaveBody(save)),
   });
-  return ((await res.json().catch(() => ({}))) ?? {}) as { saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[] };
+  return ((await res.json().catch(() => ({}))) ?? {}) as { saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[]; warnings?: string[] };
 }
 
 /** A file never published keeps its draft, its only copy. */

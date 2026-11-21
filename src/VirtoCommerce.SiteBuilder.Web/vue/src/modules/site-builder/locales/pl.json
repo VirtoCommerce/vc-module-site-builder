@@ -331,6 +331,7 @@
       "ASSISTANT_CHANGED": "Asystent AI zmienił tę stronę. Twoje niezapisane zmiany zostały zachowane: skopiuj to, czego potrzebujesz, a następnie otwórz stronę ponownie, aby zobaczyć zmiany asystenta.",
       "CATALOG_PENDING": "Zmiany motywu zostaną zapisane po załadowaniu podglądu sklepu: wskazuje on schematy, według których są sprawdzane.",
       "SAVE_FAILED": "Nie udało się zapisać strony.",
+      "SAVE_WARNINGS": "Zapisano z ostrzeżeniami:",
       "SAVE_FORBIDDEN": "Nie masz uprawnień do zapisania: {parts}. Nic nie zostało zapisane.",
       "SAVE_FORBIDDEN_ANY": "Nie masz uprawnień do zapisania tych zmian. Nic nie zostało zapisane.",
       "PUBLISH_FAILED": "Nie udało się opublikować strony.",
