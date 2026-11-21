@@ -64,14 +64,18 @@ public static class ThemeFileEdits
             change.VersionTokens[edit.Path] = edit.Current.ETag;
         }
 
-        var changed = edits.Where(x => Compare(x.Path, x.Current.Content, x.Content).Count > 0).ToList();
+        var changed = edits.Where(x => !IsSameContent(x.Current.Content, x.Content)).ToList();
         if (changed.Count == 0)
         {
             change.AddWarning("The call changes nothing, so nothing was saved.");
-            return;
+            if (!dryRun)
+            {
+                return;
+            }
         }
 
-        var files = changed.Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
+        // a dry run that changes nothing still answers what the file breaks
+        var files = (changed.Count > 0 ? changed : edits).Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
         var result = await ThemeFiles.SaveAsync(designerOperationService, user, storeId, catalogHash, files, dryRun, cancellationToken);
         var refused = dryRun && result.Status == SiteBuilderOperationStatus.Invalid;
         if (refused)
@@ -109,11 +113,15 @@ public static class ThemeFileEdits
             change.AddWarning(warning);
         }
 
-        if (!refused)
+        if (!refused && changed.Count > 0)
         {
             change.NextStep = "Customers see this change only after the theme is published (publish_theme), which a second person approves.";
         }
     }
+
+    // A readable diff leaves out what it cannot show, so whether the content changed is decided on the JSON itself.
+    private static bool IsSameContent(string before, string after) =>
+        Parse(before) is { } from && Parse(after) is { } to ? JsonNode.DeepEquals(from, to) : string.Equals(before, after, StringComparison.Ordinal);
 
     public static IList<PageDocumentChange> Compare(string path, string before, string after)
     {
@@ -207,8 +215,10 @@ public static class ThemeFileEdits
 
         var from = fromNode as JsonObject ?? [];
         var to = toNode as JsonObject ?? [];
-        var fromSettings = TakeSettings(from);
-        var toSettings = TakeSettings(to);
+        // settings that are not a list on either side are compared as a value
+        var lists = GetSettings(from) is null or JsonArray && GetSettings(to) is null or JsonArray;
+        var fromSettings = lists ? TakeSettings(from) : null;
+        var toSettings = lists ? TakeSettings(to) : null;
         var fromTexts = SectionTypeTexts.ToDictionary(x => x, x => Take(from, x));
         var toTexts = SectionTypeTexts.ToDictionary(x => x, x => Take(to, x));
 
@@ -224,6 +234,8 @@ public static class ThemeFileEdits
 
         return changes;
     }
+
+    private static JsonNode GetSettings(JsonObject type) => (type["schema"] as JsonObject)?["settings"];
 
     private static JsonArray TakeSettings(JsonObject type)
     {

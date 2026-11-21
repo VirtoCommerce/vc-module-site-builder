@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -170,6 +171,46 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.Equal(["schema.settings.note", "css line 1"], change.Changes.Select(x => x.Field));
         Assert.Equal((":scope { padding: 2rem; }", ":scope { padding: 4rem; }"), (change.Changes[1].From?.ToString(), change.Changes[1].To?.ToString()));
         Assert.Contains("padding: 4rem", JsonNode.Parse(_context.ReadThemeFile(StoreA, File, draft: true)!)!["css"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AChange_OfMalformedSettingsToAList_IsAChange_AndIsSaved()
+    {
+        const string template = "<section class=\"custom-stats\"><h2>Stats</h2></section>";
+        await SeedAsync();
+        var current = new JsonObject
+        {
+            ["format"] = 1,
+            ["name"] = new JsonObject { ["en-US"] = "Stats" },
+            ["schema"] = new JsonObject { ["settings"] = "invalid" },
+            ["template"] = template,
+            ["css"] = Css,
+        }.ToJsonString();
+        _context.SeedThemeFile(StoreA, File, current, draft: true);
+        var token = SiteBuilderContentVersion.CreateForThemeFile(StoreA, Path, current);
+
+        var change = (await CallAsync(Change, template: template, settings: [], versionToken: token)).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Contains(change.Changes, x => x.Field == "schema.settings" && x.From?.ToString() == "invalid");
+        Assert.Equal("[]", JsonNode.Parse(_context.ReadThemeFile(StoreA, File, draft: true)!)!["schema"]!["settings"]!.ToJsonString());
+    }
+
+    [Fact]
+    public async Task ADryRunThatChangesNothing_StillAnswersTheErrorsOfTheType()
+    {
+        await SeedAsync();
+        var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
+        var broken = JsonNode.Parse(_context.ReadThemeFile(StoreA, File, draft: true)!)!;
+        broken["template"] = "<section onclick=\"go()\"></section>";
+        _context.SeedThemeFile(StoreA, File, broken.ToJsonString(), draft: true);
+        var token = SiteBuilderContentVersion.CreateForThemeFile(StoreA, Path, broken.ToJsonString());
+
+        var change = (await CallAsync(Change, template: "<section onclick=\"go()\"></section>", versionToken: token, dryRun: true)).EnsureSucceeded()
+            .Read<ThemeFileChange>();
+
+        Assert.NotEqual(created.VersionTokens[Path], token);
+        Assert.Contains("The call changes nothing, so nothing was saved.", change.Warnings);
+        Assert.Contains(change.Errors ?? [], x => x.Contains("'onclick': it runs script", StringComparison.Ordinal));
     }
 
     [Fact]
