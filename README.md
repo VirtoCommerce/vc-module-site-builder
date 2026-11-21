@@ -145,7 +145,7 @@ MCP clients show the prompts as slash commands, for example `/mcp__virto__weekly
 | --- | --- | --- |
 | `site-builder://stores/{store_id}/schemas` | Section, block, object and template types the storefront sent, and the theme's custom section types; not available until the storefront has sent its catalog | `builder:read` |
 | `site-builder://stores/{store_id}/schemas/{kind}/{key}` | One schema with its settings | `builder:read` |
-| `site-builder://stores/{store_id}/section-kit` | What a custom section type may hold: elements, bindings, setting types, CSS rules, palette tokens, the storefront's kit tags and behaviors, the design rules with the storefront's design tokens, and an example | `builder:read` |
+| `site-builder://stores/{store_id}/section-kit` | What a custom section type may hold: elements, bindings, setting types, CSS rules, palette tokens, the storefront's kit tags and behaviors, its guide and design tokens, the design rules, and an example | `builder:read` |
 | `site-builder://stores/{store_id}/custom-sections/{type}` | A custom section type as its draft holds it, else as it is live, with its version token | `builder:read` |
 | `site-builder://template-rule-conditions` | The conditions a template rule can use, and the shape of their values | `builder:read` |
 | `site-builder://stores/{store_id}/settings` | Languages, time zone and publication flow (git or blob) of a store | `builder:read`, `platform:setting:read` |

@@ -31,28 +31,30 @@ public static class SectionKit
             ]
           },
           "template": "<section class=\"custom-stats-band\" data-inview data-inview-once>\n  <h2 class=\"custom-stats-band__heading\" data-if=\"settings.heading\">{{ settings.heading }}</h2>\n  <ul class=\"custom-stats-band__list\">\n    <li class=\"custom-stats-band__item\" data-each=\"settings.stats\">\n      <span class=\"custom-stats-band__value\"><span data-count-up=\"{{ item.value }}\">0</span>{{ item.suffix }}</span>\n      <span class=\"custom-stats-band__label\">{{ item.label }}</span>\n    </li>\n  </ul>\n</section>",
-          "css": ":scope { padding: var(--spacing-10, 2.5rem) var(--spacing-4, 1rem); background: var(--setting-background); color: var(--color-neutral-900); }\n.custom-stats-band__heading { margin: 0 0 var(--spacing-6, 1.5rem); font-size: var(--text-2xl, 1.5rem); text-align: center; }\n.custom-stats-band__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-4, 1rem); margin: 0; padding: 0; list-style: none; }\n.custom-stats-band__item { padding: var(--spacing-4, 1rem); border-radius: var(--radius-lg, 0.5rem); box-shadow: var(--shadow-sm, none); background: var(--color-additional-50); text-align: center; overflow-wrap: anywhere; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .custom-stats-band__item { animation: custom-stats-band-rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.custom-stats-band__value { display: block; font-size: var(--text-4xl, 2.25rem); font-weight: var(--font-weight-bold, 700); color: var(--color-primary-700); }\n@container sb-section (min-width: 40rem) { :scope { padding-block: var(--spacing-16, 4rem); } .custom-stats-band__list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-6, 1.5rem); } }\n@container sb-section (min-width: 64rem) { .custom-stats-band__heading { font-size: var(--text-3xl, 1.875rem); } .custom-stats-band__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }\n@keyframes custom-stats-band-rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .custom-stats-band__item { opacity: 1; transform: none; } :scope[data-visible] .custom-stats-band__item { animation: none; } }"
+          "css": ":scope { padding: 2.5rem 1rem; background: var(--setting-background); color: var(--color-neutral-900); font-family: var(--vc-base-font-family, inherit); }\n.custom-stats-band__heading { margin: 0 0 1.5rem; font-family: var(--vc-heading-font-family, inherit); font-size: 1.5rem; line-height: 1.25; text-align: center; }\n.custom-stats-band__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; margin: 0; padding: 0; list-style: none; }\n.custom-stats-band__item { padding: 1rem; border-radius: var(--vc-radius, 0.5rem); background: var(--color-additional-50); text-align: center; overflow-wrap: anywhere; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .custom-stats-band__item { animation: custom-stats-band-rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.custom-stats-band__value { display: block; font-family: var(--vc-heading-font-family, inherit); font-size: 2.25rem; font-weight: 700; line-height: 1.1; color: var(--color-primary-700); }\n@container sb-section (min-width: 40rem) { :scope { padding-block: 4rem; } .custom-stats-band__list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; } }\n@container sb-section (min-width: 64rem) { .custom-stats-band__heading { font-size: 1.875rem; } .custom-stats-band__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }\n@keyframes custom-stats-band-rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .custom-stats-band__item { opacity: 1; transform: none; } :scope[data-visible] .custom-stats-band__item { animation: none; } }"
         }
         """;
 
     private const string KitKey = "kit";
     private const string DesignKey = "design";
+    private const string GuideKey = "guide";
 
-    // what a section of the storefront does, written for the model that writes one
+    // what the server checks, and the few rules any section keeps; the storefront's guide says the rest
     private static readonly string[] DesignRules =
     [
-        "Mobile first: write the base styles for the narrow width, and widen with @container sb-section (min-width: ...). The storefront makes " +
-            "every section's wrapper a container named sb-section, so the section follows its own width, not the window's. Use @media only for " +
-            "the person's preferences, such as prefers-reduced-motion, and for print.",
-        "Spacing, type sizes, font weights, radii and shadows come from the storefront's design token variables (storefront below), each with " +
-            "a rem fallback, never from literal values alone; colors come from the palette tokens.",
-        "Headings start at h2, since the page has its h1, and go down one level at a time.",
-        "Every image's alt is bound to a translatable setting.",
-        "German and French run about 30% longer than English: no fixed width or height on an element that holds text, and long words may " +
-            "wrap (overflow-wrap: anywhere).",
-        "Whatever a person taps or clicks is at least 44px high and wide.",
-        "The dark theme comes with the palette tokens: never write a color for light or dark, and no prefers-color-scheme query.",
-        "Motion comes from the kit's behaviors and the CSS they drive, and stops in @media (prefers-reduced-motion: reduce).",
+        "Follow storefront_guide first; these rules add what a save checks or every section keeps.",
+        "Mobile first: base styles for the narrow width, widened with @container sb-section (min-width: ...), the container the storefront " +
+            "wraps each section in (storefront_design names it containerName). @media is only for the person's preferences, such as " +
+            "prefers-reduced-motion, and for print.",
+        "Read the exact token names in storefront_design: fonts, font sizes, line heights, font weights, letter spacing, radii and shadows " +
+            "are var(--vc-..., fallback) with the fallback it lists. There are no spacing variables: spacing is rem on a 0.25rem step. Colors " +
+            "are palette variables, var(--color-<family>-<shade>), which the dark theme changes with them.",
+        "No h1, since the page has it: headings start at h2 and go down one level at a time.",
+        "An image's alt is bound to a translatable setting, or is \"\" for an image that only decorates.",
+        "A link has text a person reads, bound to a translatable setting.",
+        "Never remove the focus outline, with outline: none or outline: 0.",
+        "Anything that moves stops in @media (prefers-reduced-motion: reduce).",
+        "German and French run about 30% longer than English: no fixed width or height on an element that holds text.",
     ];
 
     public static object Describe(string storeId, JsonObject catalog, CustomSectionRules rules)
@@ -68,6 +70,11 @@ public static class SectionKit
                 ? "The storefront has not sent its schema catalog yet: its kit tags, behaviors and palette tokens are not known, and a type " +
                   "is not saved until it has. Open the store once in the designer; its preview sends the catalog."
                 : null,
+            StorefrontGuide = GetString(kit?[GuideKey]) ?? "Not available: the storefront's catalog has no guide; follow design_rules.",
+            StorefrontDesign = kit?[DesignKey]?.DeepClone() ?? JsonValue.Create("Not available: the storefront's catalog names no design, so its " +
+                "breakpoints and token names are not known. Use only --vc-radius, --vc-base-font-family and --vc-heading-font-family, each with a " +
+                "fallback, and the palette variables."),
+            DesignRules = DesignRules,
             Workflow = new[]
             {
                 $"Read site-builder://stores/{storeId}/schemas first: a built-in section may do it already, or a custom type (custom: true) may be close; " +
@@ -96,15 +103,6 @@ public static class SectionKit
                     "images holds one image of the asset library; color-token holds a palette token below, such as color_primary_500.",
                     "A setting holds one value: no multiple.",
                 },
-            },
-            Design = new
-            {
-                Rules = DesignRules,
-                Storefront = kit?[DesignKey]?.DeepClone(),
-                StorefrontNote = kit?[DesignKey] == null
-                    ? "Not available: the storefront's catalog names no design, so its breakpoints, container width and design token variables " +
-                      "are not known. Write the token variables of the example with their fallbacks, or rem values."
-                    : "The storefront's breakpoints, its container's max width and its design token variables, as its catalog names them.",
             },
             Template = new
             {
@@ -212,7 +210,8 @@ public static class SectionKit
             {
                 Type = ExampleType,
                 Note = "The arguments of create_section_type for a band of numbers that count up as it scrolls into view, following the design rules: " +
-                    "one column on a narrow section and more as it widens, the token variables with their fallbacks, and the behaviors inview and count-up.",
+                    "one column on a narrow section and more as it widens, spacing in rem, the token variables that certainly exist with their " +
+                    "fallbacks, and the behaviors inview and count-up.",
                 Name = example["name"]?.DeepClone(),
                 Schema = example["schema"]?.DeepClone(),
                 Template = example["template"]?.DeepClone(),
@@ -220,6 +219,8 @@ public static class SectionKit
             },
         };
     }
+
+    private static string GetString(JsonNode node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
     private static List<string> Functions(IEnumerable<string> names) => names.Select(x => $"{x}()").ToList();
 

@@ -205,25 +205,27 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task TheSectionKit_PassesTheStorefrontsDesignOn_NextToTheDesignRules()
+    public async Task TheSectionKit_StartsWithTheStorefrontsGuideAndDesign_ThenTheDesignRules()
     {
         var kit = JObject.Parse(StorefrontKit);
+        kit["guide"] = "# Writing a section\n\nUse the heading font for headings.";
         kit["design"] = JObject.Parse("""
-            { "breakpoints": { "md": "48rem" }, "containerMaxWidth": "80rem", "tokens": { "--spacing-4": { "value": "1rem", "description": "Space between related items." } } }
+            { "containerName": "sb-section", "containerMaxWidth": "80rem", "tokens": { "--vc-radius": { "fallback": "0.5rem", "description": "The default corner radius of controls." } } }
             """);
         await _context.SeedThemeAsync(StoreA, kit.ToString());
         await _context.SeedThemeAsync(StoreB, StorefrontKit);
 
-        var design = (await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit")).GetProperty("design");
-        var withoutDesign = (await ReadAsync(Reader(), "site-builder://stores/store-b/section-kit")).GetProperty("design");
+        var section = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
+        var withoutGuide = await ReadAsync(Reader(), "site-builder://stores/store-b/section-kit");
 
-        Assert.Contains(Strings(design.GetProperty("rules")), x => x.Contains("@container sb-section", StringComparison.Ordinal));
-        Assert.Contains(Strings(design.GetProperty("rules")), x => x.Contains("44px", StringComparison.Ordinal));
-        Assert.Equal("80rem", design.GetProperty("storefront").GetProperty("containerMaxWidth").GetString());
-        Assert.Equal("Space between related items.", design.GetProperty("storefront").GetProperty("tokens").GetProperty("--spacing-4").GetProperty("description").GetString());
-        Assert.False(withoutDesign.TryGetProperty("storefront", out _));
-        Assert.StartsWith("Not available:", withoutDesign.GetProperty("storefront_note").GetString(), StringComparison.Ordinal);
-        Assert.NotEmpty(Strings(withoutDesign.GetProperty("rules")));
+        Assert.Equal(["store_id", "available", "storefront_guide", "storefront_design", "design_rules"], section.EnumerateObject().Take(5).Select(x => x.Name));
+        Assert.Equal("# Writing a section\n\nUse the heading font for headings.", section.GetProperty("storefront_guide").GetString());
+        Assert.Equal("The default corner radius of controls.",
+            section.GetProperty("storefront_design").GetProperty("tokens").GetProperty("--vc-radius").GetProperty("description").GetString());
+        Assert.Contains(Strings(section.GetProperty("design_rules")), x => x.Contains("@container sb-section", StringComparison.Ordinal));
+        Assert.Contains(Strings(section.GetProperty("design_rules")), x => x.Contains("spacing is rem", StringComparison.Ordinal));
+        Assert.StartsWith("Not available:", withoutGuide.GetProperty("storefront_guide").GetString(), StringComparison.Ordinal);
+        Assert.StartsWith("Not available:", withoutGuide.GetProperty("storefront_design").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -238,14 +240,18 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
-    public void TheSectionKitsExample_IsMobileFirst_AndWidensWithTheSectionsContainer()
+    public void TheSectionKitsExample_IsMobileFirst_AndUsesOnlyTokensThatExist_WithFallbacks()
     {
         var css = ThemeJson.Parse(SectionKit.ExampleFile)["css"]!.ToString();
+        var tokens = System.Text.RegularExpressions.Regex.Matches(css, @"var\((--vc-[\w-]+)(,?)").Select(x => (Name: x.Groups[1].Value, HasFallback: x.Groups[2].Value == ",")).ToList();
 
         Assert.Contains("@container sb-section (min-width:", css, StringComparison.Ordinal);
         Assert.DoesNotContain("@media (min-width", css, StringComparison.Ordinal);
         Assert.Contains("@media (prefers-reduced-motion: reduce)", css, StringComparison.Ordinal);
-        Assert.Contains("var(--spacing-", css, StringComparison.Ordinal);
+        Assert.NotEmpty(tokens);
+        Assert.All(tokens, x => Assert.Contains(x.Name, new[] { "--vc-radius", "--vc-base-font-family", "--vc-heading-font-family" }));
+        Assert.All(tokens, x => Assert.True(x.HasFallback, x.Name));
+        Assert.DoesNotContain("<h1", ThemeJson.Parse(SectionKit.ExampleFile)["template"]!.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
