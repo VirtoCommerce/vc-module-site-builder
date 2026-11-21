@@ -108,6 +108,7 @@ public class DesignerContentService(
         foreach (var (themeName, contents) in themes)
         {
             // with the theme's other custom types, which a template may place
+            // the theme's other custom types, which a template may place; the validation does not check their own rules again
             foreach (var (type, content) in customSections[themeName])
             {
                 contents.TryAdd(ThemeStorage.GetCustomSectionFile(type), content);
@@ -202,6 +203,23 @@ public class DesignerContentService(
         }
 
         return ThemeCustomSections.AddToCatalog(catalog, await GetCustomSectionsAsync(storeId, themeName, contents, cancellationToken));
+    }
+
+    /// <summary>A custom section type a version restores is checked as a save checks it, with the size of the theme's types once it is back.</summary>
+    protected virtual async Task<IList<string>> GetRestoredCustomSectionErrorsAsync(ContentRestoreCommand command, JObject catalog,
+        CancellationToken cancellationToken)
+    {
+        var errors = new List<string>();
+        var themes = command.Contents
+            .Where(x => x.Key.Type == HistoryItemType.Theme && IsCustomSectionFile(SiteBuilderContentPaths.GetPathInTheme(x.Key.Key)))
+            .GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key.Key), StringComparer.OrdinalIgnoreCase);
+        foreach (var theme in themes)
+        {
+            var files = theme.ToDictionary(x => SiteBuilderContentPaths.GetPathInTheme(x.Key.Key), x => ParseOrNull(x.Value), StringComparer.OrdinalIgnoreCase);
+            errors.AddRange(GetCustomSectionErrors(files, await GetCustomSectionsAsync(command.StoreId, theme.Key, files, cancellationToken), catalog));
+        }
+
+        return errors;
     }
 
     private static bool IsCustomSectionFile(string file) => ThemeCustomSections.GetSectionType(file) != null;
@@ -606,6 +624,8 @@ public class DesignerContentService(
                 ? contentGuard.GuardThemeFileContent(SiteBuilderContentPaths.GetPathInTheme(item.Key), content, catalog, errors)
                 : contentGuard.GuardPageContent(content, PageName, catalog, errors);
         }
+
+        errors.AddRange(await GetRestoredCustomSectionErrorsAsync(command, catalog, cancellationToken));
 
         SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
     }

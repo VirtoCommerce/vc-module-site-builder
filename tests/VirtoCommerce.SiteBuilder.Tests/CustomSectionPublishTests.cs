@@ -123,6 +123,19 @@ public sealed class CustomSectionPublishTests : IDisposable
     }
 
     [Fact]
+    public async Task PublishAsync_FooterGroupPlacingACustomType_IsRefusedAndPublishesNothing()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/sections/footer-group.json-draft")] = """{ "content": [ { "id": "news", "type": "custom-hero" } ] }""";
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Equal(["sections/footer-group.json: 'news' places a custom section, which only a page or a template can hold"], exception.Errors);
+        Assert.False(_storage.Files.ContainsKey(Theme(Pointer)));
+    }
+
+    [Fact]
     public async Task PublishAsync_FileOfTheFolderNamedAsNoType_IsRefused()
     {
         await SaveCatalogAsync();

@@ -25,6 +25,7 @@ public class CustomSectionValidatorTests
           { "id": "tone", "type": "color-token" },
           { "id": "show", "type": "checkbox" },
           { "id": "view", "type": "select", "options": [ { "value": "grid", "label": "Grid" }, { "value": "carousel" } ] },
+          { "id": "layout", "type": "select", "options": [ { "value": "custom-hero--wide" }, { "value": "custom-hero--narrow custom-hero--dark" }, { "value": "" } ] },
           { "id": "items", "type": "list", "element": [
             { "id": "title", "type": "string" }, { "id": "image", "type": "images" }, { "id": "link", "type": "string", "format": "url" }, { "id": "body", "type": "text" }
           ] },
@@ -33,12 +34,12 @@ public class CustomSectionValidatorTests
         """;
 
     private const string ValidTemplate = """
-        <section class="hero {{ settings.view }}" data-inview data-inview-threshold="0.3" data-inview-once data-pointer>
+        <section class="custom-hero {{ settings.layout }}" data-inview data-inview-threshold="0.3" data-inview-once data-pointer>
           <h2 data-if="settings.title">{{ settings.title }}</h2>
-          <div class="hero__body" data-html="settings.body"></div>
+          <div class="custom-hero__body" data-html="settings.body"></div>
           <img src="{{ settings.image }}" alt="{{ settings.title }}" loading="lazy">
           <img src="https://cdn.example/assets/stores/s1/hero.png" srcset="https://cdn.example/assets/a.png 1x, https://cdn.example/assets/b.png 2x" alt="">
-          <ul class="hero__items" data-marquee>
+          <ul class="custom-hero__items" data-marquee>
             <li data-each="settings.items" data-if="!item.title" aria-label="{{ item.title }}">
               <a href="{{ item.link }}"><img src="{{ item.image }}" alt=""></a>
               <div data-html="item.body"></div>
@@ -61,15 +62,15 @@ public class CustomSectionValidatorTests
 
     private const string ValidCss = """
         :scope { color: var(--color-neutral-900); background: var(--setting-image) center / cover; position: relative; }
-        :scope[data-visible] .hero__items { opacity: 1; transform: translateY(calc(var(--scroll-progress) * 10px)); }
-        .hero__items > li { animation: custom-hero-fade 1s calc(var(--i) * 100ms) both; border-color: transparent; color: currentColor; }
-        .hero__body { background-image: url("https://cdn.example/assets/stores/s1/texture.png"); }
-        .hero__button { & .icon { opacity: .5; } }
-        @media (width >= 600px) { .hero__items { display: grid; grid-template-columns: repeat(var(--n), 1fr); } }
-        @supports (display: grid) { .hero__items { gap: 1rem; } }
-        @container (min-width: 400px) { .hero__body { font-size: 1.25rem; } }
+        :scope[data-visible] .custom-hero__items { opacity: 1; transform: translateY(calc(var(--scroll-progress) * 10px)); }
+        .custom-hero__items > li { animation: custom-hero-fade 1s calc(var(--i) * 100ms) both; border-color: transparent; color: currentColor; }
+        .custom-hero__body { background-image: url("https://cdn.example/assets/stores/s1/texture.png"); }
+        .custom-hero__button { & .icon { opacity: .5; } }
+        @media (width >= 600px) { .custom-hero__items { display: grid; grid-template-columns: repeat(var(--n), 1fr); } }
+        @supports (display: grid) { .custom-hero__items { gap: 1rem; } }
+        @container (min-width: 400px) { .custom-hero__body { font-size: 1.25rem; } }
         @keyframes custom-hero-fade { from { opacity: 0; } to { opacity: 1; } }
-        @media (prefers-reduced-motion: reduce) { .hero__items > li { animation: none; } }
+        @media (prefers-reduced-motion: reduce) { .custom-hero__items > li { animation: none; } }
         """;
 
     // the built-in kit tags and behaviors, as the storefront announces them in its catalog
@@ -115,8 +116,11 @@ public class CustomSectionValidatorTests
               "inview": { "options": { "threshold": { "type": "number", "min": 0, "max": 1 }, "once": { "type": "boolean" } }, "writes": [ "data-visible" ] },
               "scroll-progress": { "options": {} },
               "pointer": { "options": {} },
-              "count-up": { "options": { "duration": { "type": "number", "min": 0, "max": 5000 }, "decimals": { "type": "number", "min": 0, "max": 4 } } },
-              "countdown": { "options": { "part": { "type": "select", "options": [ "days", "hours", "minutes", "seconds" ] } } },
+              "count-up": {
+                "value": { "type": "number" },
+                "options": { "duration": { "type": "number", "min": 0, "max": 5000 }, "decimals": { "type": "number", "min": 0, "max": 4 } }
+              },
+              "countdown": { "value": { "type": "date" }, "options": { "part": { "type": "select", "options": [ "days", "hours", "minutes", "seconds" ] } } },
               "copy": { "options": {} },
               "marquee": { "options": {} }
             }
@@ -147,6 +151,13 @@ public class CustomSectionValidatorTests
     [InlineData("""<section data-visible></section>""", "<section> at line 1 has an attribute a custom section cannot use, 'data-visible': it is no binding and no behavior the storefront offers")]
     [InlineData("""<section></section><div></div>""", "the template has 2 root elements, and has one: the section's root")]
     [InlineData("""text <section></section>""", "the template has text outside its root element")]
+    [InlineData("""<section class="fixed top-0 z-50 size-full"></section>""", "<section> at line 1 has the class 'fixed', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
+    [InlineData("""<section class="custom-hero custom-heroic"></section>""", "<section> at line 1 has the class 'custom-heroic', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
+    [InlineData("""<section class="custom-hero {{ settings.view }}"></section>""", "<section> at line 1 binds class to 'settings.view', which is not a select whose options are the type's own classes")]
+    [InlineData("""<section class="{{ settings.title }}"></section>""", "<section> at line 1 binds class to 'settings.title', which is not a select whose options are the type's own classes")]
+    [InlineData("""<section><a href="/x" target="storefront">x</a></section>""", "<a> at line 1 has target=\"storefront\", which is not _self or _blank")]
+    [InlineData("""<section><a href="/x" target="{{ settings.title }}">x</a></section>""", "<a> at line 1 has target=\"{{ settings.title }}\", which is written as it is, without a binding")]
+    [InlineData("""<section><a href="/x" target="_blank" rel="noreferrer opener">x</a></section>""", "<a> at line 1 has rel=\"noreferrer opener\" with opener, which gives the page it opens a hold on the storefront's window")]
     [InlineData("""<section data-each="settings.items"></section>""", "<section> at line 1 is the root and has data-each, which repeats an element inside the root")]
     [InlineData("""<section><ul data-each="settings.items"><li data-each="settings.items"></li></ul></section>""", "<li> at line 1 has data-each inside an element that has one")]
     [InlineData("""<section><ul><li data-each="settings.title"></li></ul></section>""", "<li> at line 1 repeats for 'title', a string and not a list")]
@@ -176,8 +187,8 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><vc-button color="pink"></vc-button></section>""", "<vc-button> at line 1 has color=\"pink\", which vc-button does not take: it takes primary, secondary, neutral, accent, info, success, warning, danger")]
     [InlineData("""<section><vc-button variant="solid-light"></vc-button></section>""", "<vc-button> at line 1 has variant=\"solid-light\", which vc-button does not take: it takes solid, outline, soft, surface, ghost, tonal")]
     [InlineData("""<section><vc-button full-width="yes"></vc-button></section>""", "<vc-button> at line 1 has full-width=\"yes\", which vc-button does not take: it takes true, false or no value")]
-    [InlineData("""<section><vc-button onclick="go()"></vc-button></section>""", "<vc-button> at line 1 has an attribute vc-button does not take, 'onclick'")]
-    [InlineData("""<section><vc-button class="cta"></vc-button></section>""", "<vc-button> at line 1 has an attribute vc-button does not take, 'class'")]
+    [InlineData("""<section><vc-button onclick="go()"></vc-button></section>""", "<vc-button> at line 1 has 'onclick', which no kit tag takes, whatever the catalog declares")]
+    [InlineData("""<section><vc-button class="cta"></vc-button></section>""", "<vc-button> at line 1 has 'class', which no kit tag takes, whatever the catalog declares")]
     [InlineData("""<section><vc-button data-copy="x"></vc-button></section>""", "<vc-button> at line 1 has an attribute vc-button does not take, 'data-copy'")]
     [InlineData("""<section><vc-carousel></vc-carousel></section>""", "<vc-carousel> at line 1 is not a kit tag the storefront offers")]
     [InlineData("""<section><rating></rating></section>""", "<rating> at line 1 is not an element a custom section can hold")]
@@ -196,6 +207,11 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><p data-inview data-inview-delay="1"></p></section>""", "<p> at line 1 has data-inview-delay, which is not an option data-inview takes")]
     [InlineData("""<section><span data-count-up="5" data-count-up-duration="9000"></span></section>""", "<span> at line 1 has data-count-up-duration=\"9000\", which data-count-up does not take: it takes a number from 0 to 5000")]
     [InlineData("""<section><span data-count-up="{{ settings.price }}"></span></section>""", "<span> at line 1 binds 'settings.price', a setting the schema does not declare")]
+    [InlineData("""<section><span data-count-up="many"></span></section>""", "<span> at line 1 has data-count-up=\"many\", which data-count-up does not take: it takes a number")]
+    [InlineData("""<section><span data-count-up="{{ settings.count }}+"></span></section>""", "<span> at line 1 has data-count-up=\"{{ settings.count }}+\", which is a value or one binding")]
+    [InlineData("""<section><span data-countdown="tomorrow"></span></section>""", "<span> at line 1 has data-countdown=\"tomorrow\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="2026-02-30"></span></section>""", "<span> at line 1 has data-countdown=\"2026-02-30\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="31.12.2026"></span></section>""", "<span> at line 1 has data-countdown=\"31.12.2026\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
     [InlineData("""<section><span data-countdown-part="days"></span></section>""", "<span> at line 1 has data-countdown-part, an option of data-countdown, outside an element with data-countdown")]
     [InlineData("""<section data-countdown="2026-12-31"><span data-countdown-part="weeks"></span></section>""", "<span> at line 1 has data-countdown-part=\"weeks\", which data-countdown does not take: it takes days, hours, minutes, seconds")]
     public void Validate_TemplateThatBreaksARule_IsRefusedWithTheRule(string template, string error)
@@ -236,19 +252,70 @@ public class CustomSectionValidatorTests
     public void Validate_KitTagAndBehaviorAModuleAdds_AreTakenAsTheCatalogDeclaresThem()
     {
         var catalog = (JObject)Catalog.DeepClone();
-        catalog["kit"]!["tags"]!["vc-rating"] = JObject.Parse("""{ "attributes": { "value": { "type": "number", "min": 0, "max": 5 } } }""");
+        catalog["kit"]!["tags"]!["vc-rating"] = JObject.Parse("""{ "attributes": { "value": { "type": "number", "min": 0, "max": 5 }, "since": { "type": "date" } } }""");
         catalog["kit"]!["behaviors"]!["tilt"] = JObject.Parse("""{ "options": { "max": { "type": "number", "max": 45 } } }""");
 
-        var valid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="30"><vc-rating value="4.5"></vc-rating></section>"""), catalog);
-        var invalid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="60"><vc-rating value="6"></vc-rating></section>"""), catalog);
+        var valid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="30"><vc-rating value="4.5" since="2026-11-21T09:30:00+02:00"></vc-rating></section>"""), catalog);
+        var invalid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="60"><vc-rating value="6" since="soon"></vc-rating></section>"""), catalog);
 
         Assert.Empty(valid.Errors);
         Assert.Equal(
             [
                 $"{File}: <section> at line 1 has data-tilt-max=\"60\", which data-tilt does not take: it takes a number up to 45",
                 $"{File}: <vc-rating> at line 1 has value=\"6\", which vc-rating does not take: it takes a number from 0 to 5",
+                $"{File}: <vc-rating> at line 1 has since=\"soon\", which vc-rating does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z",
             ],
             invalid.Errors);
+    }
+
+    [Theory]
+    [InlineData("onclick", "x()")]
+    [InlineData("style", "position: fixed")]
+    [InlineData("srcdoc", "<script>alert(1)</script>")]
+    [InlineData("formaction", "https://evil.example")]
+    [InlineData("is", "x-evil")]
+    [InlineData("id", "x")]
+    public void Validate_KitAttributeTheCatalogDeclaresButNoKitTagTakes_IsRefused(string name, string value)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-button"]!["attributes"]![name] = JObject.Parse("""{ "type": "string" }""");
+
+        var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="{value}"></vc-button></section>"""), catalog);
+
+        Assert.Equal([$"{File}: <vc-button> at line 1 has '{name}', which no kit tag takes, whatever the catalog declares"], result.Errors);
+    }
+
+    [Theory]
+    [InlineData("to")]
+    [InlineData("href")]
+    [InlineData("src")]
+    public void Validate_LinkAttributeTheCatalogDeclaresAsText_FollowsTheLinkRule(string name)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-button"]!["attributes"]![name] = JObject.Parse("""{ "type": "string" }""");
+
+        var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="javascript:alert(1)"></vc-button></section>"""), catalog);
+
+        Assert.Equal(
+            [$"{File}: <vc-button> at line 1 has {name}=\"javascript:alert(1)\", which is not a path starting with '/', or an https:, mailto: or tel: URL"],
+            result.Errors);
+    }
+
+    [Fact]
+    public void Validate_KitDeclaredWithATypeTheServerDoesNotKnow_IsRefused()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-frame"] = JObject.Parse("""{ "attributes": { "content": { "type": "html" } } }""");
+        catalog["kit"]!["behaviors"]!["inject"] = JObject.Parse("""{ "options": { "code": { "type": "script" } } }""");
+
+        var result = _validator.Validate(Type, Section("""<section data-inject><vc-frame content="x"></vc-frame></section>"""), catalog);
+
+        Assert.Equal(
+            [
+                $"{File}: <section> at line 1 has data-inject, and the catalog declares data-inject with 'code' of a type the server does not know, 'script'",
+                $"{File}: <vc-frame> at line 1 is a kit tag the catalog declares with the attribute 'content' of a type the server does not know, 'html'",
+            ],
+            result.Errors);
     }
 
     [Theory]
@@ -260,6 +327,27 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section(template), Catalog);
 
         Assert.StartsWith($"{File}: {error}", result.Errors[0]);
+    }
+
+    [Theory]
+    [InlineData("q", 21000, false)]
+    [InlineData("div", 33, true)]
+    [InlineData("span", 300, true)]
+    public void Validate_TemplateNestedDeeperThanTheLimit_IsRefusedBeforeItIsWalked(string tag, int depth, bool closed)
+    {
+        var template = string.Concat(Enumerable.Repeat($"<{tag}>", depth)) + (closed ? string.Concat(Enumerable.Repeat($"</{tag}>", depth)) : string.Empty);
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal([$"{File}: the template nests elements deeper than 32"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_TemplateNestedToTheLimit_IsTaken()
+    {
+        var template = "<section>" + string.Concat(Enumerable.Repeat("<div>", 31)) + string.Concat(Enumerable.Repeat("</div>", 31)) + "</section>";
+
+        Assert.Empty(_validator.Validate(Type, Section(template), Catalog).Errors);
     }
 
     [Fact]
@@ -293,7 +381,20 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { behavior: url(https://cdn.example/assets/x.htc); }""", "the CSS sets behavior, which runs script")]
     [InlineData(""".a { -moz-binding: url(https://cdn.example/assets/x.xml#y); }""", "the CSS sets -moz-binding, which runs script")]
     [InlineData("""@keyframes fade { from { opacity: 0; } }""", "the CSS names @keyframes 'fade', which does not start with the type, 'custom-hero': names are not scoped")]
-    [InlineData("""} body { display: none; } .a {""", "the CSS has a '{' or a '}' without its pair")]
+    [InlineData("""} body { display: none; } .a {""", "the CSS has a '}' without its pair")]
+    [InlineData(""".a { color: red; """, "the CSS has a '{' without its pair")]
+    [InlineData(""".a { background: rgb(0 0 0 }""", "the CSS has a '}' without its pair")]
+    [InlineData(""".a{background:url(x')}}} *{display:none!important} .b{content:'}""", "the CSS has a url( whose URL a quote, a parenthesis or a space breaks: quote the URL")]
+    [InlineData(".a{content:'x\r}}} *{display:none}\n}", "the CSS has a string that a line break cuts off")]
+    [InlineData(".a{content:'x\f}}} *{display:none}\n}", "the CSS has a string that a line break cuts off")]
+    [InlineData(""":scope{--a:"/*";position:fixed;inset:0;z-index:2147483647;--b:"*/"}""", "the CSS has position: fixed, which puts the section over the page")]
+    [InlineData(""":scope{--a:"/*";background:url(https://evil.example/t.gif);--b:"*/"}""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library")]
+    [InlineData(""".a { background: url("https://evil.example/t.gif\"") }""", "the CSS loads 'https://evil.example/t.gif\"', which is not a URL of the store's asset library")]
+    [InlineData(""":scope { --u: url(https://evil.example/t.gif); }""", "the CSS loads 'https://evil.example/t.gif', which is not a URL of the store's asset library")]
+    [InlineData(""":scope { --p: fixed; position: var(--p); }""", "the CSS sets position with var(), which could make it fixed")]
+    [InlineData(""".a { posit\69 on: fi\78 ed; }""", "the CSS has position: fixed, which puts the section over the page")]
+    [InlineData(""".a { background-image: image-set(var(--u) 1x); }""", "the CSS has var() inside image-set(), whose URL is then not known on save")]
+    [InlineData("""@media a { @media b { @media c { @media d { @media e { .a { margin: 0; } } } } } }""", "the CSS nests at-rules deeper than 4")]
     public void Validate_CssThatBreaksARule_IsRefusedWithTheRule(string css, string error)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
@@ -302,11 +403,13 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
-    public void Validate_CssTheParserCannotBuild_IsRefused()
+    public void Validate_CssNestedDeeperThanTheLimit_IsRefusedBeforeItIsWalked()
     {
-        var result = _validator.Validate(Type, Section("<section></section>", """.a { margin: 0; } @namespace svg "http://www.w3.org/2000/svg";"""), Catalog);
+        var css = string.Concat(Enumerable.Repeat(".a { ", 5000)) + string.Concat(Enumerable.Repeat("} ", 5000));
 
-        Assert.StartsWith($"{File}: the CSS does not read: ", Assert.Single(result.Errors));
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Equal([$"{File}: the CSS nests blocks deeper than 32"], result.Errors);
     }
 
     [Fact]
@@ -417,7 +520,7 @@ public class CustomSectionValidatorTests
         var error = _validator.GetSizeError(types);
         types.Remove("custom-hero-5");
 
-        Assert.Equal("custom-sections: the custom section types are 304.2 KB of JSON together, more than 256 KB: the snapshot carries every type to every page", error);
+        Assert.Equal("custom-sections: the custom section types are 304.9 KB of JSON together, more than 256 KB: the snapshot carries every type to every page", error);
         Assert.Null(_validator.GetSizeError(types));
     }
 

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
+using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Services;
@@ -111,6 +113,57 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task SaveAsync_ThemeHoldingATypeThatBreaksARule_SavesTheFilesThatDoNotWriteIt()
+    {
+        await SaveCatalogAsync(""", "site-header": {}""");
+        _live.Files[Theme($"{Hero}-draft")] = HeroWith(template: "<section onclick=\"go()\"></section>");
+        const string headerFile = """{ "content": [ { "id": "h", "type": "site-header" } ] }""";
+
+        var header = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", headerFile))), _user, Ct);
+        var template = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-hero")))), _user, Ct);
+
+        Assert.True(header.Succeeded, header.Error);
+        Assert.True(template.Succeeded, template.Error);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_DraftOfATypeNeverPublished_RemovesTheType()
+    {
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        var request = new DesignerDiscardOperationRequest { StoreId = "s1", SaveId = "save-0001", Changes = new DesignerDiscardRequest { ThemeFiles = [Hero] } };
+        request.DryRun = true;
+        var preview = await Operations().DiscardAsync(request, _user, Ct);
+        request.DryRun = false;
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.Empty(preview.Preview.Warnings);
+        Assert.Equal((ModuleConstants.ChangePreview.ThemeFile, Hero), (preview.Preview.Objects.Single().ObjectType, preview.Preview.Objects.Single().ObjectId));
+        Assert.True(result.Succeeded, result.Error);
+        Assert.DoesNotContain(_live.Files.Keys, x => x.Contains("custom-sections/", System.StringComparison.Ordinal));
+        Assert.Empty(await ThemeCustomSections.GetTypesAsync(await _themes.OpenAsync("s1")));
+    }
+
+    [Fact]
+    public async Task RestoreAsync_TypeThatBreaksARule_IsRefusedAndWritesNothing()
+    {
+        var restore = TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
+                themes: _themes)
+            .RestoreAsync(new ContentRestoreCommand
+            {
+                StoreId = "s1",
+                SaveId = "restore-0001",
+                VersionId = "1234567",
+                Contents = new Dictionary<HistoryItem, string> { [new HistoryItem(HistoryItemType.Theme, Hero)] = HeroWith(template: "<section><script>x()</script></section>") },
+            }, _user, Ct);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(() => restore);
+
+        Assert.Contains("custom-sections/custom-hero.json: <script> at line 1 is not an element a custom section can hold", exception.Message);
+        Assert.DoesNotContain(_live.Files.Keys, x => x.EndsWith("-draft", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task SaveAsync_FileOfTheFolderNamedAsNoType_IsInvalid()
     {
         await SaveCatalogAsync();
@@ -142,6 +195,20 @@ public class CustomSectionSaveTests
         var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroFile), (Product, TemplateOf("product-info", "custom-hero")))), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
+    }
+
+    [Fact]
+    public async Task SaveAsync_HeaderGroupPlacingACustomType_IsInvalidAndWritesNothing()
+    {
+        await SaveCatalogAsync(""", "site-header": {}""");
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        const string header = """{ "content": [ { "id": "h", "type": "site-header" }, { "id": "promo", "type": "custom-hero" } ] }""";
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", header))), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], result.Errors);
+        Assert.False(_live.Files.ContainsKey(Theme("default/sections/header-group.json-draft")));
     }
 
     [Fact]
