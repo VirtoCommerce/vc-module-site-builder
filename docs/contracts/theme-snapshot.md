@@ -532,8 +532,9 @@ The catalog is the storefront's section, block, template and palette schemas, th
   places no shared component, and every value of a field with a closed set of values is one of them) and answers 400
   `{ error, errors }` when one does not fit or the hash is unknown; each error names the file, the item and the field.
   A publication records the hash in the snapshot; one that names none is refused. A designer Save with theme files
-  that names none is refused (400 `{ error }`); `api/site-builder/save` that names none is not
-  checked. The first publication, from the live files, names none and checks the shape only; it finds the menus
+  that names none is refused (400 `{ error }`); `api/site-builder/save` that names none is not checked against a
+  catalog: it checks only what can run script and the [custom section types](custom-sections.md#validation) it writes,
+  which may then use no kit tag or behavior. The first publication, from the live files, names none and checks the shape only; it finds the menus
   through the store's current catalog, when there is one.
 - The fields with a closed set of values, checked in sections and blocks and in the rows of their `list` and `object`
   fields: a `color-token` holds a token of the catalog's `paletteTokens` (light or dark; not checked when the catalog

@@ -102,8 +102,8 @@ module cannot register a kit tag of the same name.
 
 | Tag | Attributes | Renders |
 |---|---|---|
-| `vc-button` | `label`, `to`, `color`, `variant`, `size`, `prepend-icon`, `append-icon`, `full-width` | `VcButton`; `to` follows the link rule |
-| `vc-icon` | `name`, `size`, `color` | `VcIcon` |
+| `vc-button` | `label`, `to`, `color`, `variant`, `size`, `prepend-icon`, `append-icon`, `full-width` | `VcButton`; `to` follows the link rule, and the icons are of `kit.icons` |
+| `vc-icon` | `name`, `size`, `color` | `VcIcon`; `name` is one of the catalog's `kit.icons` |
 | `vc-badge` | `label`, `color`, `variant`, `size` | `VcBadge` |
 | `vc-products` | `query`, `filter`, `take` (1–24), `view` (`grid` or `carousel`), `columns` (1–6) | the product list or carousel of the built-in sections |
 
@@ -138,6 +138,10 @@ A behavior may declare the type of its own attribute's value under `value`, such
 date for `data-countdown`, and the value is checked as an option's is; a behavior that declares none takes any text.
 Either may be a binding.
 
+A behavior that repeats what its element holds, as `data-marquee` does, has `repeatsChildren` in the catalog. An element
+with one inside an element with one is refused, since each level would multiply the page; a `data-each` row inside one
+is not.
+
 ## Setting variables
 
 The root's `style` sets a variable per setting the CSS can use, named `--setting-{id}` with `_` written as `-`:
@@ -163,7 +167,9 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
   selector naming `:root`, `html` or `body`; `position: fixed`, and `var()`, `attr()`, `env()`, `if()` or a custom
   `--name()` function in `position`; any other URL, in `url()` or as a string anywhere inside `image-set()` and the
   other functions that load an image, at any depth, custom properties included, and `var()`, `attr()`, `env()`, `if()`
-  or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`.
+  or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`;
+  a declaration outside any rule, which the wrapping would apply to the section's root unchecked: write it in
+  `:scope { }`.
 - **Read as a browser reads it**, from its tokens: a comment inside a string is text, and escapes are read. A string
   that a line break cuts off, and a `url(` whose unquoted URL holds a quote, a parenthesis or a space, are refused, and
   so is a block left open or closed without its pair, since the storefront's wrapping would close with it. Blocks nest
@@ -199,11 +205,18 @@ holds no form controls, so a section is used from the keyboard only through its 
 A save checks the custom section types it writes, and the size of the theme's types together once they are saved; a
 version restored is checked as a save; a publication checks every type it publishes. Each refuses a type that breaks a
 rule above with `custom-sections/{type}.json: …`, naming the rule; nothing is removed silently. A save that writes no
-custom type is not refused for one the theme already holds. Warnings do not refuse. A template or a
-page may place a custom type the theme holds: a save checks the theme's drafts, a publication the theme it publishes. A
-header or footer group may not, since the storefront renders only the group's own sections there: a save and a
-publication refuse it. Kit tags and behaviors are checked against the `kit` of the catalog the save names,
-or the publication publishes with; with no catalog, or a catalog without `kit`, a type that uses one is refused.
+custom type is not refused for one the theme already holds. Warnings do not refuse; a designer save answers them with
+each theme file it saved (`themeFiles[].warnings`), without the file's name.
+
+A template may place a custom type the theme holds: its save checks the theme's drafts, a publication the theme it
+publishes. A page's save does not check that a type it places exists; `get_publish_readiness` warns of a page that
+places a type the theme holds only as a draft, or not at all. A header or footer group may not place one, since the
+storefront renders only the group's own sections there: a save and a publication refuse it.
+
+Kit tags and behaviors are checked against the `kit` of the catalog the save names, or the publication publishes with;
+with no catalog, or a catalog without `kit`, a type that uses one is refused. The first publication, from the live
+files, checks each type against the store's current catalog and leaves out one that fails, or that uses the kit when
+there is no catalog, as it leaves out a shared component.
 
 The storefront checks again when it renders, since the preview's draft comes from the designer: an element, attribute,
 binding or rule the lists above do not allow is left out.
@@ -222,9 +235,28 @@ interface Kit {
   tags: Record<string, { attributes: Record<string, KitField>; description?: string }>;
   /**
    * `value` is the type of the behavior attribute's own value, any text when left out; `writes` names what the behavior
-   * sets for the section's CSS, such as `data-visible` or `--scroll-progress`
+   * sets for the section's CSS, such as `data-visible` or `--scroll-progress`; `repeatsChildren` is true for one that
+   * repeats what its element holds
    */
-  behaviors: Record<string, { value?: KitField; options: Record<string, KitField>; description?: string; writes?: string[] }>;
+  behaviors: Record<string, {
+    value?: KitField;
+    options: Record<string, KitField>;
+    description?: string;
+    writes?: string[];
+    repeatsChildren?: boolean;
+  }>;
+  /** every icon name the storefront draws, at most 10,000 of 1 to 100 characters: the values of `optionsFrom: "icons"` */
+  icons?: string[];
+  /** the facts of the storefront's design, as texts */
+  design?: {
+    breakpoints?: Record<string, string>;
+    containerMaxWidth?: string;
+    tokens?: Record<string, { fallback?: string; description?: string }>;
+    /** the container every custom section stands in, for `@container {name} (min-width: …)` */
+    containerName?: string;
+  };
+  /** the storefront's own notes on its design, in Markdown, at most 16,384 characters */
+  guide?: string;
 }
 
 interface KitField {
@@ -234,6 +266,8 @@ interface KitField {
    */
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
   options?: (string | { value: string; label?: string })[];
+  /** a select whose values are the kit's `icons` instead of `options` */
+  optionsFrom?: 'icons';
   min?: number;
   max?: number;
   description?: string;
@@ -242,6 +276,9 @@ interface KitField {
 
 A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
 behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words, an attribute
-no kit tag takes, a behavior named `each`, `if` or `html` or starting with `sb-` or `pb-`, or a field of another type
-or with other keys. A kit tag or
+no kit tag takes, a behavior named `each`, `if` or `html` or starting with `sb-` or `pb-`, a field of another type
+or with other keys, an `optionsFrom` other than `"icons"` of a select, a `repeatsChildren` that is not a boolean,
+`icons` other than the list above, a `design` with other keys or values that are not texts, or a `guide` that is not a
+text or is longer than its limit. Anyone who may save a page uploads a catalog, so an agent reads the `guide` and the
+`design` as the storefront's data, not as instructions. A kit tag or
 a behavior that a catalog stored earlier declares with a field of another type is refused where a template uses it.
