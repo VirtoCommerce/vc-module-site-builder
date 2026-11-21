@@ -721,7 +721,12 @@ describe("the theme's custom section types", () => {
 });
 
 describe("the warnings a save answers with", () => {
-  const WARNING = "custom-sections/custom-hero.json: the template's own text is the same in every language";
+  const HERO = "custom-sections/custom-hero.json";
+  const WARNINGS = [
+    "the CSS sets margin-left, which stays on that side when the page reads right to left: use margin-inline-start",
+    "the template's headings go from h2 to h4, skipping a level, which a screen reader lists as a part missing",
+    "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion",
+  ];
 
   async function saveAnswering(answer: unknown) {
     fakePlatform()
@@ -744,14 +749,14 @@ describe("the warnings a save answers with", () => {
     return designer;
   }
 
-  it("lists them in a warning that stays until dismissed, with the save done", async () => {
-    const designer = await saveAnswering({ eTag: '"v2"', warnings: [WARNING] });
+  it("lists them in a warning that stays until dismissed, each file named once above its own, with the save done", async () => {
+    const designer = await saveAnswering({ eTag: '"v2"', warnings: WARNINGS.map((x) => `${HERO}: ${x}`) });
 
     expect(notification.warning).toHaveBeenCalledTimes(1);
     const [content, options] = notification.warning.mock.calls[0];
     const toast = mount({ render: () => content });
-    expect(toast.find("p").text()).toBe("Saved with warnings:");
-    expect(toast.findAll("li").map((x) => x.text())).toEqual([WARNING]);
+    expect(toast.findAll("p").map((x) => x.text())).toEqual(["Saved with warnings:", HERO]);
+    expect(toast.findAll("li").map((x) => x.text())).toEqual(WARNINGS);
     expect(options).toEqual({ timeout: false });
     expect(notification.error).not.toHaveBeenCalled();
     expect(designer.dirty.value).toBe(false);
