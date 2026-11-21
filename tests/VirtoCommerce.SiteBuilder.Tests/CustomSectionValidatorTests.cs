@@ -291,6 +291,12 @@ public class CustomSectionValidatorTests
     [InlineData("formaction", "https://evil.example")]
     [InlineData("is", "x-evil")]
     [InlineData("id", "x")]
+    [InlineData("ping", "https://evil.example/track")]
+    [InlineData("srcset", "https://evil.example/x.png 1x")]
+    [InlineData("poster", "https://evil.example/x.png")]
+    [InlineData("popover", "")]
+    [InlineData("popovertarget", "x")]
+    [InlineData("action", "https://evil.example")]
     public void Validate_KitAttributeTheCatalogDeclaresButNoKitTagTakes_IsRefused(string name, string value)
     {
         var catalog = (JObject)Catalog.DeepClone();
@@ -299,6 +305,22 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="{value}"></vc-button></section>"""), catalog);
 
         Assert.Equal([$"{File}: <vc-button> at line 1 has '{name}', which no kit tag takes, whatever the catalog declares"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_BehaviorNamedAsTheStorefrontsOwnAttributes_IsRefused()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["behaviors"]!["sb-anchor"] = JObject.Parse("""{ "options": {} }""");
+
+        var result = _validator.Validate(Type, Section("""<section data-sb-anchor><p data-pb-id="x">{{ settings.title }}</p></section>"""), catalog);
+
+        Assert.Equal(
+            [
+                $"{File}: <section> at line 1 has an attribute a custom section cannot use, 'data-sb-anchor': the storefront writes data-sb- and data-pb- attributes itself",
+                $"{File}: <p> at line 1 has an attribute a custom section cannot use, 'data-pb-id': the storefront writes data-sb- and data-pb- attributes itself",
+            ],
+            result.Errors);
     }
 
     [Theory]

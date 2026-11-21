@@ -696,6 +696,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         "style" => ": the section's CSS styles it",
         _ when name.StartsWith("on", StringComparison.Ordinal) => ": it runs script",
         _ when !name.StartsWith(DataPrefix, StringComparison.Ordinal) => string.Empty,
+        _ when CustomSectionKit.IsReservedBehavior(name[DataPrefix.Length..]) => ": the storefront writes data-sb- and data-pb- attributes itself",
         _ when !check.Kit.HasCatalog => ": it is no binding, and no schema catalog names the storefront's behaviors",
         _ when check.Kit.Behaviors == null => ": it is no binding, and the storefront offers no behaviors, as its catalog has no kit",
         _ => ": it is no binding and no behavior the storefront offers",
@@ -884,8 +885,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
 
         var tags = ReadKitEntries(kit["tags"], CustomSectionKit.TagPrefix, x => ReadKitFields(x["attributes"]));
+        // a stored catalog may name a behavior its upload would refuse now
         var behaviors = ReadKitEntries(kit["behaviors"], string.Empty,
-            x => new KitBehavior(x["value"] is JObject value ? ReadKitField(value) : null, ReadKitFields(x["options"])));
+                x => new KitBehavior(x["value"] is JObject value ? ReadKitField(value) : null, ReadKitFields(x["options"])))
+            .Where(x => !CustomSectionKit.IsReservedBehavior(x.Key))
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
 
         return new StorefrontKit(true, tags, behaviors);
     }

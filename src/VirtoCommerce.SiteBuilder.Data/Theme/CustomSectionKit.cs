@@ -32,11 +32,19 @@ public static class CustomSectionKit
     private static readonly Regex TagNamePattern = new("^vc-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex NamePattern = new("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
 
-    /// <summary>An attribute that runs script, names the element or reaches a form, which no kit tag takes whatever the catalog declares.</summary>
+    /// <summary>
+    /// An attribute that runs script, names the element, reaches a form or a popover, or loads or pings a URL outside the link and image
+    /// rules, which no kit tag takes whatever the catalog declares.
+    /// </summary>
     public static bool IsDeniedAttribute(string name) =>
         name.StartsWith("on", StringComparison.OrdinalIgnoreCase) ||
         name.StartsWith("form", StringComparison.OrdinalIgnoreCase) ||
-        name.ToLowerInvariant() is "style" or "id" or "is" or "class" or "srcdoc";
+        name.StartsWith("popover", StringComparison.OrdinalIgnoreCase) ||
+        name.ToLowerInvariant() is "style" or "id" or "is" or "class" or "srcdoc" or "ping" or "srcset" or "poster" or "action";
+
+    /// <summary>A name no behavior takes: a binding's, or one of the attributes the storefront writes itself, data-sb- and data-pb-.</summary>
+    public static bool IsReservedBehavior(string name) =>
+        BindingNames.Contains(name) || name.StartsWith("sb-", StringComparison.Ordinal) || name.StartsWith("pb-", StringComparison.Ordinal);
 
     /// <summary>An attribute a component reads as a link, which follows the link rule whatever type the catalog declares.</summary>
     public static bool IsLinkAttribute(string name) => name.ToLowerInvariant() is "to" or "href" or "src";
@@ -86,7 +94,9 @@ public static class CustomSectionKit
         GetFieldsError(tag["attributes"], "attribute", x => IsDeniedAttribute(x) ? "no kit tag takes" : null);
 
     private static string GetBehaviorNameError(string name) =>
-        !NamePattern.IsMatch(name) ? "is not lowercase words joined by '-'" : BindingNames.Contains(name) ? "is the name of a binding" : null;
+        !NamePattern.IsMatch(name) ? "is not lowercase words joined by '-'"
+        : IsReservedBehavior(name) ? "is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do"
+        : null;
 
     private static string GetBehaviorError(JObject behavior)
     {

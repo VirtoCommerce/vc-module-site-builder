@@ -86,7 +86,14 @@ public class SchemaCatalogServiceTests
         "has the tag 'vc-x', which has the attribute 'content', which has no type of string, number, boolean, select, date or link")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "label": "S" } ] } } } } }""",
         "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values")]
-    [InlineData("""{ "behaviors": { "each": { "options": {} } } }""", "has the behavior 'each', which is the name of a binding")]
+    [InlineData("""{ "behaviors": { "each": { "options": {} } } }""",
+        "has the behavior 'each', which is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do")]
+    [InlineData("""{ "behaviors": { "sb-anchor": { "options": {} } } }""",
+        "has the behavior 'sb-anchor', which is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do")]
+    [InlineData("""{ "behaviors": { "pb-id": { "options": {} } } }""",
+        "has the behavior 'pb-id', which is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "popovertarget": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'popovertarget', which no kit tag takes")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "ping": { "type": "link" } } } } }""", "has the tag 'vc-x', which has the attribute 'ping', which no kit tag takes")]
     [InlineData("""{ "behaviors": { "count-up": { "value": { "type": "number", "min": "0" } } } }""",
         "has the behavior 'count-up', which has a value that has a min, a max or a description of another kind")]
     [InlineData("""{ "behaviors": { "tilt": { "options": { "max": { "type": "number", "script": "x" } } } } }""",

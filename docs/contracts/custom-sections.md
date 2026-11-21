@@ -110,8 +110,8 @@ module cannot register a kit tag of the same name.
 A kit tag's name starts with `vc-`, and an element named `vc-…` that the catalog does not name is refused. Its
 attributes are those the catalog declares, and `data-if` and `data-each`; they take literals or bindings, and a literal
 the attribute's type does not take is refused on save. Whatever the catalog declares, a kit tag takes no `on*`, `style`,
-`id`, `is`, `class`, `srcdoc` or `form*` attribute, and `to`, `href` and `src` follow the link rule. A kit tag has no
-content.
+`id`, `is`, `class`, `srcdoc`, `form*`, `popover*`, `ping`, `srcset`, `poster` or `action` attribute, and `to`, `href`
+and `src` follow the link rule. A kit tag has no content.
 
 ### Behaviors
 
@@ -119,8 +119,10 @@ A behavior is a storefront directive an attribute switches on. It reads the elem
 or the element's text; the visuals are the section's CSS. With `prefers-reduced-motion: reduce` a behavior shows its end
 state at once. The catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior
 when the catalog has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or
-inside it, its value checked by the option's type. The storefront registers these, and their names are reserved: a
-module cannot register a behavior of the same name.
+inside it, its value checked by the option's type. No behavior is named `each`, `if` or `html`, which are bindings, or
+starts with `sb-` or `pb-`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
+writes one is refused. The storefront registers these, and their names are reserved: a module cannot register a
+behavior of the same name.
 
 | Attribute | Options | Effect |
 |---|---|---|
@@ -239,5 +241,6 @@ interface KitField {
 
 A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
 behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words, an attribute
-no kit tag takes, a behavior named `each`, `if` or `html`, or a field of another type or with other keys. A kit tag or
+no kit tag takes, a behavior named `each`, `if` or `html` or starting with `sb-` or `pb-`, or a field of another type
+or with other keys. A kit tag or
 a behavior that a catalog stored earlier declares with a field of another type is refused where a template uses it.
