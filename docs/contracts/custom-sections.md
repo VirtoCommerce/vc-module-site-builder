@@ -125,7 +125,7 @@ or the element's text; the visuals are the section's CSS. With `prefers-reduced-
 state at once. The catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior
 when the catalog has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or
 inside it, its value checked by the option's type. No behavior is named `each`, `if` or `html`, which are bindings, or
-is or starts with `sb` or `pb`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
+is `sb` or `pb`, or starts with `sb-` or `pb-`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
 writes one is refused, whatever a catalog names. The storefront registers these, and their names are reserved: a module cannot register a
 behavior of the same name.
 
@@ -161,7 +161,8 @@ The root's `style` sets a variable per setting the CSS can use, named `--setting
 ## CSS
 
 The storefront applies a type's CSS once per page, wrapped so it reaches only the type's sections:
-`@layer sections { @scope ([data-sb-type="{type}"]) { … } }`. `:scope` is the section's root.
+`@layer custom-sections { @scope ([data-sb-type="{type}"]) { … } }`, with its `@keyframes` in the layer outside the
+scope. `:scope` is the section's root.
 
 - **At-rules**: `@media`, `@supports`, `@container`, `@starting-style` and `@keyframes`. A keyframes name starts with
   the type and `__` (`@keyframes custom-hero__fade`), since names are not scoped and one type's name may start
@@ -216,12 +217,14 @@ each theme file it saved (`themeFiles[].warnings`), without the file's name.
 A template may place a custom type the theme holds: its save checks the theme's drafts, a publication the theme it
 publishes. A page's save does not check that a type it places exists; `get_publish_readiness` warns of a page that
 places a type the theme holds only as a draft, or not at all. A header or footer group may not place one, since the
-storefront renders only the group's own sections there: a save and a publication refuse it.
+storefront renders only the group's own sections there: a save and a publication refuse it, and the first publication,
+from the live files, leaves it out of the group.
 
 Kit tags and behaviors are checked against the `kit` of the catalog the save names, or the publication publishes with;
 with no catalog, or a catalog without `kit`, a type that uses one is refused. The first publication, from the live
-files, checks each type against the store's current catalog and leaves out one that fails, or that uses the kit when
-there is no catalog, as it leaves out a shared component.
+files, checks each type against the store's current catalog and leaves out one that is not JSON, fails, or uses the kit
+when there is no catalog, as it leaves out a shared component; it then leaves out the largest types until the rest fit
+the size limit.
 
 The storefront checks again when it renders, since the preview's draft comes from the designer: an element, attribute,
 binding or rule the lists above do not allow is left out.
@@ -281,8 +284,8 @@ interface KitField {
 
 A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
 behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words, an attribute
-no kit tag takes or named `data-sb-…` or `data-pb-…`, a behavior named `each`, `if` or `html` or that is or starts with
-`sb` or `pb`, a tag, a behavior or a field with other keys, a field of another type, a `min` or a `max` that is not a
+no kit tag takes or named `data-sb-…` or `data-pb-…`, a behavior named `each`, `if`, `html`, `sb` or `pb` or starting
+with `sb-` or `pb-`, a tag, a behavior or a field with other keys, a field of another type, a `min` or a `max` that is not a
 number within the range of a decimal, a `description` that is not a text of at most 1,024 characters, an
 `optionsFrom` other than `"icons"` of a select, a `repeatsChildren` that is not a boolean, `icons` other than the list
 above, a `design` with other keys or values that are not texts, or a `guide` that is not a text or is longer than its

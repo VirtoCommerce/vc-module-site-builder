@@ -155,7 +155,8 @@ public static class SectionKitGuide
             },
             Css = new
             {
-                Scope = "The storefront wraps the CSS in @layer sections { @scope ([data-sb-type=\"<type>\"]) { ... } }: it reaches only the type's sections, and :scope is the section's root.",
+                Scope = "The storefront wraps the CSS in @layer custom-sections { @scope ([data-sb-type=\"<type>\"]) { ... } }, with the @keyframes in the layer: " +
+                    "it reaches only the type's sections, and :scope is the section's root.",
                 AtRules = rules.AtRules,
                 Keyframes = $"A @keyframes name is the type, {rules.KeyframesSeparator} and a name, such as custom-stats-band{rules.KeyframesSeparator}rise: " +
                     "keyframes names are not scoped.",

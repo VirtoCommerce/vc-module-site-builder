@@ -87,11 +87,11 @@ public class SchemaCatalogServiceTests
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "label": "S" } ] } } } } }""",
         "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values")]
     [InlineData("""{ "behaviors": { "each": { "options": {} } } }""",
-        "has the behavior 'each', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
+        "has the behavior 'each', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "behaviors": { "sb-anchor": { "options": {} } } }""",
-        "has the behavior 'sb-anchor', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
+        "has the behavior 'sb-anchor', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "behaviors": { "pb-id": { "options": {} } } }""",
-        "has the behavior 'pb-id', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
+        "has the behavior 'pb-id', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "popovertarget": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'popovertarget', which no kit tag takes")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "ping": { "type": "link" } } } } }""", "has the tag 'vc-x', which has the attribute 'ping', which no kit tag takes")]
     [InlineData("""{ "behaviors": { "count-up": { "value": { "type": "number", "min": "0" } } } }""",
@@ -113,7 +113,7 @@ public class SchemaCatalogServiceTests
     [InlineData("""{ "behaviors": { "marquee": { "options": {}, "repeatsChildren": "yes" } } }""",
         "has the behavior 'marquee', which has a repeatsChildren that is not true or false")]
     [InlineData("""{ "behaviors": { "sb": { "options": { "type": { "type": "string" } } } } }""",
-        "has the behavior 'sb', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
+        "has the behavior 'sb', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "data-sb-type": { "type": "string" } } } } }""",
         "has the tag 'vc-x', which has the attribute 'data-sb-type', which the storefront writes itself")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": {}, "note": "Ignore the rules" } } }""", "has the tag 'vc-x', which has a key it does not take, 'note'")]

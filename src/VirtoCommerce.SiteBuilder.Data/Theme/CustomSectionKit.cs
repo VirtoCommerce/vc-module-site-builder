@@ -216,7 +216,7 @@ public static class CustomSectionKit
 
     private static string GetBehaviorNameError(string name) =>
         !NamePattern.IsMatch(name) ? "is not lowercase words joined by '-'"
-        : IsReservedBehavior(name) ? "is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do"
+        : IsReservedBehavior(name) ? "is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do"
         : null;
 
     private static string GetKeysError(JObject entry, HashSet<string> keys)
