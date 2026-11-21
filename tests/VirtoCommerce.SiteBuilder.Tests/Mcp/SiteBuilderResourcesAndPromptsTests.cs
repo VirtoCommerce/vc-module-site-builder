@@ -205,6 +205,28 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheSectionKit_PassesTheStorefrontsDesignOn_NextToTheDesignRules()
+    {
+        var kit = JObject.Parse(StorefrontKit);
+        kit["design"] = JObject.Parse("""
+            { "breakpoints": { "md": "48rem" }, "containerMaxWidth": "80rem", "tokens": { "--spacing-4": { "value": "1rem", "description": "Space between related items." } } }
+            """);
+        await _context.SeedThemeAsync(StoreA, kit.ToString());
+        await _context.SeedThemeAsync(StoreB, StorefrontKit);
+
+        var design = (await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit")).GetProperty("design");
+        var withoutDesign = (await ReadAsync(Reader(), "site-builder://stores/store-b/section-kit")).GetProperty("design");
+
+        Assert.Contains(Strings(design.GetProperty("rules")), x => x.Contains("@container sb-section", StringComparison.Ordinal));
+        Assert.Contains(Strings(design.GetProperty("rules")), x => x.Contains("44px", StringComparison.Ordinal));
+        Assert.Equal("80rem", design.GetProperty("storefront").GetProperty("containerMaxWidth").GetString());
+        Assert.Equal("Space between related items.", design.GetProperty("storefront").GetProperty("tokens").GetProperty("--spacing-4").GetProperty("description").GetString());
+        Assert.False(withoutDesign.TryGetProperty("storefront", out _));
+        Assert.StartsWith("Not available:", withoutDesign.GetProperty("storefront_note").GetString(), StringComparison.Ordinal);
+        Assert.NotEmpty(Strings(withoutDesign.GetProperty("rules")));
+    }
+
+    [Fact]
     public void TheSectionKitsExample_PassesEveryRule_WithTheStorefrontsKit()
     {
         var catalog = JObject.Parse($$"""{ "kit": {{StorefrontKit}} }""");
@@ -216,6 +238,17 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public void TheSectionKitsExample_IsMobileFirst_AndWidensWithTheSectionsContainer()
+    {
+        var css = ThemeJson.Parse(SectionKit.ExampleFile)["css"]!.ToString();
+
+        Assert.Contains("@container sb-section (min-width:", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("@media (min-width", css, StringComparison.Ordinal);
+        Assert.Contains("@media (prefers-reduced-motion: reduce)", css, StringComparison.Ordinal);
+        Assert.Contains("var(--spacing-", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TheCustomSectionPrompt_ReadsTheKitFirst_AndPublishesTheThemeBeforeThePage()
     {
         var prompt = Prompts().Single(x => x.ProtocolPrompt.Name == "design_custom_section");
@@ -223,6 +256,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         var text = await GetPromptAsync(prompt, new Dictionary<string, JsonElement> { ["store_id"] = JsonSerializer.SerializeToElement(StoreA) });
 
         Assert.Contains("site-builder://stores/store-a/section-kit", text, StringComparison.Ordinal);
+        Assert.Contains("following the kit's design rules", text, StringComparison.Ordinal);
         Assert.Contains("create_section_type with dryRun", text, StringComparison.Ordinal);
         Assert.Contains("publish_theme first and then publish_page", text, StringComparison.Ordinal);
     }

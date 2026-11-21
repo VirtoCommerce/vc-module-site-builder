@@ -31,11 +31,29 @@ public static class SectionKit
             ]
           },
           "template": "<section class=\"custom-stats-band\" data-inview data-inview-once>\n  <h2 class=\"custom-stats-band__heading\" data-if=\"settings.heading\">{{ settings.heading }}</h2>\n  <ul class=\"custom-stats-band__list\">\n    <li class=\"custom-stats-band__item\" data-each=\"settings.stats\">\n      <span class=\"custom-stats-band__value\"><span data-count-up=\"{{ item.value }}\">0</span>{{ item.suffix }}</span>\n      <span class=\"custom-stats-band__label\">{{ item.label }}</span>\n    </li>\n  </ul>\n</section>",
-          "css": ":scope { padding: 4rem 1.5rem; background: var(--setting-background); color: var(--color-neutral-900); }\n.custom-stats-band__heading { margin: 0 0 2rem; text-align: center; }\n.custom-stats-band__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 2rem; margin: 0; padding: 0; list-style: none; }\n.custom-stats-band__item { text-align: center; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .custom-stats-band__item { animation: custom-stats-band-rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.custom-stats-band__value { display: block; font-size: 2.5rem; font-weight: 700; color: var(--color-primary-700); }\n@keyframes custom-stats-band-rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .custom-stats-band__item { opacity: 1; transform: none; } :scope[data-visible] .custom-stats-band__item { animation: none; } }"
+          "css": ":scope { padding: var(--spacing-10, 2.5rem) var(--spacing-4, 1rem); background: var(--setting-background); color: var(--color-neutral-900); }\n.custom-stats-band__heading { margin: 0 0 var(--spacing-6, 1.5rem); font-size: var(--text-2xl, 1.5rem); text-align: center; }\n.custom-stats-band__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-4, 1rem); margin: 0; padding: 0; list-style: none; }\n.custom-stats-band__item { padding: var(--spacing-4, 1rem); border-radius: var(--radius-lg, 0.5rem); box-shadow: var(--shadow-sm, none); background: var(--color-additional-50); text-align: center; overflow-wrap: anywhere; opacity: 0; transform: translateY(1rem); }\n:scope[data-visible] .custom-stats-band__item { animation: custom-stats-band-rise 600ms ease-out calc(var(--i) * 120ms) both; }\n.custom-stats-band__value { display: block; font-size: var(--text-4xl, 2.25rem); font-weight: var(--font-weight-bold, 700); color: var(--color-primary-700); }\n@container sb-section (min-width: 40rem) { :scope { padding-block: var(--spacing-16, 4rem); } .custom-stats-band__list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-6, 1.5rem); } }\n@container sb-section (min-width: 64rem) { .custom-stats-band__heading { font-size: var(--text-3xl, 1.875rem); } .custom-stats-band__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }\n@keyframes custom-stats-band-rise { to { opacity: 1; transform: none; } }\n@media (prefers-reduced-motion: reduce) { .custom-stats-band__item { opacity: 1; transform: none; } :scope[data-visible] .custom-stats-band__item { animation: none; } }"
         }
         """;
 
     private const string KitKey = "kit";
+    private const string DesignKey = "design";
+
+    // what a section of the storefront does, written for the model that writes one
+    private static readonly string[] DesignRules =
+    [
+        "Mobile first: write the base styles for the narrow width, and widen with @container sb-section (min-width: ...). The storefront makes " +
+            "every section's wrapper a container named sb-section, so the section follows its own width, not the window's. Use @media only for " +
+            "the person's preferences, such as prefers-reduced-motion, and for print.",
+        "Spacing, type sizes, font weights, radii and shadows come from the storefront's design token variables (storefront below), each with " +
+            "a rem fallback, never from literal values alone; colors come from the palette tokens.",
+        "Headings start at h2, since the page has its h1, and go down one level at a time.",
+        "Every image's alt is bound to a translatable setting.",
+        "German and French run about 30% longer than English: no fixed width or height on an element that holds text, and long words may " +
+            "wrap (overflow-wrap: anywhere).",
+        "Whatever a person taps or clicks is at least 44px high and wide.",
+        "The dark theme comes with the palette tokens: never write a color for light or dark, and no prefers-color-scheme query.",
+        "Motion comes from the kit's behaviors and the CSS they drive, and stops in @media (prefers-reduced-motion: reduce).",
+    ];
 
     public static object Describe(string storeId, JsonObject catalog, CustomSectionRules rules)
     {
@@ -78,6 +96,15 @@ public static class SectionKit
                     "images holds one image of the asset library; color-token holds a palette token below, such as color_primary_500.",
                     "A setting holds one value: no multiple.",
                 },
+            },
+            Design = new
+            {
+                Rules = DesignRules,
+                Storefront = kit?[DesignKey]?.DeepClone(),
+                StorefrontNote = kit?[DesignKey] == null
+                    ? "Not available: the storefront's catalog names no design, so its breakpoints, container width and design token variables " +
+                      "are not known. Write the token variables of the example with their fallbacks, or rem values."
+                    : "The storefront's breakpoints, its container's max width and its design token variables, as its catalog names them.",
             },
             Template = new
             {
@@ -184,7 +211,8 @@ public static class SectionKit
             Example = new
             {
                 Type = ExampleType,
-                Note = "The arguments of create_section_type for a band of numbers that count up as it scrolls into view; it uses the behaviors inview and count-up.",
+                Note = "The arguments of create_section_type for a band of numbers that count up as it scrolls into view, following the design rules: " +
+                    "one column on a narrow section and more as it widens, the token variables with their fallbacks, and the behaviors inview and count-up.",
                 Name = example["name"]?.DeepClone(),
                 Schema = example["schema"]?.DeepClone(),
                 Template = example["template"]?.DeepClone(),

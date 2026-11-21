@@ -43,7 +43,7 @@ public class SectionTypeTools(
         "of the theme does it already (site-builder://stores/{store_id}/schemas lists them, the custom ones marked custom), place " +
         "that with edit_page_draft, or change the custom type with change_section_type. Read site-builder://stores/{store_id}/section-kit " +
         "first: the elements and bindings a template may use, the setting types, the CSS rules, the store's palette tokens, the kit " +
-        "tags and behaviors (such as data-inview or data-count-up) and a complete example. Keep every text a customer reads in a " +
+        "tags and behaviors (such as data-inview or data-count-up), the design rules to follow and a complete example. Keep every text a customer reads in a " +
         "translatable setting bound with {{ settings.<id> }}, and take colors from the palette (var(--color-…)) or a color-token " +
         "setting. Call it with dryRun first: the answer lists the errors that refuse the type, the warnings and the changes; fix " +
         "them and call again until there are no errors. It writes the theme's draft, needs no approval, and refuses a type the " +
@@ -68,7 +68,7 @@ public class SectionTypeTools(
     [Description("Change a custom section type of a store's theme: its name, schema, template and CSS are replaced with the ones " +
         "passed. Every page and template that places the type changes with it once the theme is published; the pages keep their " +
         "settings, so a setting removed or renamed loses what pages hold in it. Read the type first at " +
-        "site-builder://stores/{store_id}/custom-sections/{type} and pass its version_token; the rules are in " +
+        "site-builder://stores/{store_id}/custom-sections/{type} and pass its version_token; the rules and the design rules are in " +
         "site-builder://stores/{store_id}/section-kit. Call it with dryRun first: the answer lists the errors that refuse the type, " +
         "the warnings and the changes, setting by setting and line by line; fix them and call again until there are no errors. It " +
         "writes the theme's draft and needs no approval; customers see it after publish_theme, which a second person approves. A " +

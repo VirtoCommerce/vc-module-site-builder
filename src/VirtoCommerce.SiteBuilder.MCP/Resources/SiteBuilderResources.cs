@@ -113,7 +113,8 @@ public class SiteBuilderResources(
     [McpPermission(Read)]
     [Description("Everything to write a custom section type with create_section_type or change_section_type: the elements and attributes a template may hold, " +
         "the bindings, the setting types, the setting variables, the CSS rules, the store's palette tokens, the kit tags and behaviors " +
-        "the storefront offers, the size limits and a complete example. Read it before writing a type.")]
+        "the storefront offers, the design rules with the storefront's design tokens, the size limits and a complete example. Read it " +
+        "before writing a type.")]
     public async Task<string> ReadSectionKit(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
     {
         var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
