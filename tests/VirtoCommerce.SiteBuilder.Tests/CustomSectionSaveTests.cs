@@ -154,7 +154,7 @@ public class CustomSectionSaveTests
         Assert.Equal((ModuleConstants.ChangePreview.ThemeFile, Hero), (preview.Preview.Objects.Single().ObjectType, preview.Preview.Objects.Single().ObjectId));
         Assert.True(result.Succeeded, result.Error);
         Assert.DoesNotContain(_live.Files.Keys, x => x.Contains("custom-sections/", System.StringComparison.Ordinal));
-        Assert.Empty(await ThemeCustomSections.GetTypesAsync(await _themes.OpenAsync("s1")));
+        Assert.Empty(await new CustomSectionService(_themes, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance)).ListTypesAsync("s1", null, Ct));
     }
 
     [Fact]

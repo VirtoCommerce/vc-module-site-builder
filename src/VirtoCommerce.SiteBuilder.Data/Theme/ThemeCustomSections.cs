@@ -14,18 +14,6 @@ public static class ThemeCustomSections
     // what of a type's schema the storefront adds to the catalog, as it adds a type
     private static readonly string[] CatalogSchemaKeys = ["settings", "targetTemplates", "limit", "icon"];
 
-    /// <summary>The type of each file in the folder, drafts included; a name that is not a type is kept, for the validation to refuse.</summary>
-    public static async Task<IList<string>> GetTypesAsync(IThemeStorage storage)
-    {
-        var fileNames = await storage.ListFilesAsync(ThemeStorage.CustomSectionsFolder);
-
-        return fileNames
-            .Select(x => ThemeStorage.GetCustomSectionType(storage.GetLivePath(x)))
-            .Where(x => x != null)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-    }
-
     /// <summary>The type of a file by its path in the theme, valid or not; null for a file outside the folder or one that is not JSON.</summary>
     public static string GetCustomSectionType(string pathInTheme)
     {

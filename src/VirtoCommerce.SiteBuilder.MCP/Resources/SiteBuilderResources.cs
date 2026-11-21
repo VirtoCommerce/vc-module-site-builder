@@ -45,6 +45,8 @@ public class SiteBuilderResources(
     IMcpPageSizeResolver pageSizeResolver,
     IThemeStorageFactory themeStorageFactory,
     IDesignerOperationService designerOperationService,
+    IThemeOperationService themeOperationService,
+    ICustomSectionService customSectionService,
     ICustomSectionValidator customSectionValidator,
     ILogger<SiteBuilderResources> logger)
 {
@@ -174,7 +176,9 @@ public class SiteBuilderResources(
             });
         }
 
-        var state = await ThemeSectionTypes.ReadAsync(await themeStorageFactory.OpenAsync(store_id), type);
+        var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = store_id }, context.User, cancellationToken);
+        SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{store_id}'", $"Your builder:read permission does not cover store '{store_id}'.");
+        var pathInTheme = ThemeStorage.GetCustomSectionFile(type);
         var content = ParseObject(file.Content);
 
         return Serialize(new
@@ -184,8 +188,8 @@ public class SiteBuilderResources(
             Type = type,
             Path = path,
             VersionToken = file.ETag,
-            state.Published,
-            state.HasDraft,
+            Published = !status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
+            HasDraft = status.Value.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
             Name = content?[NameKey]?.DeepClone(),
             Schema = content?["schema"]?.DeepClone(),
             Template = content?["template"]?.DeepClone(),
@@ -302,7 +306,14 @@ public class SiteBuilderResources(
     {
         var catalog = await ReadCatalogAsync(user, storeId, cancellationToken);
 
-        return catalog == null ? null : ThemeSectionTypes.AddToCatalog(catalog, await ThemeSectionTypes.ListAsync(themeStorageFactory, storeId));
+        if (catalog == null)
+        {
+            return null;
+        }
+
+        var result = await customSectionService.GetThemeCatalogAsync(storeId, ThemeJson.ParseObject(catalog.ToJsonString()), files: null, cancellationToken);
+
+        return JsonNode.Parse(result.ToString(Newtonsoft.Json.Formatting.None)) as JsonObject;
     }
 
     private Task EnsureStoreAsync(ClaimsPrincipal user, string storeId)

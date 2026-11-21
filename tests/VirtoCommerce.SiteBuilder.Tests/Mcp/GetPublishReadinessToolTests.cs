@@ -223,6 +223,21 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APageThatPlacesACustomSectionTypeTheThemeDoesNotHold_IsWarned()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-missing");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("create_section_type", finding.Fix, StringComparison.Ordinal);
+        Assert.DoesNotContain(readiness.Findings, x => x.Id == "section-type-unpublished");
+    }
+
+    [Fact]
     public async Task TheThemeOfAnotherStore_IsRefused()
     {
         var result = await _context.CallAsync(StoreAReader(), Tool, new { theme = true, store_id = StoreB });

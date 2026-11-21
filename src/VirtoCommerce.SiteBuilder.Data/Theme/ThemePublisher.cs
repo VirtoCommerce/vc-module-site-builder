@@ -459,7 +459,7 @@ public class ThemePublisher(
     protected virtual async Task<IList<string>> GetThemeFilesAsync(IThemeStorage storage)
     {
         var templateKeys = await GetTemplateKeysAsync(storage);
-        var customSectionTypes = await ThemeCustomSections.GetTypesAsync(storage);
+        var customSectionTypes = await GetCustomSectionTypesAsync(storage);
 
         return ThemeParts.Keys
             .Concat(templateKeys.Select(ThemeStorage.GetTemplateFile))
@@ -541,6 +541,18 @@ public class ThemePublisher(
             source.InvalidFiles.Add(file);
             return null;
         }
+    }
+
+    /// <summary>Every type the folder names, valid or not, for the validation to refuse a name that is not one.</summary>
+    protected virtual async Task<IList<string>> GetCustomSectionTypesAsync(IThemeStorage storage)
+    {
+        var fileNames = await storage.ListFilesAsync(ThemeStorage.CustomSectionsFolder);
+
+        return fileNames
+            .Select(x => ThemeStorage.GetCustomSectionType(storage.GetLivePath(x)))
+            .Where(x => x != null)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     protected virtual async Task<IList<string>> GetTemplateKeysAsync(IThemeStorage storage)

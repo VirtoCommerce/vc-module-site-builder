@@ -382,6 +382,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton<ISchemaCatalogService>(new SchemaCatalogService(ThemeStorage))
             .AddSingleton<IThemePaletteService>(new ThemePaletteService())
             .AddSingleton<ICustomSectionValidator>(new CustomSectionValidator())
+            .AddSingleton<ICustomSectionService>(new CustomSectionService(ThemeStorage, GetDesigner().Themes))
             .AddSingleton(Previews.Object)
             .AddSingleton<IThemeOperationService>(provider => new ThemeOperationService(provider.GetRequiredService<IAuthorizationService>(),
                 RequestValidators.Stores(StoreA, StoreB, StoreC), CreateThemePublisher(), SavedVersions))

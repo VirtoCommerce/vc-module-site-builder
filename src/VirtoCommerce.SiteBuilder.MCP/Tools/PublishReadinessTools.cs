@@ -142,7 +142,7 @@ public class PublishReadinessTools(
 
         if (await dryRuns.CheckPageAsync(user, group, unpublish, readiness, cancellationToken) && !unpublish)
         {
-            readiness.Parts.Add(await ReadPagePartAsync(group, readiness, cancellationToken));
+            readiness.Parts.Add(await ReadPagePartAsync(user, group, readiness, cancellationToken));
             await AddPageFindingsAsync(group, readiness, cancellationToken);
         }
 
@@ -169,7 +169,7 @@ public class PublishReadinessTools(
             var group = await groupedPageService.GetByIdAsync(groupId);
             if (group != null && await dryRuns.CheckLanguageVersionAsync(user, group, readiness, cancellationToken))
             {
-                readiness.Parts.Add(await ReadPagePartAsync(group, readiness, cancellationToken));
+                readiness.Parts.Add(await ReadPagePartAsync(user, group, readiness, cancellationToken));
                 await AddPageFindingsAsync(group, readiness, cancellationToken);
                 audiences.Add(PageAudience.Describe(group));
             }
@@ -200,7 +200,8 @@ public class PublishReadinessTools(
         return readiness;
     }
 
-    private async Task<PublishPart> ReadPagePartAsync(GroupedSiteBuilderPage group, PublishReadiness readiness, CancellationToken cancellationToken)
+    private async Task<PublishPart> ReadPagePartAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, PublishReadiness readiness,
+        CancellationToken cancellationToken)
     {
         var draft = GroupedPagePublishing.GetDraft(group) ?? new SiteBuilderPage();
         var part = new PublishPart
@@ -221,7 +222,7 @@ public class PublishReadinessTools(
         var before = group.Pages.Any(x => x.Status == PageStatuses.Published) ? await ReadContentAsync(group, draft: false, cancellationToken) : null;
         var after = await ReadContentAsync(group, draft: true, cancellationToken);
         part.Changes = PublishPart.Compare(before, after);
-        await dryRuns.CheckSectionTypesAsync(group.StoreId, group.Name, after, readiness, group);
+        await dryRuns.CheckSectionTypesAsync(user, group.StoreId, group.Name, after, readiness, group, cancellationToken);
 
         return part;
     }
@@ -308,7 +309,7 @@ public class PublicationDryRuns(
     IThemeOperationService themeOperationService,
     ISiteBuilderContentQueryService contentQueryService,
     ISchemaCatalogService schemaCatalogService,
-    IThemeStorageFactory themeStorageFactory,
+    ICustomSectionService customSectionService,
     ILogger<PublicationDryRuns> logger)
 {
     private const string ContrastMarker = "contrast";
@@ -449,7 +450,7 @@ public class PublicationDryRuns(
             {
                 var draft = await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken);
                 part.Changes = PublishPart.Compare(await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: false, cancellationToken), draft);
-                await CheckSectionTypesAsync(page.StoreId, page.PageId, draft, readiness);
+                await CheckSectionTypesAsync(user, page.StoreId, page.PageId, draft, readiness, group: null, cancellationToken);
             }
 
             readiness.Parts.Add(part);
@@ -462,8 +463,9 @@ public class PublicationDryRuns(
     }
 
     // The storefront renders a custom section type only from the published theme: a page published with one the theme holds only as a
-    // draft shows nothing in its place.
-    public async Task CheckSectionTypesAsync(string storeId, string pageName, string content, PublishReadiness readiness, GroupedSiteBuilderPage group = null)
+    // draft, or not at all, shows nothing in its place.
+    public async Task CheckSectionTypesAsync(ClaimsPrincipal user, string storeId, string pageName, string content, PublishReadiness readiness,
+        GroupedSiteBuilderPage group, CancellationToken cancellationToken)
     {
         var placed = (PageDocumentEditor.Read(content)?.Sections ?? [])
             .Select(SiteBuilderPageItems.GetItemType)
@@ -474,9 +476,21 @@ public class PublicationDryRuns(
             return;
         }
 
-        var drafts = (await ThemeSectionTypes.ListAsync(themeStorageFactory, storeId))
-            .Where(x => !x.Published && placed.Contains(x.Type))
-            .Select(x => x.Type)
+        var types = (await customSectionService.ListTypesAsync(storeId, themeName: null, cancellationToken)).ToHashSet(StringComparer.Ordinal);
+        var missing = placed.Where(x => !types.Contains(x)).Order(StringComparer.Ordinal).ToList();
+        if (missing.Count > 0)
+        {
+            readiness.Findings.Add(Warning("section-type-missing", $"Page '{pageName}' places custom section types the theme does not hold " +
+                $"({string.Join(", ", missing)}): the storefront shows nothing for them.",
+                $"Store '{storeId}': {string.Join(", ", missing.Select(ThemeStorage.GetCustomSectionFile))} do not exist.",
+                "Create them with create_section_type and publish the theme, or remove those sections from the page.", "theme", group));
+        }
+
+        var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = storeId }, user, cancellationToken);
+        SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{storeId}'", $"Your builder:read permission does not cover store '{storeId}'.");
+        var drafts = placed
+            .Where(x => types.Contains(x) && status.Value.NewDrafts.Contains(ThemeStorage.GetCustomSectionFile(x), StringComparer.OrdinalIgnoreCase))
+            .Order(StringComparer.Ordinal)
             .ToList();
         if (drafts.Count > 0)
         {

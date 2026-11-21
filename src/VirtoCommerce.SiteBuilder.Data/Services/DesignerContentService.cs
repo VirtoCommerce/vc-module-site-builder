@@ -28,7 +28,7 @@ public class DesignerContentService(
     IContentHistory contentHistory,
     ISiteBuilderContentGuard contentGuard,
     ISchemaCatalogService schemaCatalogService,
-    IThemeStorageFactory themeStorageFactory,
+    ICustomSectionService customSectionService,
     ICustomSectionValidator customSectionValidator) : IDesignerContentService
 {
     private const string NeverPublishedError = "This page has never been published, so there is no published version to go back to.";
@@ -153,23 +153,12 @@ public class DesignerContentService(
         return saved.SelectMany(x => customSectionValidator.Validate(x.Type, x.Content, catalog).Warnings).ToList();
     }
 
-    /// <summary>The theme's custom section types by type, each as its draft holds it, else as it is live, with those of <paramref name="files"/> over them.</summary>
+    /// <summary>By type: the draft, else the live file, with those of <paramref name="files"/> over them.</summary>
     /// <param name="files">Contents by the path in the theme.</param>
     protected virtual async Task<IDictionary<string, JToken>> GetCustomSectionsAsync(string storeId, string themeName, IDictionary<string, JToken> files,
         CancellationToken cancellationToken)
     {
-        var result = new Dictionary<string, JToken>();
-        var storage = themeStorageFactory.Open(storeId, themeName);
-        foreach (var type in await ThemeCustomSections.GetTypesAsync(storage))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var file = ThemeStorage.GetCustomSectionFile(type);
-            if (ParseOrNull(await storage.ReadAsync(storage.GetDraftPath(file)) ?? await storage.ReadAsync(file)) is { } content)
-            {
-                result[type] = content;
-            }
-        }
-
+        var result = await customSectionService.GetTypesAsync(storeId, themeName, cancellationToken);
         foreach (var (file, content) in files)
         {
             if (ThemeCustomSections.GetCustomSectionType(file) is { } type)
@@ -181,28 +170,11 @@ public class DesignerContentService(
         return result;
     }
 
-    /// <summary>
-    /// The catalog with the custom section types of the store's theme added, as its drafts hold them with those of <paramref name="files"/> over
-    /// them: content is checked against the types the theme publishes, which the storefront's preview may not have seen yet. Null for no catalog.
-    /// </summary>
-    /// <param name="files">Contents by the path with the theme folder; those of another theme are left out.</param>
-    protected virtual async Task<JObject> GetThemeCatalogAsync(string storeId, JObject catalog, IEnumerable<KeyValuePair<string, string>> files,
-        CancellationToken cancellationToken)
-    {
-        if (catalog == null)
-        {
-            return null;
-        }
-
-        var themeName = await themeStorageFactory.GetThemeNameAsync(storeId);
-        var contents = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, content) in files.Where(x => string.Equals(SiteBuilderContentPaths.GetThemeName(x.Key), themeName, StringComparison.OrdinalIgnoreCase)))
-        {
-            contents[SiteBuilderContentPaths.GetPathInTheme(path)] = ParseOrNull(content);
-        }
-
-        return ThemeCustomSections.AddToCatalog(catalog, await GetCustomSectionsAsync(storeId, themeName, contents, cancellationToken));
-    }
+    /// <param name="files">Contents by the path with the theme folder.</param>
+    protected virtual Task<JObject> GetThemeCatalogAsync(string storeId, JObject catalog, IEnumerable<KeyValuePair<string, string>> files,
+        CancellationToken cancellationToken) =>
+        customSectionService.GetThemeCatalogAsync(storeId, catalog, files.ToDictionary(x => x.Key, x => ParseOrNull(x.Value), StringComparer.OrdinalIgnoreCase),
+            cancellationToken);
 
     /// <summary>A custom section type a version restores is checked as a save checks it, with the size of the theme's types once it is back.</summary>
     protected virtual async Task<IList<string>> GetRestoredCustomSectionErrorsAsync(ContentRestoreCommand command, JObject catalog,
