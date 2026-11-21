@@ -743,6 +743,42 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
+    public void Validate_IconNameOfAKitTag_IsOneOfTheKitsIcons()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-icon"]!["attributes"]!["name"] = JObject.Parse("""{ "type": "select", "optionsFrom": "icons" }""");
+        catalog["kit"]!["icons"] = new JArray("arrow-right", "star");
+        var known = _validator.Validate(Type, Section("""<section><vc-icon name="star"></vc-icon></section>"""), catalog);
+        var unknown = _validator.Validate(Type, Section("""<section><vc-icon name="lucide-star"></vc-icon></section>"""), catalog);
+
+        ((JObject)catalog["kit"]!).Remove("icons");
+        var unlisted = _validator.Validate(Type, Section("""<section><vc-icon name="lucide-star"></vc-icon></section>"""), catalog);
+
+        Assert.Empty(known.Errors);
+        Assert.Equal(
+            ["<vc-icon> at line 1 has name=\"lucide-star\", which vc-icon does not take: it takes an icon name of the storefront, as the kit's icons list them"],
+            unknown.Errors);
+        Assert.Empty(unlisted.Errors);
+    }
+
+    [Fact]
+    public void Validate_BehaviorThatRepeatsInsideAnotherThatDoes_IsRefused_ButARowInsideOneIsNot()
+    {
+        const string nested = """<section><div data-marquee><p><span data-marquee>{{ settings.title }}</span></p></div></section>""";
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["behaviors"]!["marquee"]!["repeatsChildren"] = true;
+
+        var refused = _validator.Validate(Type, Section(nested), catalog);
+        var rows = _validator.Validate(Type, Section("""<section><ul data-marquee><li data-each="settings.items">{{ item.title }}</li></ul></section>"""), catalog);
+
+        Assert.Equal(
+            ["<span> at line 1 has data-marquee, which repeats what it holds, inside an element with data-marquee, which repeats it too: each level would multiply the page"],
+            refused.Errors);
+        Assert.Empty(rows.Errors);
+        Assert.Empty(_validator.Validate(Type, Section(nested), Catalog).Errors);
+    }
+
+    [Fact]
     public void ValidateTypes_TypesTogetherOverTheLimit_AddTheSizeErrorForTheFolder()
     {
         var padding = $"/* {new string('x', 60 * 1024)} */";

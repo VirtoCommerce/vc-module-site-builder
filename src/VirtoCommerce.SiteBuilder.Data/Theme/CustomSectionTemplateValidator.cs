@@ -410,19 +410,21 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         {
             check.AddError($"{where} has {name}=\"{Quote(value)}\", which is a value or one binding");
         }
-        else if (GetKitValueRule(field, value) is { } rule)
+        else if (GetKitValueRule(check, field, value) is { } rule)
         {
             check.AddError($"{where} has {name}=\"{Quote(value)}\", which {owner} does not take: it takes {rule}");
         }
     }
 
     /// <returns>What the field takes, when the value is not one of it; <c>null</c> for a value it takes.</returns>
-    protected virtual string GetKitValueRule(KitField field, string value)
+    protected virtual string GetKitValueRule(CustomSectionCheck check, KitField field, string value)
     {
         switch (field.Type)
         {
             case CustomSectionKit.BooleanType:
                 return value is "" or "true" or "false" ? null : "true, false or no value";
+            case CustomSectionKit.SelectType when field.OptionsFrom == CustomSectionKit.IconsKey:
+                return check.Kit.Icons == null || check.Kit.Icons.Contains(value) ? null : "an icon name of the storefront, as the kit's icons list them";
             case CustomSectionKit.SelectType:
                 return field.Options == null || field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
             case CustomSectionKit.DateType:
@@ -451,6 +453,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
         if (option == null)
         {
+            if (kitBehavior.RepeatsChildren && FindRepeatingAncestor(check, element) is { } outer)
+            {
+                check.AddError($"{where} has {name}, which repeats what it holds, inside an element with {outer}, which repeats it too: " +
+                    "each level would multiply the page");
+            }
+
             if (kitBehavior.Value is { } valueField)
             {
                 ValidateKitValue(check, attribute, valueField, name, value, where, scope);
@@ -475,6 +483,23 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         ValidateKitValue(check, attribute, field, name, value, where, scope);
+    }
+
+    /// <returns>The attribute of the nearest ancestor whose behavior repeats what it holds; <c>null</c> for none.</returns>
+    protected virtual string FindRepeatingAncestor(CustomSectionCheck check, IElement element)
+    {
+        for (var ancestor = element.ParentElement; ancestor != null; ancestor = ancestor.ParentElement)
+        {
+            var repeating = ancestor.Attributes
+                .Select(x => FindBehavior(check, x.Name) is { Option: null } behavior && check.Kit.Behaviors[behavior.Name].RepeatsChildren ? x.Name : null)
+                .FirstOrDefault(x => x != null);
+            if (repeating != null)
+            {
+                return repeating;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The behavior a data- attribute switches on, with the option it sets; the longest name wins, so count-up-duration is an option of count-up.</summary>

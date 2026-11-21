@@ -98,6 +98,20 @@ public class SchemaCatalogServiceTests
         "has the behavior 'count-up', which has a value that has a min, a max or a description of another kind")]
     [InlineData("""{ "behaviors": { "tilt": { "options": { "max": { "type": "number", "script": "x" } } } } }""",
         "has the behavior 'tilt', which has the option 'max', which has a key a kit field does not have, 'script'")]
+    [InlineData("""{ "guide": 1 }""", "has a guide that is not a text")]
+    [InlineData("""{ "design": { "breakpoints": {}, "tokens": {}, "script": "x" } }""", "has a design with a key it does not have, 'script'")]
+    [InlineData("""{ "design": { "tokens": { "--color-primary": { "fallback": "#000", "note": "x" } } } }""",
+        "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them")]
+    [InlineData("""{ "design": { "breakpoints": { "md": 768 } } }""",
+        "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them")]
+    [InlineData("""{ "icons": "star" }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters")]
+    [InlineData("""{ "icons": [ "star", "" ] }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters")]
+    [InlineData("""{ "tags": { "vc-icon": { "attributes": { "name": { "type": "select", "optionsFrom": "files" } } } } }""",
+        "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" of a select")]
+    [InlineData("""{ "tags": { "vc-icon": { "attributes": { "name": { "type": "string", "optionsFrom": "icons" } } } } }""",
+        "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" of a select")]
+    [InlineData("""{ "behaviors": { "marquee": { "options": {}, "repeatsChildren": "yes" } } }""",
+        "has the behavior 'marquee', which has a repeatsChildren that is not true or false")]
     public async Task SaveAsync_KitOfAnotherShape_ThrowsNamingItAndKeepsNothing(string kit, string error)
     {
         var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct));
@@ -112,13 +126,34 @@ public class SchemaCatalogServiceTests
         const string kit = """
             {
               "tags": { "vc-button": { "description": "A button", "attributes": { "to": { "type": "link" }, "size": { "type": "select", "options": [ "sm", { "value": "lg", "label": "Large" } ] } } } },
-              "behaviors": { "count-up": { "value": { "type": "number" }, "options": { "duration": { "type": "number", "min": 0, "max": 5000 } }, "writes": [ "--count" ] } }
+              "behaviors": {
+                "count-up": { "value": { "type": "number" }, "options": { "duration": { "type": "number", "min": 0, "max": 5000 } }, "writes": [ "--count" ] },
+                "marquee": { "options": {}, "repeatsChildren": true }
+              },
+              "design": {
+                "breakpoints": { "md": "768px" },
+                "containerMaxWidth": "1280px",
+                "tokens": { "--color-primary-500": { "fallback": "#0f62fe", "description": "The primary color" } },
+                "containerName": "sb-section"
+              },
+              "icons": [ "arrow-right", "star" ],
+              "guide": "# Writing a custom section"
             }
             """;
 
         await Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct);
 
         Assert.NotNull(JObject.Parse(await Service().GetAsync("s1", null, Ct))["kit"]!["tags"]!["vc-button"]);
+    }
+
+    [Fact]
+    public async Task SaveAsync_KitGuideOverTheLimit_IsRefused()
+    {
+        var guide = new string('x', CustomSectionKit.MaxGuideLength + 1);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": { "guide": "{{guide}}" } }""", Ct));
+
+        Assert.StartsWith("The catalog's \"kit\" has a guide longer than 16384 characters.", exception.Message);
     }
 
     private SchemaCatalogService Service() => new(new ThemeStorageFactory(_storage.StoreService, _storage, _storage, _storage));

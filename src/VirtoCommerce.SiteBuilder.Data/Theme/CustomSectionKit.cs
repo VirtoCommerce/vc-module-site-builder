@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -21,6 +22,17 @@ public static class CustomSectionKit
     public const string LinkType = "link";
 
     public const string TagPrefix = "vc-";
+
+    /// <summary>The key of the storefront's icon names in the kit, and the <c>optionsFrom</c> of a select that takes one of them.</summary>
+    public const string IconsKey = "icons";
+
+    public const string GuideKey = "guide";
+    public const string DesignKey = "design";
+
+    public const int MaxGuideLength = 16 * 1024;
+
+    public const int MaxIcons = 10_000;
+    public const int MaxIconLength = 100;
 
     public static IReadOnlySet<string> FieldTypes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -46,7 +58,11 @@ public static class CustomSectionKit
 
     private static readonly HashSet<string> BindingNames = new(StringComparer.Ordinal) { "each", "if", "html" };
 
-    private static readonly HashSet<string> FieldKeys = new(StringComparer.Ordinal) { "type", "options", "min", "max", "description" };
+    private static readonly HashSet<string> FieldKeys = new(StringComparer.Ordinal) { "type", "options", "optionsFrom", "min", "max", "description" };
+
+    private static readonly HashSet<string> DesignKeys = new(StringComparer.Ordinal) { "breakpoints", "containerMaxWidth", "tokens", "containerName" };
+
+    private static readonly HashSet<string> DesignTokenKeys = new(StringComparer.Ordinal) { "fallback", "description" };
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
     private static readonly Regex TagNamePattern = new("^vc-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
@@ -62,17 +78,23 @@ public static class CustomSectionKit
     {
         if (catalog?[KitKey] is not JObject kit)
         {
-            return new StorefrontKit(catalog != null, Tags: null, Behaviors: null);
+            return new StorefrontKit(catalog != null, Tags: null, Behaviors: null, Icons: null);
         }
 
         var tags = ReadEntries(kit["tags"], TagPrefix, x => ReadFields(x["attributes"]));
         // a stored catalog may name a behavior its upload would refuse now
         var behaviors = ReadEntries(kit["behaviors"], string.Empty,
-                x => new KitBehavior(x["value"] is JObject value ? ReadField(value) : null, ReadFields(x["options"])))
+                x => new KitBehavior(x["value"] is JObject value ? ReadField(value) : null, ReadFields(x["options"]),
+                    x["repeatsChildren"] is JValue { Type: JTokenType.Boolean } repeats && (bool)repeats))
             .Where(x => !IsReservedBehavior(x.Key))
             .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+        var icons = (kit[IconsKey] as JArray)?
+            .OfType<JValue>()
+            .Where(x => x.Type == JTokenType.String)
+            .Select(x => (string)x)
+            .ToFrozenSet(StringComparer.Ordinal);
 
-        return new StorefrontKit(true, tags, behaviors);
+        return new StorefrontKit(true, tags, behaviors, icons);
     }
 
     /// <returns>What is wrong with the kit's shape, naming where; <c>null</c> for a kit that is right or for none.</returns>
@@ -89,8 +111,65 @@ public static class CustomSectionKit
         }
 
         return GetEntriesError(entries["tags"], "tags", x => TagNamePattern.IsMatch(x) ? null : "does not start with vc- and lowercase words joined by '-'", GetTagError)
-            ?? GetEntriesError(entries["behaviors"], "behaviors", GetBehaviorNameError, GetBehaviorError);
+            ?? GetEntriesError(entries["behaviors"], "behaviors", GetBehaviorNameError, GetBehaviorError)
+            ?? GetGuideError(entries[GuideKey])
+            ?? GetDesignError(entries[DesignKey])
+            ?? GetIconsError(entries[IconsKey]);
     }
+
+    private static string GetGuideError(JToken guide) => guide switch
+    {
+        null or { Type: JTokenType.Null } => null,
+        JValue { Type: JTokenType.String } text when ((string)text).Length <= MaxGuideLength => null,
+        JValue { Type: JTokenType.String } => string.Create(CultureInfo.InvariantCulture, $"has a guide longer than {MaxGuideLength} characters"),
+        _ => "has a guide that is not a text",
+    };
+
+    private static string GetDesignError(JToken design)
+    {
+        if (design is null || design.Type == JTokenType.Null)
+        {
+            return null;
+        }
+
+        if (design is not JObject facts)
+        {
+            return "has a design that is not an object";
+        }
+
+        if (facts.Properties().FirstOrDefault(x => !DesignKeys.Contains(x.Name)) is { } unknown)
+        {
+            return $"has a design with a key it does not have, '{unknown.Name}'";
+        }
+
+        var isRight = IsTextOrNone(facts["containerMaxWidth"]) && IsTextOrNone(facts["containerName"]) &&
+            IsMapOrNone(facts["breakpoints"], x => x.Type == JTokenType.String) &&
+            IsMapOrNone(facts["tokens"], x => x is JObject token && token.Properties().All(p => DesignTokenKeys.Contains(p.Name) && p.Value.Type == JTokenType.String));
+
+        return isRight ? null : "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them";
+    }
+
+    private static string GetIconsError(JToken icons)
+    {
+        if (icons is null || icons.Type == JTokenType.Null)
+        {
+            return null;
+        }
+
+        if (icons is not JArray names || names.Count > MaxIcons ||
+            !names.All(x => x is JValue { Type: JTokenType.String } name && ((string)name).Length is > 0 and <= MaxIconLength))
+        {
+            return string.Create(CultureInfo.InvariantCulture,
+                $"has icons that are not a list of at most {MaxIcons} names, each of 1 to {MaxIconLength} characters");
+        }
+
+        return null;
+    }
+
+    private static bool IsTextOrNone(JToken token) => token is null || token.Type is JTokenType.Null or JTokenType.String;
+
+    private static bool IsMapOrNone(JToken token, Func<JToken, bool> isValue) =>
+        token is null || token.Type == JTokenType.Null || (token is JObject map && map.Properties().All(x => isValue(x.Value)));
 
     private static string GetEntriesError(JToken entries, string name, Func<string, string> getNameError, Func<JObject, string> getEntryError)
     {
@@ -134,6 +213,11 @@ public static class CustomSectionKit
         if (behavior["writes"] is { Type: not JTokenType.Null } writes && !(writes is JArray list && list.All(x => x.Type == JTokenType.String)))
         {
             return "has writes that are not a list of names";
+        }
+
+        if (behavior["repeatsChildren"] is { Type: not (JTokenType.Null or JTokenType.Boolean) })
+        {
+            return "has a repeatsChildren that is not true or false";
         }
 
         return GetFieldsError(behavior["options"], "option", _ => null);
@@ -185,6 +269,12 @@ public static class CustomSectionKit
             return "has options that are not a list of values";
         }
 
+        if (field["optionsFrom"] is { Type: not JTokenType.Null } optionsFrom &&
+            !((string)type == SelectType && optionsFrom is JValue { Type: JTokenType.String } source && (string)source == IconsKey))
+        {
+            return $"has an optionsFrom other than \"{IconsKey}\" of a select";
+        }
+
         return field["min"] is { Type: not (JTokenType.Null or JTokenType.Integer or JTokenType.Float) } ||
             field["max"] is { Type: not (JTokenType.Null or JTokenType.Integer or JTokenType.Float) } ||
             field["description"] is { Type: not (JTokenType.Null or JTokenType.String) }
@@ -218,7 +308,8 @@ public static class CustomSectionKit
             .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture))
             .ToList(),
         GetNumber(field, "min"),
-        GetNumber(field, "max"));
+        GetNumber(field, "max"),
+        ThemeContentReader.GetString(field, "optionsFrom"));
 
     private static decimal? GetNumber(JObject item, string name) =>
         item[name] is JValue { Type: JTokenType.Integer or JTokenType.Float } value ? value.Value<decimal>() : null;
