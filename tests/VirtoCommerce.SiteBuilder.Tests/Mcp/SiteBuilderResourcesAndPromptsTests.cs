@@ -181,6 +181,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal(rules.Attributes, Strings(kit.GetProperty("template").GetProperty("attributes")));
         Assert.Equal(rules.FieldTypes, Strings(kit.GetProperty("file").GetProperty("field_types")));
         Assert.Equal(rules.AtRules, Strings(kit.GetProperty("css").GetProperty("at_rules")));
+        Assert.Equal("margin-inline-start", kit.GetProperty("css").GetProperty("logical_properties").GetProperty("margin-left").GetString());
+        Assert.Equal("text-align: end", kit.GetProperty("css").GetProperty("logical_properties").GetProperty("text-align: right").GetString());
         Assert.Contains("section", rules.Elements);
         Assert.DoesNotContain("input", rules.Elements);
         Assert.Equal(rules.MaxPartSize, kit.GetProperty("limits").GetProperty("template_bytes").GetInt32());

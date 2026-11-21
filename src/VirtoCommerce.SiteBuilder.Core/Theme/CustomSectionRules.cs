@@ -44,6 +44,9 @@ public class CustomSectionRules
     /// <summary>The CSS functions whose value is known only when the page is shown: not inside an image function, not in position.</summary>
     public IList<string> LateValueFunctions { get; set; } = [];
 
+    /// <summary>The logical property or value for each physical one, which a save warns of outside a rule for one direction such as :dir(rtl).</summary>
+    public IDictionary<string, string> LogicalProperties { get; set; } = new Dictionary<string, string>();
+
     /// <summary>The types of a kit tag's attribute, of a behavior's option and of a behavior's own value.</summary>
     public IList<string> KitFieldTypes { get; set; } = [];
 

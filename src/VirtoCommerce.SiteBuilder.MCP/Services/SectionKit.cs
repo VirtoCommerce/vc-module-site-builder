@@ -169,6 +169,9 @@ public static class SectionKit
                 Colors = "From the palette: var(--color-...) of the tokens below, a color-token setting's --setting-<id>, transparent or currentColor. A literal " +
                     "color saves with a warning: neither the palette nor the dark theme changes it.",
                 Classes = "The type's own classes, as the template's class names them: the storefront's utility classes are not available.",
+                LogicalProperties = rules.LogicalProperties,
+                LogicalPropertiesNote = "Write the logical property or value for each physical one: a save warns of the physical one, except in a " +
+                    "rule for one direction, such as :dir(rtl) { }.",
                 Motion = "With prefers-reduced-motion the behaviors show their end state at once; turn your own animations off in @media (prefers-reduced-motion: reduce).",
             },
             Palette = new

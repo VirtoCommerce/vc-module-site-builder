@@ -162,6 +162,26 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
   `currentColor`. A literal color is saved with a warning.
 - **Classes** are the type's own, as the template's `class` names them. The storefront's utility classes are not
   available: they would style the section from outside its CSS, such as fixed over the page.
+- **Right to left**: a page in a right-to-left language mirrors a section through logical properties and values only.
+  A physical side (`margin-left`, `padding-right`, `left`, `border-left`, `border-top-left-radius`,
+  `scroll-margin-right`, `text-align: left`, `float: right`, `clear: left` and the like) is saved with a warning that
+  names its logical replacement (`margin-inline-start`, `inset-inline-start`, `border-start-start-radius`,
+  `text-align: start`, `float: inline-start`), except in a rule for one direction, under `:dir(rtl)` or `:dir(ltr)`.
+
+## Accessibility
+
+A section is used with a keyboard and a screen reader as well as with a mouse. A save refuses:
+
+- an `h1`: the page holds its own, and a section's headings start at `h2`;
+- an `img` without `alt`: bind it to a `string` setting, or write `alt=""` for an image that only decorates; a literal
+  text in it is saved with the warning on text of the template's own;
+- a link with nothing to read: no text or binding inside, no `aria-label`, no rich text and no image with an `alt`;
+- CSS that hides the focus ring: `outline: none` or `0`, `outline-style: none`, `outline-width: 0`, in any rule.
+
+It saves with a warning a heading level skipped on the way down (`h2`, then `h4`), CSS with an `animation`,
+`animation-name` or `transition` and no `@media (prefers-reduced-motion: reduce)` or `(prefers-reduced-motion:
+no-preference)` block, and a `vc-button` without a `label` when the kit declares one. The template runs no code and
+holds no form controls, so a section is used from the keyboard only through its links, its kit tags and its behaviors.
 
 ## Validation
 
