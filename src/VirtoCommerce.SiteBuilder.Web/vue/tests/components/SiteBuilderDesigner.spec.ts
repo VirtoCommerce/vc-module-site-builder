@@ -681,6 +681,22 @@ describe("the theme's custom section types", () => {
     expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
   });
 
+  it("replace the picker's types when the storefront sends loaded again with a new set, each named in the admin's language and listed once", async () => {
+    const page = await openPage([]);
+    // Hashes no other test loads: the designer remembers the catalogs the server has for as long as it runs.
+    await page.load("c0ffee01", { text: { name: "Text" }, "custom-old": { name: "Old", custom: true, settings: [] } });
+    const sections = { text: { name: "Text" }, "custom-hero": { name: { "en-US": "Hero", "de-DE": "Held" }, custom: true, settings: [] } };
+
+    await page.load("c0ffee02", sections);
+    await page.load("c0ffee02", sections);
+
+    expect(page.designer.sectionTypes.value.map((x) => [x.type, x.schema.name])).toEqual([
+      ["custom-hero", "Hero"],
+      ["text", "Text"],
+    ]);
+    expect(platform.to("/api/site-builder/catalog").map((x) => x.query.hash)).toEqual(["c0ffee01", "c0ffee02"]);
+  });
+
   it("are left to the published snapshot, and not read, while none has a draft", async () => {
     const page = await openPage(["templates/product.json"]);
 

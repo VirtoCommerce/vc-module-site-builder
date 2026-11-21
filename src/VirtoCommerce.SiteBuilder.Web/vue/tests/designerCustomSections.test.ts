@@ -4,11 +4,13 @@ import {
   customSectionPath,
   customSectionTypeOf,
   draftedCustomSectionTypes,
+  namedSections,
   savedCustomSectionsReader,
   type CustomSectionType,
 } from "../src/modules/designer/customSections";
 import type { ThemeFileSource } from "../src/modules/designer/templateDrafts";
 import type { ThemeStatus } from "../src/modules/designer/themePublication";
+import type { ItemSchema } from "../src/modules/designer/types";
 
 const type = (name: string): CustomSectionType => ({ format: 1, name, schema: { settings: [] }, template: "<section></section>", css: "" });
 const status = (drafts: string[], publication?: number): ThemeStatus => ({ publication, drafts, newDrafts: [] });
@@ -65,4 +67,13 @@ test("live custom types are read once per publication, drafts on every read", as
   requests.length = 0;
   await read("s/default", status(["custom-sections/custom-hero.json"], 3), src);
   assert.deepEqual(requests, ["custom-hero"]);
+});
+
+test("a custom type's name by language is shown in the designer's language, else the store's default, else its first", () => {
+  const name = { "en-US": "Hero", "de-DE": "Held" } as unknown as string;
+  const sections: Record<string, ItemSchema> = { text: { name: "Text" }, "custom-hero": { name, custom: true }, "custom-plain": { custom: true } };
+  assert.deepEqual(namedSections(sections, "de", "en-US"), { text: { name: "Text" }, "custom-hero": { name: "Held", custom: true }, "custom-plain": { custom: true } });
+  assert.equal(namedSections(sections, "fr", "de-DE")["custom-hero"].name, "Held");
+  assert.equal(namedSections(sections, "fr", "")["custom-hero"].name, "Hero");
+  assert.equal(namedSections({ odd: { name: { title: "Hero" } as unknown as string } }, "en", "en-US").odd.name, undefined);
 });

@@ -456,6 +456,19 @@ test("on loaded: the schemas, the catalog, then auth, inspector, colorScheme, dr
   assert.deepEqual(preview.posted.at(-1), { type: "hover", sectionId: "s1" });
 });
 
+test("a loaded again, once the draft changed the storefront's custom types, brings the new catalog and the whole handshake again", async () => {
+  const preview = channel();
+  await preview.receive(fromPreview(loadedData()));
+  preview.log.length = 0;
+  preview.posted.length = 0;
+  const sections = { ...loadedData().sections, "custom-hero": { name: "Hero", custom: true, settings: [] } };
+
+  await preview.receive(fromPreview(loadedData({ hash: "5eedc0de", sections })));
+
+  assert.deepEqual(preview.log, ["loaded 5eedc0de", "catalog", "post auth", "post inspector", "post colorScheme", "post draft", "post render"]);
+  assert.equal(preview.connected.value, true);
+});
+
 test("nothing but the handshake goes out before it: it carries the state as it is when it goes", async () => {
   let release!: () => void;
   let colorScheme: ColorScheme = "light";
