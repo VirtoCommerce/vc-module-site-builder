@@ -76,7 +76,7 @@ public class DesignerContentService(
         var catalogs = customSections.ToDictionary(x => x.Key, x => ThemeCustomSections.AddToCatalog(catalog, x.Value), StringComparer.OrdinalIgnoreCase);
         var errors = files
             .SelectMany(x => contentGuard.GuardThemeFile(SiteBuilderContentPaths.GetPathInTheme(x.Key), x.Value, catalogs[SiteBuilderContentPaths.GetThemeName(x.Key)]).Errors)
-            .Concat(themes.SelectMany(x => GetCustomSectionErrors(x.Value, customSections[x.Key])))
+            .Concat(themes.SelectMany(x => GetCustomSectionErrors(x.Value, customSections[x.Key], catalog)))
             .ToList();
         if (errors.Count > 0)
         {
@@ -120,13 +120,14 @@ public class DesignerContentService(
     /// <summary>The types the files save, and the size of the theme's types together once they are saved.</summary>
     /// <param name="files">Contents by the path in the theme.</param>
     /// <param name="customSections">The theme's types with those of the files over them.</param>
-    protected virtual IList<string> GetCustomSectionErrors(IDictionary<string, JToken> files, IDictionary<string, JToken> customSections)
+    /// <param name="catalog">The catalog the save names, whose kit the templates may use.</param>
+    protected virtual IList<string> GetCustomSectionErrors(IDictionary<string, JToken> files, IDictionary<string, JToken> customSections, JObject catalog)
     {
         var saved = files
             .Select(x => (Type: ThemeCustomSections.GetSectionType(x.Key), Content: x.Value))
             .Where(x => x.Type != null)
             .ToList();
-        var errors = saved.SelectMany(x => customSectionValidator.Validate(x.Type, x.Content).Errors).ToList();
+        var errors = saved.SelectMany(x => customSectionValidator.Validate(x.Type, x.Content, catalog).Errors).ToList();
         if (saved.Count > 0 && customSectionValidator.GetSizeError(customSections) is { } sizeError)
         {
             errors.Add(sizeError);
@@ -135,13 +136,22 @@ public class DesignerContentService(
         return errors;
     }
 
-    /// <summary>What the custom section types the files save are saved with, such as text their template holds in one language only.</summary>
-    protected virtual IList<string> GetCustomSectionWarnings(IEnumerable<DesignerSaveFile> files) =>
-        files
+    /// <summary>What the custom section types the command saves are saved with, such as text their template holds in one language only.</summary>
+    protected virtual async Task<IList<string>> GetCustomSectionWarningsAsync(DesignerSaveCommand command, CancellationToken cancellationToken)
+    {
+        var saved = command.ThemeFiles
             .Select(x => (Type: ThemeCustomSections.GetSectionType(SiteBuilderContentPaths.GetPathInTheme(x.Path)), Content: ParseOrNull(x.Content)))
             .Where(x => x.Type != null && x.Content != null)
-            .SelectMany(x => customSectionValidator.Validate(x.Type, x.Content).Warnings)
             .ToList();
+        if (saved.Count == 0)
+        {
+            return [];
+        }
+
+        var catalog = await GetCatalogAsync(command.StoreId, command.CatalogHash, cancellationToken);
+
+        return saved.SelectMany(x => customSectionValidator.Validate(x.Type, x.Content, catalog).Warnings).ToList();
+    }
 
     /// <summary>The theme's custom section types by type, each as its draft holds it, else as it is live, with those of <paramref name="files"/> over them.</summary>
     /// <param name="files">Contents by the path in the theme.</param>
@@ -305,7 +315,7 @@ public class DesignerContentService(
             token => SavePageAsync(command, user, token),
             cancellationToken);
         result.ThemeFiles = command.ThemeFiles.Select(x => CreateThemeFileVersion(command.StoreId, x)).ToList();
-        result.Warnings = GetCustomSectionWarnings(command.ThemeFiles);
+        result.Warnings = await GetCustomSectionWarningsAsync(command, cancellationToken);
 
         var record = CreateHistoryRecord(ModuleConstants.GitHistory.SavedSummary, command.SaveId, user);
         if (command.Group != null)
@@ -353,7 +363,7 @@ public class DesignerContentService(
             preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, file.Path, current.ETag, current.Content, file.Content));
         }
 
-        foreach (var warning in GetCustomSectionWarnings(command.ThemeFiles))
+        foreach (var warning in await GetCustomSectionWarningsAsync(command, cancellationToken))
         {
             preview.Warnings.Add(warning);
         }

@@ -53,15 +53,15 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
             errors.Add($"{ThemeStorage.TemplateRulesFile}: not an object");
         }
 
-        ValidateCustomSections(source.CustomSections, errors);
+        ValidateCustomSections(source.CustomSections, catalog, errors);
 
         return errors;
     }
 
-    /// <summary>Whatever the catalog: the rules of a type are its own.</summary>
-    protected virtual void ValidateCustomSections(IDictionary<string, JToken> customSections, IList<string> errors)
+    /// <summary>Whatever the catalog: without one, a type is refused only for a kit tag or a behavior, which the catalog names.</summary>
+    protected virtual void ValidateCustomSections(IDictionary<string, JToken> customSections, JObject catalog, IList<string> errors)
     {
-        foreach (var error in customSections.SelectMany(x => customSectionValidator.Validate(x.Key, x.Value).Errors))
+        foreach (var error in customSections.SelectMany(x => customSectionValidator.Validate(x.Key, x.Value, catalog).Errors))
         {
             errors.Add(error);
         }

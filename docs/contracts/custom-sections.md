@@ -77,8 +77,8 @@ language: the save answers it with a warning.
 
 ### Kit tags
 
-A kit tag renders a storefront component. Its attributes take literals or bindings; values are those the component
-accepts, others are refused on save.
+A kit tag renders a storefront component. The storefront names its kit tags in the catalog's [`kit`](#catalog), and a
+module or a plugin of the storefront may add its own; the storefront registers these:
 
 | Tag | Attributes | Renders |
 |---|---|---|
@@ -87,13 +87,17 @@ accepts, others are refused on save.
 | `vc-badge` | `label`, `color`, `variant`, `size` | `VcBadge` |
 | `vc-products` | `query`, `filter`, `take` (1–24), `view` (`grid` or `carousel`), `columns` (1–6) | the product list or carousel of the built-in sections |
 
-A kit tag has no content.
+A kit tag's name starts with `vc-`, and an element named `vc-…` that the catalog does not name is refused. Its
+attributes are those the catalog declares, and `data-if` and `data-each`; they take literals or bindings, and a literal
+the attribute's type does not take is refused on save. A kit tag has no content.
 
 ### Behaviors
 
 A behavior is a storefront directive an attribute switches on. It reads the element and writes CSS variables, attributes
 or the element's text; the visuals are the section's CSS. With `prefers-reduced-motion: reduce` a behavior shows its end
-state at once.
+state at once. The catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior
+when the catalog has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or
+inside it, its value checked by the option's type. The storefront registers these:
 
 | Attribute | Options | Effect |
 |---|---|---|
@@ -105,7 +109,7 @@ state at once.
 | `data-copy="{text}"` | | a click copies the text and sets `data-copied` for 2 seconds |
 | `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run |
 
-The value of `data-count-up`, `data-countdown` and `data-copy` may be a binding.
+The value of a behavior's own attribute, such as `data-count-up`, is the storefront's to read, and may be a binding.
 
 ## Setting variables
 
@@ -137,7 +141,8 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
 A save and a publication check every custom section type of the theme and refuse a type that breaks a rule above with
 `custom-sections/{type}.json: …`, naming the rule; nothing is removed silently. Warnings do not refuse. A template, a
 header or footer group, or a page may place a custom type the theme holds: a save checks the theme's drafts, a
-publication the theme it publishes.
+publication the theme it publishes. Kit tags and behaviors are checked against the `kit` of the catalog the save names,
+or the publication publishes with; with no catalog, or a catalog without `kit`, a type that uses one is refused.
 
 The storefront checks again when it renders, since the preview's draft comes from the designer: an element, attribute,
 binding or rule the lists above do not allow is left out.
@@ -147,3 +152,25 @@ binding or rule the lists above do not allow is left out.
 The storefront adds each custom type to the catalog's `sections` under its type, with its `name`, `settings`,
 `targetTemplates`, `limit` and `icon`, and `"custom": true`. It sends `loaded` again when the draft changes the set of
 custom types.
+
+The catalog's `kit` names the kit tags and the behaviors the storefront offers, its own and those its modules add:
+
+```ts
+interface Kit {
+  tags: Record<string, { attributes: Record<string, KitField>; description?: string }>;
+  /** `writes` names what the behavior sets for the section's CSS, such as `data-visible` or `--scroll-progress` */
+  behaviors: Record<string, { options: Record<string, KitField>; description?: string; writes?: string[] }>;
+}
+
+interface KitField {
+  /** a select takes one of its options, a number one from min to max, a boolean true, false or no value, and a link follows the link rule */
+  type: 'string' | 'number' | 'boolean' | 'select' | 'link';
+  options?: (string | { value: string; label?: string })[];
+  min?: number;
+  max?: number;
+  description?: string;
+}
+```
+
+A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
+behaviors.

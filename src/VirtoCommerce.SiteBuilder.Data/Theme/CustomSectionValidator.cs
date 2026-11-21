@@ -48,9 +48,14 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const string EachAttribute = "data-each";
     private const string IfAttribute = "data-if";
     private const string HtmlAttribute = "data-html";
-    private const string CountdownAttribute = "data-countdown";
-    private const string CountdownPartAttribute = "data-countdown-part";
-    private const string ClassAttribute = "class";
+    private const string DataPrefix = "data-";
+
+    private const string KitKey = "kit";
+    private const string KitTagPrefix = "vc-";
+    private const string LinkKitType = "link";
+    private const string NumberKitType = "number";
+    private const string BooleanKitType = "boolean";
+    private const string SelectKitType = "select";
 
     private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
 
@@ -81,7 +86,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     private static readonly HashSet<string> AllowedAttributes = new(StringComparer.Ordinal)
     {
-        ClassAttribute, "role", "alt", "title", "lang", "dir", "hidden", "href", "target", "rel", "src", "srcset", "sizes", "loading", "decoding",
+        "class", "role", "alt", "title", "lang", "dir", "hidden", "href", "target", "rel", "src", "srcset", "sizes", "loading", "decoding",
         "width", "height", "datetime", "colspan", "rowspan", "scope",
     };
 
@@ -92,8 +97,6 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     private static readonly char[] Whitespace = [' ', '\t', '\n', '\r', '\f'];
 
-    private static readonly string[] MainColors = ["primary", "secondary", "neutral", "accent", "info", "success", "warning", "danger"];
-
     private static readonly string[] AllowedAtRules = ["media", "supports", "container", "keyframes"];
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
@@ -102,8 +105,6 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private static readonly Regex BindingPattern = new(@"\{\{\s*([^{}]*?)\s*\}\}", RegexOptions.None, RegexTimeout);
     private static readonly Regex SingleBindingPattern = new(@"^\s*\{\{\s*([^{}]*?)\s*\}\}\s*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex PathPattern = new(@"^(settings|item)\.([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$", RegexOptions.None, RegexTimeout);
-    private static readonly Regex IconNamePattern = new("^[a-z0-9]+(?:[-:][a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
-    private static readonly Regex IsoDatePattern = new(@"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$", RegexOptions.None, RegexTimeout);
 
     private static readonly Regex CssCommentPattern = new(@"/\*.*?(?:\*/|$)", RegexOptions.Singleline, RegexTimeout);
     private static readonly Regex CssEscapePattern = new(@"\\(?:([0-9a-fA-F]{1,6})[ \t\r\n\f]?|(.))", RegexOptions.Singleline, RegexTimeout);
@@ -117,77 +118,15 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private static readonly Regex CssDocumentSelectorPattern = new(@"(?:^|[\s,>+~(])(?:html|body)(?=$|[\s,>+~.#:\[)])|:root(?![\w-])", RegexOptions.IgnoreCase, RegexTimeout);
     private static readonly Regex CssLiteralColorPattern = new(@"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(", RegexOptions.IgnoreCase, RegexTimeout);
 
-    private static readonly KitAttribute TextValue = new(null, null);
-    private static readonly KitAttribute LinkValue = new(null, null, IsLink: true);
-    private static readonly KitAttribute ColorValue = OneOf(MainColors);
-    private static readonly KitAttribute IconValue = new(IconNamePattern.IsMatch, "an icon name such as 'arrow-right'");
-    private static readonly KitAttribute FlagValue = new(x => x is "" or "true" or "false", "no value, 'true' or 'false'");
-
-    private static readonly Dictionary<string, KitTag> KitTags = new(StringComparer.Ordinal)
-    {
-        ["vc-button"] = new("VcButton", new(StringComparer.Ordinal)
-        {
-            ["label"] = TextValue,
-            ["to"] = LinkValue,
-            ["color"] = ColorValue,
-            ["variant"] = OneOf("solid", "outline", "soft", "surface", "ghost", "tonal"),
-            ["size"] = OneOf("xxs", "xs", "sm", "md", "lg"),
-            ["prepend-icon"] = IconValue,
-            ["append-icon"] = IconValue,
-            ["full-width"] = FlagValue,
-        }),
-        ["vc-icon"] = new("VcIcon", new(StringComparer.Ordinal)
-        {
-            ["name"] = IconValue,
-            ["size"] = new(x => x is "xxs" or "xs" or "sm" or "md" or "lg" or "xl" or "xxl" || IsWholeNumber(x, 1, 256),
-                "xxs, xs, sm, md, lg, xl, xxl or a whole number of pixels"),
-            ["color"] = ColorValue,
-        }),
-        ["vc-badge"] = new("VcBadge", new(StringComparer.Ordinal)
-        {
-            ["label"] = TextValue,
-            ["color"] = ColorValue,
-            ["variant"] = OneOf("solid", "soft", "outline", "surface", "ghost", "tonal"),
-            ["size"] = OneOf("xs", "sm", "md", "lg"),
-        }),
-        ["vc-products"] = new("the product list", new(StringComparer.Ordinal)
-        {
-            ["query"] = TextValue,
-            ["filter"] = TextValue,
-            ["take"] = WholeNumber(1, 24),
-            ["view"] = OneOf("grid", "carousel"),
-            ["columns"] = WholeNumber(1, 6),
-        }),
-    };
-
-    // each behavior attribute; an option names the attribute it is an option of
-    private static readonly Dictionary<string, Behavior> Behaviors = new(StringComparer.Ordinal)
-    {
-        ["data-inview"] = Behavior.Flag(),
-        ["data-inview-threshold"] = new("data-inview", x => decimal.TryParse(x, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var share) && share <= 1,
-            "a number from 0 to 1"),
-        ["data-inview-once"] = Behavior.Flag("data-inview"),
-        ["data-scroll-progress"] = Behavior.Flag(),
-        ["data-pointer"] = Behavior.Flag(),
-        ["data-count-up"] = new(null, x => decimal.TryParse(x, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out _),
-            "a number", Bindable: true),
-        ["data-count-up-duration"] = new("data-count-up", x => IsWholeNumber(x, 0, 5000), "a whole number of milliseconds up to 5000"),
-        ["data-count-up-decimals"] = new("data-count-up", x => IsWholeNumber(x, 0, 4), "a whole number from 0 to 4"),
-        [CountdownAttribute] = new(null, IsIsoDate, "an ISO 8601 date such as 2026-12-31T23:59:59Z", Bindable: true),
-        [CountdownPartAttribute] = new(null, x => x is "days" or "hours" or "minutes" or "seconds", "days, hours, minutes or seconds"),
-        ["data-copy"] = new(null, null, null, Bindable: true),
-        ["data-marquee"] = Behavior.Flag(),
-    };
-
     public CustomSectionValidator()
         : this(blobUrlResolver: null)
     {
     }
 
-    public virtual CustomSectionValidationResult Validate(string type, JToken content)
+    public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog)
     {
         var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
-        var check = new CustomSectionCheck(type, result);
+        var check = new CustomSectionCheck(type, result) { Kit = ReadKit(catalog) };
         if (!ThemeStorage.IsCustomSectionType(type))
         {
             check.AddError($"'{type}' is not a custom section type, which is 'custom-' and lowercase words joined by '-', at most 64 characters");
@@ -439,15 +378,25 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return;
         }
 
-        ValidateElement(check, roots[0], new TemplateScope(Each: null, InCountdown: false, IsRoot: true));
+        ValidateElement(check, roots[0], new TemplateScope(Each: null, IsRoot: true));
     }
 
     protected virtual void ValidateElement(CustomSectionCheck check, IElement element, TemplateScope scope)
     {
         var tag = element.LocalName;
         var where = string.Create(CultureInfo.InvariantCulture, $"<{tag}> at line {GetLine(check, element)}");
-        var kit = KitTags.GetValueOrDefault(tag);
-        if (kit == null && !AllowedElements.Contains(tag))
+        IReadOnlyDictionary<string, KitField> kitAttributes = null;
+        if (tag.StartsWith(KitTagPrefix, StringComparison.Ordinal))
+        {
+            if (GetKitTagError(check, tag) is { } error)
+            {
+                check.AddError($"{where} {error}");
+                return;
+            }
+
+            kitAttributes = check.Kit.Tags[tag];
+        }
+        else if (!AllowedElements.Contains(tag))
         {
             check.AddError($"{where} is not an element a custom section can hold");
             return;
@@ -457,11 +406,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         var elementScope = scope with { Each = each };
         foreach (var attribute in element.Attributes)
         {
-            ValidateAttribute(check, element, attribute.Name, attribute.Value, kit, where, elementScope);
+            ValidateAttribute(check, element, attribute.Name, attribute.Value, kitAttributes, where, elementScope);
         }
 
-        var childScope = new TemplateScope(each, scope.InCountdown || element.HasAttribute(CountdownAttribute), IsRoot: false);
-        var holdsNothing = kit != null || element.HasAttribute(HtmlAttribute);
+        var childScope = new TemplateScope(each, IsRoot: false);
+        var holdsNothing = kitAttributes != null || element.HasAttribute(HtmlAttribute);
         var hasContent = false;
         foreach (var node in element.ChildNodes)
         {
@@ -485,11 +434,29 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         if (holdsNothing && hasContent)
         {
-            check.AddError(kit != null ? $"{where} has content, which a kit tag does not have" : $"{where} has data-html and content of its own");
+            check.AddError(kitAttributes != null ? $"{where} has content, which a kit tag does not have" : $"{where} has data-html and content of its own");
         }
     }
 
-    protected virtual void ValidateAttribute(CustomSectionCheck check, IElement element, string name, string value, KitTag kit, string where, TemplateScope scope)
+    /// <summary>A kit tag is one the storefront names in its catalog, as a module of the storefront may add its own.</summary>
+    protected virtual string GetKitTagError(CustomSectionCheck check, string tag)
+    {
+        if (!check.Kit.HasCatalog)
+        {
+            return "is a kit tag, and no schema catalog names the storefront's kit tags: save it with the catalog of the storefront's preview";
+        }
+
+        if (check.Kit.Tags == null)
+        {
+            return "is a kit tag, and the storefront offers none: its catalog has no kit";
+        }
+
+        return check.Kit.Tags.ContainsKey(tag) ? null : "is not a kit tag the storefront offers";
+    }
+
+    /// <param name="kitAttributes">The attributes of the kit tag the element is; <c>null</c> for an element of HTML.</param>
+    protected virtual void ValidateAttribute(CustomSectionCheck check, IElement element, string name, string value,
+        IReadOnlyDictionary<string, KitField> kitAttributes, string where, TemplateScope scope)
     {
         switch (name)
         {
@@ -499,31 +466,27 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
                 ValidateIf(check, value, where, scope);
                 return;
             case HtmlAttribute:
-                ValidateHtml(check, value, kit, where, scope);
+                ValidateHtml(check, value, kitAttributes != null, where, scope);
                 return;
         }
 
-        if (kit != null)
+        if (kitAttributes != null)
         {
-            if (name == ClassAttribute)
+            if (kitAttributes.TryGetValue(name, out var field))
             {
-                ValidateBindings(check, value, where, scope);
-            }
-            else if (kit.Attributes.TryGetValue(name, out var kitAttribute))
-            {
-                ValidateKitAttribute(check, kit, kitAttribute, name, value, where, scope);
+                ValidateKitValue(check, element.LocalName, field, name, value, where, scope);
             }
             else
             {
-                check.AddError($"{where} has an attribute {kit.Component} does not take, '{name}'");
+                check.AddError($"{where} has an attribute {element.LocalName} does not take, '{name}'");
             }
 
             return;
         }
 
-        if (Behaviors.TryGetValue(name, out var behavior))
+        if (FindBehavior(check, name) is { } behavior)
         {
-            ValidateBehavior(check, element, behavior, name, value, where, scope);
+            ValidateBehavior(check, element, behavior.Name, behavior.Option, name, value, where, scope);
         }
         else if (name is "href")
         {
@@ -543,16 +506,19 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
         else
         {
-            check.AddError($"{where} has an attribute a custom section cannot use, '{name}'{GetAttributeReason(name)}");
+            check.AddError($"{where} has an attribute a custom section cannot use, '{name}'{GetAttributeReason(check, name)}");
         }
     }
 
-    protected virtual string GetAttributeReason(string name) => name switch
+    protected virtual string GetAttributeReason(CustomSectionCheck check, string name) => name switch
     {
         "id" => ": two sections on a page would share it",
         "style" => ": the section's CSS styles it",
         _ when name.StartsWith("on", StringComparison.Ordinal) => ": it runs script",
-        _ => string.Empty,
+        _ when !name.StartsWith(DataPrefix, StringComparison.Ordinal) => string.Empty,
+        _ when !check.Kit.HasCatalog => ": it is no binding, and no schema catalog names the storefront's behaviors",
+        _ when check.Kit.Behaviors == null => ": it is no binding, and the storefront offers no behaviors, as its catalog has no kit",
+        _ => ": it is no binding and no behavior the storefront offers",
     };
 
     /// <returns>The list the element repeats for, as far as it is known.</returns>
@@ -596,9 +562,9 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         ResolvePath(check, path.StartsWith('!') ? path[1..].TrimStart() : path, where, scope);
     }
 
-    protected virtual void ValidateHtml(CustomSectionCheck check, string value, KitTag kit, string where, TemplateScope scope)
+    protected virtual void ValidateHtml(CustomSectionCheck check, string value, bool isKitTag, string where, TemplateScope scope)
     {
-        if (kit != null)
+        if (isKitTag)
         {
             check.AddError($"{where} has data-html, and a kit tag holds nothing");
             return;
@@ -611,16 +577,18 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
     }
 
-    protected virtual void ValidateKitAttribute(CustomSectionCheck check, KitTag kit, KitAttribute attribute, string name, string value, string where,
+    /// <summary>A value of a kit tag's attribute or of a behavior's option, checked by the type the storefront declares for it.</summary>
+    /// <param name="owner">The kit tag or the behavior attribute, which names what takes the value.</param>
+    protected virtual void ValidateKitValue(CustomSectionCheck check, string owner, KitField field, string name, string value, string where,
         TemplateScope scope)
     {
-        if (attribute.IsLink)
+        if (field.Type == LinkKitType)
         {
             ValidateLink(check, name, value, where, scope);
             return;
         }
 
-        if (attribute.IsAllowed == null)
+        if (field.Type is not (NumberKitType or BooleanKitType or SelectKitType))
         {
             var text = ValidateBindings(check, value, where, scope);
             if (TextAttributes.Contains(name))
@@ -639,37 +607,83 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         {
             check.AddError($"{where} has {name}=\"{Quote(value)}\", which is a value or one binding");
         }
-        else if (!attribute.IsAllowed(value))
+        else if (GetKitValueRule(field, value) is { } rule)
         {
-            check.AddError($"{where} has {name}=\"{Quote(value)}\", which {kit.Component} does not take: it takes {attribute.Allowed}");
+            check.AddError($"{where} has {name}=\"{Quote(value)}\", which {owner} does not take: it takes {rule}");
         }
     }
 
-    protected virtual void ValidateBehavior(CustomSectionCheck check, IElement element, Behavior behavior, string name, string value, string where,
-        TemplateScope scope)
+    /// <returns>What the field takes, when the value is not one of it; <c>null</c> for a value it takes.</returns>
+    protected virtual string GetKitValueRule(KitField field, string value)
     {
-        if (behavior.Option != null && !element.HasAttribute(behavior.Option))
+        switch (field.Type)
         {
-            check.AddError($"{where} has {name}, an option of {behavior.Option}, which the element does not have");
+            case BooleanKitType:
+                return value is "" or "true" or "false" ? null : "true, false or no value";
+            case SelectKitType:
+                return field.Options == null || field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
+            default:
+                var isNumber = decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number);
+                return isNumber && !(number < field.Min) && !(number > field.Max) ? null : DescribeNumber(field);
         }
+    }
 
-        if (name == CountdownPartAttribute && !scope.InCountdown)
-        {
-            check.AddError($"{where} has {name} outside an element with {CountdownAttribute}");
-        }
-
-        if (behavior.IsAllowed == null)
+    /// <summary>
+    /// A behavior's option is an attribute of its own, data-{behavior}-{option}, on the element with the behavior or inside it: the countdown's
+    /// parts are elements inside the countdown. The behavior's own value is the storefront's to read.
+    /// </summary>
+    protected virtual void ValidateBehavior(CustomSectionCheck check, IElement element, string behavior, string option, string name, string value,
+        string where, TemplateScope scope)
+    {
+        if (option == null)
         {
             ValidateBindings(check, value, where, scope);
+            return;
         }
-        else if (behavior.Bindable && GetSingleBinding(value) is { } path)
+
+        var attribute = DataPrefix + behavior;
+        if (!check.Kit.Behaviors[behavior].TryGetValue(option, out var field))
         {
-            ResolveValue(check, path, where, scope);
+            check.AddError($"{where} has {name}, which is not an option {attribute} takes");
+            return;
         }
-        else if (!behavior.IsAllowed(value))
+
+        if (!HasBehavior(element, attribute))
         {
-            check.AddError($"{where} has {name}=\"{Quote(value)}\", and {name} takes {behavior.Allowed}");
+            check.AddError($"{where} has {name}, an option of {attribute}, outside an element with {attribute}");
         }
+
+        ValidateKitValue(check, attribute, field, name, value, where, scope);
+    }
+
+    /// <summary>The behavior a data- attribute switches on, with the option it sets; the longest name wins, so count-up-duration is an option of count-up.</summary>
+    protected virtual (string Name, string Option)? FindBehavior(CustomSectionCheck check, string attribute)
+    {
+        if (check.Kit.Behaviors == null || !attribute.StartsWith(DataPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var name = attribute[DataPrefix.Length..];
+        if (check.Kit.Behaviors.ContainsKey(name))
+        {
+            return (name, null);
+        }
+
+        var behavior = check.Kit.Behaviors.Keys.Where(x => name.StartsWith(x + "-", StringComparison.Ordinal)).MaxBy(x => x.Length);
+
+        return behavior == null ? null : (behavior, name[(behavior.Length + 1)..]);
+    }
+
+    /// <summary>The kit of the storefront's catalog: its kit tags, which start with vc-, and its behaviors, each with the fields it takes.</summary>
+    protected virtual StorefrontKit ReadKit(JObject catalog)
+    {
+        if (catalog?[KitKey] is not JObject kit)
+        {
+            return new StorefrontKit(catalog != null, Tags: null, Behaviors: null);
+        }
+
+        return new StorefrontKit(true, ReadKitEntries(kit["tags"], "attributes", KitTagPrefix), ReadKitEntries(kit["behaviors"], "options", string.Empty));
     }
 
     protected virtual void ValidateLink(CustomSectionCheck check, string name, string value, string where, TemplateScope scope)
@@ -1156,16 +1170,54 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         _ => $"setting '{parent}.{id}'",
     };
 
-    private static bool IsWholeNumber(string value, int min, int max) =>
-        int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number) && number >= min && number <= max;
+    private static bool HasBehavior(IElement element, string attribute)
+    {
+        for (var current = element; current != null; current = current.ParentElement)
+        {
+            if (current.HasAttribute(attribute))
+            {
+                return true;
+            }
+        }
 
-    private static bool IsIsoDate(string value) =>
-        IsoDatePattern.IsMatch(value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _);
+        return false;
+    }
 
-    private static KitAttribute OneOf(params string[] values) => new(x => values.Contains(x, StringComparer.Ordinal), string.Join(", ", values));
+    private static Dictionary<string, IReadOnlyDictionary<string, KitField>> ReadKitEntries(JToken entries, string fieldsKey, string prefix) =>
+        (entries as JObject)?.Properties()
+            .Where(x => x.Name.StartsWith(prefix, StringComparison.Ordinal) && x.Name.Length > prefix.Length && x.Value is JObject)
+            .ToDictionary(x => x.Name, x => ReadKitFields(x.Value[fieldsKey]), StringComparer.Ordinal)
+        ?? new Dictionary<string, IReadOnlyDictionary<string, KitField>>(StringComparer.Ordinal);
 
-    private static KitAttribute WholeNumber(int min, int max) =>
-        new(x => IsWholeNumber(x, min, max), string.Create(CultureInfo.InvariantCulture, $"a whole number from {min} to {max}"));
+    private static IReadOnlyDictionary<string, KitField> ReadKitFields(JToken fields) =>
+        (fields as JObject)?.Properties()
+            .Where(x => x.Value is JObject)
+            .ToDictionary(x => x.Name, x => ReadKitField((JObject)x.Value), StringComparer.Ordinal)
+        ?? new Dictionary<string, KitField>(StringComparer.Ordinal);
+
+    // an option is a value, or an object with its value and its label
+    private static KitField ReadKitField(JObject field) => new(
+        GetString(field, "type"),
+        (field["options"] as JArray)?
+            .Select(x => x is JObject option ? option["value"] : x)
+            .OfType<JValue>()
+            .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture))
+            .ToList(),
+        GetNumber(field, "min"),
+        GetNumber(field, "max"));
+
+    private static decimal? GetNumber(JObject item, string name) =>
+        item[name] is JValue { Type: JTokenType.Integer or JTokenType.Float } value ? value.Value<decimal>() : null;
+
+    private static string DescribeNumber(KitField field) => (field.Min, field.Max) switch
+    {
+        ({ } min, { } max) => string.Create(CultureInfo.InvariantCulture, $"a number from {FormatNumber(min)} to {FormatNumber(max)}"),
+        ({ } min, null) => string.Create(CultureInfo.InvariantCulture, $"a number from {FormatNumber(min)}"),
+        (null, { } max) => string.Create(CultureInfo.InvariantCulture, $"a number up to {FormatNumber(max)}"),
+        _ => "a number",
+    };
+
+    private static string FormatNumber(decimal number) => number.ToString("0.##########", CultureInfo.InvariantCulture);
 
     private static string FormatSize(long size) => string.Create(CultureInfo.InvariantCulture, $"{size / 1024.0:0.#} KB");
 
@@ -1185,27 +1237,25 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     }
 
     /// <param name="Each">The list the element repeats for, or one of its ancestors does.</param>
-    /// <param name="InCountdown">An ancestor has data-countdown.</param>
-    protected sealed record TemplateScope(CustomSectionSetting Each, bool InCountdown, bool IsRoot);
+    protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot);
 
-    protected sealed record KitTag(string Component, Dictionary<string, KitAttribute> Attributes);
+    /// <param name="Type">string, number, boolean, select or link; any other is read as a string.</param>
+    /// <param name="Options">The values a select takes.</param>
+    protected sealed record KitField(string Type, IReadOnlyList<string> Options, decimal? Min, decimal? Max);
 
-    /// <param name="IsAllowed">Whether a value is one the component takes; <c>null</c> takes any text.</param>
-    protected sealed record KitAttribute(Func<string, bool> IsAllowed, string Allowed, bool IsLink = false);
-
-    /// <param name="Option">The behavior attribute this one is an option of.</param>
-    /// <param name="IsAllowed">Whether a value is one the behavior takes; <c>null</c> takes any text.</param>
-    /// <param name="Bindable">The value may be a binding.</param>
-    protected sealed record Behavior(string Option, Func<string, bool> IsAllowed, string Allowed, bool Bindable = false)
-    {
-        public static Behavior Flag(string option = null) => new(option, string.IsNullOrEmpty, "no value");
-    }
+    /// <param name="HasCatalog">A catalog was given: without one, nothing is known of the kit.</param>
+    /// <param name="Tags">The attributes of each kit tag, by its name; <c>null</c> for a catalog without a kit.</param>
+    /// <param name="Behaviors">The options of each behavior, by its name; <c>null</c> for a catalog without a kit.</param>
+    protected sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, IReadOnlyDictionary<string, KitField>> Tags,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, KitField>> Behaviors);
 
     protected sealed class CustomSectionCheck(string type, CustomSectionValidationResult result)
     {
         public string Type { get; } = type;
 
         public string File { get; } = ThemeStorage.GetCustomSectionFile(type);
+
+        public StorefrontKit Kit { get; init; }
 
         /// <summary>The settings a binding can name, by id; <c>null</c> when the schema cannot be read.</summary>
         public IDictionary<string, CustomSectionSetting> Settings { get; set; }
