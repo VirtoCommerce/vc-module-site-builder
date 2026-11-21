@@ -6,7 +6,7 @@ using VirtoCommerce.SiteBuilder.Core.Theme;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
-public class ThemeValidator(ICustomSectionValidator customSectionValidator) : ThemeContentReader, IThemeValidator
+public class ThemeValidator : ThemeContentReader, IThemeValidator
 {
     private const string ColorTokenFieldType = "color-token";
     private const string SelectFieldType = "select";
@@ -51,9 +51,6 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
         return errors;
     }
 
-    public virtual IList<string> ValidateCustomSections(ThemeSource source, JObject catalog) =>
-        ThemeCustomSections.GetErrors(customSectionValidator.ValidateTypes(source.CustomSections, source.CustomSections.Keys, catalog)).ToList();
-
     protected virtual void ValidateSectionGroup(JToken token, string file, JObject catalog, IList<string> errors)
     {
         if (token == null)
@@ -67,11 +64,14 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
             return;
         }
 
-        // the storefront renders the group's own sections there, not the section registry a custom type is in
-        var customSections = content.OfType<JObject>().Where(IsCustomSection).ToList();
-        foreach (var item in customSections)
+        var customSections = content.OfType<JObject>().Where(ThemeCustomSections.IsPlacement).ToList();
+        // A first publication checks the shape only and leaves custom sections out, as it does shared components.
+        if (catalog != null)
         {
-            errors.Add($"{file}: '{GetString(item, "id")}' places a custom section, which only a page or a template can hold");
+            foreach (var error in ThemeCustomSections.GetSectionGroupErrors(file, sectionGroup))
+            {
+                errors.Add(error);
+            }
         }
 
         var sections = customSections.Count == 0 ? content : new JArray(content.Except(customSections));
@@ -163,9 +163,6 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
 
         return !string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(type);
     }
-
-    private static bool IsCustomSection(JObject item) =>
-        !string.IsNullOrWhiteSpace(GetString(item, "id")) && GetString(item, "type") is { } type && ThemeStorage.IsCustomSectionType(type);
 
     private static bool IsKnownType(JObject catalog, string kind, string type, bool allowPageContent) =>
         catalog == null || GetItemSchema(catalog, kind, type) != null || IsPageContent(kind, type, allowPageContent);

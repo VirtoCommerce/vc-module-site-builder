@@ -37,7 +37,8 @@ public class ThemePublisher(
     IOptions<ThemeSnapshotOptions> options,
     ILogger<ThemePublisher> logger,
     ISiteBuilderContentGuard contentGuard,
-    IThemePaletteService themePaletteService) : IThemePublisher
+    IThemePaletteService themePaletteService,
+    ICustomSectionValidator customSectionValidator) : IThemePublisher
 {
     private const string PaletteTokensKey = "paletteTokens";
 
@@ -86,7 +87,7 @@ public class ThemePublisher(
         var source = await GetThemeSourceAsync(storage, includeDrafts: true);
         var result = AbstractTypeFactory<ThemePublicationPreview>.TryCreateInstance();
         result.Drafts = GetDraftVersions(storeId, storage, source);
-        var errors = ValidateThemeSource(source, catalog, includeDrafts: true).Concat(themeValidator.ValidateCustomSections(source, catalog)).ToList();
+        var errors = ValidateThemeSource(source, catalog, includeDrafts: true).Concat(ValidateCustomSections(source, catalog)).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -172,7 +173,7 @@ public class ThemePublisher(
             LeaveOutFailingCustomSections(storeId, source, catalog);
         }
 
-        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts).Concat(themeValidator.ValidateCustomSections(source, catalog)).ToList();
+        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts).Concat(ValidateCustomSections(source, catalog)).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -238,23 +239,35 @@ public class ThemePublisher(
             .ToList();
     }
 
+    /// <summary>Each type's own rules, and their size together.</summary>
+    protected virtual IList<string> ValidateCustomSections(ThemeSource source, JObject catalog) =>
+        ThemeCustomSections.GetErrors(customSectionValidator.ValidateTypes(source.CustomSections, source.CustomSections.Keys, catalog)).ToList();
+
     /// <summary>
     /// A first publication puts the live files out as they are, and a failure keeps the store's storefront from any theme: a custom section
-    /// type that fails against the current catalog, or uses the kit when there is none, is left out, as a shared component is.
+    /// type that fails against the current catalog, or uses the kit when there is none, is left out, as a shared component is, and so are
+    /// the largest types until the rest fit the size the snapshot carries.
     /// </summary>
     protected virtual void LeaveOutFailingCustomSections(string storeId, ThemeSource source, JObject catalog)
     {
         foreach (var (type, content) in source.CustomSections.ToList())
         {
-            var single = AbstractTypeFactory<ThemeSource>.TryCreateInstance();
-            single.CustomSections[type] = content;
-            var errors = themeValidator.ValidateCustomSections(single, catalog);
-            if (errors.Count > 0)
+            var result = customSectionValidator.Validate(type, content, catalog);
+            if (result.Errors.Count > 0)
             {
-                source.CustomSections.Remove(type);
-                logger.LogWarning("The first theme publication of store {StoreId} leaves out the custom section type {Type}: {Errors}", storeId, type,
-                    string.Join("; ", errors));
+                LeaveOut(type, string.Join("; ", result.Errors));
             }
+        }
+
+        while (source.CustomSections.Count > 0 && customSectionValidator.ValidateTypes(source.CustomSections, [], catalog).Count > 0)
+        {
+            LeaveOut(source.CustomSections.MaxBy(x => x.Value.ToString(Formatting.None).Length).Key, "the types together are too large");
+        }
+
+        void LeaveOut(string type, string reason)
+        {
+            source.CustomSections.Remove(type);
+            logger.LogWarning("The first theme publication of store {StoreId} leaves out the custom section type {Type}: {Reason}", storeId, type, reason);
         }
     }
 
@@ -567,17 +580,7 @@ public class ThemePublisher(
         }
     }
 
-    /// <summary>Every type the folder names, valid or not, for the validation to refuse a name that is not one.</summary>
-    protected virtual async Task<IList<string>> GetCustomSectionTypesAsync(IThemeStorage storage)
-    {
-        var fileNames = await storage.ListFilesAsync(ThemeStorage.CustomSectionsFolder);
-
-        return fileNames
-            .Select(x => ThemeStorage.GetCustomSectionType(storage.GetLivePath(x)))
-            .Where(x => x != null)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-    }
+    protected virtual Task<IList<string>> GetCustomSectionTypesAsync(IThemeStorage storage) => ThemeCustomSections.ListTypesAsync(storage);
 
     protected virtual async Task<IList<string>> GetTemplateKeysAsync(IThemeStorage storage)
     {

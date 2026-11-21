@@ -8,7 +8,7 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 
 public class ThemeValidatorTests
 {
-    private readonly ThemeValidator _validator = TestServices.ThemeValidator();
+    private readonly ThemeValidator _validator = new ThemeValidator();
 
     [Fact]
     public void Validate_TypeMissingFromCatalog_ReturnsErrors()
@@ -118,7 +118,7 @@ public class ThemeValidatorTests
     }
 
     [Fact]
-    public void Validate_CustomSectionInAHeaderOrFooterGroup_ReturnsErrorsWithOrWithoutCatalog()
+    public void Validate_CustomSectionInAHeaderOrFooterGroup_ReturnsErrors_ButNotOnAFirstPublicationWithoutCatalog()
     {
         // The storefront renders only a group's own sections, so the custom one would not show.
         var catalog = JObject.Parse("""{ "sections": { "site-header": {}, "product-info": {} } }""");
@@ -136,7 +136,7 @@ public class ThemeValidatorTests
         ];
 
         Assert.Equal(errors, _validator.Validate(source, catalog));
-        Assert.Equal(errors, _validator.Validate(source, null));
+        Assert.Empty(_validator.Validate(source, null));
     }
 
     [Fact]

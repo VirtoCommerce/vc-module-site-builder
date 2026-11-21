@@ -1254,8 +1254,9 @@ public class DesignerSaveTests
             """, Ct);
 
     private ThemePublisher ThemePublisher() =>
-        new(_themes, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
+        new(_themes, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
     private SiteBuilderController Builder(IAuthorizationService authorization = null, IContentHistory history = null)
     {

@@ -23,6 +23,38 @@ public static class ThemeCustomSections
     public static IEnumerable<string> GetErrors(IEnumerable<CustomSectionValidationResult> results) =>
         results.SelectMany(x => x.Errors.Select(error => $"{x.File}: {error}"));
 
+    /// <summary>Every type the folder names, valid or not, for a check to refuse a name that is not one.</summary>
+    public static async Task<IList<string>> ListTypesAsync(IThemeStorage storage)
+    {
+        var fileNames = await storage.ListFilesAsync(ThemeStorage.CustomSectionsFolder);
+
+        // a draft listed by its draft file names the same type as its live file
+        return fileNames
+            .Select(x => ThemeStorage.GetCustomSectionType(storage.GetLivePath(x)))
+            .Where(x => x != null)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>Whether the document places a custom type anywhere, as the type of an item.</summary>
+    public static bool PlacesCustomType(JToken document) =>
+        document is JContainer container && container.Descendants().OfType<JProperty>()
+            .Any(x => x.Name == "type" && x.Value is JValue { Type: JTokenType.String } type && ThemeStorage.IsCustomSectionType((string)type));
+
+    /// <summary>The storefront renders only the group's own sections in the header and the footer, so neither places a custom type.</summary>
+    public static IEnumerable<string> GetSectionGroupErrors(string file, JToken sectionGroup) =>
+        ((sectionGroup as JObject)?["content"] as JArray)?.OfType<JObject>().Where(IsPlacement)
+            .Select(x => $"{file}: '{ThemeJson.GetString(x, "id")}' places a custom section, which only a page or a template can hold")
+        ?? [];
+
+    public static bool IsSectionGroupFile(string pathInTheme) =>
+        pathInTheme.Equals(ThemeStorage.HeaderGroupFile, StringComparison.OrdinalIgnoreCase) ||
+        pathInTheme.Equals(ThemeStorage.FooterGroupFile, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>An item of a page document that places a custom type.</summary>
+    public static bool IsPlacement(JObject item) =>
+        !string.IsNullOrWhiteSpace(ThemeJson.GetString(item, "id")) && ThemeJson.GetString(item, "type") is { } type && ThemeStorage.IsCustomSectionType(type);
+
     /// <summary>The type of a file by its path in the theme, valid or not; null for a file outside the folder or one that is not JSON.</summary>
     public static string GetCustomSectionType(string pathInTheme)
     {

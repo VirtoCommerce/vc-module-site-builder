@@ -60,9 +60,9 @@ public sealed class CustomSectionPublishTests : IDisposable
     public CustomSectionPublishTests()
     {
         _storageFactory = new ThemeStorageFactory(_stores, _storage, _storage, _storage);
-        _publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory), _lock,
+        _publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory), _lock,
             _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
-            new ThemePaletteService());
+            new ThemePaletteService(), TestServices.CustomSectionValidator());
         _snapshots = new ThemeSnapshotService(_stores, _storageFactory, _publisher, _cache, Options.Create(new ThemeSnapshotOptions()));
     }
 
@@ -200,6 +200,33 @@ public sealed class CustomSectionPublishTests : IDisposable
         var snapshot = await SnapshotAsync("en-US");
 
         Assert.Equal(["custom-hero"], ((JObject)snapshot["customSections"]!).Properties().Select(x => x.Name));
+    }
+
+    [Fact]
+    public async Task FirstPublication_WithoutACatalog_LeavesACustomTypeOutOfTheHeader()
+    {
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/sections/header-group.json")] = """{ "type": "header", "content": [ { "id": "h", "type": "site-header" }, { "id": "promo", "type": "custom-hero" } ] }""";
+
+        var snapshot = await SnapshotAsync("en-US");
+
+        Assert.Equal(["site-header"], snapshot["header"]!["content"]!.Select(x => x.Value<string>("type")));
+    }
+
+    [Fact]
+    public async Task FirstPublication_LeavesOutTheLargestTypesUntilTheRestFit()
+    {
+        var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
+            _lock, _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
+            new ThemePaletteService(), TestServices.CustomSectionValidator(options: new ThemeSnapshotOptions { CustomSectionsMaxSize = 1024 }));
+        _storage.Files[Theme(Hero)] = HeroFile;
+        var large = JObject.Parse(HeroFile);
+        large["css"] = $":scope {{ color: var(--color-neutral-900); }} /* {new string('x', 2000)} */";
+        _storage.Files[Theme("default/custom-sections/custom-large.json")] = large.ToString();
+
+        await publisher.PublishFirstAsync(StoreId, Ct);
+
+        Assert.Equal(["custom-hero"], ((JObject)(await SnapshotAsync("en-US"))["customSections"]!).Properties().Select(x => x.Name));
     }
 
     [Fact]
