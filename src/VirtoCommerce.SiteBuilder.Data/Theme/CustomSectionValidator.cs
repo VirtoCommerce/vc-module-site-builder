@@ -52,14 +52,16 @@ public class CustomSectionValidator(
 
     private static readonly Regex SettingIdPattern = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
-    public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog) => ValidateType(type, content, catalog);
+    public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog) =>
+        ValidateType(type, content, new Lazy<StorefrontKit>(() => CustomSectionKit.Read(catalog)));
 
     public virtual IList<CustomSectionValidationResult> ValidateTypes(IDictionary<string, JToken> types, ICollection<string> checkedTypes, JObject catalog)
     {
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(checkedTypes);
 
-        var results = checkedTypes.Select(x => ValidateType(x, types.TryGetValue(x, out var content) ? content : null, catalog)).ToList();
+        var kit = new Lazy<StorefrontKit>(() => CustomSectionKit.Read(catalog));
+        var results = checkedTypes.Select(x => ValidateType(x, types.TryGetValue(x, out var content) ? content : null, kit)).ToList();
         if (GetSizeError(types) is { } sizeError)
         {
             var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
@@ -114,7 +116,8 @@ public class CustomSectionValidator(
         return result;
     }
 
-    protected virtual CustomSectionValidationResult ValidateType(string type, JToken content, JObject catalog)
+    /// <param name="kit">Read once for all the types a call checks, in the check of each, so that a fault refuses the types instead of the request.</param>
+    protected virtual CustomSectionValidationResult ValidateType(string type, JToken content, Lazy<StorefrontKit> kit)
     {
         var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
         var check = new CustomSectionCheck(type, result);
@@ -133,7 +136,7 @@ public class CustomSectionValidator(
 
         try
         {
-            check.Kit = CustomSectionKit.Read(catalog);
+            check.Kit = kit.Value;
             ValidateShape(check, file);
             if (GetPart(check, file, TemplateKey) is { } template && check.Settings != null)
             {
