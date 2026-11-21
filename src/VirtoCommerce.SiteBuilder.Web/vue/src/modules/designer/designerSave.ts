@@ -45,3 +45,17 @@ export const designerDiscardUrl = (storeId: string) => `/api/site-builder/design
 export function designerDiscardBody(discard: { page?: DesignerDiscardPage; themeFiles: string[] }): DesignerDiscardRequest {
   return { ...(discard.page ? { page: discard.page } : {}), themeFiles: [...new Set(discard.themeFiles)] };
 }
+
+const FILE_WARNING = /^([^\s:]+\.json): ([\s\S]+)$/;
+
+/** A save's warnings by the theme file each names, in the order the server gave them; a warning that names no file has none. */
+export function warningsByFile(warnings: string[]): { file?: string; warnings: string[] }[] {
+  const groups: { file?: string; warnings: string[] }[] = [];
+  for (const warning of warnings) {
+    const [, file, text = warning] = FILE_WARNING.exec(warning) ?? [];
+    const group = groups.find((x) => x.file === file);
+    if (group) group.warnings.push(text);
+    else groups.push({ file, warnings: [text] });
+  }
+  return groups;
+}
