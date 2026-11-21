@@ -15,6 +15,8 @@ using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -47,7 +49,8 @@ public class PublishReadinessTools(
         "The answer comes from the dry run of the publication itself: parts (each with its changes section by section and " +
         "who changed it), findings (critical ones block the publication: no draft, a page document that is refused, published " +
         "pages it would replace, a palette below WCAG 2.2 AA, no schema catalog; warnings: hidden page, ended dates, an address " +
-        "another page serves, a language version that publishing every language skips), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
+        "another page serves, a language version that publishing every language skips, a custom section type the theme holds only " +
+        "as a draft), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
         "instead. Changes nothing. To publish, use publish_page or publish_theme.")]
     public async Task<PublishReadiness> GetPublishReadiness(
         RequestContext<CallToolRequestParams> context,
@@ -218,6 +221,7 @@ public class PublishReadinessTools(
         var before = group.Pages.Any(x => x.Status == PageStatuses.Published) ? await ReadContentAsync(group, draft: false, cancellationToken) : null;
         var after = await ReadContentAsync(group, draft: true, cancellationToken);
         part.Changes = PublishPart.Compare(before, after);
+        await dryRuns.CheckSectionTypesAsync(group.StoreId, group.Name, after, readiness, group);
 
         return part;
     }
@@ -304,6 +308,7 @@ public class PublicationDryRuns(
     IThemeOperationService themeOperationService,
     ISiteBuilderContentQueryService contentQueryService,
     ISchemaCatalogService schemaCatalogService,
+    IThemeStorageFactory themeStorageFactory,
     ILogger<PublicationDryRuns> logger)
 {
     private const string ContrastMarker = "contrast";
@@ -442,8 +447,9 @@ public class PublicationDryRuns(
             var part = PublishPart.FromPreview(item);
             if (!unpublish)
             {
-                part.Changes = PublishPart.Compare(await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: false, cancellationToken),
-                    await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken));
+                var draft = await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken);
+                part.Changes = PublishPart.Compare(await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: false, cancellationToken), draft);
+                await CheckSectionTypesAsync(page.StoreId, page.PageId, draft, readiness);
             }
 
             readiness.Parts.Add(part);
@@ -452,6 +458,32 @@ public class PublicationDryRuns(
         foreach (var warning in check.Preview?.Warnings ?? [])
         {
             readiness.Findings.Add(Info("git-flow", warning, "The dry run of the publication.", "Nothing to do before publishing.", "publishing"));
+        }
+    }
+
+    // The storefront renders a custom section type only from the published theme: a page published with one the theme holds only as a
+    // draft shows nothing in its place.
+    public async Task CheckSectionTypesAsync(string storeId, string pageName, string content, PublishReadiness readiness, GroupedSiteBuilderPage group = null)
+    {
+        var placed = (PageDocumentEditor.Read(content)?.Sections ?? [])
+            .Select(SiteBuilderPageItems.GetItemType)
+            .Where(x => x != null && ThemeStorage.IsCustomSectionType(x))
+            .ToHashSet(StringComparer.Ordinal);
+        if (placed.Count == 0)
+        {
+            return;
+        }
+
+        var drafts = (await ThemeSectionTypes.ListAsync(themeStorageFactory, storeId))
+            .Where(x => !x.Published && placed.Contains(x.Type))
+            .Select(x => x.Type)
+            .ToList();
+        if (drafts.Count > 0)
+        {
+            readiness.Findings.Add(Warning("section-type-unpublished", $"Page '{pageName}' places custom section types the theme holds only as a draft " +
+                $"({string.Join(", ", drafts)}): the storefront shows nothing for them until the theme is published.",
+                $"Store '{storeId}': {string.Join(", ", drafts.Select(ThemeStorage.GetCustomSectionFile))} have no published version.",
+                "Publish the theme first (publish_theme, which a second person approves), then the page.", "theme", group));
         }
     }
 
