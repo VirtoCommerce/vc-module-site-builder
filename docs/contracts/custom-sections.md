@@ -45,7 +45,8 @@ deep. `string` and `text` may be `"translatable": true`.
 
 An HTML fragment with exactly one root element, the section's root. The storefront adds to the root
 `data-sb-type="{type}"`, the preview attributes of a section and a `style` holding the
-[setting variables](#setting-variables).
+[setting variables](#setting-variables). It is HTML as written: markup an HTML parser has to mend, such as an element
+left open or a `/>` on a kit tag, is refused, and so are elements nested more than 32 deep, the root counted.
 
 - **Elements**: the elements the builder's HTML sanitizer keeps, without form controls (`form`, `input`, `select`,
   `textarea`, `button`, `option`, `optgroup`, `datalist`, `fieldset`, `legend`, `label`, `output`), plus the

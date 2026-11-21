@@ -271,6 +271,27 @@ public class CustomSectionValidatorTests
         Assert.StartsWith($"{File}: {error}", result.Errors[0]);
     }
 
+    [Theory]
+    [InlineData("q", 21000, false)]
+    [InlineData("div", 33, true)]
+    [InlineData("span", 300, true)]
+    public void Validate_TemplateNestedDeeperThanTheLimit_IsRefusedBeforeItIsWalked(string tag, int depth, bool closed)
+    {
+        var template = string.Concat(Enumerable.Repeat($"<{tag}>", depth)) + (closed ? string.Concat(Enumerable.Repeat($"</{tag}>", depth)) : string.Empty);
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal([$"{File}: the template nests elements deeper than 32"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_TemplateNestedToTheLimit_IsTaken()
+    {
+        var template = "<section>" + string.Concat(Enumerable.Repeat("<div>", 31)) + string.Concat(Enumerable.Repeat("</div>", 31)) + "</section>";
+
+        Assert.Empty(_validator.Validate(Type, Section(template), Catalog).Errors);
+    }
+
     [Fact]
     public void Validate_ElementOnALaterLine_IsNamedAtItsLine()
     {

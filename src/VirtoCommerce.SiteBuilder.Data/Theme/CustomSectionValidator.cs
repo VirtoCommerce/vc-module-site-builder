@@ -24,6 +24,10 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const int MaxSamples = 3;
     private const int MaxQuoteLength = 60;
     private const int MaxCssDepth = 32;
+    private const int MaxTemplateDepth = 32;
+
+    // the HTML parser takes seconds over thousands of nested elements, so a template far deeper than the limit is not parsed at all
+    private const int MaxScannedTemplateDepth = 256;
     private const int MaxAtRuleDepth = 4;
     private const string KeyframesAtRule = "keyframes";
 
@@ -100,6 +104,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private static readonly string[] LinkSchemes = ["https:", "mailto:", "tel:"];
 
     private static readonly char[] Whitespace = [' ', '\t', '\n', '\r', '\f'];
+
+    private static readonly HashSet<string> VoidElements = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+    };
 
     private static readonly HashSet<string> AllowedAtRules = new(StringComparer.OrdinalIgnoreCase) { "media", "supports", "container", KeyframesAtRule };
 
@@ -353,6 +362,13 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     protected virtual void ValidateTemplate(CustomSectionCheck check, string template)
     {
+        var depthError = string.Create(CultureInfo.InvariantCulture, $"the template nests elements deeper than {MaxTemplateDepth}");
+        if (GetScannedDepth(template) > MaxScannedTemplateDepth)
+        {
+            check.AddError(depthError);
+            return;
+        }
+
         var parser = new HtmlParser(new HtmlParserOptions { IsKeepingSourceReferences = true });
         var parseErrors = new List<HtmlErrorEvent>();
         parser.Error += (_, error) => parseErrors.Add((HtmlErrorEvent)error);
@@ -382,6 +398,13 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         {
             check.AddError(string.Create(CultureInfo.InvariantCulture,
                 $"the template has {roots.Count} root elements, and has one: the section's root"));
+            return;
+        }
+
+        // before the elements are walked, each in the call for its parent
+        if (GetDepth(roots[0]) > MaxTemplateDepth)
+        {
+            check.AddError(depthError);
             return;
         }
 
@@ -1208,6 +1231,89 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         {
             check.Texts.Add(string.Join(' ', text.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)));
         }
+    }
+
+    private static int GetDepth(IElement root)
+    {
+        var deepest = 0;
+        var elements = new Stack<(IElement Element, int Depth)>([(root, 1)]);
+        while (elements.TryPop(out var current))
+        {
+            deepest = Math.Max(deepest, current.Depth);
+            foreach (var child in current.Element.Children)
+            {
+                elements.Push((child, current.Depth + 1));
+            }
+        }
+
+        return deepest;
+    }
+
+    // the depth of the tags as written, without the parser: an element whose end tag is left out counts as open
+    private static int GetScannedDepth(string template)
+    {
+        var (depth, deepest) = (0, 0);
+        for (var start = template.IndexOf('<'); start >= 0 && start < template.Length; start = template.IndexOf('<', start))
+        {
+            if (template.AsSpan(start).StartsWith("<!--"))
+            {
+                var commentEnd = template.IndexOf("-->", start + 4, StringComparison.Ordinal);
+                start = commentEnd < 0 ? template.Length : commentEnd + 3;
+                continue;
+            }
+
+            var isEndTag = start + 1 < template.Length && template[start + 1] == '/';
+            var nameStart = start + (isEndTag ? 2 : 1);
+            var nameEnd = nameStart;
+            while (nameEnd < template.Length && (char.IsAsciiLetterOrDigit(template[nameEnd]) || template[nameEnd] == '-'))
+            {
+                nameEnd++;
+            }
+
+            if (nameEnd == nameStart || !char.IsAsciiLetter(template[nameStart]))
+            {
+                start++;
+                continue;
+            }
+
+            var tagEnd = FindTagEnd(template, nameEnd);
+            var isSelfClosing = tagEnd >= 2 && template[tagEnd - 1] == '>' && template[tagEnd - 2] == '/';
+            if (isEndTag)
+            {
+                depth = Math.Max(0, depth - 1);
+            }
+            else if (!isSelfClosing && !VoidElements.Contains(template[nameStart..nameEnd]))
+            {
+                deepest = Math.Max(deepest, ++depth);
+            }
+
+            start = tagEnd;
+        }
+
+        return deepest;
+    }
+
+    // past the '>' that ends a tag, outside its quoted attribute values
+    private static int FindTagEnd(string template, int start)
+    {
+        var quote = '\0';
+        for (var i = start; i < template.Length; i++)
+        {
+            if (quote != '\0')
+            {
+                quote = template[i] == quote ? '\0' : quote;
+            }
+            else if (template[i] is '"' or '\'')
+            {
+                quote = template[i];
+            }
+            else if (template[i] == '>')
+            {
+                return i + 1;
+            }
+        }
+
+        return template.Length;
     }
 
     private static char GetOpener(CssTokenizer.TokenKind closer) => closer switch
