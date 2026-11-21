@@ -659,6 +659,65 @@ public class CustomSectionValidatorTests
     }
 
     [Theory]
+    [InlineData("""*:has([data-search-query^="a"]) :scope""", ":scope or & comes only once, at the start of a selector")]
+    [InlineData("""div :scope""", ":scope or & comes only once, at the start of a selector")]
+    [InlineData("""div :sc\6fpe""", ":scope or & comes only once, at the start of a selector")]
+    [InlineData(""":scope :scope""", ":scope or & comes only once, at the start of a selector")]
+    [InlineData("""div &""", ":scope or & comes only once, at the start of a selector")]
+    [InlineData(""".a:not(:scope)""", ":scope or & comes only once, at the start of a selector")]
+    [InlineData(""":is(:scope, .x) .y""", ":scope or & comes only once, at the start of a selector")]
+    [InlineData(""":scope:has(~ .x)""", "a selector in :has() starts with no + or ~")]
+    [InlineData(""".a:has(+ .b)""", "a selector in :has() starts with no + or ~")]
+    [InlineData(""".a:has(> .b, ~ .c)""", "a selector in :has() starts with no + or ~")]
+    [InlineData(""":scope:nth-child(1 of .promo)""", ":nth-child(… of …) on :scope or & counts the section's siblings")]
+    [InlineData(""":scope:nth-last-child(2n of .x)""", ":nth-last-child(… of …) on :scope or & counts the section's siblings")]
+    [InlineData(""":scope:is(:nth-child(1 of .x))""", ":nth-child(… of …) on :scope or & counts the section's siblings")]
+    [InlineData(""".a:is(:has([data-search-query^="a"]) *)""", ":is() takes only compound selectors, with no combinator")]
+    [InlineData(""".a:not(.b .c)""", ":not() takes only compound selectors, with no combinator")]
+    [InlineData(""".a:where(.b > .c)""", ":where() takes only compound selectors, with no combinator")]
+    [InlineData(""".a:nth-child(2 of .b .c)""", ":nth-child(… of …) takes only compound selectors, with no combinator")]
+    [InlineData("""::slotted(.a ~ .b)""", "::slotted() takes only compound selectors, with no combinator")]
+    [InlineData(""".a:foo(.b)""", ":foo() is not a pseudo-class the storefront takes")]
+    public void Validate_CssSelectorThatCanMatchOutsideTheSection_IsRefused(string selector, string reason)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", $"{selector} {{ margin: 0; }} .kept {{ margin: 0; }}"), Catalog);
+
+        var error = Assert.Single(result.Errors);
+        Assert.StartsWith("the CSS selector '", error, StringComparison.Ordinal);
+        Assert.EndsWith($"' can match outside the section: {reason}", error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(""".a { margin: 0; *:has([data-q]) & { margin: 1rem; } }""", "*:has([data-q]) &")]
+    [InlineData("""@media (width >= 40rem) { div :scope { margin: 0; } }""", "div :scope")]
+    public void Validate_CssSelectorOfANestedRuleThatCanMatchOutsideTheSection_IsRefused(string css, string selector)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Equal([$"the CSS selector '{selector}' can match outside the section: :scope or & comes only once, at the start of a selector"], result.Errors);
+    }
+
+    [Theory]
+    [InlineData(""":scope""")]
+    [InlineData(""":scope > .a""")]
+    [InlineData("""& .a""")]
+    [InlineData(""":scope:nth-child(2)""")]
+    [InlineData(""":scope:has(> .a .b)""")]
+    [InlineData(""".a:nth-child(2n + 1 of .b)""")]
+    [InlineData(""".a:has(> .b, .c)""")]
+    [InlineData(""".a:is(.b, .c):not(.d)""")]
+    [InlineData(""":dir(rtl) .a""")]
+    [InlineData(""":lang(en, fr) .a""")]
+    [InlineData("""[data-x=":scope"] .a""")]
+    [InlineData("""> .a""")]
+    public void Validate_CssSelectorThatStaysInTheSection_IsTaken(string selector)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", $"{selector} {{ margin: 0; }}"), Catalog);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
     [InlineData(""".a { box-shadow: 0 1px 2px rgb(from #000 r g b / 0.25); }""", "box-shadow")]
     [InlineData(""".a { border: 1px solid red; }""", "border")]
     [InlineData(""".a { --accent: #ff0000; }""", "--accent")]

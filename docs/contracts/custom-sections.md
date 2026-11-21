@@ -184,6 +184,18 @@ scope. `:scope` is the section's root.
   or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`;
   a declaration outside any rule, which the wrapping would apply to the section's root unchecked: write it in
   `:scope { }`.
+- **Selectors**: `@scope` keeps inside the section only the element a rule styles; every other part of its selector
+  matches against the whole page. So a selector is refused, a nested rule's included, when `:scope` or `&` comes other
+  than once at its start; when a selector in `:has()` starts with `+` or `~`; when `:nth-child(… of …)` or
+  `:nth-last-child(… of …)` is on `:scope` or `&`; when the argument of `:is()`, `:where()`, `:not()`, `:matches()`,
+  `:any()`, `:-webkit-any()`, `:-moz-any()`, `:host()`, `:host-context()`, `::slotted()`, `::cue()`, `:current()`,
+  `:past()` or `:future()`, or what follows `of` in `:nth-child()` and `:nth-last-child()`, holds a combinator; and when
+  it has a functional pseudo-class or pseudo-element other than these, `:has()`, which may hold `>` and descendants, and
+  those that take no selector: `:nth-child()` and `:nth-last-child()` without `of`, `:nth-of-type()`,
+  `:nth-last-of-type()`, `:nth-col()`, `:nth-last-col()`, `:lang()`, `:dir()`, `:state()`, `::part()`,
+  `::highlight()`, `::picker()`, `::view-transition-group()`, `::view-transition-image-pair()`,
+  `::view-transition-old()`, `::view-transition-new()` and `:active-view-transition-type()`. Strings and attribute
+  values are no part of the check, and escapes are read. The storefront drops such a rule.
 - **Read as a browser reads it**, from its tokens: a comment inside a string is text, and escapes are read. A string
   that a line break cuts off, and a `url(` whose unquoted URL holds a quote, a parenthesis or a space, are refused, and
   so is a block left open or closed without its pair, since the storefront's wrapping would close with it. Blocks nest

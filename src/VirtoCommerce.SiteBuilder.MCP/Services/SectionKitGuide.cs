@@ -166,6 +166,10 @@ public static class SectionKitGuide
                 {
                     "any other at-rule than at_rules, such as @import, @font-face, @layer or @property",
                     "a selector naming :root, html or body",
+                    "a selector any part of which can match outside the section, a nested rule's included: :scope or & other than once at its " +
+                        "start, a selector in :has() starting with + or ~, :nth-child(… of …) or :nth-last-child(… of …) on :scope or &, a " +
+                        "combinator inside :is(), :where(), :not() and the other pseudo-classes of selectors or after the of of :nth-child(), and a " +
+                        "functional pseudo-class or pseudo-element the storefront does not take; :has() may hold > and descendants",
                     "a declaration outside any rule, which would apply to the section's root unchecked: write it in :scope { }",
                     $"position: fixed, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} in position",
                     $"a URL other than one of the store's asset library or a data:image/ URL in {JoinOr(Functions(rules.ImageFunctions))}, custom " +

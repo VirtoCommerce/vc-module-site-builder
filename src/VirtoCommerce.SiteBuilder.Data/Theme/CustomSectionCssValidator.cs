@@ -283,7 +283,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
 
     /// <summary>
     /// A rule's selector may not name :root, html or body. The storefront scopes the CSS to the section, where they match nothing, but a
-    /// browser without @scope would apply them to the page.
+    /// browser without @scope would apply them to the page. Nor may any other part of it match outside the section (<see cref="CustomSectionCssSelector"/>).
     /// </summary>
     protected virtual void ValidateCssSelector(IList<CssTokenizer.Token> prelude, CssFindings findings)
     {
@@ -308,6 +308,11 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
             }
 
             previous = token;
+        }
+
+        if (CustomSectionCssSelector.GetOutsideMatch(prelude) is { } outside)
+        {
+            findings.Errors.Add($"the CSS selector '{Quote(WriteCss(prelude))}' {outside}");
         }
     }
 
