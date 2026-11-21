@@ -49,10 +49,12 @@ designer runs the one and sends the other, and so are `"multiple": true` and any
 
 ## Template
 
-An HTML fragment with exactly one root element, the section's root. The storefront adds to the root
-`data-sb-type="{type}"`, the preview attributes of a section and a `style` holding the
-[setting variables](#setting-variables). It is HTML as written: markup an HTML parser has to mend, such as an element
-left open or a `/>` on a kit tag, is refused, and so are elements nested more than 32 deep, the root counted.
+An HTML fragment with exactly one root element, the section's root. The storefront renders each section inside a
+wrapper element of its own, outside the scope root, with `contain: paint` and `isolation: isolate`, so that nothing a
+section draws leaves its box; the wrapper carries the section's anchor id and the preview attributes of a section. The
+root keeps `data-sb-type="{type}"` and a `style` holding the [setting variables](#setting-variables). It is HTML as
+written: markup an HTML parser has to mend, such as an element left open or a `/>` on a kit tag, is refused, and so
+are elements nested more than 32 deep, the root counted.
 
 - **Elements**: the elements the builder's HTML sanitizer keeps, without form controls (`form`, `input`, `select`,
   `textarea`, `button`, `option`, `optgroup`, `datalist`, `fieldset`, `legend`, `label`, `output`), plus the
@@ -90,7 +92,8 @@ language: the save answers it with a warning.
 ### Kit tags
 
 A kit tag renders a storefront component. The storefront names its kit tags in the catalog's [`kit`](#catalog), and a
-module or a plugin of the storefront may add its own; the storefront registers these:
+module or a plugin of the storefront may add its own. The storefront registers these, and their names are reserved: a
+module cannot register a kit tag of the same name.
 
 | Tag | Attributes | Renders |
 |---|---|---|
@@ -111,7 +114,8 @@ A behavior is a storefront directive an attribute switches on. It reads the elem
 or the element's text; the visuals are the section's CSS. With `prefers-reduced-motion: reduce` a behavior shows its end
 state at once. The catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior
 when the catalog has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or
-inside it, its value checked by the option's type. The storefront registers these:
+inside it, its value checked by the option's type. The storefront registers these, and their names are reserved: a
+module cannot register a behavior of the same name.
 
 | Attribute | Options | Effect |
 |---|---|---|
@@ -133,7 +137,7 @@ The root's `style` sets a variable per setting the CSS can use, named `--setting
 
 | Field | Value |
 |---|---|
-| `color-token` | `var(--color-{token})`, the token with `_` written as `-` |
+| `color-token` | the token's variable: `var(--color-primary-500)` for `color_primary_500`, the token with `_` written as `-`, and `color_` put before a token without it |
 | `images` | `url("{url}")` |
 | `number`, `slider` | the number |
 | `checkbox` | `1` or `0` |
