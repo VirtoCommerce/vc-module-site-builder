@@ -171,6 +171,19 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task ValidateThemeFilesAsync_WithoutACatalogHash_RefusesAHeaderThatPlacesACustomType()
+    {
+        var designer = TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
+            themes: _themes);
+        var header = JObject.Parse("""{ "type": "header", "content": [ { "id": "promo", "type": "custom-hero" } ] }""");
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() =>
+            designer.ValidateThemeFilesAsync("s1", new Dictionary<string, JToken> { ["default/sections/header-group.json"] = header }, draft: true, catalogHash: null, Ct));
+
+        Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], exception.Errors);
+    }
+
+    [Fact]
     public async Task RestoreAsync_TypeThatBreaksARule_IsRefusedAndWritesNothing()
     {
         var restore = TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
@@ -183,9 +196,9 @@ public class CustomSectionSaveTests
                 Contents = new Dictionary<HistoryItem, string> { [new HistoryItem(HistoryItemType.Theme, Hero)] = HeroWith(template: "<section><script>x()</script></section>") },
             }, _user, Ct);
 
-        var exception = await Assert.ThrowsAsync<InvalidDataException>(() => restore);
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => restore);
 
-        Assert.Contains("custom-sections/custom-hero.json: <script> at line 1 is not an element a custom section can hold", exception.Message);
+        Assert.Contains("custom-sections/custom-hero.json: <script> at line 1 is not an element a custom section can hold", exception.Errors);
         Assert.DoesNotContain(_live.Files.Keys, x => x.EndsWith("-draft", System.StringComparison.Ordinal));
     }
 
@@ -291,6 +304,27 @@ public class CustomSectionSaveTests
         Assert.Equal("<p>Hi</p><img src=\"x\">", JObject.Parse(saved.Content)["content"]![0]!.Value<string>("body"));
     }
 
+    [Theory]
+    [InlineData("text", 0)]
+    [InlineData("custom-hero", 1)]
+    public async Task SaveAsync_OfAPage_ReadsTheThemesTypesOnlyWhenItPlacesOne(string type, int reads)
+    {
+        await SaveCatalogAsync(sections: """, "text": {}""");
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        var service = new CountingService(new CustomSectionService(_themes, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance)));
+        var page = new DesignerSavePage
+        {
+            GroupId = "g1",
+            ETag = SiteBuilderContentVersion.Create(await _pages.GetByIdAsync("g1"), Published),
+            Content = $$"""{"settings":{},"content":[{"id":"a","type":"{{type}}"}]}""",
+        };
+
+        var result = await Operations(customSectionService: service).SaveAsync(SaveRequest(Save(page)), _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(reads, service.Reads);
+    }
+
     [Fact]
     public async Task SaveAsync_TypesTogetherOverTheLimit_IsInvalid()
     {
@@ -328,22 +362,23 @@ public class CustomSectionSaveTests
         new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "product-info": {}{{sections}} }, "blocks": {}, "shared": {}{{kit}} }""", Ct);
 
-    private DesignerOperationService Operations(ICustomSectionValidator customSectionValidator = null)
+    private DesignerOperationService Operations(ICustomSectionValidator customSectionValidator = null, ICustomSectionService customSectionService = null)
     {
         var authorization = new FakeAuthorizationService(true);
         var options = Options.Create(new GitContentOptions());
         var policy = GitHubConnections.CreatePolicy(options, new FakeSettingsManager(false), new FakeGitContentOwnership());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), policy, null, null, new FakeGitContentProvisioner());
         var themeDrafts = new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance);
-        var themePublisher = new ThemePublisher(_themes, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
+        var themePublisher = new ThemePublisher(_themes, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
         return TestServices.DesignerOperations(
             authorizationService: authorization,
             contentPermissionService: TestServices.Permissions(authorization),
             requestValidator: RequestValidators.Content("s1"),
             designerContentService: TestServices.Designer(_history, filePageDrafts, themeDrafts, _pages, _live, themePublisher, new SchemaCatalogService(_themes), _themes,
-                customSectionValidator),
+                customSectionValidator, customSectionService),
             themeDraftService: themeDrafts,
             groupedPageService: _pages,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization));
@@ -380,5 +415,20 @@ public class CustomSectionSaveTests
         }
 
         public CustomSectionRules GetRules() => inner.GetRules();
+    }
+
+    private sealed class CountingService(ICustomSectionService inner) : ICustomSectionService
+    {
+        public int Reads { get; private set; }
+
+        public Task<IList<string>> ListTypesAsync(string storeId, string themeName, CancellationToken cancellationToken = default) =>
+            inner.ListTypesAsync(storeId, themeName, cancellationToken);
+
+        public Task<IDictionary<string, JToken>> GetTypesAsync(string storeId, string themeName, IDictionary<string, JToken> files = null,
+            CancellationToken cancellationToken = default)
+        {
+            Reads++;
+            return inner.GetTypesAsync(storeId, themeName, files, cancellationToken);
+        }
     }
 }

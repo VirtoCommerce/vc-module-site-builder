@@ -457,8 +457,9 @@ internal sealed class McpTestContext : IAsyncDisposable
     public ThemeStorageFactory ThemeStorage => _themeStorage ??= new ThemeStorageFactory(Stores, Blobs, Blobs, Blobs);
 
     private ThemePublisher CreateThemePublisher() =>
-        new(ThemeStorage, TestServices.ThemeSnapshotBuilder(), TestServices.ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
-            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService());
+        new(ThemeStorage, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
+            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
     public Task SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null, string kit = null)
     {
@@ -564,7 +565,7 @@ internal sealed class McpTestContext : IAsyncDisposable
         public Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => inner.DiscardAsync(request, user, cancellationToken);
 
-        public Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
+        public Task<SiteBuilderOperationResult<ThemeFilesValidationResult>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
             bool draft, string catalogHash, CancellationToken cancellationToken = default) => inner.ValidateThemeFilesAsync(storeId, files, draft, catalogHash, cancellationToken);
     }
 

@@ -94,9 +94,10 @@ public class DesignerOperationService(
         }
 
         var command = CreateDesignerSaveCommand(request, group, files, themeFiles);
-        command.ThemeFileWarnings = themeCheck.Value;
+        var result = await SaveDesignerChangesAsync(command, request.DryRun, user, cancellationToken);
+        AddThemeFileWarnings(result, themeCheck.Value);
 
-        return await SaveDesignerChangesAsync(command, request.DryRun, user, cancellationToken);
+        return result;
     }
 
     /// <summary>The request with the files it saves, then the page; the theme files are checked after them.</summary>
@@ -165,7 +166,7 @@ public class DesignerOperationService(
         }
     }
 
-    public virtual Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
+    public virtual Task<SiteBuilderOperationResult<ThemeFilesValidationResult>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
         bool draft, string catalogHash, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(files);
@@ -173,12 +174,12 @@ public class DesignerOperationService(
         return ValidateThemeFilesInternalAsync(storeId, files, draft, catalogHash, cancellationToken);
     }
 
-    private async Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesInternalAsync(string storeId,
+    private async Task<SiteBuilderOperationResult<ThemeFilesValidationResult>> ValidateThemeFilesInternalAsync(string storeId,
         IList<SiteBuilderContentFile> files, bool draft, string catalogHash, CancellationToken cancellationToken)
     {
         if (!DesignerThemeFiles.AreNamedOnce(files.Select(x => x.Path).ToList()))
         {
-            return SiteBuilderOperationResult.Invalid(DesignerThemeFiles.NamingError).As<IDictionary<string, IList<string>>>();
+            return SiteBuilderOperationResult.Invalid(DesignerThemeFiles.NamingError).As<ThemeFilesValidationResult>();
         }
 
         var contents = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
@@ -193,11 +194,11 @@ public class DesignerOperationService(
         }
         catch (InvalidDataException ex)
         {
-            return SiteBuilderOperationResult.Invalid(ex.Message).As<IDictionary<string, IList<string>>>();
+            return SiteBuilderOperationResult.Invalid(ex.Message).As<ThemeFilesValidationResult>();
         }
         catch (ThemeValidationException ex)
         {
-            return SiteBuilderOperationResult.Invalid(ex.Message, ex.Errors).As<IDictionary<string, IList<string>>>();
+            return SiteBuilderOperationResult.Invalid(ex.Message, ex.Errors).As<ThemeFilesValidationResult>();
         }
     }
 
@@ -271,27 +272,57 @@ public class DesignerOperationService(
         return placement.Error != null ? SiteBuilderOperationResult.Invalid(placement.Error) : null;
     }
 
-    /// <returns>The warnings of the files, by the path with the theme folder, or the refusal.</returns>
-    protected virtual async Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> CheckDesignerThemeFilesAsync(string storeId,
+    /// <returns>The warnings of the files, or the refusal.</returns>
+    protected virtual async Task<SiteBuilderOperationResult<ThemeFilesValidationResult>> CheckDesignerThemeFilesAsync(string storeId,
         IList<DesignerSaveFile> themeFiles, IList<SiteBuilderContentFile> files, string catalogHash, CancellationToken cancellationToken)
     {
         if (themeFiles.Any(x => string.IsNullOrWhiteSpace(x.ETag)))
         {
-            return SiteBuilderOperationResult.VersionRequired(ThemeFileVersionRequiredError).As<IDictionary<string, IList<string>>>();
+            return SiteBuilderOperationResult.VersionRequired(ThemeFileVersionRequiredError).As<ThemeFilesValidationResult>();
         }
 
         var themeSaveFiles = files.Where(IsThemeFile).ToList();
         if (themeSaveFiles.Count == 0)
         {
-            return SiteBuilderOperationResult.Success<IDictionary<string, IList<string>>>(new Dictionary<string, IList<string>>());
+            return SiteBuilderOperationResult.Success(AbstractTypeFactory<ThemeFilesValidationResult>.TryCreateInstance());
         }
 
         if (string.IsNullOrEmpty(catalogHash))
         {
-            return SiteBuilderOperationResult.Invalid(CatalogRequiredError).As<IDictionary<string, IList<string>>>();
+            return SiteBuilderOperationResult.Invalid(CatalogRequiredError).As<ThemeFilesValidationResult>();
         }
 
         return await ValidateThemeFilesAsync(storeId, themeSaveFiles, draft: true, catalogHash, cancellationToken);
+    }
+
+    /// <summary>The warnings of the check before the save, on the theme files the save answers with, or in its preview.</summary>
+    protected virtual void AddThemeFileWarnings(SiteBuilderOperationResult<DesignerSaveResult> result, ThemeFilesValidationResult validation)
+    {
+        if (validation == null)
+        {
+            return;
+        }
+
+        foreach (var file in result.Value?.ThemeFiles ?? [])
+        {
+            if (validation.Warnings.TryGetValue(file.Path, out var warnings))
+            {
+                file.Warnings = warnings;
+            }
+        }
+
+        if (result.Preview == null)
+        {
+            return;
+        }
+
+        foreach (var (path, warnings) in validation.Warnings)
+        {
+            foreach (var warning in warnings)
+            {
+                result.Preview.Warnings.Add($"{SiteBuilderContentPaths.GetPathInTheme(path)}: {warning}");
+            }
+        }
     }
 
     protected virtual DesignerSaveCommand CreateDesignerSaveCommand(DesignerSaveOperationRequest request, GroupedSiteBuilderPage group,

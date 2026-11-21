@@ -11,8 +11,7 @@ public interface IDesignerContentService
     /// <param name="files">Contents by the path with the theme folder.</param>
     /// <exception cref="InvalidDataException">A live theme write.</exception>
     /// <exception cref="Theme.ThemeValidationException">A file can run script, or does not fit the catalog.</exception>
-    /// <returns>What the files are saved with that their author should know, by the path with the theme folder.</returns>
-    Task<IDictionary<string, IList<string>>> ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
+    Task<ThemeFilesValidationResult> ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
         CancellationToken cancellationToken = default);
 
     /// <summary>Saves the content with its HTML sanitized.</summary>

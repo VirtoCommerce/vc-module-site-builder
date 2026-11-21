@@ -23,7 +23,6 @@ public interface IDesignerOperationService
         CancellationToken cancellationToken = default);
 
     /// <summary>Checks theme files about to be written: named once each, safe, and fit for the catalog. Sanitizes their HTML in place.</summary>
-    /// <returns>The warnings of the files that pass, by the path with the theme folder.</returns>
-    Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft, string catalogHash,
+    Task<SiteBuilderOperationResult<ThemeFilesValidationResult>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft, string catalogHash,
         CancellationToken cancellationToken = default);
 }

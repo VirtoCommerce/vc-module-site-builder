@@ -20,9 +20,6 @@ public class DesignerSaveCommand
 
     public IList<DesignerSaveFile> ThemeFiles { get; set; } = [];
 
-    /// <summary>By the path with the theme folder, as the check of the files before the save found them.</summary>
-    public IDictionary<string, IList<string>> ThemeFileWarnings { get; set; } = new Dictionary<string, IList<string>>();
-
     /// <summary>The section schema catalog the designer previewed; without it the content is checked without a schema.</summary>
     public string CatalogHash { get; set; }
 }

@@ -43,16 +43,12 @@ public class SiteBuilderResources(
     IMemberSearchService memberSearchService,
     ISiteBuilderPublishStatusQueryService publishStatusQueryService,
     IMcpPageSizeResolver pageSizeResolver,
-    IThemeStorageFactory themeStorageFactory,
-    IDesignerOperationService designerOperationService,
-    IThemeOperationService themeOperationService,
     ICustomSectionService customSectionService,
-    ICustomSectionValidator customSectionValidator,
     ILogger<SiteBuilderResources> logger)
 {
     public const string SchemasUri = "site-builder://stores/{store_id}/schemas";
 
-    private const string JsonMimeType = "application/json";
+    internal const string JsonMimeType = "application/json";
     private const string NameKey = "name";
 
     private static readonly string[] SchemaKindsListed = [SchemaKinds.Sections, SchemaKinds.Blocks, SchemaKinds.Objects, SchemaKinds.Templates];
@@ -110,117 +106,6 @@ public class SiteBuilderResources(
         return Serialize(new { StoreId = store_id, Available = true, Kind = kind, Key = key, Schema = schema.DeepClone() });
     }
 
-    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit", Name = "section_kit", MimeType = JsonMimeType)]
-    [McpPermission(Read)]
-    [Description("Everything to write a custom section type with create_section_type or change_section_type: the elements and attributes a template may hold, " +
-        "the bindings, the setting types, the setting variables, the CSS rules, the store's palette tokens, the kit tags and behaviors " +
-        "the storefront offers, the storefront's own guide and design tokens, the design rules, the size limits and a complete example. " +
-        "Read it before writing a type.")]
-    public async Task<string> SectionKit(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
-    {
-        var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
-        var palette = AbstractTypeFactory<ThemePalette>.TryCreateInstance();
-        palette.Light = await ReadPaletteColorsAsync(context.User, store_id, ThemeStorage.PaletteFile, cancellationToken);
-        palette.Dark = await ReadPaletteColorsAsync(context.User, store_id, ThemeStorage.DarkPaletteFile, cancellationToken);
-
-        return Serialize(SectionKitGuide.Describe(store_id, catalog, customSectionValidator.GetRules(), palette));
-    }
-
-    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit/icons", Name = "section_kit_icons", MimeType = JsonMimeType)]
-    [McpPermission(Read)]
-    [Description("Every icon name the storefront draws, as its catalog lists them: the values of a kit attribute whose field has " +
-        "\"optionsFrom\": \"icons\", such as vc-icon's name or vc-button's prepend-icon. A name the list does not hold is refused.")]
-    public async Task<string> SectionKitIcons(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
-    {
-        var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
-        if (catalog == null)
-        {
-            return Serialize(NoCatalog(store_id));
-        }
-
-        var icons = catalog[CustomSectionKit.KitKey]?[CustomSectionKit.IconsKey] as JsonArray;
-
-        return Serialize(new
-        {
-            StoreId = store_id,
-            Available = icons != null,
-            Reason = icons == null ? "The storefront's catalog lists no icon names, so an icon name is not checked." : null,
-            Icons = icons?.DeepClone(),
-        });
-    }
-
-    // a palette file as its draft holds it, else as it is live; none for no file or one that is not a palette
-    private async Task<IDictionary<string, string>> ReadPaletteColorsAsync(ClaimsPrincipal user, string storeId, string file, CancellationToken cancellationToken)
-    {
-        var path = await ThemeFiles.GetPathAsync(themeStorageFactory, storeId, file);
-        var content = (await ThemeFiles.ReadAsync(designerOperationService, user, storeId, path, cancellationToken)).Content;
-        if (string.IsNullOrEmpty(content))
-        {
-            return null;
-        }
-
-        try
-        {
-            return ThemePaletteValues.ReadColors(ThemeJson.Parse(content));
-        }
-        catch (Newtonsoft.Json.JsonReaderException)
-        {
-            return null;
-        }
-    }
-
-    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/custom-sections/{type}", Name = "custom_section", MimeType = JsonMimeType)]
-    [McpPermission(Read)]
-    [Description("A custom section type of the store's theme as change_section_type takes it: name, schema, template and css, as its draft " +
-        "holds them, else as they are live, with its version_token and whether it is published. A type only in draft shows nothing " +
-        "on the storefront until the theme is published.")]
-    public async Task<string> CustomSection(RequestContext<ReadResourceRequestParams> context, string store_id, string type, CancellationToken cancellationToken)
-    {
-        await EnsureStoreAsync(context.User, store_id);
-        if (string.IsNullOrEmpty(type) || !ThemeStorage.IsCustomSectionType(type))
-        {
-            return Serialize(new
-            {
-                StoreId = store_id,
-                Available = false,
-                Reason = $"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType()}.",
-            });
-        }
-
-        var path = await ThemeFiles.GetPathAsync(themeStorageFactory, store_id, ThemeStorage.GetCustomSectionFile(type));
-        var file = await ThemeFiles.ReadAsync(designerOperationService, context.User, store_id, path, cancellationToken);
-        if (file.Content == null)
-        {
-            return Serialize(new
-            {
-                StoreId = store_id,
-                Available = false,
-                Reason = $"The theme has no custom section type '{type}'. {SchemasUri.Replace("{store_id}", store_id, StringComparison.Ordinal)} lists its types, marked custom; create_section_type creates one.",
-            });
-        }
-
-        var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = store_id }, context.User, cancellationToken);
-        SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{store_id}'", $"Your builder:read permission does not cover store '{store_id}'.");
-        var pathInTheme = ThemeStorage.GetCustomSectionFile(type);
-        var content = ParseObject(file.Content);
-
-        return Serialize(new
-        {
-            StoreId = store_id,
-            Available = true,
-            Type = type,
-            Path = path,
-            VersionToken = file.ETag,
-            Published = !status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
-            HasDraft = status.Value.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
-            Name = content?[NameKey]?.DeepClone(),
-            Schema = content?["schema"]?.DeepClone(),
-            Template = content?["template"]?.DeepClone(),
-            Css = content?["css"]?.DeepClone(),
-            Content = content == null ? file.Content : null,
-        });
-    }
-
     [McpServerResource(UriTemplate = "site-builder://template-rule-conditions", Name = "template_rule_conditions", MimeType = JsonMimeType)]
     [McpPermission(Read)]
     [Description("The conditions a template rule can use, with the page types each applies to and the shape of its value: what " +
@@ -245,7 +130,7 @@ public class SiteBuilderResources(
         "request; blob: at once). Page dates are stored in UTC.")]
     public async Task<string> StoreSettings(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
     {
-        await EnsureStoreAsync(context.User, store_id);
+        await EnsureStoreAsync(authorizationService, context.User, store_id);
         var store = await storeService.GetNoCloneAsync(store_id)
             ?? throw new McpException($"Store '{store_id}' was not found.");
 
@@ -317,29 +202,32 @@ public class SiteBuilderResources(
         return Serialize(McpPage<OrganizationRow>.Create(result.Results.Select(x => new OrganizationRow(x.Id, x.Name ?? x.Id)), result.TotalCount, paging));
     }
 
-    private async Task<JsonObject> ReadCatalogAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
-    {
-        await EnsureStoreAsync(user, storeId);
-
-        return await ThemeFiles.GetCatalogAsync(schemaCatalogService, storeId, cancellationToken);
-    }
-
     // With the theme's custom section types, which the storefront's preview may not have seen yet.
     private async Task<JsonObject> ReadThemeCatalogAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
     {
-        var catalog = await ReadCatalogAsync(user, storeId, cancellationToken);
+        await EnsureStoreAsync(authorizationService, user, storeId);
+        var json = await schemaCatalogService.GetAsync(storeId, hash: null, cancellationToken);
+        Newtonsoft.Json.Linq.JObject catalog;
+        try
+        {
+            catalog = string.IsNullOrEmpty(json) ? null : ThemeJson.ParseObject(json);
+        }
+        catch (Newtonsoft.Json.JsonReaderException)
+        {
+            return null;
+        }
 
         if (catalog == null)
         {
             return null;
         }
 
-        var result = await customSectionService.GetThemeCatalogAsync(storeId, ThemeJson.ParseObject(catalog.ToJsonString()), files: null, cancellationToken);
+        var types = await customSectionService.GetTypesAsync(storeId, themeName: null, cancellationToken: cancellationToken);
 
-        return JsonNode.Parse(result.ToString(Newtonsoft.Json.Formatting.None)) as JsonObject;
+        return JsonNode.Parse(ThemeCustomSections.AddToCatalog(catalog, types).ToString(Newtonsoft.Json.Formatting.None)) as JsonObject;
     }
 
-    private Task EnsureStoreAsync(ClaimsPrincipal user, string storeId)
+    internal static Task EnsureStoreAsync(IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId)
     {
         if (string.IsNullOrWhiteSpace(storeId))
         {
@@ -349,7 +237,7 @@ public class SiteBuilderResources(
         return authorizationService.EnsureStoreAllowedAsync(user, storeId);
     }
 
-    private static object NoCatalog(string storeId) => new
+    internal static object NoCatalog(string storeId) => new
     {
         StoreId = storeId,
         Available = false,
@@ -371,19 +259,7 @@ public class SiteBuilderResources(
 
     private static bool IsCustom(JsonObject schema) => schema?[ThemeCustomSections.CustomKey] is JsonValue custom && custom.TryGetValue<bool>(out var value) && value;
 
-    private static JsonObject ParseObject(string content)
-    {
-        try
-        {
-            return JsonNode.Parse(content) as JsonObject;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string Serialize(object value) => JsonSerializer.Serialize(value, McpSerialization.Options);
+    internal static string Serialize(object value) => JsonSerializer.Serialize(value, McpSerialization.Options);
 }
 
 public sealed record SchemaRow(string Key, string Name, bool? Custom = null);

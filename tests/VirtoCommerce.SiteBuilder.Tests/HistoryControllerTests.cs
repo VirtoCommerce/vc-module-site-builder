@@ -272,6 +272,18 @@ public class HistoryControllerTests
     }
 
     [Fact]
+    public async Task RestoreOperation_HeaderPlacingACustomType_IsInvalidWithTheRuleAndWritesNothing()
+    {
+        _history.Versions[(VersionId, $"theme:{Header}")] = """{ "type": "header", "content": [ { "id": "promo", "type": "custom-hero" } ] }""";
+
+        var result = await Operations().RestoreAsync(RestoreRequest(VersionId, $"theme:{Header}"), User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], result.Errors);
+        Assert.DoesNotContain(_live.Files.Keys, x => x.EndsWith("-draft", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Restore_PagePlacingASharedComponentWithoutSharedComponentsRead_ReturnsForbidAndWritesNothing()
     {
         _history.Versions[(VersionId, "page:g1")] = SharedComponentPage;
@@ -439,8 +451,9 @@ public class HistoryControllerTests
     {
         authorization ??= new FakeAuthorizationService(true);
         history ??= _history;
-        var drafts = new ThemeDraftService(new ThemeStorageFactory(_live.StoreService, _live, _live, _live), new InProcessDistributedLock(), _live,
-            NullLogger<ThemeDraftService>.Instance);
-        return TestServices.ContentHistoryOperations(authorization, history, _pages, TestServices.Designer(history, themeDrafts: drafts, pages: _pages, events: _live));
+        var themes = new ThemeStorageFactory(_live.StoreService, _live, _live, _live);
+        var drafts = new ThemeDraftService(themes, new InProcessDistributedLock(), _live, NullLogger<ThemeDraftService>.Instance);
+        return TestServices.ContentHistoryOperations(authorization, history, _pages,
+            TestServices.Designer(history, themeDrafts: drafts, pages: _pages, events: _live, themes: themes));
     }
 }

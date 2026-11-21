@@ -46,8 +46,6 @@ internal static class TestServices
 
     public static CustomSectionUrlPolicy CustomSectionUrlPolicy(string assetsUrl = AssetsUrl) => new(new AssetUrls(assetsUrl));
 
-    public static ThemeValidator ThemeValidator() => new(CustomSectionValidator());
-
     public static ThemeSnapshotBuilder ThemeSnapshotBuilder(string assetsUrl = AssetsUrl) => new(CustomSectionUrlPolicy(assetsUrl));
 
     public static FilePageDraftService FilePageDrafts(
@@ -78,7 +76,8 @@ internal static class TestServices
         IThemePublisher themePublisher = null,
         ISchemaCatalogService catalogs = null,
         IThemeStorageFactory themes = null,
-        ICustomSectionValidator customSectionValidator = null)
+        ICustomSectionValidator customSectionValidator = null,
+        ICustomSectionService customSectionService = null)
     {
         var contentGuard = ContentGuard;
         var contentWriter = pages == null
@@ -87,7 +86,7 @@ internal static class TestServices
 
         return new DesignerContentService(themeDrafts, themePublisher, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
             pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs(),
-            new CustomSectionService(themes, themeDrafts), customSectionValidator ?? CustomSectionValidator());
+            customSectionService ?? new CustomSectionService(themes, themeDrafts), customSectionValidator ?? CustomSectionValidator());
     }
 
     public static DesignerOperationService DesignerOperations(
