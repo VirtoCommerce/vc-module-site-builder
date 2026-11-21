@@ -910,6 +910,7 @@ const bridge = usePreviewBridge({
   },
   onHover: (id) => (designer.hovered.value = id),
   onResolved: (value) => (reported.value = value),
+  onAuthRenew: (userId) => previewAs.renew(userId),
   onEdit: ({ itemId, path, value, cultureName: language }) => {
     // A version shown is look-only: what is typed there is not the page's.
     if (versionView) return;

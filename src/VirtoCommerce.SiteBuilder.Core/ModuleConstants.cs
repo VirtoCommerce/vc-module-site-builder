@@ -168,6 +168,22 @@ namespace VirtoCommerce.SiteBuilder.Core
                     SharedComponentsDelete,
                 ];
             }
+
+            public static class GrantTypes
+            {
+                /// <summary>Exchanges a preview code for an access token of the user the designer previews as.</summary>
+                public const string SiteBuilderPreview = "site_builder_preview";
+            }
+
+            public static class PreviewAuth
+            {
+                public const string CodePurpose = "VirtoCommerce.SiteBuilder.PreviewCode.v1";
+
+                public static readonly TimeSpan CodeLifetime = TimeSpan.FromSeconds(60);
+
+                /// <summary>The sign-in log type of a preview token, at most 32 characters.</summary>
+                public const string SignInType = "SiteBuilderPreview";
+            }
         }
 
         public static class Settings
