@@ -268,6 +268,20 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheIcons_OfACatalogStoredWithAKitOfAnotherShape_AreNotAvailable()
+    {
+        await _context.SeedThemeAsync(StoreA, McpTestContext.StorefrontKit);
+        var file = $"catalogs/catalog-{StoreA}.json";
+        var stored = JObject.Parse(_context.ReadThemeFile(StoreA, file)!);
+        stored["kit"] = "tags";
+        _context.SeedThemeFile(StoreA, file, stored.ToString());
+
+        var icons = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit/icons");
+
+        Assert.False(icons.GetProperty("available").GetBoolean());
+    }
+
+    [Fact]
     public async Task TheSectionKit_StartsWithTheStorefrontsGuideAndDesign_ThenTheDesignRules()
     {
         var kit = JObject.Parse(McpTestContext.StorefrontKit);

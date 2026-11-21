@@ -58,7 +58,7 @@ public class SectionTypeResources(
             return SiteBuilderResources.Serialize(NoCatalog(store_id));
         }
 
-        var icons = catalog[CustomSectionKit.KitKey]?[CustomSectionKit.IconsKey] as JsonArray;
+        var icons = (catalog[CustomSectionKit.KitKey] as JsonObject)?[CustomSectionKit.IconsKey] as JsonArray;
 
         return SiteBuilderResources.Serialize(new
         {
