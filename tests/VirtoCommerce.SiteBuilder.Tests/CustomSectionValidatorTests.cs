@@ -514,6 +514,28 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
+    public void Validate_HtmlElementsWrittenAsSelfClosing_CountAsOpenBeforeTheTemplateIsParsed()
+    {
+        var template = "<section>" + string.Concat(Enumerable.Repeat("<div/>", 10000)) + "</section>";
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
+        Assert.Equal([$"the template nests elements deeper than 32"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_SelfClosingElementsOfSvg_DoNotCountAsOpen()
+    {
+        var template = "<section><svg>" + string.Concat(Enumerable.Repeat("<path/>", 300)) + "</svg></section>";
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal(["<svg> at line 1 is not an element a custom section can hold"], result.Errors);
+    }
+
+    [Fact]
     public void Validate_TemplateOfEndTagsThatCloseNothing_IsRefusedBeforeItIsParsed()
     {
         var template = string.Concat(Enumerable.Repeat("<div></i>", 7200));

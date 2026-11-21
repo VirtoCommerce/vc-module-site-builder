@@ -795,10 +795,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         return deepest;
     }
 
-    // the depth of the tags as written, without the parser: an element whose end tag is left out counts as open
+    // the depth of the tags as written, without the parser: an element whose end tag is left out counts as open, and so does one of
+    // HTML written with '/>', which HTML ignores outside svg and math
     private static int GetScannedDepth(string template)
     {
         var open = new Stack<string>();
+        var foreign = 0;
         var deepest = 0;
         for (var start = template.IndexOf('<'); start >= 0 && start < template.Length; start = template.IndexOf('<', start))
         {
@@ -824,18 +826,23 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             }
 
             var tagEnd = FindTagEnd(template, nameEnd);
-            var isSelfClosing = tagEnd >= 2 && template[tagEnd - 1] == '>' && template[tagEnd - 2] == '/';
             var name = template[nameStart..nameEnd].ToLowerInvariant();
+            var isSelfClosing = tagEnd >= 2 && template[tagEnd - 1] == '>' && template[tagEnd - 2] == '/' && (foreign > 0 || IsForeignRoot(name));
             // an end tag closes the element it names and those left open inside it; one that names no open element closes nothing
             if (isEndTag && open.Contains(name))
             {
-                while (open.Pop() != name)
+                string closed;
+                do
                 {
+                    closed = open.Pop();
+                    foreign -= IsForeignRoot(closed) ? 1 : 0;
                 }
+                while (closed != name);
             }
             else if (!isEndTag && !isSelfClosing && !VoidElements.Contains(name))
             {
                 open.Push(name);
+                foreign += IsForeignRoot(name) ? 1 : 0;
                 deepest = Math.Max(deepest, open.Count);
                 if (deepest > MaxScannedTemplateDepth)
                 {
@@ -848,6 +855,8 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
         return deepest;
     }
+
+    private static bool IsForeignRoot(string name) => name is "svg" or "math";
 
     // past the '>' that ends a tag, outside its quoted attribute values
     private static int FindTagEnd(string template, int start)
