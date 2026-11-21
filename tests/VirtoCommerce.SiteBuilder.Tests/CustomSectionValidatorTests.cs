@@ -41,7 +41,7 @@ public class CustomSectionValidatorTests
           <img src="https://cdn.example/assets/stores/s1/hero.png" srcset="https://cdn.example/assets/a.png 1x, https://cdn.example/assets/b.png 2x" alt="">
           <ul class="custom-hero__items" data-marquee>
             <li data-each="settings.items" data-if="!item.title" aria-label="{{ item.title }}">
-              <a href="{{ item.link }}"><img src="{{ item.image }}" alt=""></a>
+              <a href="{{ item.link }}"><img src="{{ item.image }}" alt="{{ item.title }}"></a>
               <div data-html="item.body"></div>
             </li>
           </ul>
@@ -151,6 +151,12 @@ public class CustomSectionValidatorTests
     [InlineData("""<section data-visible></section>""", "<section> at line 1 has an attribute a custom section cannot use, 'data-visible': it is no binding and no behavior the storefront offers")]
     [InlineData("""<section></section><div></div>""", "the template has 2 root elements, and has one: the section's root")]
     [InlineData("""text <section></section>""", "the template has text outside its root element")]
+    [InlineData("""<section><h1>{{ settings.title }}</h1></section>""", "<h1> at line 1 is an h1, which the page holds: a section's headings start at h2")]
+    [InlineData("""<section><img src="{{ settings.image }}"></section>""", "<img> at line 1 has no alt: bind it to a string setting, or write alt=\"\" for an image that only decorates")]
+    [InlineData("""<section><img src="{{ settings.image }}" alt="{{ settings.count }}"></section>""", "<img> at line 1 has alt bound to 'settings.count', a number and not a string setting")]
+    [InlineData("""<section><a href="/catalog"></a></section>""", "<a> at line 1 is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt")]
+    [InlineData("""<section><a href="/catalog"><img src="{{ settings.image }}" alt=""></a></section>""", "<a> at line 1 is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt")]
+    [InlineData("""<section><a href="/catalog" aria-label=" "><vc-icon name="arrow-right"></vc-icon></a></section>""", "<a> at line 1 is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt")]
     [InlineData("""<section class="fixed top-0 z-50 size-full"></section>""", "<section> at line 1 has the class 'fixed', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
     [InlineData("""<section class="custom-hero custom-heroic"></section>""", "<section> at line 1 has the class 'custom-heroic', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
     [InlineData("""<section class="custom-hero {{ settings.view }}"></section>""", "<section> at line 1 binds class to 'settings.view', which is not a select whose options are the type's own classes")]
@@ -319,6 +325,83 @@ public class CustomSectionValidatorTests
     }
 
     [Theory]
+    [InlineData("""<section><a href="/catalog">{{ settings.title }}</a></section>""")]
+    [InlineData("""<section><a href="/catalog" aria-label="{{ settings.title }}"><vc-icon name="arrow-right"></vc-icon></a></section>""")]
+    [InlineData("""<section><a href="/catalog"><img src="{{ settings.image }}" alt="{{ settings.title }}"></a></section>""")]
+    [InlineData("""<section><a href="/catalog" data-html="settings.body"></a></section>""")]
+    [InlineData("""<section><img src="{{ settings.image }}" alt=""></section>""")]
+    [InlineData("""<section><h2>{{ settings.title }}</h2><h3>{{ settings.title }}</h3><h4 data-if="settings.show">{{ settings.title }}</h4><h2>{{ settings.title }}</h2></section>""")]
+    public void Validate_ElementsAScreenReaderCanName_AreTaken(string template)
+    {
+        var result = _validator.Validate(Type, Section(template, ".a { outline: 2px solid var(--color-primary-500); }"), Catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.DoesNotContain(result.Warnings, x => x.Contains("skipping a level", System.StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("""<section><h2>{{ settings.title }}</h2><h4>{{ settings.title }}</h4></section>""", "",
+        "the template's headings go from h2 to h4, skipping a level, which a screen reader lists as a part missing")]
+    [InlineData("<section></section>", """.a { transition: opacity .2s; }""",
+        "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion")]
+    [InlineData("<section></section>", """.a { animation-name: custom-hero-fade; } @media (prefers-reduced-motion: no-change) { .a { animation: none; } }""",
+        "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion")]
+    [InlineData("""<section><vc-button to="/catalog"></vc-button></section>""", "",
+        "<vc-button> at line 1 has no label, so a screen reader names the button by its icon or not at all")]
+    public void Validate_TypeHarderToUseWithoutTheScreen_IsSavedWithAWarning(string template, string css, string warning)
+    {
+        var result = _validator.Validate(Type, Section(template, css), Catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal([$"{File}: {warning}"], result.Warnings);
+    }
+
+    [Theory]
+    [InlineData(""".a { margin-left: 1rem; }""", "margin-left", "margin-inline-start")]
+    [InlineData(""".a { PADDING-RIGHT: 0; }""", "padding-right", "padding-inline-end")]
+    [InlineData(""".a { left: 0; }""", "left", "inset-inline-start")]
+    [InlineData(""".a { right: 0; }""", "right", "inset-inline-end")]
+    [InlineData(""".a { border-left-color: var(--color-primary-500); }""", "border-left-color", "border-inline-start-color")]
+    [InlineData(""".a { border-right: 1px solid var(--color-primary-500); }""", "border-right", "border-inline-end")]
+    [InlineData(""".a { border-top-left-radius: 4px; }""", "border-top-left-radius", "border-start-start-radius")]
+    [InlineData(""".a { border-bottom-right-radius: 4px; }""", "border-bottom-right-radius", "border-end-end-radius")]
+    [InlineData(""".a { scroll-padding-left: 1rem; }""", "scroll-padding-left", "scroll-padding-inline-start")]
+    [InlineData(""".a { text-align: right; }""", "text-align: right", "text-align: end")]
+    [InlineData(""".a { float: left; }""", "float: left", "float: inline-start")]
+    [InlineData(""".a { clear: right; } .b { clear: right; }""", "clear: right", "clear: inline-end")]
+    public void Validate_CssOnOneSideOfThePage_IsSavedWithTheLogicalReplacement(string css, string physical, string logical)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal([$"{File}: the CSS sets {physical}, which stays on that side when the page reads right to left: use {logical}"], result.Warnings);
+    }
+
+    [Fact]
+    public void Validate_CssForOneDirectionAndLogicalCss_HasNoWarning()
+    {
+        const string css = """
+            :scope:dir(rtl) .a { margin-left: 1rem; }
+            .a:dir(ltr) { text-align: left; }
+            .b { margin-inline-start: 1rem; inset-inline-end: 0; text-align: start; float: inline-start; border-start-end-radius: 4px; }
+            .c { &:dir(rtl) { float: right; } }
+            """;
+
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Theory]
+    [InlineData("""@media (prefers-reduced-motion: no-preference) { .a { transition: opacity .2s; } }""")]
+    [InlineData(""".a { animation: custom-hero-fade 1s; } @media (prefers-reduced-motion: reduce) { .a { animation: none; } }""")]
+    public void Validate_MotionThatAsksForLessMotion_HasNoWarning(string css)
+    {
+        Assert.Empty(_validator.Validate(Type, Section("<section></section>", css), Catalog).Warnings);
+    }
+
+    [Theory]
     [InlineData("""<section><vc-button label="Go" /><p>x</p></section>""", "the template does not read as HTML at line 1, column 10: The given tag cannot be self-closed.")]
     [InlineData("""<section><p>a < b</p></section>""", "the template does not read as HTML at line 1, column 16: Ambiguous open tag.")]
     [InlineData("<section>\n  <div>\n</section>", "the template does not read as HTML at line 3, column 1: ")]
@@ -377,6 +460,10 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { background: url(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library")]
     [InlineData(""".a { background-image: image-set("https://evil.example/x.png" 1x); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library")]
     [InlineData(""".a { background: u\72l(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library")]
+    [InlineData(""".a:focus { outline: none; }""", "the CSS sets outline to none or 0, which hides where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { OUTLINE: 0 }""", "the CSS sets outline to none or 0, which hides where the keyboard is on the page")]
+    [InlineData(""".a { outline-style: none; }""", "the CSS sets outline-style to none or 0, which hides where the keyboard is on the page")]
+    [InlineData(""".a { & .b { outline-width: 0px; } }""", "the CSS sets outline-width to none or 0, which hides where the keyboard is on the page")]
     [InlineData(""".a { width: expression(alert(1)); }""", "the CSS has expression(), which runs script")]
     [InlineData(""".a { behavior: url(https://cdn.example/assets/x.htc); }""", "the CSS sets behavior, which runs script")]
     [InlineData(""".a { -moz-binding: url(https://cdn.example/assets/x.xml#y); }""", "the CSS sets -moz-binding, which runs script")]
@@ -506,7 +593,7 @@ public class CustomSectionValidatorTests
     [Fact]
     public void Validate_WithoutAnAssetLibraryAddress_RefusesALiteralImageButNotABoundOne()
     {
-        var result = new CustomSectionValidator().Validate(Type, Section("""<section><img src="https://cdn.example/assets/a.png"><img src="{{ settings.image }}"></section>"""), Catalog);
+        var result = new CustomSectionValidator().Validate(Type, Section("""<section><img src="https://cdn.example/assets/a.png" alt=""><img src="{{ settings.image }}" alt=""></section>"""), Catalog);
 
         Assert.Equal([$"{File}: <img> at line 1 has src with 'https://cdn.example/assets/a.png', which is not a URL of the store's asset library"], result.Errors);
     }
