@@ -170,6 +170,23 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheSectionKit_GivesEachPaletteTokenItsLightAndDarkColor_FromTheDraftElseWhatIsLive()
+    {
+        await _context.SeedThemeAsync(StoreA, StorefrontKit);
+        _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#0047ab" }""");
+        _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#ff7a00", "color_neutral_950": "#111111" }""", draft: true);
+        _context.SeedThemeFile(StoreA, "config/palette.dark.json", """{ "color_primary_500": "#ffb366", "color_neutral_950": "#f5f5f5" }""");
+
+        var palette = (await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit")).GetProperty("palette");
+
+        var tokens = palette.GetProperty("tokens").EnumerateArray().ToDictionary(x => x.GetProperty("token").GetString()!);
+        Assert.Equal(("#ff7a00", "#ffb366"), (tokens["color_primary_500"].GetProperty("light").GetString(), tokens["color_primary_500"].GetProperty("dark").GetString()));
+        Assert.Equal(("#111111", "#f5f5f5"), (tokens["color_neutral_950"].GetProperty("light").GetString(), tokens["color_neutral_950"].GetProperty("dark").GetString()));
+        Assert.Contains("invert shades", palette.GetProperty("schemes").GetString(), StringComparison.Ordinal);
+        Assert.Contains("preset", palette.GetProperty("note").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TheSectionKit_ListsWhatTheValidatorChecks()
     {
         await _context.SeedThemeAsync(StoreA);

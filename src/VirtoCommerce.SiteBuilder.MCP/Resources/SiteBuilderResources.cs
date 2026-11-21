@@ -118,8 +118,31 @@ public class SiteBuilderResources(
     public async Task<string> ReadSectionKit(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
     {
         var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
+        var palette = AbstractTypeFactory<ThemePalette>.TryCreateInstance();
+        palette.Light = await ReadPaletteColorsAsync(context.User, store_id, ThemeStorage.PaletteFile, cancellationToken);
+        palette.Dark = await ReadPaletteColorsAsync(context.User, store_id, ThemeStorage.DarkPaletteFile, cancellationToken);
 
-        return Serialize(SectionKit.Describe(store_id, catalog, customSectionValidator.GetRules()));
+        return Serialize(SectionKit.Describe(store_id, catalog, customSectionValidator.GetRules(), palette));
+    }
+
+    // a palette file as its draft holds it, else as it is live; none for no file or one that is not a palette
+    private async Task<IDictionary<string, string>> ReadPaletteColorsAsync(ClaimsPrincipal user, string storeId, string file, CancellationToken cancellationToken)
+    {
+        var path = await ThemeFiles.GetPathAsync(themeStorageFactory, storeId, file);
+        var content = (await ThemeFiles.ReadAsync(designerOperationService, user, storeId, path, cancellationToken)).Content;
+        if (string.IsNullOrEmpty(content))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ThemePaletteValues.ReadColors(ThemeJson.Parse(content));
+        }
+        catch (Newtonsoft.Json.JsonReaderException)
+        {
+            return null;
+        }
     }
 
     [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/custom-sections/{type}", Name = "custom_section", MimeType = JsonMimeType)]

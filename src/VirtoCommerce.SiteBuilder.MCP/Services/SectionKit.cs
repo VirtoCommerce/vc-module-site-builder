@@ -59,7 +59,8 @@ public static class SectionKit
             "right; mirror what is left, such as an arrow, with :dir(rtl). A save warns of a physical direction.",
     ];
 
-    public static object Describe(string storeId, JsonObject catalog, CustomSectionRules rules)
+    /// <param name="palette">The colors of the theme's palette, light and dark; a token either leaves out keeps the storefront preset's.</param>
+    public static object Describe(string storeId, JsonObject catalog, CustomSectionRules rules, ThemePalette palette)
     {
         var kit = catalog?[KitKey] as JsonObject;
         var example = (JsonObject)JsonNode.Parse(ExampleFile)!;
@@ -182,8 +183,11 @@ public static class SectionKit
             },
             Palette = new
             {
-                Tokens = GetPaletteTokens(catalog),
-                Note = "A color-token setting holds the token; the CSS reads a token's color as its variable.",
+                Tokens = GetPaletteTokens(catalog, palette),
+                Note = "A color-token setting holds the token; the CSS reads a token's color as its variable. light and dark are the theme's " +
+                    "palette, as its draft holds it, else as it is live; a token without one keeps the color of the storefront's preset, " +
+                    "which the server does not know.",
+                Schemes = "Dark palettes invert shades: a token light in one scheme may be dark in the other; pick pairs that hold in both.",
             },
             Kit = new
             {
@@ -239,15 +243,18 @@ public static class SectionKit
         items.Count > 1 ? $"{string.Join(", ", items.Take(items.Count - 1))} or {items[^1]}" : string.Join(string.Empty, items);
 
     // A token's variable is the token with '_' written as '-': color_primary_500 is --color-primary-500.
-    private static List<PaletteTokenRow> GetPaletteTokens(JsonObject catalog)
+    private static List<PaletteTokenRow> GetPaletteTokens(JsonObject catalog, ThemePalette palette)
     {
         var tokens = ThemeFiles.GetPaletteTokens(catalog);
+        IReadOnlyDictionary<string, string> light = new Dictionary<string, string>(palette?.Light ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+        IReadOnlyDictionary<string, string> dark = new Dictionary<string, string>(palette?.Dark ?? new Dictionary<string, string>(), StringComparer.Ordinal);
 
         return tokens.Light.Concat(tokens.Dark)
+            .Concat(light.Keys.Concat(dark.Keys).Order(StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal)
-            .Select(x => new PaletteTokenRow(x, $"--{x.Replace('_', '-')}"))
+            .Select(x => new PaletteTokenRow(x, $"--{x.Replace('_', '-')}", light.GetValueOrDefault(x), dark.GetValueOrDefault(x)))
             .ToList();
     }
 }
 
-public sealed record PaletteTokenRow(string Token, string Variable);
+public sealed record PaletteTokenRow(string Token, string Variable, string Light, string Dark);
