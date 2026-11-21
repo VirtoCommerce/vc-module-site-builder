@@ -276,7 +276,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         // before the kit's names: a catalog may name a behavior or an attribute as the storefront's own
-        if (IsReservedDataAttribute(name))
+        if (CustomSectionKit.IsReservedDataAttribute(name))
         {
             check.AddError($"{where} has an attribute a custom section cannot use, '{name}': the storefront writes " +
                 $"{JoinAnd(CustomSectionKit.ReservedBehaviorPrefixes.Select(x => DataPrefix + x))} attributes itself");
@@ -875,9 +875,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     private static bool IsOwnClasses(CustomSectionCheck check, string classes) =>
         classes.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)
             .All(x => x == check.Type || ClassSeparators.Any(separator => x.StartsWith(check.Type + separator, StringComparison.Ordinal)));
-
-    private static bool IsReservedDataAttribute(string name) =>
-        name.StartsWith(DataPrefix, StringComparison.Ordinal) && CustomSectionKit.IsReservedBehavior(name[DataPrefix.Length..]);
 
     private static string GetSingleBinding(string value)
     {

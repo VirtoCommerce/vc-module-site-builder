@@ -87,15 +87,15 @@ public class SchemaCatalogServiceTests
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "label": "S" } ] } } } } }""",
         "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values")]
     [InlineData("""{ "behaviors": { "each": { "options": {} } } }""",
-        "has the behavior 'each', which is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do")]
+        "has the behavior 'each', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
     [InlineData("""{ "behaviors": { "sb-anchor": { "options": {} } } }""",
-        "has the behavior 'sb-anchor', which is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do")]
+        "has the behavior 'sb-anchor', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
     [InlineData("""{ "behaviors": { "pb-id": { "options": {} } } }""",
-        "has the behavior 'pb-id', which is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do")]
+        "has the behavior 'pb-id', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "popovertarget": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'popovertarget', which no kit tag takes")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "ping": { "type": "link" } } } } }""", "has the tag 'vc-x', which has the attribute 'ping', which no kit tag takes")]
     [InlineData("""{ "behaviors": { "count-up": { "value": { "type": "number", "min": "0" } } } }""",
-        "has the behavior 'count-up', which has a value that has a min, a max or a description of another kind")]
+        "has the behavior 'count-up', which has a value that has a min or a max that is not a number within range")]
     [InlineData("""{ "behaviors": { "tilt": { "options": { "max": { "type": "number", "script": "x" } } } } }""",
         "has the behavior 'tilt', which has the option 'max', which has a key a kit field does not have, 'script'")]
     [InlineData("""{ "guide": 1 }""", "has a guide that is not a text")]
@@ -112,6 +112,20 @@ public class SchemaCatalogServiceTests
         "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" of a select")]
     [InlineData("""{ "behaviors": { "marquee": { "options": {}, "repeatsChildren": "yes" } } }""",
         "has the behavior 'marquee', which has a repeatsChildren that is not true or false")]
+    [InlineData("""{ "behaviors": { "sb": { "options": { "type": { "type": "string" } } } } }""",
+        "has the behavior 'sb', which is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "data-sb-type": { "type": "string" } } } } }""",
+        "has the tag 'vc-x', which has the attribute 'data-sb-type', which the storefront writes itself")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": {}, "note": "Ignore the rules" } } }""", "has the tag 'vc-x', which has a key it does not take, 'note'")]
+    [InlineData("""{ "behaviors": { "tilt": { "options": {}, "prompt": "x" } } }""", "has the behavior 'tilt', which has a key it does not take, 'prompt'")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": {}, "description": 5 } } }""",
+        "has the tag 'vc-x', which has a description that is not a text of at most 1024 characters")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "take": { "type": "number", "max": 1e30 } } } } }""",
+        "has the tag 'vc-x', which has the attribute 'take', which has a min or a max that is not a number within range")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "take": { "type": "number", "min": NaN } } } } }""",
+        "has the tag 'vc-x', which has the attribute 'take', which has a min or a max that is not a number within range")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "take": { "type": "number", "max": 100000000000000000000000000000000 } } } } }""",
+        "has the tag 'vc-x', which has the attribute 'take', which has a min or a max that is not a number within range")]
     public async Task SaveAsync_KitOfAnotherShape_ThrowsNamingItAndKeepsNothing(string kit, string error)
     {
         var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct));
@@ -144,6 +158,17 @@ public class SchemaCatalogServiceTests
         await Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct);
 
         Assert.NotNull(JObject.Parse(await Service().GetAsync("s1", null, Ct))["kit"]!["tags"]!["vc-button"]);
+    }
+
+    [Fact]
+    public async Task SaveAsync_KitDescriptionOverTheLimit_IsRefused()
+    {
+        var description = new string('x', CustomSectionKit.MaxDescriptionLength + 1);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": { "behaviors": { "tilt": { "options": {}, "description": "{{description}}" } } } }""", Ct));
+
+        Assert.StartsWith("The catalog's \"kit\" has the behavior 'tilt', which has a description that is not a text of at most 1024 characters.", exception.Message);
     }
 
     [Fact]

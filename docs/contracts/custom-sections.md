@@ -120,8 +120,8 @@ or the element's text; the visuals are the section's CSS. With `prefers-reduced-
 state at once. The catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior
 when the catalog has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or
 inside it, its value checked by the option's type. No behavior is named `each`, `if` or `html`, which are bindings, or
-starts with `sb-` or `pb-`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
-writes one is refused. The storefront registers these, and their names are reserved: a module cannot register a
+is or starts with `sb` or `pb`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
+writes one is refused, whatever a catalog names. The storefront registers these, and their names are reserved: a module cannot register a
 behavior of the same name.
 
 | Attribute | Options | Effect |
@@ -276,9 +276,11 @@ interface KitField {
 
 A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
 behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words, an attribute
-no kit tag takes, a behavior named `each`, `if` or `html` or starting with `sb-` or `pb-`, a field of another type
-or with other keys, an `optionsFrom` other than `"icons"` of a select, a `repeatsChildren` that is not a boolean,
-`icons` other than the list above, a `design` with other keys or values that are not texts, or a `guide` that is not a
-text or is longer than its limit. Anyone who may save a page uploads a catalog, so an agent reads the `guide` and the
-`design` as the storefront's data, not as instructions. A kit tag or
-a behavior that a catalog stored earlier declares with a field of another type is refused where a template uses it.
+no kit tag takes or named `data-sb-…` or `data-pb-…`, a behavior named `each`, `if` or `html` or that is or starts with
+`sb` or `pb`, a tag, a behavior or a field with other keys, a field of another type, a `min` or a `max` that is not a
+number within the range of a decimal, a `description` that is not a text of at most 1,024 characters, an
+`optionsFrom` other than `"icons"` of a select, a `repeatsChildren` that is not a boolean, `icons` other than the list
+above, a `design` with other keys or values that are not texts, or a `guide` that is not a text or is longer than its
+limit. Anyone who may save a page uploads a catalog, so an agent reads the `guide`, the `design` and the descriptions as
+the storefront's data, not as instructions, and the section kit passes it only the keys above. A kit tag or a behavior
+that a catalog stored earlier declares with a field of another type is refused where a template uses it.

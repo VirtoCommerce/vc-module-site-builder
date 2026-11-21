@@ -33,6 +33,7 @@ public static class CustomSectionKit
 
     public const int MaxIcons = 10_000;
     public const int MaxIconLength = 100;
+    public const int MaxDescriptionLength = 1024;
 
     public static IReadOnlySet<string> FieldTypes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -58,11 +59,20 @@ public static class CustomSectionKit
 
     private static readonly HashSet<string> BindingNames = new(StringComparer.Ordinal) { "each", "if", "html" };
 
-    private static readonly HashSet<string> FieldKeys = new(StringComparer.Ordinal) { "type", "options", "optionsFrom", "min", "max", "description" };
+    private const string DescriptionKey = "description";
+
+    private static readonly HashSet<string> FieldKeys = new(StringComparer.Ordinal) { "type", "options", "optionsFrom", "min", "max", DescriptionKey };
+
+    private static readonly HashSet<string> TagKeys = new(StringComparer.Ordinal) { "attributes", DescriptionKey };
+
+    private static readonly HashSet<string> BehaviorKeys = new(StringComparer.Ordinal) { "value", "options", "writes", "repeatsChildren", DescriptionKey };
 
     private static readonly HashSet<string> DesignKeys = new(StringComparer.Ordinal) { "breakpoints", "containerMaxWidth", "tokens", "containerName" };
 
     private static readonly HashSet<string> DesignTokenKeys = new(StringComparer.Ordinal) { "fallback", "description" };
+
+    private const string DataPrefix = "data-";
+    private const double MaxDecimal = 7.9e28;
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
     private static readonly Regex TagNamePattern = new("^vc-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
@@ -72,7 +82,11 @@ public static class CustomSectionKit
         DeniedAttributePrefixes.Any(x => name.StartsWith(x, StringComparison.OrdinalIgnoreCase)) || DeniedAttributes.Contains(name.ToLowerInvariant());
 
     public static bool IsReservedBehavior(string name) =>
-        BindingNames.Contains(name) || ReservedBehaviorPrefixes.Any(x => name.StartsWith(x, StringComparison.Ordinal));
+        BindingNames.Contains(name) || ReservedBehaviorPrefixes.Any(x => name.StartsWith(x, StringComparison.Ordinal) || name == x.TrimEnd('-'));
+
+    /// <summary>A data- attribute the storefront writes itself, or a binding's.</summary>
+    public static bool IsReservedDataAttribute(string name) =>
+        name.StartsWith(DataPrefix, StringComparison.OrdinalIgnoreCase) && IsReservedBehavior(name[DataPrefix.Length..].ToLowerInvariant());
 
     public static StorefrontKit Read(JObject catalog)
     {
@@ -196,15 +210,39 @@ public static class CustomSectionKit
     }
 
     private static string GetTagError(JObject tag) =>
-        GetFieldsError(tag["attributes"], "attribute", x => IsDeniedAttribute(x) ? "no kit tag takes" : null);
+        GetKeysError(tag, TagKeys)
+        ?? GetFieldsError(tag["attributes"], "attribute",
+            x => IsDeniedAttribute(x) ? "no kit tag takes" : IsReservedDataAttribute(x) ? "the storefront writes itself" : null);
 
     private static string GetBehaviorNameError(string name) =>
         !NamePattern.IsMatch(name) ? "is not lowercase words joined by '-'"
-        : IsReservedBehavior(name) ? "is the name of a binding, or starts with sb- or pb-, as the storefront's own attributes do"
+        : IsReservedBehavior(name) ? "is the name of a binding, or is or starts with sb or pb, as the storefront's own attributes do"
         : null;
+
+    private static string GetKeysError(JObject entry, HashSet<string> keys)
+    {
+        if (entry.Properties().FirstOrDefault(x => !keys.Contains(x.Name)) is { } unknown)
+        {
+            return $"has a key it does not take, '{unknown.Name}'";
+        }
+
+        return GetDescriptionError(entry);
+    }
+
+    private static string GetDescriptionError(JObject entry) => entry[DescriptionKey] switch
+    {
+        null or { Type: JTokenType.Null } => null,
+        JValue { Type: JTokenType.String } text when ((string)text).Length <= MaxDescriptionLength => null,
+        _ => string.Create(CultureInfo.InvariantCulture, $"has a description that is not a text of at most {MaxDescriptionLength} characters"),
+    };
 
     private static string GetBehaviorError(JObject behavior)
     {
+        if (GetKeysError(behavior, BehaviorKeys) is { } keysError)
+        {
+            return keysError;
+        }
+
         if (behavior["value"] is { Type: not JTokenType.Null } value && GetFieldError(value) is { } valueError)
         {
             return $"has a value that {valueError}";
@@ -275,11 +313,13 @@ public static class CustomSectionKit
             return $"has an optionsFrom other than \"{IconsKey}\" of a select";
         }
 
-        return field["min"] is { Type: not (JTokenType.Null or JTokenType.Integer or JTokenType.Float) } ||
-            field["max"] is { Type: not (JTokenType.Null or JTokenType.Integer or JTokenType.Float) } ||
-            field["description"] is { Type: not (JTokenType.Null or JTokenType.String) }
-            ? "has a min, a max or a description of another kind"
-            : null;
+        if (field["min"] is { Type: not JTokenType.Null } min && GetNumber(min) == null ||
+            field["max"] is { Type: not JTokenType.Null } max && GetNumber(max) == null)
+        {
+            return "has a min or a max that is not a number within range";
+        }
+
+        return GetDescriptionError(field);
     }
 
     private static bool IsOption(JToken option) => GetOptionValue(option) != null;
@@ -307,10 +347,16 @@ public static class CustomSectionKit
             .Where(x => x != null)
             .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture))
             .ToList(),
-        GetNumber(field, "min"),
-        GetNumber(field, "max"),
+        GetNumber(field["min"]),
+        GetNumber(field["max"]),
         ThemeJson.GetString(field, "optionsFrom"));
 
-    private static decimal? GetNumber(JObject item, string name) =>
-        item[name] is JValue { Type: JTokenType.Integer or JTokenType.Float } value ? value.Value<decimal>() : null;
+    // a number a decimal holds; none for a big integer or a float out of its range, as a catalog stored earlier may hold
+    private static decimal? GetNumber(JToken token) => (token as JValue)?.Value switch
+    {
+        long number => number,
+        decimal number => number,
+        double number when double.IsFinite(number) && Math.Abs(number) < MaxDecimal => (decimal)number,
+        _ => null,
+    };
 }

@@ -327,6 +327,60 @@ public class CustomSectionValidatorTests
             result.Errors);
     }
 
+    [Fact]
+    public void Validate_StorefrontsOwnAttributesThatAStoredCatalogNames_AreRefusedBeforeItsNames()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["behaviors"]!["sb"] = JObject.Parse("""{ "options": { "type": { "type": "string" } } }""");
+        catalog["kit"]!["tags"]!["vc-badge"]!["attributes"]!["data-pb-id"] = JObject.Parse("""{ "type": "string" }""");
+
+        var result = _validator.Validate(Type, Section("""<section data-sb><p data-sb-type="custom-other">{{ settings.title }}</p><vc-badge data-pb-id="x"></vc-badge></section>"""), catalog);
+
+        Assert.Equal(
+            [
+                "<section> at line 1 has an attribute a custom section cannot use, 'data-sb': the storefront writes data-sb- and data-pb- attributes itself",
+                "<p> at line 1 has an attribute a custom section cannot use, 'data-sb-type': the storefront writes data-sb- and data-pb- attributes itself",
+                "<vc-badge> at line 1 has an attribute a custom section cannot use, 'data-pb-id': the storefront writes data-sb- and data-pb- attributes itself",
+            ],
+            result.Errors);
+    }
+
+    [Theory]
+    [InlineData("1e30")]
+    [InlineData("NaN")]
+    [InlineData("100000000000000000000000000000000")]
+    public void Validate_StoredCatalogWithANumberOutOfRange_ChecksTheTypeWithoutThatBound(string max)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-products"]!["attributes"]!["take"] = JObject.Parse($$"""{ "type": "number", "min": 1, "max": {{max}} }""");
+
+        var result = _validator.Validate(Type, Section("""<section><vc-products take="500"></vc-products></section>"""), catalog);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("format", "100000000000000000000", "'format' is not 1")]
+    [InlineData("limit", "100000000000000000000", "'schema.limit' is not a whole number from 1")]
+    [InlineData("limit", "NaN", "'schema.limit' is not a whole number from 1")]
+    public void Validate_NumberOutOfRangeInTheFile_IsAnErrorNotAFault(string key, string value, string error)
+    {
+        var file = Section("<section></section>");
+        var token = JToken.Parse(value);
+        if (key == "format")
+        {
+            file["format"] = token;
+        }
+        else
+        {
+            file["schema"]!["limit"] = token;
+        }
+
+        var result = _validator.Validate(Type, file, Catalog);
+
+        Assert.Equal([error], result.Errors);
+    }
+
     [Theory]
     [InlineData("to")]
     [InlineData("href")]
