@@ -187,8 +187,8 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><vc-button color="pink"></vc-button></section>""", "<vc-button> at line 1 has color=\"pink\", which vc-button does not take: it takes primary, secondary, neutral, accent, info, success, warning, danger")]
     [InlineData("""<section><vc-button variant="solid-light"></vc-button></section>""", "<vc-button> at line 1 has variant=\"solid-light\", which vc-button does not take: it takes solid, outline, soft, surface, ghost, tonal")]
     [InlineData("""<section><vc-button full-width="yes"></vc-button></section>""", "<vc-button> at line 1 has full-width=\"yes\", which vc-button does not take: it takes true, false or no value")]
-    [InlineData("""<section><vc-button onclick="go()"></vc-button></section>""", "<vc-button> at line 1 has an attribute vc-button does not take, 'onclick'")]
-    [InlineData("""<section><vc-button class="cta"></vc-button></section>""", "<vc-button> at line 1 has an attribute vc-button does not take, 'class'")]
+    [InlineData("""<section><vc-button onclick="go()"></vc-button></section>""", "<vc-button> at line 1 has 'onclick', which no kit tag takes, whatever the catalog declares")]
+    [InlineData("""<section><vc-button class="cta"></vc-button></section>""", "<vc-button> at line 1 has 'class', which no kit tag takes, whatever the catalog declares")]
     [InlineData("""<section><vc-button data-copy="x"></vc-button></section>""", "<vc-button> at line 1 has an attribute vc-button does not take, 'data-copy'")]
     [InlineData("""<section><vc-carousel></vc-carousel></section>""", "<vc-carousel> at line 1 is not a kit tag the storefront offers")]
     [InlineData("""<section><rating></rating></section>""", "<rating> at line 1 is not an element a custom section can hold")]
@@ -266,6 +266,56 @@ public class CustomSectionValidatorTests
                 $"{File}: <vc-rating> at line 1 has since=\"soon\", which vc-rating does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z",
             ],
             invalid.Errors);
+    }
+
+    [Theory]
+    [InlineData("onclick", "x()")]
+    [InlineData("style", "position: fixed")]
+    [InlineData("srcdoc", "<script>alert(1)</script>")]
+    [InlineData("formaction", "https://evil.example")]
+    [InlineData("is", "x-evil")]
+    [InlineData("id", "x")]
+    public void Validate_KitAttributeTheCatalogDeclaresButNoKitTagTakes_IsRefused(string name, string value)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-button"]!["attributes"]![name] = JObject.Parse("""{ "type": "string" }""");
+
+        var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="{value}"></vc-button></section>"""), catalog);
+
+        Assert.Equal([$"{File}: <vc-button> at line 1 has '{name}', which no kit tag takes, whatever the catalog declares"], result.Errors);
+    }
+
+    [Theory]
+    [InlineData("to")]
+    [InlineData("href")]
+    [InlineData("src")]
+    public void Validate_LinkAttributeTheCatalogDeclaresAsText_FollowsTheLinkRule(string name)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-button"]!["attributes"]![name] = JObject.Parse("""{ "type": "string" }""");
+
+        var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="javascript:alert(1)"></vc-button></section>"""), catalog);
+
+        Assert.Equal(
+            [$"{File}: <vc-button> at line 1 has {name}=\"javascript:alert(1)\", which is not a path starting with '/', or an https:, mailto: or tel: URL"],
+            result.Errors);
+    }
+
+    [Fact]
+    public void Validate_KitDeclaredWithATypeTheServerDoesNotKnow_IsRefused()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-frame"] = JObject.Parse("""{ "attributes": { "content": { "type": "html" } } }""");
+        catalog["kit"]!["behaviors"]!["inject"] = JObject.Parse("""{ "options": { "code": { "type": "script" } } }""");
+
+        var result = _validator.Validate(Type, Section("""<section data-inject><vc-frame content="x"></vc-frame></section>"""), catalog);
+
+        Assert.Equal(
+            [
+                $"{File}: <section> at line 1 has data-inject, and the catalog declares data-inject with 'code' of a type the server does not know, 'script'",
+                $"{File}: <vc-frame> at line 1 is a kit tag the catalog declares with the attribute 'content' of a type the server does not know, 'html'",
+            ],
+            result.Errors);
     }
 
     [Theory]

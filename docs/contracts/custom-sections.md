@@ -95,7 +95,9 @@ module or a plugin of the storefront may add its own; the storefront registers t
 
 A kit tag's name starts with `vc-`, and an element named `vc-…` that the catalog does not name is refused. Its
 attributes are those the catalog declares, and `data-if` and `data-each`; they take literals or bindings, and a literal
-the attribute's type does not take is refused on save. A kit tag has no content.
+the attribute's type does not take is refused on save. Whatever the catalog declares, a kit tag takes no `on*`, `style`,
+`id`, `is`, `class`, `srcdoc` or `form*` attribute, and `to`, `href` and `src` follow the link rule. A kit tag has no
+content.
 
 ### Behaviors
 
@@ -196,4 +198,6 @@ interface KitField {
 ```
 
 A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
-behaviors.
+behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words, an attribute
+no kit tag takes, a behavior named `each`, `if` or `html`, or a field of another type or with other keys. A kit tag or
+a behavior that a catalog stored earlier declares with a field of another type is refused where a template uses it.

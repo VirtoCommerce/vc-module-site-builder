@@ -58,12 +58,6 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const string DataPrefix = "data-";
 
     private const string KitKey = "kit";
-    private const string KitTagPrefix = "vc-";
-    private const string LinkKitType = "link";
-    private const string NumberKitType = "number";
-    private const string BooleanKitType = "boolean";
-    private const string SelectKitType = "select";
-    private const string DateKitType = "date";
 
     private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
 
@@ -421,7 +415,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         var tag = element.LocalName;
         var where = string.Create(CultureInfo.InvariantCulture, $"<{tag}> at line {GetLine(check, element)}");
         IReadOnlyDictionary<string, KitField> kitAttributes = null;
-        if (tag.StartsWith(KitTagPrefix, StringComparison.Ordinal))
+        if (tag.StartsWith(CustomSectionKit.TagPrefix, StringComparison.Ordinal))
         {
             if (GetKitTagError(check, tag) is { } error)
             {
@@ -486,7 +480,15 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return "is a kit tag, and the storefront offers none: its catalog has no kit";
         }
 
-        return check.Kit.Tags.ContainsKey(tag) ? null : "is not a kit tag the storefront offers";
+        if (!check.Kit.Tags.TryGetValue(tag, out var attributes))
+        {
+            return "is not a kit tag the storefront offers";
+        }
+
+        // an older catalog may hold a kit its upload would refuse now
+        return GetUnknownField(attributes) is { } unknown
+            ? $"is a kit tag the catalog declares with the attribute '{unknown.Key}' of a type the server does not know, '{unknown.Value.Type}'"
+            : null;
     }
 
     /// <param name="kitAttributes">The attributes of the kit tag the element is; <c>null</c> for an element of HTML.</param>
@@ -507,7 +509,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         if (kitAttributes != null)
         {
-            if (kitAttributes.TryGetValue(name, out var field))
+            if (CustomSectionKit.IsDeniedAttribute(name))
+            {
+                check.AddError($"{where} has '{name}', which no kit tag takes, whatever the catalog declares");
+            }
+            else if (kitAttributes.TryGetValue(name, out var field))
             {
                 ValidateKitValue(check, element.LocalName, field, name, value, where, scope);
             }
@@ -625,13 +631,14 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     protected virtual void ValidateKitValue(CustomSectionCheck check, string owner, KitField field, string name, string value, string where,
         TemplateScope scope)
     {
-        if (field.Type == LinkKitType)
+        // a component reads to, href and src as a link whatever type the catalog gives them
+        if (field.Type == CustomSectionKit.LinkType || CustomSectionKit.IsLinkAttribute(name))
         {
             ValidateLink(check, name, value, where, scope);
             return;
         }
 
-        if (field.Type is not (NumberKitType or BooleanKitType or SelectKitType or DateKitType))
+        if (field.Type is not (CustomSectionKit.NumberType or CustomSectionKit.BooleanType or CustomSectionKit.SelectType or CustomSectionKit.DateType))
         {
             var text = ValidateBindings(check, value, where, scope);
             if (TextAttributes.Contains(name))
@@ -661,11 +668,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         switch (field.Type)
         {
-            case BooleanKitType:
+            case CustomSectionKit.BooleanType:
                 return value is "" or "true" or "false" ? null : "true, false or no value";
-            case SelectKitType:
+            case CustomSectionKit.SelectType:
                 return field.Options == null || field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
-            case DateKitType:
+            case CustomSectionKit.DateType:
                 return IsIsoDate(value) ? null : "an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z";
             default:
                 var isNumber = decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number);
@@ -683,6 +690,13 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var attribute = DataPrefix + behavior;
         var kitBehavior = check.Kit.Behaviors[behavior];
+        var fields = kitBehavior.Value == null ? kitBehavior.Options : kitBehavior.Options.Append(KeyValuePair.Create("value", kitBehavior.Value));
+        if (GetUnknownField(fields) is { } unknown)
+        {
+            check.AddError($"{where} has {name}, and the catalog declares {attribute} with '{unknown.Key}' of a type the server does not know, '{unknown.Value.Type}'");
+            return;
+        }
+
         if (option == null)
         {
             if (kitBehavior.Value is { } valueField)
@@ -738,7 +752,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return new StorefrontKit(catalog != null, Tags: null, Behaviors: null);
         }
 
-        var tags = ReadKitEntries(kit["tags"], KitTagPrefix, x => ReadKitFields(x["attributes"]));
+        var tags = ReadKitEntries(kit["tags"], CustomSectionKit.TagPrefix, x => ReadKitFields(x["attributes"]));
         var behaviors = ReadKitEntries(kit["behaviors"], string.Empty,
             x => new KitBehavior(x["value"] is JObject value ? ReadKitField(value) : null, ReadKitFields(x["options"])));
 
@@ -1445,6 +1459,9 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         _ => $"setting '{parent}.{id}'",
     };
 
+    private static KeyValuePair<string, KitField>? GetUnknownField(IEnumerable<KeyValuePair<string, KitField>> fields) =>
+        fields.Where(x => !CustomSectionKit.FieldTypes.Contains(x.Value.Type ?? string.Empty)).Cast<KeyValuePair<string, KitField>?>().FirstOrDefault();
+
     private static bool HasBehavior(IElement element, string attribute)
     {
         for (var current = element; current != null; current = current.ParentElement)
@@ -1519,7 +1536,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     /// <param name="Each">The list the element repeats for, or one of its ancestors does.</param>
     protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot);
 
-    /// <param name="Type">string, number, boolean, select, date or link; any other is read as a string.</param>
+    /// <param name="Type">string, number, boolean, select, date or link; any other refuses the kit tag or the behavior that declares it.</param>
     /// <param name="Options">The values a select takes.</param>
     protected sealed record KitField(string Type, IReadOnlyList<string> Options, decimal? Min, decimal? Max);
 
