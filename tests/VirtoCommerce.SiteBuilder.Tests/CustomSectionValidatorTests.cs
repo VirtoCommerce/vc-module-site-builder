@@ -151,6 +151,16 @@ public class CustomSectionValidatorTests
     [InlineData("""<section data-visible></section>""", "<section> at line 1 has an attribute a custom section cannot use, 'data-visible': it is no binding and no behavior the storefront offers")]
     [InlineData("""<section></section><div></div>""", "the template has 2 root elements, and has one: the section's root")]
     [InlineData("""text <section></section>""", "the template has text outside its root element")]
+    [InlineData("""<vc-button label="Go"></vc-button>""", "the template's root is <vc-button>, a kit tag, which renders a component and not the section: the root is an element of HTML")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/../other/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/../other/x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/%2e%2e/other/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/%2e%2e/other/x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/%2E%2e%2Fother/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/%2E%2e%2Fother/x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets\..\other\x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets\\..\\other\\x.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><a href="#1st">x</a></section>""", "<a> at line 1 has href=\"#1st\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><q cite="javascript:x()">{{ settings.title }}</q></section>""", "<q> at line 1 has cite=\"javascript:x()\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><video poster="https://evil.example/p.png"></video></section>""", "<video> at line 1 has poster with 'https://evil.example/p.png', which is not a URL of the store's asset library")]
+    [InlineData("""<section><div open></div></section>""", "<div> at line 1 has an attribute a custom section cannot use, 'open'")]
+    [InlineData("""<section><img alt="" src="{{ settings.image }}" poster="{{ settings.image }}"></section>""", "<img> at line 1 has an attribute a custom section cannot use, 'poster'")]
     [InlineData("""<section><h1>{{ settings.title }}</h1></section>""", "<h1> at line 1 is an h1, which the page holds: a section's headings start at h2")]
     [InlineData("""<section><img src="{{ settings.image }}"></section>""", "<img> at line 1 has no alt: bind it to a string setting, or write alt=\"\" for an image that only decorates")]
     [InlineData("""<section><img src="{{ settings.image }}" alt="{{ settings.count }}"></section>""", "<img> at line 1 has alt bound to 'settings.count', a number and not a string setting")]
@@ -423,6 +433,40 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section(template), Catalog);
 
         Assert.Equal([$"{File}: the template nests elements deeper than 32"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_TemplateOfEndTagsThatCloseNothing_IsRefusedBeforeItIsParsed()
+    {
+        var template = string.Concat(Enumerable.Repeat("<div></i>", 7200));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal([$"{File}: the template nests elements deeper than 32"], result.Errors);
+        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
+    }
+
+    [Fact]
+    public void Validate_BindingLeftOpenOverALongRun_IsRefusedWithoutTimingOut()
+    {
+        var template = "<section><p>{{" + new string(' ', 60000) + "</p></section>";
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal([$"{File}: <p> at line 1 has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}"], result.Errors);
+    }
+
+    [Theory]
+    [InlineData("""<section><p><table><tr><td>{{ settings.title }}</td></tr></table></p></section>""")]
+    [InlineData("""<section><a href="#custom-hero__reviews">{{ settings.title }}</a></section>""")]
+    [InlineData("""<section><video src="{{ settings.image }}" poster="{{ settings.image }}" autoplay muted loop playsinline controls preload="metadata"><source src="https://cdn.example/assets/a.mp4" type="video/mp4" media="(width >= 600px)"></video></section>""")]
+    [InlineData("""<section><details open><summary>{{ settings.title }}</summary><p>{{ settings.title }}</p></details></section>""")]
+    [InlineData("""<section><blockquote cite="https://example.com/review">{{ settings.title }}</blockquote><q cite="/reviews">{{ settings.title }}</q></section>""")]
+    [InlineData("""<section><img alt="" src="https://cdn.example/assets/stores/s1/../s1/x.png"></section>""")]
+    public void Validate_TemplateTheStorefrontRendersAsWritten_IsTaken(string template)
+    {
+        Assert.Empty(_validator.Validate(Type, Section(template), Catalog).Errors);
     }
 
     [Fact]

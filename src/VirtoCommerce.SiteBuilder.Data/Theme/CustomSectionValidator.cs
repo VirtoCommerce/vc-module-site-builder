@@ -32,7 +32,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const string KeyframesAtRule = "keyframes";
     private const string AllowedAtRulesText = "@media, @supports, @container, @starting-style and @keyframes";
 
-    private const string DocumentStart = "<!DOCTYPE html><html><head></head><body>";
+    // no doctype, as the storefront's sanitizer parses: a document without one is read in quirks mode, where a table may stay in a p
+    private const string DocumentStart = "<html><head></head><body>";
     private const string AssetProbe = "file";
 
     // the CSS parser writes 'transparent' so
@@ -93,6 +94,16 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         "class", "role", "alt", "title", "lang", "dir", "hidden", "href", "target", "rel", "src", "srcset", "sizes", "loading", "decoding",
         "width", "height", "datetime", "colspan", "rowspan", "scope",
+    };
+
+    // what an element takes besides the attributes every element does
+    private static readonly Dictionary<string, HashSet<string>> ElementAttributes = new(StringComparer.Ordinal)
+    {
+        ["video"] = new(StringComparer.Ordinal) { "autoplay", "muted", "loop", "playsinline", "controls", "preload", "poster" },
+        ["source"] = new(StringComparer.Ordinal) { "type", "media" },
+        ["details"] = new(StringComparer.Ordinal) { "open" },
+        ["blockquote"] = new(StringComparer.Ordinal) { "cite" },
+        ["q"] = new(StringComparer.Ordinal) { "cite" },
     };
 
     // people read what these hold, as they read the template's text
@@ -162,11 +173,15 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
     private static readonly Regex SettingIdPattern = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.None, RegexTimeout);
-    private static readonly Regex BindingPattern = new(@"\{\{\s*([^{}]*?)\s*\}\}", RegexOptions.None, RegexTimeout);
-    private static readonly Regex SingleBindingPattern = new(@"^\s*\{\{\s*([^{}]*?)\s*\}\}\s*$", RegexOptions.None, RegexTimeout);
+    // the path is trimmed after the match: a pattern that trims it backtracks over a long run of spaces
+    private static readonly Regex BindingPattern = new(@"\{\{([^{}]*)\}\}", RegexOptions.None, RegexTimeout);
+    private static readonly Regex SingleBindingPattern = new(@"^\s*\{\{([^{}]*)\}\}\s*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex PathPattern = new(@"^(settings|item)\.([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$", RegexOptions.None, RegexTimeout);
     private static readonly Regex IsoDatePattern = new(@"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$", RegexOptions.None, RegexTimeout);
 
+    // an escaped dot, slash or backslash, which a URL resolves as the character
+    private static readonly Regex EscapedPathPattern = new("%(?:2[eEfF]|5[cC])", RegexOptions.None, RegexTimeout);
+    private static readonly Regex AnchorPattern = new("^#[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex ImageDataUrlPattern = new("^data:image/[a-z0-9.+-]+[;,]", RegexOptions.IgnoreCase, RegexTimeout);
     private static readonly Regex CssDocumentSelectorPattern = new(@"(?:^|[\s,>+~(])(?:html|body)(?=$|[\s,>+~.#:\[)])|:root(?![\w-])", RegexOptions.IgnoreCase, RegexTimeout);
     private static readonly Regex CssLiteralColorPattern = new(@"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(", RegexOptions.IgnoreCase, RegexTimeout);
@@ -194,14 +209,22 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         ValidateShape(check, file);
 
-        if (GetPart(check, file, TemplateKey) is { } template && check.Settings != null)
+        // every pattern has a timeout, which refuses the type rather than fails the request
+        try
         {
-            ValidateTemplate(check, template);
-        }
+            if (GetPart(check, file, TemplateKey) is { } template && check.Settings != null)
+            {
+                ValidateTemplate(check, template);
+            }
 
-        if (GetPart(check, file, CssKey) is { } css)
+            if (GetPart(check, file, CssKey) is { } css)
+            {
+                ValidateCss(check, css);
+            }
+        }
+        catch (RegexMatchTimeoutException)
         {
-            ValidateCss(check, css);
+            check.AddError("the type takes too long to check: write its template and its CSS plainer");
         }
 
         AddWarnings(check);
@@ -417,10 +440,12 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         using var document = parser.ParseDocument(DocumentStart + template);
         check.Template = template;
-        if (parseErrors.Count > 0)
+        // the missing doctype is the document's, not the template's
+        var templateErrors = parseErrors.Where(x => x.Position.Position > DocumentStart.Length).ToList();
+        if (templateErrors.Count > 0)
         {
             // the parser has mended what it reports, so the elements are not what was written
-            foreach (var error in parseErrors.Take(MaxParseErrors))
+            foreach (var error in templateErrors.Take(MaxParseErrors))
             {
                 var (line, column) = GetLocation(check, GetIndex(check, error.Position.Position));
                 check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template does not read as HTML at line {line}, column {column}: {error.Message}"));
@@ -440,6 +465,12 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         {
             check.AddError(string.Create(CultureInfo.InvariantCulture,
                 $"the template has {roots.Count} root elements, and has one: the section's root"));
+            return;
+        }
+
+        if (roots[0].LocalName.StartsWith(CustomSectionKit.TagPrefix, StringComparison.Ordinal))
+        {
+            check.AddError($"the template's root is <{roots[0].LocalName}>, a kit tag, which renders a component and not the section: the root is an element of HTML");
             return;
         }
 
@@ -613,6 +644,21 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         else if (name is "href")
         {
             ValidateLink(check, name, value, where, scope);
+        }
+        else if (ElementAttributes.TryGetValue(element.LocalName, out var own) && own.Contains(name))
+        {
+            switch (name)
+            {
+                case "cite":
+                    ValidateLink(check, name, value, where, scope);
+                    break;
+                case "poster":
+                    ValidateImage(check, name, value, where, scope);
+                    break;
+                default:
+                    ValidateBindings(check, value, where, scope);
+                    break;
+            }
         }
         else if (name is "class")
         {
@@ -852,7 +898,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var literal = BindingPattern.Replace(value, match =>
         {
-            var path = match.Groups[1].Value;
+            var path = match.Groups[1].Value.Trim();
             if (ResolveValue(check, path, where, scope) is { } setting &&
                 (setting.Type != SelectFieldType || setting.Options == null || !setting.Options.All(x => IsOwnClasses(check.Type, x))))
             {
@@ -878,7 +924,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var literal = BindingPattern.Replace(value, match =>
         {
-            var path = match.Groups[1].Value;
+            var path = match.Groups[1].Value.Trim();
             if (ResolveValue(check, path, where, scope) is { } setting && setting.Type != StringFieldType)
             {
                 check.AddError($"{where} has alt bound to '{path}', a {setting.Type} and not a string setting");
@@ -964,7 +1010,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var literal = BindingPattern.Replace(text, match =>
         {
-            ResolveValue(check, match.Groups[1].Value, where, scope);
+            ResolveValue(check, match.Groups[1].Value.Trim(), where, scope);
             return " ";
         });
 
@@ -1407,12 +1453,26 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
     }
 
-    /// <summary>A URL of the asset library starts with its public address, as the link of each of its files does.</summary>
-    protected virtual bool IsAssetUrl(string url) =>
-        GetAssetsBaseUrl() is { } baseUrl &&
-        !url.Any(char.IsControl) &&
-        url.StartsWith(baseUrl, StringComparison.OrdinalIgnoreCase) &&
-        Uri.TryCreate(url, UriKind.Absolute, out _);
+    /// <summary>
+    /// A URL of the asset library starts with its public address, as the link of each of its files does, once its dot segments are resolved
+    /// as a browser resolves them: '/../' or an escaped dot could otherwise climb out of the library on the same host.
+    /// </summary>
+    protected virtual bool IsAssetUrl(string url)
+    {
+        if (GetAssetsBaseUrl() is not { } baseUrl || url.Any(char.IsControl) || url.Contains('\\'))
+        {
+            return false;
+        }
+
+        var unescaped = EscapedPathPattern.Replace(url, x => x.Value.ToLowerInvariant() switch { "%2e" => ".", "%2f" => "/", _ => "\\" });
+        if (unescaped.Contains('\\') || EscapedPathPattern.IsMatch(unescaped))
+        {
+            return false;
+        }
+
+        return Uri.TryCreate(unescaped, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && string.IsNullOrEmpty(uri.UserInfo) &&
+            Uri.TryCreate(baseUrl, UriKind.Absolute, out var library) && uri.AbsoluteUri.StartsWith(library.AbsoluteUri, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>The public link of a file at the library's root without the file; <c>null</c> when the library gives none.</summary>
     protected virtual string GetAssetsBaseUrl()
@@ -1443,6 +1503,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         if (url.StartsWith('/'))
         {
             return url.Length == 1 || url[1] is not ('/' or '\\');
+        }
+
+        if (url.StartsWith('#'))
+        {
+            return AnchorPattern.IsMatch(url);
         }
 
         return LinkSchemes.Any(x => url.StartsWith(x, StringComparison.OrdinalIgnoreCase)) && Uri.TryCreate(url, UriKind.Absolute, out _);
@@ -1495,7 +1560,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     // the depth of the tags as written, without the parser: an element whose end tag is left out counts as open
     private static int GetScannedDepth(string template)
     {
-        var (depth, deepest) = (0, 0);
+        var open = new Stack<string>();
+        var deepest = 0;
         for (var start = template.IndexOf('<'); start >= 0 && start < template.Length; start = template.IndexOf('<', start))
         {
             if (template.AsSpan(start).StartsWith("<!--"))
@@ -1521,13 +1587,18 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
             var tagEnd = FindTagEnd(template, nameEnd);
             var isSelfClosing = tagEnd >= 2 && template[tagEnd - 1] == '>' && template[tagEnd - 2] == '/';
-            if (isEndTag)
+            var name = template[nameStart..nameEnd].ToLowerInvariant();
+            // an end tag closes the element it names and those left open inside it; one that names no open element closes nothing
+            if (isEndTag && open.Contains(name))
             {
-                depth = Math.Max(0, depth - 1);
+                while (open.Pop() != name)
+                {
+                }
             }
-            else if (!isSelfClosing && !VoidElements.Contains(template[nameStart..nameEnd]))
+            else if (!isEndTag && !isSelfClosing && !VoidElements.Contains(name))
             {
-                deepest = Math.Max(deepest, ++depth);
+                open.Push(name);
+                deepest = Math.Max(deepest, open.Count);
             }
 
             start = tagEnd;
@@ -1629,7 +1700,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var match = SingleBindingPattern.Match(value);
 
-        return match.Success ? match.Groups[1].Value : null;
+        return match.Success ? match.Groups[1].Value.Trim() : null;
     }
 
     private static bool HasBinding(string value) => value.Contains("{{", StringComparison.Ordinal);
@@ -1657,9 +1728,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     private static (int Line, int Column) GetLocation(CustomSectionCheck check, int index)
     {
-        var lineStart = index == 0 ? 0 : check.Template.LastIndexOf('\n', index - 1) + 1;
+        var lineStarts = check.LineStarts;
+        var found = lineStarts.BinarySearch(index);
+        var line = found >= 0 ? found : ~found - 1;
 
-        return (check.Template.AsSpan(0, index).Count('\n') + 1, index - lineStart + 1);
+        return (line + 1, index - lineStarts[line] + 1);
     }
 
     private static bool IsName(JToken name) => name switch
@@ -1784,6 +1857,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     protected sealed class CustomSectionCheck(string type, CustomSectionValidationResult result)
     {
+        private string _template = string.Empty;
+
         public string Type { get; } = type;
 
         public string File { get; } = ThemeStorage.GetCustomSectionFile(type);
@@ -1794,7 +1869,18 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         public IDictionary<string, CustomSectionSetting> Settings { get; set; }
 
         /// <summary>The template as written, which names the line of an element.</summary>
-        public string Template { get; set; } = string.Empty;
+        public string Template
+        {
+            get => _template;
+            set
+            {
+                _template = value;
+                LineStarts = [0, .. value.Select((x, i) => (x, i)).Where(x => x.x == '\n').Select(x => x.i + 1)];
+            }
+        }
+
+        /// <summary>Where each line of <see cref="Template"/> starts.</summary>
+        public List<int> LineStarts { get; private set; } = [0];
 
         public IList<string> Texts { get; } = [];
 

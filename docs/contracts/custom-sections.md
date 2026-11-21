@@ -52,9 +52,10 @@ designer runs the one and sends the other, and so are `"multiple": true` and any
 An HTML fragment with exactly one root element, the section's root. The storefront renders each section inside a
 wrapper element of its own, outside the scope root, with `contain: paint` and `isolation: isolate`, so that nothing a
 section draws leaves its box; the wrapper carries the section's anchor id and the preview attributes of a section. The
-root keeps `data-sb-type="{type}"` and a `style` holding the [setting variables](#setting-variables). It is HTML as
-written: markup an HTML parser has to mend, such as an element left open or a `/>` on a kit tag, is refused, and so
-are elements nested more than 32 deep, the root counted.
+root keeps `data-sb-type="{type}"` and a `style` holding the [setting variables](#setting-variables), so the root is an
+element of HTML, not a kit tag. It is HTML as written, read as the storefront's sanitizer reads it, with no doctype
+(quirks mode, where a `table` may stay inside a `p`): markup the parser has to mend, such as an element left open or a
+`/>` on a kit tag, is refused, and so are elements nested more than 32 deep, the root counted.
 
 - **Elements**: the elements the builder's HTML sanitizer keeps, without form controls (`form`, `input`, `select`,
   `textarea`, `button`, `option`, `optgroup`, `datalist`, `fieldset`, `legend`, `label`, `output`), plus the
@@ -62,16 +63,20 @@ are elements nested more than 32 deep, the root counted.
   their content are refused.
 - **Attributes**: `class`, `role`, `aria-*`, `alt`, `title`, `lang`, `dir`, `hidden`, `href`, `target`, `rel`, `src`,
   `srcset`, `sizes`, `loading`, `decoding`, `width`, `height`, `datetime`, `colspan`, `rowspan`, `scope`,
-  `data-each`, `data-if`, `data-html`, and the [behavior](#behaviors) attributes. No `id` (two instances on a page would
-  share it), no `style`, no `on*`.
+  `data-each`, `data-if`, `data-html`, and the [behavior](#behaviors) attributes. `video` also takes `autoplay`,
+  `muted`, `loop`, `playsinline`, `controls`, `preload` and `poster`; `source` takes `type` and `media`; `details` takes
+  `open`; `blockquote` and `q` take `cite`, which follows the link rule. No `id` (two instances on a page would share
+  it), no `style`, no `on*`.
 - **Classes**: `class` names the type's own classes only: the type itself, or a name starting with `{type}-` or
   `{type}__` (`custom-hero__title`, `custom-hero--dark`). A binding in it names a `select` setting whose options are such
   classes.
 - **Link targets**: `target` is `_self` or `_blank`, and `rel` does not hold `opener`; both are written as they are, with
   no binding.
-- **Links and images**: `href` is a path starting with `/`, an `https:`, `mailto:` or `tel:` URL, or a binding of a
-  `"format": "url"` field. `src` and `srcset` are a URL of the store's asset library or a binding of an `images`
-  field. A bound value that breaks the rule renders without the attribute.
+- **Links and images**: `href` is a path starting with `/`, an anchor on the page (`#` and a letter, then letters,
+  digits, `_` and `-`), an `https:`, `mailto:` or `tel:` URL, or a binding of a `"format": "url"` field. `src`,
+  `srcset` and a `video`'s `poster` are a URL of the store's asset library or a binding of an `images` field; a URL of
+  the library is read with its `..` and its escaped dots and slashes resolved, and one with a backslash is refused. A
+  bound value that breaks the rule renders without the attribute.
 
 ### Bindings
 
