@@ -109,7 +109,9 @@ inside it, its value checked by the option's type. The storefront registers thes
 | `data-copy="{text}"` | | a click copies the text and sets `data-copied` for 2 seconds |
 | `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run |
 
-The value of a behavior's own attribute, such as `data-count-up`, is the storefront's to read, and may be a binding.
+A behavior may declare the type of its own attribute's value under `value`, such as a number for `data-count-up` and a
+date for `data-countdown`, and the value is checked as an option's is; a behavior that declares none takes any text.
+Either may be a binding.
 
 ## Setting variables
 
@@ -158,13 +160,19 @@ The catalog's `kit` names the kit tags and the behaviors the storefront offers, 
 ```ts
 interface Kit {
   tags: Record<string, { attributes: Record<string, KitField>; description?: string }>;
-  /** `writes` names what the behavior sets for the section's CSS, such as `data-visible` or `--scroll-progress` */
-  behaviors: Record<string, { options: Record<string, KitField>; description?: string; writes?: string[] }>;
+  /**
+   * `value` is the type of the behavior attribute's own value, any text when left out; `writes` names what the behavior
+   * sets for the section's CSS, such as `data-visible` or `--scroll-progress`
+   */
+  behaviors: Record<string, { value?: KitField; options: Record<string, KitField>; description?: string; writes?: string[] }>;
 }
 
 interface KitField {
-  /** a select takes one of its options, a number one from min to max, a boolean true, false or no value, and a link follows the link rule */
-  type: 'string' | 'number' | 'boolean' | 'select' | 'link';
+  /**
+   * a select takes one of its options, a number one from min to max, a boolean true, false or no value, a date an ISO
+   * 8601 date or date and time, and a link follows the link rule
+   */
+  type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
   options?: (string | { value: string; label?: string })[];
   min?: number;
   max?: number;

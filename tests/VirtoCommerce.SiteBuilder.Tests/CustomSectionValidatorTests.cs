@@ -115,8 +115,11 @@ public class CustomSectionValidatorTests
               "inview": { "options": { "threshold": { "type": "number", "min": 0, "max": 1 }, "once": { "type": "boolean" } }, "writes": [ "data-visible" ] },
               "scroll-progress": { "options": {} },
               "pointer": { "options": {} },
-              "count-up": { "options": { "duration": { "type": "number", "min": 0, "max": 5000 }, "decimals": { "type": "number", "min": 0, "max": 4 } } },
-              "countdown": { "options": { "part": { "type": "select", "options": [ "days", "hours", "minutes", "seconds" ] } } },
+              "count-up": {
+                "value": { "type": "number" },
+                "options": { "duration": { "type": "number", "min": 0, "max": 5000 }, "decimals": { "type": "number", "min": 0, "max": 4 } }
+              },
+              "countdown": { "value": { "type": "date" }, "options": { "part": { "type": "select", "options": [ "days", "hours", "minutes", "seconds" ] } } },
               "copy": { "options": {} },
               "marquee": { "options": {} }
             }
@@ -196,6 +199,11 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><p data-inview data-inview-delay="1"></p></section>""", "<p> at line 1 has data-inview-delay, which is not an option data-inview takes")]
     [InlineData("""<section><span data-count-up="5" data-count-up-duration="9000"></span></section>""", "<span> at line 1 has data-count-up-duration=\"9000\", which data-count-up does not take: it takes a number from 0 to 5000")]
     [InlineData("""<section><span data-count-up="{{ settings.price }}"></span></section>""", "<span> at line 1 binds 'settings.price', a setting the schema does not declare")]
+    [InlineData("""<section><span data-count-up="many"></span></section>""", "<span> at line 1 has data-count-up=\"many\", which data-count-up does not take: it takes a number")]
+    [InlineData("""<section><span data-count-up="{{ settings.count }}+"></span></section>""", "<span> at line 1 has data-count-up=\"{{ settings.count }}+\", which is a value or one binding")]
+    [InlineData("""<section><span data-countdown="tomorrow"></span></section>""", "<span> at line 1 has data-countdown=\"tomorrow\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="2026-02-30"></span></section>""", "<span> at line 1 has data-countdown=\"2026-02-30\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="31.12.2026"></span></section>""", "<span> at line 1 has data-countdown=\"31.12.2026\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
     [InlineData("""<section><span data-countdown-part="days"></span></section>""", "<span> at line 1 has data-countdown-part, an option of data-countdown, outside an element with data-countdown")]
     [InlineData("""<section data-countdown="2026-12-31"><span data-countdown-part="weeks"></span></section>""", "<span> at line 1 has data-countdown-part=\"weeks\", which data-countdown does not take: it takes days, hours, minutes, seconds")]
     public void Validate_TemplateThatBreaksARule_IsRefusedWithTheRule(string template, string error)
@@ -236,17 +244,18 @@ public class CustomSectionValidatorTests
     public void Validate_KitTagAndBehaviorAModuleAdds_AreTakenAsTheCatalogDeclaresThem()
     {
         var catalog = (JObject)Catalog.DeepClone();
-        catalog["kit"]!["tags"]!["vc-rating"] = JObject.Parse("""{ "attributes": { "value": { "type": "number", "min": 0, "max": 5 } } }""");
+        catalog["kit"]!["tags"]!["vc-rating"] = JObject.Parse("""{ "attributes": { "value": { "type": "number", "min": 0, "max": 5 }, "since": { "type": "date" } } }""");
         catalog["kit"]!["behaviors"]!["tilt"] = JObject.Parse("""{ "options": { "max": { "type": "number", "max": 45 } } }""");
 
-        var valid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="30"><vc-rating value="4.5"></vc-rating></section>"""), catalog);
-        var invalid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="60"><vc-rating value="6"></vc-rating></section>"""), catalog);
+        var valid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="30"><vc-rating value="4.5" since="2026-11-21T09:30:00+02:00"></vc-rating></section>"""), catalog);
+        var invalid = _validator.Validate(Type, Section("""<section data-tilt data-tilt-max="60"><vc-rating value="6" since="soon"></vc-rating></section>"""), catalog);
 
         Assert.Empty(valid.Errors);
         Assert.Equal(
             [
                 $"{File}: <section> at line 1 has data-tilt-max=\"60\", which data-tilt does not take: it takes a number up to 45",
                 $"{File}: <vc-rating> at line 1 has value=\"6\", which vc-rating does not take: it takes a number from 0 to 5",
+                $"{File}: <vc-rating> at line 1 has since=\"soon\", which vc-rating does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z",
             ],
             invalid.Errors);
     }

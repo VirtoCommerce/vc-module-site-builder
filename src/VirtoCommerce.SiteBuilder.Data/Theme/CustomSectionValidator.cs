@@ -56,6 +56,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const string NumberKitType = "number";
     private const string BooleanKitType = "boolean";
     private const string SelectKitType = "select";
+    private const string DateKitType = "date";
 
     private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
 
@@ -105,6 +106,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private static readonly Regex BindingPattern = new(@"\{\{\s*([^{}]*?)\s*\}\}", RegexOptions.None, RegexTimeout);
     private static readonly Regex SingleBindingPattern = new(@"^\s*\{\{\s*([^{}]*?)\s*\}\}\s*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex PathPattern = new(@"^(settings|item)\.([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$", RegexOptions.None, RegexTimeout);
+    private static readonly Regex IsoDatePattern = new(@"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$", RegexOptions.None, RegexTimeout);
 
     private static readonly Regex CssCommentPattern = new(@"/\*.*?(?:\*/|$)", RegexOptions.Singleline, RegexTimeout);
     private static readonly Regex CssEscapePattern = new(@"\\(?:([0-9a-fA-F]{1,6})[ \t\r\n\f]?|(.))", RegexOptions.Singleline, RegexTimeout);
@@ -588,7 +590,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return;
         }
 
-        if (field.Type is not (NumberKitType or BooleanKitType or SelectKitType))
+        if (field.Type is not (NumberKitType or BooleanKitType or SelectKitType or DateKitType))
         {
             var text = ValidateBindings(check, value, where, scope);
             if (TextAttributes.Contains(name))
@@ -622,6 +624,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
                 return value is "" or "true" or "false" ? null : "true, false or no value";
             case SelectKitType:
                 return field.Options == null || field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
+            case DateKitType:
+                return IsIsoDate(value) ? null : "an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z";
             default:
                 var isNumber = decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number);
                 return isNumber && !(number < field.Min) && !(number > field.Max) ? null : DescribeNumber(field);
@@ -630,19 +634,29 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     /// <summary>
     /// A behavior's option is an attribute of its own, data-{behavior}-{option}, on the element with the behavior or inside it: the countdown's
-    /// parts are elements inside the countdown. The behavior's own value is the storefront's to read.
+    /// parts are elements inside the countdown. The behavior's own value is checked by the type it declares, and is the storefront's to read
+    /// when it declares none.
     /// </summary>
     protected virtual void ValidateBehavior(CustomSectionCheck check, IElement element, string behavior, string option, string name, string value,
         string where, TemplateScope scope)
     {
+        var attribute = DataPrefix + behavior;
+        var kitBehavior = check.Kit.Behaviors[behavior];
         if (option == null)
         {
-            ValidateBindings(check, value, where, scope);
+            if (kitBehavior.Value is { } valueField)
+            {
+                ValidateKitValue(check, attribute, valueField, name, value, where, scope);
+            }
+            else
+            {
+                ValidateBindings(check, value, where, scope);
+            }
+
             return;
         }
 
-        var attribute = DataPrefix + behavior;
-        if (!check.Kit.Behaviors[behavior].TryGetValue(option, out var field))
+        if (!kitBehavior.Options.TryGetValue(option, out var field))
         {
             check.AddError($"{where} has {name}, which is not an option {attribute} takes");
             return;
@@ -683,7 +697,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return new StorefrontKit(catalog != null, Tags: null, Behaviors: null);
         }
 
-        return new StorefrontKit(true, ReadKitEntries(kit["tags"], "attributes", KitTagPrefix), ReadKitEntries(kit["behaviors"], "options", string.Empty));
+        var tags = ReadKitEntries(kit["tags"], KitTagPrefix, x => ReadKitFields(x["attributes"]));
+        var behaviors = ReadKitEntries(kit["behaviors"], string.Empty,
+            x => new KitBehavior(x["value"] is JObject value ? ReadKitField(value) : null, ReadKitFields(x["options"])));
+
+        return new StorefrontKit(true, tags, behaviors);
     }
 
     protected virtual void ValidateLink(CustomSectionCheck check, string name, string value, string where, TemplateScope scope)
@@ -1183,11 +1201,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         return false;
     }
 
-    private static Dictionary<string, IReadOnlyDictionary<string, KitField>> ReadKitEntries(JToken entries, string fieldsKey, string prefix) =>
+    private static Dictionary<string, T> ReadKitEntries<T>(JToken entries, string prefix, Func<JObject, T> read) =>
         (entries as JObject)?.Properties()
             .Where(x => x.Name.StartsWith(prefix, StringComparison.Ordinal) && x.Name.Length > prefix.Length && x.Value is JObject)
-            .ToDictionary(x => x.Name, x => ReadKitFields(x.Value[fieldsKey]), StringComparer.Ordinal)
-        ?? new Dictionary<string, IReadOnlyDictionary<string, KitField>>(StringComparer.Ordinal);
+            .ToDictionary(x => x.Name, x => read((JObject)x.Value), StringComparer.Ordinal)
+        ?? new Dictionary<string, T>(StringComparer.Ordinal);
 
     private static IReadOnlyDictionary<string, KitField> ReadKitFields(JToken fields) =>
         (fields as JObject)?.Properties()
@@ -1205,6 +1223,9 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             .ToList(),
         GetNumber(field, "min"),
         GetNumber(field, "max"));
+
+    private static bool IsIsoDate(string value) =>
+        IsoDatePattern.IsMatch(value) && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _);
 
     private static decimal? GetNumber(JObject item, string name) =>
         item[name] is JValue { Type: JTokenType.Integer or JTokenType.Float } value ? value.Value<decimal>() : null;
@@ -1239,15 +1260,18 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     /// <param name="Each">The list the element repeats for, or one of its ancestors does.</param>
     protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot);
 
-    /// <param name="Type">string, number, boolean, select or link; any other is read as a string.</param>
+    /// <param name="Type">string, number, boolean, select, date or link; any other is read as a string.</param>
     /// <param name="Options">The values a select takes.</param>
     protected sealed record KitField(string Type, IReadOnlyList<string> Options, decimal? Min, decimal? Max);
 
     /// <param name="HasCatalog">A catalog was given: without one, nothing is known of the kit.</param>
     /// <param name="Tags">The attributes of each kit tag, by its name; <c>null</c> for a catalog without a kit.</param>
-    /// <param name="Behaviors">The options of each behavior, by its name; <c>null</c> for a catalog without a kit.</param>
+    /// <param name="Behaviors">Each behavior by its name; <c>null</c> for a catalog without a kit.</param>
     protected sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, IReadOnlyDictionary<string, KitField>> Tags,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<string, KitField>> Behaviors);
+        IReadOnlyDictionary<string, KitBehavior> Behaviors);
+
+    /// <param name="Value">The type of the behavior attribute's own value; <c>null</c> when it declares none.</param>
+    protected sealed record KitBehavior(KitField Value, IReadOnlyDictionary<string, KitField> Options);
 
     protected sealed class CustomSectionCheck(string type, CustomSectionValidationResult result)
     {
