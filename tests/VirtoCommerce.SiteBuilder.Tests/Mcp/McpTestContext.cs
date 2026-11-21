@@ -564,8 +564,8 @@ internal sealed class McpTestContext : IAsyncDisposable
         public Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => inner.DiscardAsync(request, user, cancellationToken);
 
-        public Task<SiteBuilderOperationResult> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft, string catalogHash,
-            CancellationToken cancellationToken = default) => inner.ValidateThemeFilesAsync(storeId, files, draft, catalogHash, cancellationToken);
+        public Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
+            bool draft, string catalogHash, CancellationToken cancellationToken = default) => inner.ValidateThemeFilesAsync(storeId, files, draft, catalogHash, cancellationToken);
     }
 
     private UserManager<ApplicationUser> CreateUserManager()

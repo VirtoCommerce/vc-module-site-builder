@@ -19,6 +19,10 @@ public static class ThemeCustomSections
     public static string DescribeType(CustomSectionRules rules) =>
         string.Create(CultureInfo.InvariantCulture, $"matches {rules.TypePattern} and has at most {rules.MaxTypeLength} characters");
 
+    /// <summary>Each error after the file it is of, as a theme's errors are written.</summary>
+    public static IEnumerable<string> GetErrors(IEnumerable<CustomSectionValidationResult> results) =>
+        results.SelectMany(x => x.Errors.Select(error => $"{x.File}: {error}"));
+
     /// <summary>The type of a file by its path in the theme, valid or not; null for a file outside the folder or one that is not JSON.</summary>
     public static string GetCustomSectionType(string pathInTheme)
     {

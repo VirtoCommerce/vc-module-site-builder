@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.Platform.Core.Common;
@@ -16,10 +17,10 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 public class CustomSectionValidator(
     CustomSectionTemplateValidator templateValidator,
     CustomSectionCssValidator cssValidator,
+    IOptions<ThemeSnapshotOptions> options,
     ILogger<CustomSectionValidator> logger) : ICustomSectionValidator
 {
     private const int MaxPartSize = 64 * 1024;
-    private const int MaxTotalSize = 256 * 1024;
     private const int MaxCssDepth = 32;
     private const int MaxTemplateDepth = 32;
     private const int MaxAtRuleDepth = 4;
@@ -121,10 +122,32 @@ public class CustomSectionValidator(
 
     private Regex TypePattern => _typePattern ??= new Regex(Rules.TypePattern, RegexOptions.None, RegexTimeout);
 
-    public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog)
+    public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog) =>
+        Validate(type, content, CustomSectionKit.Read(catalog));
+
+    public virtual IList<CustomSectionValidationResult> ValidateTypes(IDictionary<string, JToken> types, ICollection<string> checkedTypes, JObject catalog)
+    {
+        ArgumentNullException.ThrowIfNull(types);
+        ArgumentNullException.ThrowIfNull(checkedTypes);
+
+        var kit = CustomSectionKit.Read(catalog);
+        var results = checkedTypes.Select(x => Validate(x, types.TryGetValue(x, out var content) ? content : null, kit)).ToList();
+        if (GetSizeError(types) is { } sizeError)
+        {
+            var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
+            result.File = ThemeStorage.CustomSectionsFolder;
+            result.Errors.Add(sizeError);
+            results.Add(result);
+        }
+
+        return results;
+    }
+
+    protected virtual CustomSectionValidationResult Validate(string type, JToken content, StorefrontKit kit)
     {
         var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
-        var check = new CustomSectionCheck(type, Rules, CustomSectionKit.Read(catalog), result);
+        var check = new CustomSectionCheck(type, Rules, kit, result);
+        result.File = check.File;
         if (type.Length > Rules.MaxTypeLength || !TypePattern.IsMatch(type))
         {
             check.AddError($"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType(Rules)}");
@@ -166,7 +189,8 @@ public class CustomSectionValidator(
         return result;
     }
 
-    public virtual string GetSizeError(IDictionary<string, JToken> types)
+    /// <returns><c>null</c> when the types together fit what the snapshot carries to every page.</returns>
+    protected virtual string GetSizeError(IDictionary<string, JToken> types)
     {
         var size = types.Values.Where(x => x != null).Sum(x => (long)Encoding.UTF8.GetByteCount(x.ToString(Formatting.None)));
         if (size <= Rules.MaxTotalSize)
@@ -175,7 +199,7 @@ public class CustomSectionValidator(
         }
 
         return string.Create(CultureInfo.InvariantCulture,
-            $"{ThemeStorage.CustomSectionsFolder}: the custom section types are {FormatSize(size)} of JSON together, more than {FormatSize(Rules.MaxTotalSize)}: the snapshot carries every type to every page");
+            $"the custom section types are {FormatSize(size)} of JSON together, more than {FormatSize(Rules.MaxTotalSize)}: the snapshot carries every type to every page");
     }
 
     public virtual CustomSectionRules GetRules() => Rules;
@@ -217,7 +241,7 @@ public class CustomSectionValidator(
         result.MaxCssDepth = MaxCssDepth;
         result.MaxAtRuleDepth = MaxAtRuleDepth;
         result.MaxPartSize = MaxPartSize;
-        result.MaxTotalSize = MaxTotalSize;
+        result.MaxTotalSize = options.Value.CustomSectionsMaxSize;
 
         return result;
     }

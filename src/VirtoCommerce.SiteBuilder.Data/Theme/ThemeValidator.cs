@@ -51,16 +51,8 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
         return errors;
     }
 
-    public virtual IList<string> ValidateCustomSections(ThemeSource source, JObject catalog)
-    {
-        var errors = source.CustomSections.SelectMany(x => customSectionValidator.Validate(x.Key, x.Value, catalog).Errors).ToList();
-        if (customSectionValidator.GetSizeError(source.CustomSections) is { } sizeError)
-        {
-            errors.Add(sizeError);
-        }
-
-        return errors;
-    }
+    public virtual IList<string> ValidateCustomSections(ThemeSource source, JObject catalog) =>
+        ThemeCustomSections.GetErrors(customSectionValidator.ValidateTypes(source.CustomSections, source.CustomSections.Keys, catalog)).ToList();
 
     protected virtual void ValidateSectionGroup(JToken token, string file, JObject catalog, IList<string> errors)
     {

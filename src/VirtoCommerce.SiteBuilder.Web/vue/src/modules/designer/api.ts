@@ -1,3 +1,4 @@
+import type { DesignerSaveResult } from "../../api_client/virtocommerce.sitebuilder";
 import type { Item, PageDocument, SectionGroup } from "./types";
 import { fromDocument, toDocument } from "./document";
 import { templateKeyOf } from "./templates";
@@ -283,14 +284,14 @@ export async function saveDesigner(
   storeId: string,
   save: { page?: DesignerSavePage; themeFiles: DesignerSaveFile[] },
   catalogHash?: string,
-): Promise<{ saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[]; warnings?: string[] }> {
+): Promise<DesignerSaveResult> {
   if (save.themeFiles.length && !catalogHash) throw new CatalogPendingError();
   const res = await call(designerSaveUrl(storeId, catalogHash), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(designerSaveBody(save)),
   });
-  return ((await res.json().catch(() => ({}))) ?? {}) as { saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[]; warnings?: string[] };
+  return ((await res.json().catch(() => ({}))) ?? {}) as DesignerSaveResult;
 }
 
 /** A file never published keeps its draft, its only copy. */

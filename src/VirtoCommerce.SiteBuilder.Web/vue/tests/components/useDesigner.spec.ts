@@ -276,13 +276,17 @@ describe("useDesigner: editing and saving", () => {
   });
 
   it("passes on the warnings the server saved the files with", async () => {
-    const warning = "custom-sections/custom-hero.json: the template's own text is the same in every language";
+    const warning = "the template's own text is the same in every language";
+    const hero = "default/custom-sections/custom-hero.json";
     await openDatabasePage();
-    platform.on("POST", "/api/site-builder/designer/save", { eTag: '"v2"', warnings: [warning] });
+    platform.on("POST", "/api/site-builder/designer/save", { eTag: '"v2"', themeFiles: [{ path: hero, eTag: '"h2"', warnings: [warning] }] });
     designer.selection.value = { kind: "section", id: "hero-1" };
     designer.setField("title", "Mine");
 
-    expect(await designer.save()).toEqual({ versions: {}, warnings: [warning] });
+    expect(await designer.save()).toEqual({
+      versions: { [hero]: '"h2"' },
+      warnings: [{ file: "custom-sections/custom-hero.json", warnings: [warning] }],
+    });
     expect(designer.dirty.value).toBe(false);
   });
 

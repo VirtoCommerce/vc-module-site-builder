@@ -23,13 +23,20 @@ import { resolveTranslations, type Translating } from "./translatable";
 import { moveItem } from "./rules";
 import type { Capability, Handshake } from "./previewMessages";
 import { hasThemeDraft, isNewThemeDraft, templateStatus, type ThemeStatus } from "./themePublication";
-import { CatalogPendingError, type DesignerDiscardPage, type DesignerSaveFile, type DesignerSavePage } from "./designerSave";
+import {
+  CatalogPendingError,
+  fileWarnings,
+  type DesignerDiscardPage,
+  type DesignerSaveFile,
+  type DesignerSavePage,
+  type FileWarnings,
+} from "./designerSave";
 
 const EMPTY_SCHEMAS: Schemas = { sections: {}, blocks: {}, shared: {}, objects: {} };
-/** The new version of each theme file saved, by its path, and what the server says about the files it saved as they are. */
-export interface DesignerSaved {
+/** The saved theme files' new versions by path, and the save's warnings. */
+export interface DesignerSaveOutcome {
   versions: Record<string, string>;
-  warnings: string[];
+  warnings: FileWarnings[];
 }
 
 export interface PageRow {
@@ -652,13 +659,13 @@ export function useDesigner() {
     return { path: file.value!.path, type: file.value!.type, content: api.filePageContent(sent) };
   }
 
-  async function saveFiles(page: DesignerSavePage | undefined, files: DesignerSaveFile[]): Promise<DesignerSaved> {
+  async function saveFiles(page: DesignerSavePage | undefined, files: DesignerSaveFile[]): Promise<DesignerSaveOutcome> {
     const versions: Record<string, string> = {};
     const saved = await api.saveDesigner(storeId.value!, { page, themeFiles: files }, handshake.value?.hash);
     if (groupId.value) eTag.value = saved.eTag ?? eTag.value;
-    for (const x of saved.themeFiles ?? []) versions[x.path] = x.eTag;
+    for (const x of saved.themeFiles ?? []) if (x.path && x.eTag) versions[x.path] = x.eTag;
     for (const path of Object.keys(themeETags.value)) if (versions[path]) themeETags.value[path] = versions[path];
-    return { versions, warnings: saved.warnings ?? [] };
+    return { versions, warnings: fileWarnings(saved.themeFiles) };
   }
 
   function markSaved(sent: PageDocument, groups: Partial<Record<SectionGroup, Item[]>>, pageChanged: boolean) {
@@ -667,7 +674,7 @@ export function useDesigner() {
     for (const [g, items] of Object.entries(groups)) savedGroupsJson.value[g as SectionGroup] = JSON.stringify(items);
   }
 
-  async function save(themeFiles: DesignerSaveFile[] = []): Promise<DesignerSaved | false> {
+  async function save(themeFiles: DesignerSaveFile[] = []): Promise<DesignerSaveOutcome | false> {
     if ((!groupId.value && !file.value && !shared.value) || busy.value || loadError.value) return false;
     const sent = pageOnly(doc.value);
     const pageChanged = JSON.stringify(sent) !== savedJson.value;

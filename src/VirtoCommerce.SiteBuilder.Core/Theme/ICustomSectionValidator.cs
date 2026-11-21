@@ -2,23 +2,17 @@ using Newtonsoft.Json.Linq;
 
 namespace VirtoCommerce.SiteBuilder.Core.Theme;
 
-/// <summary>
-/// Checks the custom section types of a theme, each kept as <c>custom-sections/{type}.json</c>: a type runs no code of its own, so its
-/// template and CSS are refused for anything the storefront would have to leave out, never sanitized.
-/// </summary>
+/// <summary>A type's template and CSS are refused, never sanitized, for anything the storefront would leave out.</summary>
 public interface ICustomSectionValidator
 {
-    /// <summary>The errors and the warnings name the file.</summary>
-    /// <param name="type">The type as its file names it, valid or not.</param>
-    /// <param name="catalog">
-    /// The storefront's schema catalog, whose <c>kit</c> names the kit tags and the behaviors a template may use, as a module of the storefront
-    /// may add its own; <c>null</c> refuses every kit tag and behavior.
-    /// </param>
+    /// <param name="type">From the file name; an invalid one is an error, not an exception.</param>
+    /// <param name="catalog">Its <c>kit</c> lists the kit tags and behaviors a template may use; <c>null</c> refuses all of them.</param>
     CustomSectionValidationResult Validate(string type, JToken content, JObject catalog);
 
-    /// <summary>The error for types that together are more than the snapshot carries to every page; <c>null</c> for none.</summary>
-    /// <param name="types">The file content of each type of the theme by its type.</param>
-    string GetSizeError(IDictionary<string, JToken> types);
+    /// <summary>The rules of each of <paramref name="checkedTypes"/>, and the size of all the <paramref name="types"/> together.</summary>
+    /// <param name="types">All the theme's types, by type.</param>
+    /// <returns>One result per checked type, and one for the folder when the types together are more than the snapshot carries.</returns>
+    IList<CustomSectionValidationResult> ValidateTypes(IDictionary<string, JToken> types, ICollection<string> checkedTypes, JObject catalog);
 
     /// <summary>The lists <see cref="Validate"/> checks against.</summary>
     CustomSectionRules GetRules();

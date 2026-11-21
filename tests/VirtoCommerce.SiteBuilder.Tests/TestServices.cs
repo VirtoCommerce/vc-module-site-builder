@@ -35,12 +35,12 @@ internal static class TestServices
     public static ContentPermissionService Permissions(IAuthorizationService authorizationService) => new(authorizationService);
 
     /// <param name="assetsUrl">The asset library's public address; <c>null</c> for a library that gives none.</param>
-    public static CustomSectionValidator CustomSectionValidator(string assetsUrl = AssetsUrl)
+    public static CustomSectionValidator CustomSectionValidator(string assetsUrl = AssetsUrl, ThemeSnapshotOptions options = null)
     {
         var urlPolicy = CustomSectionUrlPolicy(assetsUrl);
 
         return new CustomSectionValidator(new CustomSectionTemplateValidator(urlPolicy), new CustomSectionCssValidator(urlPolicy),
-            NullLogger<CustomSectionValidator>.Instance);
+            Options.Create(options ?? new ThemeSnapshotOptions()), NullLogger<CustomSectionValidator>.Instance);
     }
 
     public static CustomSectionUrlPolicy CustomSectionUrlPolicy(string assetsUrl = AssetsUrl) => new(new AssetUrls(assetsUrl));
@@ -74,7 +74,8 @@ internal static class TestServices
         IEventPublisher events = null,
         IThemePublisher themePublisher = null,
         ISchemaCatalogService catalogs = null,
-        IThemeStorageFactory themes = null)
+        IThemeStorageFactory themes = null,
+        ICustomSectionValidator customSectionValidator = null)
     {
         var contentGuard = ContentGuard;
         var contentWriter = pages == null
@@ -83,7 +84,7 @@ internal static class TestServices
 
         return new DesignerContentService(themeDrafts, themePublisher, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
             pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs(),
-            new CustomSectionService(themes, themeDrafts), CustomSectionValidator());
+            new CustomSectionService(themes, themeDrafts), customSectionValidator ?? CustomSectionValidator());
     }
 
     public static DesignerOperationService DesignerOperations(

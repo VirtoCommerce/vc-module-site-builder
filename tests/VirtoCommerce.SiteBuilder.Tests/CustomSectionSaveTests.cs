@@ -65,9 +65,22 @@ public class CustomSectionSaveTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(hero, _live.Files[Theme($"{Hero}-draft")]);
-        Assert.Equal(
-            ["custom-sections/custom-hero.json: the template holds text of its own ('Sale'), which is the same in every language: bind it to a translatable setting"],
-            result.Value.Warnings);
+        var file = Assert.Single(result.Value.ThemeFiles);
+        Assert.Equal(Hero, file.Path);
+        Assert.Equal(["the template holds text of its own ('Sale'), which is the same in every language: bind it to a translatable setting"], file.Warnings);
+    }
+
+    [Fact]
+    public async Task SaveAsync_CustomSectionType_IsCheckedOnceBeforeTheWrite()
+    {
+        await SaveCatalogAsync();
+        var validator = new CountingValidator(TestServices.CustomSectionValidator());
+
+        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section><h2>Sale</h2></section>")))), _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, validator.Checked);
+        Assert.NotEmpty(Assert.Single(result.Value.ThemeFiles).Warnings);
     }
 
     [Fact]
@@ -315,7 +328,7 @@ public class CustomSectionSaveTests
         new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "product-info": {}{{sections}} }, "blocks": {}, "shared": {}{{kit}} }""", Ct);
 
-    private DesignerOperationService Operations()
+    private DesignerOperationService Operations(ICustomSectionValidator customSectionValidator = null)
     {
         var authorization = new FakeAuthorizationService(true);
         var options = Options.Create(new GitContentOptions());
@@ -329,7 +342,8 @@ public class CustomSectionSaveTests
             authorizationService: authorization,
             contentPermissionService: TestServices.Permissions(authorization),
             requestValidator: RequestValidators.Content("s1"),
-            designerContentService: TestServices.Designer(_history, filePageDrafts, themeDrafts, _pages, _live, themePublisher, new SchemaCatalogService(_themes), _themes),
+            designerContentService: TestServices.Designer(_history, filePageDrafts, themeDrafts, _pages, _live, themePublisher, new SchemaCatalogService(_themes), _themes,
+                customSectionValidator),
             themeDraftService: themeDrafts,
             groupedPageService: _pages,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization));
@@ -348,4 +362,23 @@ public class CustomSectionSaveTests
 
     private string ETagOf(string path) =>
         SiteBuilderContentVersion.CreateForThemeFile("s1", path, _live.Files.GetValueOrDefault(Theme($"{path}-draft")) ?? _live.Files.GetValueOrDefault(Theme(path)));
+
+    private sealed class CountingValidator(ICustomSectionValidator inner) : ICustomSectionValidator
+    {
+        public int Checked { get; private set; }
+
+        public CustomSectionValidationResult Validate(string type, JToken content, JObject catalog)
+        {
+            Checked++;
+            return inner.Validate(type, content, catalog);
+        }
+
+        public IList<CustomSectionValidationResult> ValidateTypes(IDictionary<string, JToken> types, ICollection<string> checkedTypes, JObject catalog)
+        {
+            Checked += checkedTypes.Count;
+            return inner.ValidateTypes(types, checkedTypes, catalog);
+        }
+
+        public CustomSectionRules GetRules() => inner.GetRules();
+    }
 }

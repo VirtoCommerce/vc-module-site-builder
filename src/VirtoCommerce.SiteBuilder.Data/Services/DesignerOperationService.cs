@@ -82,23 +82,29 @@ public class DesignerOperationService(
         }
 
         contentRequest.Files = files;
-        if (await CheckDesignerChangesAsync(contentRequest, request, group, page, themeFiles, user, cancellationToken) is { } refusedChanges)
+        if (await CheckDesignerChangesAsync(contentRequest, request, group, page, user, cancellationToken) is { } refusedChanges)
         {
             return refusedChanges.As<DesignerSaveResult>();
         }
 
+        var themeCheck = await CheckDesignerThemeFilesAsync(request.StoreId, themeFiles, files, request.CatalogHash, cancellationToken);
+        if (!themeCheck.Succeeded)
+        {
+            return themeCheck.As<DesignerSaveResult>();
+        }
+
         var command = CreateDesignerSaveCommand(request, group, files, themeFiles);
+        command.ThemeFileWarnings = themeCheck.Value;
 
         return await SaveDesignerChangesAsync(command, request.DryRun, user, cancellationToken);
     }
 
-    /// <summary>The request with the files it saves, then the page, then the theme files.</summary>
+    /// <summary>The request with the files it saves, then the page; the theme files are checked after them.</summary>
     private async Task<SiteBuilderOperationResult> CheckDesignerChangesAsync(SiteBuilderContentRequest contentRequest, DesignerSaveOperationRequest request,
-        GroupedSiteBuilderPage group, DesignerSavePage page, IList<DesignerSaveFile> themeFiles, ClaimsPrincipal user, CancellationToken cancellationToken)
+        GroupedSiteBuilderPage group, DesignerSavePage page, ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         return await requestValidator.CheckOperationRequestAsync(contentRequest, request.BindingErrors, cancellationToken)
-               ?? await CheckDesignerPageAsync(request.StoreId, group, page, user, cancellationToken)
-               ?? await CheckDesignerThemeFilesAsync(request.StoreId, themeFiles, contentRequest.Files, request.CatalogHash, cancellationToken);
+               ?? await CheckDesignerPageAsync(request.StoreId, group, page, user, cancellationToken);
     }
 
     public virtual Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,
@@ -159,20 +165,20 @@ public class DesignerOperationService(
         }
     }
 
-    public virtual Task<SiteBuilderOperationResult> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft,
-        string catalogHash, CancellationToken cancellationToken = default)
+    public virtual Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
+        bool draft, string catalogHash, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(files);
 
         return ValidateThemeFilesInternalAsync(storeId, files, draft, catalogHash, cancellationToken);
     }
 
-    private async Task<SiteBuilderOperationResult> ValidateThemeFilesInternalAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft,
-        string catalogHash, CancellationToken cancellationToken)
+    private async Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesInternalAsync(string storeId,
+        IList<SiteBuilderContentFile> files, bool draft, string catalogHash, CancellationToken cancellationToken)
     {
         if (!DesignerThemeFiles.AreNamedOnce(files.Select(x => x.Path).ToList()))
         {
-            return SiteBuilderOperationResult.Invalid(DesignerThemeFiles.NamingError);
+            return SiteBuilderOperationResult.Invalid(DesignerThemeFiles.NamingError).As<IDictionary<string, IList<string>>>();
         }
 
         var contents = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
@@ -183,16 +189,15 @@ public class DesignerOperationService(
 
         try
         {
-            await designerContentService.ValidateThemeFilesAsync(storeId, contents, draft, catalogHash, cancellationToken);
-            return SiteBuilderOperationResult.Success();
+            return SiteBuilderOperationResult.Success(await designerContentService.ValidateThemeFilesAsync(storeId, contents, draft, catalogHash, cancellationToken));
         }
         catch (InvalidDataException ex)
         {
-            return SiteBuilderOperationResult.Invalid(ex.Message);
+            return SiteBuilderOperationResult.Invalid(ex.Message).As<IDictionary<string, IList<string>>>();
         }
         catch (ThemeValidationException ex)
         {
-            return SiteBuilderOperationResult.Invalid(ex.Message, ex.Errors);
+            return SiteBuilderOperationResult.Invalid(ex.Message, ex.Errors).As<IDictionary<string, IList<string>>>();
         }
     }
 
@@ -266,27 +271,27 @@ public class DesignerOperationService(
         return placement.Error != null ? SiteBuilderOperationResult.Invalid(placement.Error) : null;
     }
 
-    protected virtual async Task<SiteBuilderOperationResult> CheckDesignerThemeFilesAsync(string storeId, IList<DesignerSaveFile> themeFiles,
-        IList<SiteBuilderContentFile> files, string catalogHash, CancellationToken cancellationToken)
+    /// <returns>The warnings of the files, by the path with the theme folder, or the refusal.</returns>
+    protected virtual async Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> CheckDesignerThemeFilesAsync(string storeId,
+        IList<DesignerSaveFile> themeFiles, IList<SiteBuilderContentFile> files, string catalogHash, CancellationToken cancellationToken)
     {
         if (themeFiles.Any(x => string.IsNullOrWhiteSpace(x.ETag)))
         {
-            return SiteBuilderOperationResult.VersionRequired(ThemeFileVersionRequiredError);
+            return SiteBuilderOperationResult.VersionRequired(ThemeFileVersionRequiredError).As<IDictionary<string, IList<string>>>();
         }
 
         var themeSaveFiles = files.Where(IsThemeFile).ToList();
         if (themeSaveFiles.Count == 0)
         {
-            return null;
+            return SiteBuilderOperationResult.Success<IDictionary<string, IList<string>>>(new Dictionary<string, IList<string>>());
         }
 
         if (string.IsNullOrEmpty(catalogHash))
         {
-            return SiteBuilderOperationResult.Invalid(CatalogRequiredError);
+            return SiteBuilderOperationResult.Invalid(CatalogRequiredError).As<IDictionary<string, IList<string>>>();
         }
 
-        var validation = await ValidateThemeFilesAsync(storeId, themeSaveFiles, draft: true, catalogHash, cancellationToken);
-        return validation.Succeeded ? null : validation;
+        return await ValidateThemeFilesAsync(storeId, themeSaveFiles, draft: true, catalogHash, cancellationToken);
     }
 
     protected virtual DesignerSaveCommand CreateDesignerSaveCommand(DesignerSaveOperationRequest request, GroupedSiteBuilderPage group,

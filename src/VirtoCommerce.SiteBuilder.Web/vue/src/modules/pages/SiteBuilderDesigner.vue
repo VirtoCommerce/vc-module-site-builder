@@ -671,7 +671,7 @@ import {
   type ThemePart,
 } from "../designer/history";
 import { publishActions, themeErrors, themePublishButton } from "../designer/themePublication";
-import { CatalogPendingError, warningsByFile } from "../designer/designerSave";
+import { CatalogPendingError, type FileWarnings } from "../designer/designerSave";
 import type { Field, Item, PageDocument, SectionGroup, Selection } from "../designer/types";
 import { draftTemplates, savedTemplatesReader } from "../designer/templateDrafts";
 import { namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
@@ -1090,9 +1090,8 @@ const FILE_STYLE = { margin: "6px 0 0", fontWeight: "600" };
 const bullets = (items: string[]) => h("ul", { style: LIST_STYLE }, items.map((x) => h("li", x)));
 const listed = (heading: string, items: string[]) => h("div", [h("p", heading), bullets(items)]);
 
-// A custom type's checks can warn of several things at once, so each file is named once above its warnings.
-function notifyWarnings(warnings: string[]) {
-  const files = warningsByFile(warnings).flatMap((x) => [...(x.file ? [h("p", { style: FILE_STYLE }, x.file)] : []), bullets(x.warnings)]);
+function notifyWarnings(warnings: FileWarnings[]) {
+  const files = warnings.flatMap((x) => [h("p", { style: FILE_STYLE }, x.file), bullets(x.warnings)]);
   notification.warning(h("div", [h("p", t("SITE_BUILDER.DESIGNER.SAVE_WARNINGS")), ...files]), { timeout: false });
 }
 

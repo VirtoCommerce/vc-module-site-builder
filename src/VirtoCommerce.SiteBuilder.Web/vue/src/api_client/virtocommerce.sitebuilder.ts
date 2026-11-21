@@ -5135,7 +5135,6 @@ export interface DesignerSaveRequest {
 export interface DesignerSaveResult {
     eTag?: string | undefined;
     themeFiles?: ThemeFileVersion[] | undefined;
-    warnings?: string[] | undefined;
     saveId?: string | undefined;
 }
 
@@ -5684,6 +5683,7 @@ export interface ThemeFileContent {
 export interface ThemeFileVersion {
     path?: string | undefined;
     eTag?: string | undefined;
+    warnings?: string[] | undefined;
 }
 
 export interface ThemePalette {

@@ -201,8 +201,8 @@ public class DesignerControllerResponseTests
         public Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => Answer<ContentSaveResult>(request, user);
 
-        public Task<SiteBuilderOperationResult> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft, string catalogHash,
-            CancellationToken cancellationToken = default) => Task.FromResult(Result);
+        public Task<SiteBuilderOperationResult<IDictionary<string, IList<string>>>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
+            bool draft, string catalogHash, CancellationToken cancellationToken = default) => Task.FromResult(Result.As<IDictionary<string, IList<string>>>());
 
         private Task<SiteBuilderOperationResult<T>> Answer<T>(SiteBuilderOperationRequest request, ClaimsPrincipal user)
         {

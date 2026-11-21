@@ -750,7 +750,7 @@ describe("the warnings a save answers with", () => {
   }
 
   it("lists them in a warning that stays until dismissed, each file named once above its own, with the save done", async () => {
-    const designer = await saveAnswering({ eTag: '"v2"', warnings: WARNINGS.map((x) => `${HERO}: ${x}`) });
+    const designer = await saveAnswering({ eTag: '"v2"', themeFiles: [{ path: `default/${HERO}`, eTag: '"h2"', warnings: WARNINGS }] });
 
     expect(notification.warning).toHaveBeenCalledTimes(1);
     const [content, options] = notification.warning.mock.calls[0];
@@ -763,7 +763,7 @@ describe("the warnings a save answers with", () => {
   });
 
   it("shows nothing for a save without warnings", async () => {
-    await saveAnswering({ eTag: '"v2"', warnings: [] });
+    await saveAnswering({ eTag: '"v2"', themeFiles: [{ path: `default/${HERO}`, eTag: '"h2"', warnings: [] }] });
 
     expect(notification.warning).not.toHaveBeenCalled();
   });

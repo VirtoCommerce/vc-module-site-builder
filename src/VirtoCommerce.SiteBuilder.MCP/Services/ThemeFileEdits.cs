@@ -108,7 +108,10 @@ public static class ThemeFileEdits
             }
         }
 
-        foreach (var warning in (dryRun ? result.Preview?.Warnings : result.Value?.Warnings) ?? [])
+        var warnings = dryRun
+            ? result.Preview?.Warnings
+            : result.Value?.ThemeFiles.SelectMany(x => x.Warnings.Select(warning => $"{GetPathInTheme(x.Path)}: {warning}"));
+        foreach (var warning in warnings ?? [])
         {
             change.AddWarning(warning);
         }

@@ -1,4 +1,4 @@
-import type { DesignerDiscardRequest, DesignerSaveRequest } from "../../api_client/virtocommerce.sitebuilder";
+import type { DesignerDiscardRequest, DesignerSaveRequest, ThemeFileVersion } from "../../api_client/virtocommerce.sitebuilder";
 import type { ThemePart } from "./history";
 
 export type DesignerSavePage = { groupId: string; eTag: string; content: unknown } | { path: string; type: string; content: unknown };
@@ -46,16 +46,13 @@ export function designerDiscardBody(discard: { page?: DesignerDiscardPage; theme
   return { ...(discard.page ? { page: discard.page } : {}), themeFiles: [...new Set(discard.themeFiles)] };
 }
 
-const FILE_WARNING = /^([^\s:]+\.json): ([\s\S]+)$/;
-
-/** A save's warnings by the theme file each names, in the order the server gave them; a warning that names no file has none. */
-export function warningsByFile(warnings: string[]): { file?: string; warnings: string[] }[] {
-  const groups: { file?: string; warnings: string[] }[] = [];
-  for (const warning of warnings) {
-    const [, file, text = warning] = FILE_WARNING.exec(warning) ?? [];
-    const group = groups.find((x) => x.file === file);
-    if (group) group.warnings.push(text);
-    else groups.push({ file, warnings: [text] });
-  }
-  return groups;
+export interface FileWarnings {
+  /** The path in the theme, without the theme folder. */
+  file: string;
+  warnings: string[];
 }
+
+export const fileWarnings = (themeFiles: ThemeFileVersion[] = []): FileWarnings[] =>
+  themeFiles
+    .filter((x) => x.path && x.warnings?.length)
+    .map((x) => ({ file: x.path!.slice(x.path!.indexOf("/") + 1), warnings: x.warnings! }));

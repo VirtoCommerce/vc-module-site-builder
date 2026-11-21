@@ -15,7 +15,7 @@ below. Anything that needs logic comes from the storefront: a [kit tag](#kit-tag
 `type` matches `^custom-[a-z0-9]+(?:-[a-z0-9]+)*$` and is at most 64 characters; the file name is the type. Writing it
 takes `builder:theme`. A type is never renamed once a page or a template places it. Discarding the draft of a type that
 was never published removes the type. A theme's types are at most 256 KB of JSON together, since the snapshot carries
-every type to every page.
+every type to every page; the setting `SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes) changes the limit.
 
 ```ts
 interface CustomSectionType {

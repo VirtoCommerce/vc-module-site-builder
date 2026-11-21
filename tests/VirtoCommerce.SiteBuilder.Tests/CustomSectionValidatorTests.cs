@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using Xunit;
 
@@ -136,6 +138,7 @@ public class CustomSectionValidatorTests
     {
         var result = _validator.Validate(Type, Section(ValidTemplate, ValidCss), Catalog);
 
+        Assert.Equal(File, result.File);
         Assert.Empty(result.Errors);
         Assert.Empty(result.Warnings);
     }
@@ -235,7 +238,7 @@ public class CustomSectionValidatorTests
     {
         var result = _validator.Validate(Type, Section(template), Catalog);
 
-        Assert.Contains($"{File}: {error}", result.Errors);
+        Assert.Contains($"{error}", result.Errors);
     }
 
     [Fact]
@@ -245,8 +248,8 @@ public class CustomSectionValidatorTests
 
         Assert.Equal(
             [
-                $"{File}: <section> at line 1 has an attribute a custom section cannot use, 'data-inview': it is no binding, and no schema catalog names the storefront's behaviors",
-                $"{File}: <vc-button> at line 1 is a kit tag, and no schema catalog names the storefront's kit tags: save it with the catalog of the storefront's preview",
+                $"<section> at line 1 has an attribute a custom section cannot use, 'data-inview': it is no binding, and no schema catalog names the storefront's behaviors",
+                $"<vc-button> at line 1 is a kit tag, and no schema catalog names the storefront's kit tags: save it with the catalog of the storefront's preview",
             ],
             result.Errors);
         Assert.Empty(_validator.Validate(Type, Section("""<section><p>{{ settings.title }}</p></section>"""), null).Errors);
@@ -259,8 +262,8 @@ public class CustomSectionValidatorTests
 
         Assert.Equal(
             [
-                $"{File}: <section> at line 1 has an attribute a custom section cannot use, 'data-inview': it is no binding, and the storefront offers no behaviors, as its catalog has no kit",
-                $"{File}: <vc-button> at line 1 is a kit tag, and the storefront offers none: its catalog has no kit",
+                $"<section> at line 1 has an attribute a custom section cannot use, 'data-inview': it is no binding, and the storefront offers no behaviors, as its catalog has no kit",
+                $"<vc-button> at line 1 is a kit tag, and the storefront offers none: its catalog has no kit",
             ],
             result.Errors);
     }
@@ -278,9 +281,9 @@ public class CustomSectionValidatorTests
         Assert.Empty(valid.Errors);
         Assert.Equal(
             [
-                $"{File}: <section> at line 1 has data-tilt-max=\"60\", which data-tilt does not take: it takes a number up to 45",
-                $"{File}: <vc-rating> at line 1 has value=\"6\", which vc-rating does not take: it takes a number from 0 to 5",
-                $"{File}: <vc-rating> at line 1 has since=\"soon\", which vc-rating does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z",
+                $"<section> at line 1 has data-tilt-max=\"60\", which data-tilt does not take: it takes a number up to 45",
+                $"<vc-rating> at line 1 has value=\"6\", which vc-rating does not take: it takes a number from 0 to 5",
+                $"<vc-rating> at line 1 has since=\"soon\", which vc-rating does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z",
             ],
             invalid.Errors);
     }
@@ -305,7 +308,7 @@ public class CustomSectionValidatorTests
 
         var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="{value}"></vc-button></section>"""), catalog);
 
-        Assert.Equal([$"{File}: <vc-button> at line 1 has '{name}', which no kit tag takes, whatever the catalog declares"], result.Errors);
+        Assert.Equal([$"<vc-button> at line 1 has '{name}', which no kit tag takes, whatever the catalog declares"], result.Errors);
     }
 
     [Fact]
@@ -318,8 +321,8 @@ public class CustomSectionValidatorTests
 
         Assert.Equal(
             [
-                $"{File}: <section> at line 1 has an attribute a custom section cannot use, 'data-sb-anchor': the storefront writes data-sb- and data-pb- attributes itself",
-                $"{File}: <p> at line 1 has an attribute a custom section cannot use, 'data-pb-id': the storefront writes data-sb- and data-pb- attributes itself",
+                $"<section> at line 1 has an attribute a custom section cannot use, 'data-sb-anchor': the storefront writes data-sb- and data-pb- attributes itself",
+                $"<p> at line 1 has an attribute a custom section cannot use, 'data-pb-id': the storefront writes data-sb- and data-pb- attributes itself",
             ],
             result.Errors);
     }
@@ -336,7 +339,7 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="javascript:alert(1)"></vc-button></section>"""), catalog);
 
         Assert.Equal(
-            [$"{File}: <vc-button> at line 1 has {name}=\"javascript:alert(1)\", which is not a path starting with '/', or an https:, mailto: or tel: URL"],
+            [$"<vc-button> at line 1 has {name}=\"javascript:alert(1)\", which is not a path starting with '/', or an https:, mailto: or tel: URL"],
             result.Errors);
     }
 
@@ -351,8 +354,8 @@ public class CustomSectionValidatorTests
 
         Assert.Equal(
             [
-                $"{File}: <section> at line 1 has data-inject, and the catalog declares data-inject with 'code' of a type the server does not know, 'script'",
-                $"{File}: <vc-frame> at line 1 is a kit tag the catalog declares with the attribute 'content' of a type the server does not know, 'html'",
+                $"<section> at line 1 has data-inject, and the catalog declares data-inject with 'code' of a type the server does not know, 'script'",
+                $"<vc-frame> at line 1 is a kit tag the catalog declares with the attribute 'content' of a type the server does not know, 'html'",
             ],
             result.Errors);
     }
@@ -386,7 +389,7 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section(template, css), Catalog);
 
         Assert.Empty(result.Errors);
-        Assert.Equal([$"{File}: {warning}"], result.Warnings);
+        Assert.Equal([$"{warning}"], result.Warnings);
     }
 
     [Theory]
@@ -407,7 +410,7 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
         Assert.Empty(result.Errors);
-        Assert.Equal([$"{File}: the CSS sets {physical}, which stays on that side when the page reads right to left: use {logical}"], result.Warnings);
+        Assert.Equal([$"the CSS sets {physical}, which stays on that side when the page reads right to left: use {logical}"], result.Warnings);
     }
 
     [Fact]
@@ -442,7 +445,7 @@ public class CustomSectionValidatorTests
     {
         var result = _validator.Validate(Type, Section(template), Catalog);
 
-        Assert.StartsWith($"{File}: {error}", result.Errors[0]);
+        Assert.StartsWith($"{error}", result.Errors[0]);
     }
 
     [Theory]
@@ -455,7 +458,7 @@ public class CustomSectionValidatorTests
 
         var result = _validator.Validate(Type, Section(template), Catalog);
 
-        Assert.Equal([$"{File}: the template nests elements deeper than 32"], result.Errors);
+        Assert.Equal([$"the template nests elements deeper than 32"], result.Errors);
     }
 
     [Fact]
@@ -466,7 +469,7 @@ public class CustomSectionValidatorTests
 
         var result = _validator.Validate(Type, Section(template), Catalog);
 
-        Assert.Equal([$"{File}: the template nests elements deeper than 32"], result.Errors);
+        Assert.Equal([$"the template nests elements deeper than 32"], result.Errors);
         Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(5), $"took {watch.Elapsed}");
     }
 
@@ -477,7 +480,7 @@ public class CustomSectionValidatorTests
 
         var result = _validator.Validate(Type, Section(template), Catalog);
 
-        Assert.Equal([$"{File}: <p> at line 1 has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}"], result.Errors);
+        Assert.Equal([$"<p> at line 1 has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}"], result.Errors);
     }
 
     [Theory]
@@ -506,7 +509,7 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section("<section>\n  <p>\n    <input>\n    <svg></svg>\n  </p>\n</section>"), Catalog);
 
         Assert.Equal(
-            [$"{File}: <input> at line 3 is not an element a custom section can hold", $"{File}: <svg> at line 4 is not an element a custom section can hold"],
+            [$"<input> at line 3 is not an element a custom section can hold", $"<svg> at line 4 is not an element a custom section can hold"],
             result.Errors);
     }
 
@@ -571,7 +574,7 @@ public class CustomSectionValidatorTests
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
-        Assert.Contains($"{File}: {error}", result.Errors);
+        Assert.Contains($"{error}", result.Errors);
     }
 
     [Theory]
@@ -607,7 +610,7 @@ public class CustomSectionValidatorTests
 
         Assert.Empty(result.Errors);
         Assert.Equal(
-            [$"{File}: the CSS sets literal colors ({property}), which the palette does not change: use var(--color-…) or a color-token setting's variable"],
+            [$"the CSS sets literal colors ({property}), which the palette does not change: use var(--color-…) or a color-token setting's variable"],
             result.Warnings);
     }
 
@@ -616,7 +619,7 @@ public class CustomSectionValidatorTests
     {
         var result = new FailingValidator().Validate(Type, Section("<section></section>", ".a { color: var(--color-primary-500); }"), Catalog);
 
-        Assert.Equal([$"{File}: the type could not be checked, so it is not saved: the platform's log has the cause"], result.Errors);
+        Assert.Equal([$"the type could not be checked, so it is not saved: the platform's log has the cause"], result.Errors);
     }
 
     [Fact]
@@ -637,7 +640,7 @@ public class CustomSectionValidatorTests
 
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
-        Assert.Equal([$"{File}: the CSS nests blocks deeper than 32"], result.Errors);
+        Assert.Equal([$"the CSS nests blocks deeper than 32"], result.Errors);
     }
 
     [Fact]
@@ -651,8 +654,8 @@ public class CustomSectionValidatorTests
         Assert.Empty(result.Errors);
         Assert.Equal(
             [
-                $"{File}: the template holds text of its own ('Free shipping', 'Truck'), which is the same in every language: bind it to a translatable setting",
-                $"{File}: the CSS sets literal colors (color, background), which the palette does not change: use var(--color-…) or a color-token setting's variable",
+                $"the template holds text of its own ('Free shipping', 'Truck'), which is the same in every language: bind it to a translatable setting",
+                $"the CSS sets literal colors (color, background), which the palette does not change: use var(--color-…) or a color-token setting's variable",
             ],
             result.Warnings);
     }
@@ -678,7 +681,7 @@ public class CustomSectionValidatorTests
     {
         var result = _validator.Validate(Type, Section("<section></section>", settings: settings), Catalog);
 
-        Assert.Contains($"{File}: {error}", result.Errors);
+        Assert.Contains($"{error}", result.Errors);
     }
 
     [Fact]
@@ -697,13 +700,13 @@ public class CustomSectionValidatorTests
 
         Assert.Equal(
             [
-                $"{File}: 'script' is not a key of a custom section type, which has format, name, schema, template and css",
-                $"{File}: 'format' is not 1",
-                $"{File}: 'name' is not a text, or a text per language",
-                $"{File}: 'schema.blocks' is not a key of a custom section's schema, which has settings, targetTemplates, limit and icon",
-                $"{File}: 'schema.targetTemplates' is not a list of template names",
-                $"{File}: 'schema.limit' is not a whole number from 1",
-                $"{File}: 'css' is not a text",
+                $"'script' is not a key of a custom section type, which has format, name, schema, template and css",
+                $"'format' is not 1",
+                $"'name' is not a text, or a text per language",
+                $"'schema.blocks' is not a key of a custom section's schema, which has settings, targetTemplates, limit and icon",
+                $"'schema.targetTemplates' is not a list of template names",
+                $"'schema.limit' is not a whole number from 1",
+                $"'css' is not a text",
             ],
             result.Errors);
     }
@@ -713,7 +716,7 @@ public class CustomSectionValidatorTests
     {
         var result = _validator.Validate(Type, Section($"<section><p>{new string('x', 70 * 1024)}</p></section>"), Catalog);
 
-        Assert.Equal([$"{File}: 'template' is 70 KB, more than 64 KB"], result.Errors);
+        Assert.Equal([$"'template' is 70 KB, more than 64 KB"], result.Errors);
     }
 
     [Theory]
@@ -727,7 +730,7 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(type, Section("<section></section>"), Catalog);
 
         Assert.Equal(
-            [$"custom-sections/{type}.json: '{type}' is not a custom section type, which matches ^custom-[a-z0-9]+(?:-[a-z0-9]+)*$ and has at most 64 characters"],
+            [$"'{type}' is not a custom section type, which matches ^custom-[a-z0-9]+(?:-[a-z0-9]+)*$ and has at most 64 characters"],
             result.Errors);
     }
 
@@ -736,20 +739,34 @@ public class CustomSectionValidatorTests
     {
         var result = TestServices.CustomSectionValidator(assetsUrl: null).Validate(Type, Section("""<section><img src="https://cdn.example/assets/a.png" alt=""><img src="{{ settings.image }}" alt=""></section>"""), Catalog);
 
-        Assert.Equal([$"{File}: <img> at line 1 has src with 'https://cdn.example/assets/a.png', which is not a URL of the store's asset library"], result.Errors);
+        Assert.Equal([$"<img> at line 1 has src with 'https://cdn.example/assets/a.png', which is not a URL of the store's asset library"], result.Errors);
     }
 
     [Fact]
-    public void GetSizeError_TypesTogetherOverTheLimit_NamesTheirSizeAndTheLimit()
+    public void ValidateTypes_TypesTogetherOverTheLimit_AddTheSizeErrorForTheFolder()
     {
         var padding = $"/* {new string('x', 60 * 1024)} */";
         var types = Enumerable.Range(1, 5).ToDictionary(x => $"custom-hero-{x}", _ => (JToken)Section("<section></section>", padding));
 
-        var error = _validator.GetSizeError(types);
+        var results = _validator.ValidateTypes(types, ["custom-hero-1"], Catalog);
         types.Remove("custom-hero-5");
 
-        Assert.Equal("custom-sections: the custom section types are 304.9 KB of JSON together, more than 256 KB: the snapshot carries every type to every page", error);
-        Assert.Null(_validator.GetSizeError(types));
+        Assert.Equal(["custom-sections/custom-hero-1.json", "custom-sections"], results.Select(x => x.File));
+        Assert.Equal(["the custom section types are 304.9 KB of JSON together, more than 256 KB: the snapshot carries every type to every page"], results[1].Errors);
+        Assert.Equal(["custom-sections/custom-hero-1.json"], _validator.ValidateTypes(types, ["custom-hero-1"], Catalog).Select(x => x.File));
+    }
+
+    [Fact]
+    public void ValidateTypes_TakesTheLimitFromTheSnapshotOptions()
+    {
+        var validator = TestServices.CustomSectionValidator(Assets, new ThemeSnapshotOptions { CustomSectionsMaxSize = 100 * 1024 });
+        var padding = $"/* {new string('x', 60 * 1024)} */";
+        var types = Enumerable.Range(1, 2).ToDictionary(x => $"custom-hero-{x}", _ => (JToken)Section("<section></section>", padding));
+
+        var results = validator.ValidateTypes(types, [], Catalog);
+
+        Assert.Contains("more than 100 KB", Assert.Single(results).Errors.Single(), StringComparison.Ordinal);
+        Assert.Equal(100 * 1024, validator.GetRules().MaxTotalSize);
     }
 
     private static JObject Section(string template, string css = "", string settings = Settings)
@@ -762,7 +779,7 @@ public class CustomSectionValidatorTests
     }
 
     private sealed class FailingValidator() : CustomSectionValidator(new CustomSectionTemplateValidator(Urls), new CustomSectionCssValidator(Urls),
-        NullLogger<CustomSectionValidator>.Instance)
+        Options.Create(new ThemeSnapshotOptions()), NullLogger<CustomSectionValidator>.Instance)
     {
         private static readonly CustomSectionUrlPolicy Urls = TestServices.CustomSectionUrlPolicy(Assets);
 

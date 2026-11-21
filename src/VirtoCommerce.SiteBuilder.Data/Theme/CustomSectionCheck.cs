@@ -37,9 +37,9 @@ public class CustomSectionCheck(string type, CustomSectionRules rules, Storefron
 
     public bool Animates { get; set; }
 
-    public void AddError(string error) => result.Errors.Add($"{File}: {error}");
+    public void AddError(string error) => result.Errors.Add(error);
 
-    public void AddWarning(string warning) => result.Warnings.Add($"{File}: {warning}");
+    public void AddWarning(string warning) => result.Warnings.Add(warning);
 }
 
 /// <summary>A setting a binding can name; <see cref="Element"/> holds the fields of a list's rows or of an object.</summary>
