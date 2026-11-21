@@ -37,6 +37,12 @@ public sealed class ThemeFileChange : McpChangePreview
     // What refuses the change, on a dry run that answers them instead of failing.
     [JsonPropertyName("errors")]
     public IList<string> Errors { get; set; }
+
+    // What to do once the change is saved, such as publishing the theme; the warnings are about the change itself.
+    [JsonPropertyName("next_steps")]
+    public IList<string> NextSteps { get; set; }
+
+    public void AddNextStep(string step) => (NextSteps ??= []).Add(step);
 }
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
@@ -109,7 +115,7 @@ public static class ThemeFileEdits
 
         if (!refused)
         {
-            change.AddWarning("Customers see this change only after the theme is published (publish_theme), which a second person approves.");
+            change.AddNextStep("Customers see this change only after the theme is published (publish_theme), which a second person approves.");
         }
     }
 

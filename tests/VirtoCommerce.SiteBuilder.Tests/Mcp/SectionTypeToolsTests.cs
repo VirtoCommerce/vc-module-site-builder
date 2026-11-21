@@ -84,7 +84,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
                 $"{File}: <h2> at line 1 binds 'settings.subtitle', a setting the schema does not declare",
             ],
             change.Errors);
-        Assert.DoesNotContain(change.Warnings, x => x.Contains("publish_theme", StringComparison.Ordinal));
+        Assert.Null(change.NextSteps);
         Assert.Null(_context.ReadThemeFile(StoreA, File, draft: true));
     }
 
@@ -119,8 +119,26 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.False(change.DryRun);
         Assert.Equal(Create, change.Action);
         Assert.False(string.IsNullOrEmpty(change.VersionTokens[Path]));
-        Assert.Contains(change.Warnings, x => x.Contains("edit_page_draft", StringComparison.Ordinal));
-        Assert.Contains(change.Warnings, x => x.Contains("publish_theme", StringComparison.Ordinal));
+        Assert.Empty(change.Warnings);
+        Assert.Contains(change.NextSteps, x => x.Contains("edit_page_draft", StringComparison.Ordinal));
+        Assert.Contains(change.NextSteps, x => x.Contains("publish_theme", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(Create)]
+    [InlineData(Change)]
+    public async Task ADryRunOfACleanType_AnswersNoWarnings_AndTheNextStepsApart(string tool)
+    {
+        await SeedAsync();
+        if (tool == Change)
+        {
+            await CallAsync(Create, css: ":scope { padding: 1rem; }");
+        }
+
+        var change = (await CallAsync(tool, dryRun: true)).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Empty(change.Warnings);
+        Assert.Contains(change.NextSteps, x => x.Contains("publish_theme", StringComparison.Ordinal));
     }
 
     [Fact]

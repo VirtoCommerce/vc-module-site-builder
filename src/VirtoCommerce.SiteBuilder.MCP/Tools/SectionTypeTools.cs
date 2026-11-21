@@ -152,7 +152,7 @@ public class SectionTypeTools(
 
         if (request.Create && change.Errors == null)
         {
-            change.AddWarning($"Place it with edit_page_draft (add_section, type '{key}', with its settings); a page shows it only once the theme is published.");
+            change.AddNextStep($"Place it with edit_page_draft (add_section, type '{key}', with its settings); a page shows it only once the theme is published.");
         }
 
         return change;
