@@ -162,7 +162,8 @@ export function useDesigner() {
     );
   });
 
-  const groupSectionTypes = (group: SectionGroup) => addableSections((_, schema) => !!schema.groups?.includes(group));
+  // The storefront renders a group's own sections there, so a save refuses a custom type in one.
+  const groupSectionTypes = (group: SectionGroup) => addableSections((_, schema) => !schema.custom && !!schema.groups?.includes(group));
 
   const pageEnd = () => {
     const footer = doc.value.content.findIndex((x) => groupOf(x) === "footer");
