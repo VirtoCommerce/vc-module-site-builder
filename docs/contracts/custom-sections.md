@@ -13,7 +13,8 @@ below. Anything that needs logic comes from the storefront: a [kit tag](#kit-tag
 
 `custom-sections/{type}.json` in the theme folder, with its draft `{file}-draft` next to it as every theme file has.
 `type` matches `^custom-[a-z0-9]+(?:-[a-z0-9]+)*$` and is at most 64 characters; the file name is the type. Writing it
-takes `builder:theme`. A type is never renamed once a page or a template places it.
+takes `builder:theme`. A type is never renamed once a page or a template places it. A theme's types are at most 256 KB
+of JSON together, since the snapshot carries every type to every page.
 
 ```ts
 interface CustomSectionType {

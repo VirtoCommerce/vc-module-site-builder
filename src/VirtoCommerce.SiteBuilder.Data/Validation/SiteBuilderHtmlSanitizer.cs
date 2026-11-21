@@ -7,7 +7,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Validation;
 /// <summary>The storefront's sanitizer profile, with fewer elements and an allowlist of URL schemes.</summary>
 public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
 {
-    private static readonly HashSet<string> AllowedTags = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> AllowedTags = new(StringComparer.OrdinalIgnoreCase)
     {
         "a", "abbr", "acronym", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "big", "blink", "blockquote", "br",
         "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "data", "datalist", "dd", "del", "details", "dfn",

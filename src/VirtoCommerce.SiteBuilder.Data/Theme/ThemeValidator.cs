@@ -6,7 +6,7 @@ using VirtoCommerce.SiteBuilder.Core.Theme;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
-public class ThemeValidator : ThemeContentReader, IThemeValidator
+public class ThemeValidator(ICustomSectionValidator customSectionValidator) : ThemeContentReader, IThemeValidator
 {
     private const string ColorTokenFieldType = "color-token";
     private const string SelectFieldType = "select";
@@ -15,9 +15,16 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
     // The designer adds this section to every page template.
     private const string PageContentSection = "page-content";
 
+    public ThemeValidator()
+        : this(new CustomSectionValidator())
+    {
+    }
+
     public virtual IList<string> Validate(ThemeSource source, JObject catalog)
     {
         var errors = source.InvalidFiles.Select(x => $"{x}: not valid JSON").ToList();
+        // a type the theme holds is one the storefront renders, whether or not its preview has seen it
+        var themeCatalog = ThemeCustomSections.AddToCatalog(catalog, source.CustomSections);
 
         foreach (var (key, document) in source.Templates)
         {
@@ -35,18 +42,34 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
             }
 
             var allowPageContent = key.StartsWith(ContentPageType, StringComparison.Ordinal);
-            ValidateItems((JArray)pageDocument["content"], ModuleConstants.SchemaKinds.Sections, file, catalog, errors, allowPageContent);
+            ValidateItems((JArray)pageDocument["content"], ModuleConstants.SchemaKinds.Sections, file, themeCatalog, errors, allowPageContent);
         }
 
-        ValidateSectionGroup(source.Header, ThemeStorage.HeaderGroupFile, catalog, errors);
-        ValidateSectionGroup(source.Footer, ThemeStorage.FooterGroupFile, catalog, errors);
+        ValidateSectionGroup(source.Header, ThemeStorage.HeaderGroupFile, themeCatalog, errors);
+        ValidateSectionGroup(source.Footer, ThemeStorage.FooterGroupFile, themeCatalog, errors);
 
         if (source.Rules != null && source.Rules is not JObject)
         {
             errors.Add($"{ThemeStorage.TemplateRulesFile}: not an object");
         }
 
+        ValidateCustomSections(source.CustomSections, errors);
+
         return errors;
+    }
+
+    /// <summary>Whatever the catalog: the rules of a type are its own.</summary>
+    protected virtual void ValidateCustomSections(IDictionary<string, JToken> customSections, IList<string> errors)
+    {
+        foreach (var error in customSections.SelectMany(x => customSectionValidator.Validate(x.Key, x.Value).Errors))
+        {
+            errors.Add(error);
+        }
+
+        if (customSectionValidator.GetSizeError(customSections) is { } sizeError)
+        {
+            errors.Add(sizeError);
+        }
     }
 
     protected virtual void ValidateSectionGroup(JToken token, string file, JObject catalog, IList<string> errors)
