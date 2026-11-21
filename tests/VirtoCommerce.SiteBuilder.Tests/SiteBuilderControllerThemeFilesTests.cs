@@ -212,6 +212,31 @@ public class SiteBuilderControllerThemeFilesTests
     }
 
     [Fact]
+    public async Task SaveTemplates_CustomSectionTypeThatBreaksARule_ReturnsBadRequestWithErrorsAndWritesNothing()
+    {
+        const string path = "default/custom-sections/custom-hero.json";
+        var files = new SiteBuilderController.SaveFilesModel
+        {
+            Files = JsonConvert.SerializeObject(new[]
+            {
+                new
+                {
+                    path,
+                    type = "themes",
+                    content = new { format = 1, name = "Hero", schema = new { settings = Array.Empty<object>() }, template = "<section onclick=\"go()\"></section>", css = "" },
+                },
+            }),
+        };
+
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true);
+
+        var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result));
+        Assert.Equal("custom-sections/custom-hero.json: <section> at line 1 has an attribute a custom section cannot use, 'onclick': it runs script",
+            (string)body["errors"]!.Single());
+        Assert.False(_live.Files.ContainsKey(Theme($"{path}-draft")));
+    }
+
+    [Fact]
     public async Task SaveTemplates_NoCatalogHash_DoesNotCheckTheFiles()
     {
         Assert.IsType<OkObjectResult>(await Builder().SaveTemplates("s1", "default", HeaderGroup("carousel"), draft: true));

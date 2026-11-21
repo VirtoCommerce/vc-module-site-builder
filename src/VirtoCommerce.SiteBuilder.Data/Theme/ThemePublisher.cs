@@ -224,7 +224,8 @@ public class ThemePublisher(
     protected virtual IList<string> ValidateThemeSource(ThemeSource source, JObject catalog, bool includeDrafts)
     {
         var errors = GuardThemeSource(source, ThemeCustomSections.AddToCatalog(catalog, source.CustomSections))
-            .Concat(themeValidator.Validate(source, catalog));
+            .Concat(themeValidator.Validate(source, catalog))
+            .Concat(themeValidator.ValidateCustomSections(source, catalog));
 
         // A palette is refused when it is published: a live palette that fails stays live whatever else is published, and a first
         // publication puts the live files out as they are.

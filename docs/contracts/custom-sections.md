@@ -13,8 +13,9 @@ below. Anything that needs logic comes from the storefront: a [kit tag](#kit-tag
 
 `custom-sections/{type}.json` in the theme folder, with its draft `{file}-draft` next to it as every theme file has.
 `type` matches `^custom-[a-z0-9]+(?:-[a-z0-9]+)*$` and is at most 64 characters; the file name is the type. Writing it
-takes `builder:theme`. A type is never renamed once a page or a template places it. A theme's types are at most 256 KB
-of JSON together, since the snapshot carries every type to every page.
+takes `builder:theme`. A type is never renamed once a page or a template places it. Discarding the draft of a type that
+was never published removes the type. A theme's types are at most 256 KB of JSON together, since the snapshot carries
+every type to every page.
 
 ```ts
 interface CustomSectionType {
@@ -155,8 +156,10 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
 
 ## Validation
 
-A save and a publication check every custom section type of the theme and refuse a type that breaks a rule above with
-`custom-sections/{type}.json: …`, naming the rule; nothing is removed silently. Warnings do not refuse. A template or a
+A save checks the custom section types it writes, and the size of the theme's types together once they are saved; a
+version restored is checked as a save; a publication checks every type it publishes. Each refuses a type that breaks a
+rule above with `custom-sections/{type}.json: …`, naming the rule; nothing is removed silently. A save that writes no
+custom type is not refused for one the theme already holds. Warnings do not refuse. A template or a
 page may place a custom type the theme holds: a save checks the theme's drafts, a publication the theme it publishes. A
 header or footer group may not, since the storefront renders only the group's own sections there: a save and a
 publication refuse it. Kit tags and behaviors are checked against the `kit` of the catalog the save names,
