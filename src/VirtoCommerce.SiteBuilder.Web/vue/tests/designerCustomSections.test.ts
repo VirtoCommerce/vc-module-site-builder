@@ -77,3 +77,15 @@ test("a custom type's name by language is shown in the designer's language, else
   assert.equal(namedSections(sections, "fr", "")["custom-hero"].name, "Hero");
   assert.equal(namedSections({ odd: { name: { title: "Hero" } as unknown as string } }, "en", "en-US").odd.name, undefined);
 });
+
+test("a type never published is gone from the draft once its draft is discarded, though the folder was listed with it", async () => {
+  const { src, files } = source({ "custom-hero": type("Hero"), "custom-new": type("New") });
+  const read = savedCustomSectionsReader();
+  const drafted = status(["custom-sections/custom-hero.json", "custom-sections/custom-new.json"], 3);
+  assert.deepEqual(Object.keys((await read("s/default", drafted, src)) ?? {}), ["custom-hero", "custom-new"]);
+
+  delete files["custom-new"];
+
+  assert.deepEqual(Object.keys((await read("s/default", status(["custom-sections/custom-hero.json"], 3), src)) ?? {}), ["custom-hero"]);
+  assert.equal(await read("s/default", status([], 3), src), undefined);
+});

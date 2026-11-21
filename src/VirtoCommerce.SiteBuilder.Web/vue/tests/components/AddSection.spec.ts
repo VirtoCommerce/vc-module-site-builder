@@ -3,7 +3,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { effectScope } from "vue";
 import AddSection from "../../src/modules/designer/components/AddSection.vue";
 import { useDesigner, type Designer } from "../../src/modules/designer/useDesigner";
-import type { ItemSchema } from "../../src/modules/designer/types";
+import type { ItemSchema, SectionGroup } from "../../src/modules/designer/types";
 
 let designer: Designer;
 let scope: ReturnType<typeof effectScope>;
@@ -15,9 +15,9 @@ beforeEach(() => {
 
 afterEach(() => scope.stop());
 
-async function pickerFor(sections: Record<string, ItemSchema>) {
+async function pickerFor(sections: Record<string, ItemSchema>, group?: SectionGroup) {
   designer.schemas.value = { sections, blocks: {}, shared: {}, objects: {} };
-  const wrapper = mount(AddSection, { props: { designer } });
+  const wrapper = mount(AddSection, { props: { designer, group } });
   await flushPromises();
   return wrapper;
 }
@@ -47,6 +47,12 @@ describe("AddSection: the theme's custom section types", () => {
     await wrapper.find("input").setValue("her");
 
     expect(listed(wrapper)).toEqual(["# Custom sections", "Hero"]);
+  });
+
+  it("offers none in the header or footer, even one whose schema names the group", async () => {
+    const sections = { "site-header": { name: "Header", groups: ["header" as const] }, "custom-hero": { name: "Hero", custom: true, groups: ["header" as const] } };
+
+    expect(listed(await pickerFor(sections, "header"))).toEqual(["Header"]);
   });
 
   it("lists the storefront's sections with no heading while the theme has no custom types", async () => {

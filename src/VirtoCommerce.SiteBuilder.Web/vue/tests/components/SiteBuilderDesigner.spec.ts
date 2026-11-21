@@ -660,8 +660,8 @@ describe("the theme's custom section types", () => {
     await flushPromises();
     const frame = wrapper.find("iframe").element as HTMLIFrameElement;
     const posted = vi.spyOn(frame.contentWindow!, "postMessage");
-    const load = async (hash: string, sections: Record<string, unknown> = {}) => {
-      const data = { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [] };
+    const load = async (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+      const data = { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [], ...extra };
       window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data: { source: "preview", type: "loaded", data } }));
       await flushPromises();
     };
@@ -695,6 +695,19 @@ describe("the theme's custom section types", () => {
       ["text", "Text"],
     ]);
     expect(platform.to("/api/site-builder/catalog").map((x) => x.query.hash)).toEqual(["c0ffee01", "c0ffee02"]);
+  });
+
+  it("leave the catalog the designer uploads as the storefront sent it, names by language and kit included", async () => {
+    const page = await openPage([]);
+    platform.on("GET", "/api/site-builder/catalog", status(404)).on("PUT", "/api/site-builder/catalog", "");
+    const sections = { "custom-hero": { name: { "en-US": "Hero", "de-DE": "Held" }, custom: true, settings: [] } };
+    const kit = { tags: { "vc-button": { attributes: { label: { type: "string" } } } }, behaviors: { inview: { options: {} } } };
+
+    await page.load("c0ffee03", sections, { kit });
+
+    const [upload] = platform.to("/api/site-builder/catalog", "PUT");
+    expect(upload.body).toMatchObject({ hash: "c0ffee03", sections, kit });
+    expect(page.designer.schemas.value.sections["custom-hero"].name).toBe("Hero");
   });
 
   it("are left to the published snapshot, and not read, while none has a draft", async () => {
