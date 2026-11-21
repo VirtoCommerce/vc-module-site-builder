@@ -5678,6 +5678,7 @@ export interface ThemeFileContent {
     content?: string | undefined;
     path?: string | undefined;
     eTag?: string | undefined;
+    warnings?: string[] | undefined;
 }
 
 export interface ThemeFileVersion {
