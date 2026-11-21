@@ -79,6 +79,7 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         snapshot.Footer = GetSectionGroup(source.Footer);
         snapshot.Brand = GetBrand(source.Brand, source.SettingsData);
         snapshot.Palette = GetPalette(source.Palette, source.PaletteDark);
+        snapshot.CustomSections = GetCustomSections(source.CustomSections);
         snapshot.Menus = GetMenus(catalog, snapshot.Header, snapshot.Footer);
 
         return snapshot;
@@ -101,6 +102,7 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         result.Templates = result.Templates.ToDictionary(x => x.Key, x => (JObject)Translate(x.Value, language, defaultLanguage));
         result.Header = (JObject)Translate(result.Header, language, defaultLanguage);
         result.Footer = (JObject)Translate(result.Footer, language, defaultLanguage);
+        result.CustomSections = result.CustomSections?.ToDictionary(x => x.Key, x => (JObject)Translate(x.Value, language, defaultLanguage));
 
         return result;
     }
@@ -119,6 +121,18 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         }
 
         return result;
+    }
+
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null leaves the custom section types out of the snapshot of a theme that has none.")]
+    protected virtual IDictionary<string, JObject> GetCustomSections(IDictionary<string, JToken> customSections)
+    {
+        var result = customSections
+            .Where(x => ThemeStorage.IsCustomSectionType(x.Key) && x.Value is JObject)
+            .OrderBy(x => x.Key, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => (JObject)x.Value.DeepClone());
+
+        return result.Count > 0 ? result : null;
     }
 
     protected virtual ThemeTemplateRules GetTemplateRules(JToken rules)

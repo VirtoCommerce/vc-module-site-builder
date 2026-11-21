@@ -18,6 +18,7 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
     public const string SettingsDataFile = "config/settings_data.json";
     public const string PaletteFile = "config/palette.json";
     public const string DarkPaletteFile = "config/palette.dark.json";
+    public const string CustomSectionsFolder = "custom-sections";
     public const string SnapshotsFolder = "snapshots";
     public const string CurrentPublicationFile = SnapshotsFolder + "/current.json";
     public const string PublicationRecordFileName = "publication.json";
@@ -26,8 +27,11 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
 
     private const string FolderType = "folder";
     private const string JsonExtension = ".json";
+    private const int CustomSectionTypeMaxLength = 64;
 
     private static readonly Regex TemplateKeyPattern = new("^(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?$", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+    private static readonly Regex CustomSectionTypePattern = new("^custom-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
@@ -58,6 +62,15 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
 
         return IsTemplateKey(key) ? key : null;
     }
+
+    public static bool IsCustomSectionType(string type) =>
+        type.Length <= CustomSectionTypeMaxLength && CustomSectionTypePattern.IsMatch(type);
+
+    public static string GetCustomSectionFile(string type) => $"{CustomSectionsFolder}/{type}{JsonExtension}";
+
+    /// <summary>The type a file of the custom sections folder holds, valid or not, as the file is named by its type; null for a file that is not JSON.</summary>
+    public static string GetCustomSectionType(string fileName) =>
+        fileName.EndsWith(JsonExtension, StringComparison.OrdinalIgnoreCase) ? fileName[..^JsonExtension.Length] : null;
 
     public virtual string GetPath(string file) => $"{ThemeName}/{file}";
 

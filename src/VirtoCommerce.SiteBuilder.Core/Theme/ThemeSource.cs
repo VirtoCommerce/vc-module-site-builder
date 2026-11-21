@@ -22,6 +22,9 @@ public class ThemeSource
 
     public JToken PaletteDark { get; set; }
 
+    /// <summary>The custom section types by their type, as their file in <c>custom-sections</c> names it.</summary>
+    public IDictionary<string, JToken> CustomSections { get; set; } = new Dictionary<string, JToken>();
+
     public IDictionary<string, string> Drafts { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     public IList<string> InvalidFiles { get; set; } = new List<string>();

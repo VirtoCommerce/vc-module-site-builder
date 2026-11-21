@@ -223,7 +223,8 @@ public class ThemePublisher(
     /// <summary>Also sanitizes the HTML of the files, see <see cref="GuardThemeSource"/>.</summary>
     protected virtual IList<string> ValidateThemeSource(ThemeSource source, JObject catalog, bool includeDrafts)
     {
-        var errors = GuardThemeSource(source, catalog).Concat(themeValidator.Validate(source, catalog));
+        var errors = GuardThemeSource(source, ThemeCustomSections.AddToCatalog(catalog, source.CustomSections))
+            .Concat(themeValidator.Validate(source, catalog));
 
         // A palette is refused when it is published: a live palette that fails stays live whatever else is published, and a first
         // publication puts the live files out as they are.
@@ -408,6 +409,11 @@ public class ThemePublisher(
             files[ThemeStorage.GetTemplateFile(key)] = document;
         }
 
+        foreach (var (type, content) in source.CustomSections)
+        {
+            files[ThemeStorage.GetCustomSectionFile(type)] = content;
+        }
+
         var errors = new List<string>();
         foreach (var (file, content) in files.Where(x => x.Value != null))
         {
@@ -452,8 +458,12 @@ public class ThemePublisher(
     protected virtual async Task<IList<string>> GetThemeFilesAsync(IThemeStorage storage)
     {
         var templateKeys = await GetTemplateKeysAsync(storage);
+        var customSectionTypes = await ThemeCustomSections.GetTypesAsync(storage);
 
-        return ThemeParts.Keys.Concat(templateKeys.Select(ThemeStorage.GetTemplateFile)).ToList();
+        return ThemeParts.Keys
+            .Concat(templateKeys.Select(ThemeStorage.GetTemplateFile))
+            .Concat(customSectionTypes.Select(ThemeStorage.GetCustomSectionFile))
+            .ToList();
     }
 
     protected virtual void AddThemeFile(ThemeSource source, string file, JToken content)
@@ -465,6 +475,10 @@ public class ThemePublisher(
         else if (content != null && GetTemplateKey(file) is { } key)
         {
             source.Templates[key] = content;
+        }
+        else if (content != null && ThemeCustomSections.GetSectionType(file) is { } type)
+        {
+            source.CustomSections[type] = content;
         }
     }
 

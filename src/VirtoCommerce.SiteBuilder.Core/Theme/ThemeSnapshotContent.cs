@@ -33,6 +33,10 @@ public class ThemeSnapshotContent : ICloneable
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public ThemePalette Palette { get; set; }
 
+    /// <summary>The theme's custom section types by their type.</summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public IDictionary<string, JObject> CustomSections { get; set; }
+
     public IList<string> Menus { get; set; }
 
     public virtual object Clone()
@@ -45,6 +49,7 @@ public class ThemeSnapshotContent : ICloneable
         result.Footer = (JObject)Footer?.DeepClone();
         result.Brand = Brand?.CloneTyped();
         result.Palette = Palette?.CloneTyped();
+        result.CustomSections = CustomSections?.ToDictionary(x => x.Key, x => (JObject)x.Value?.DeepClone());
         result.Menus = Menus?.ToList();
 
         return result;
