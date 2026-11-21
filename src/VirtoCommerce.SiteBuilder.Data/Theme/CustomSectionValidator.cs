@@ -30,8 +30,10 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const int MaxScannedTemplateDepth = 256;
     private const int MaxAtRuleDepth = 4;
     private const string KeyframesAtRule = "keyframes";
+    private const string AllowedAtRulesText = "@media, @supports, @container, @starting-style and @keyframes";
 
-    private const string DocumentStart = "<!DOCTYPE html><html><head></head><body>";
+    // no doctype, as the storefront's sanitizer parses: a document without one is read in quirks mode, where a table may stay in a p
+    private const string DocumentStart = "<html><head></head><body>";
     private const string AssetProbe = "file";
 
     // the CSS parser writes 'transparent' so
@@ -55,6 +57,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     private const string EachAttribute = "data-each";
     private const string IfAttribute = "data-if";
     private const string HtmlAttribute = "data-html";
+    private const string AltAttribute = "alt";
+    private const string LabelAttribute = "label";
     private const string DataPrefix = "data-";
 
     private const string KitKey = "kit";
@@ -92,6 +96,16 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         "width", "height", "datetime", "colspan", "rowspan", "scope",
     };
 
+    // what an element takes besides the attributes every element does
+    private static readonly Dictionary<string, HashSet<string>> ElementAttributes = new(StringComparer.Ordinal)
+    {
+        ["video"] = new(StringComparer.Ordinal) { "autoplay", "muted", "loop", "playsinline", "controls", "preload", "poster" },
+        ["source"] = new(StringComparer.Ordinal) { "type", "media" },
+        ["details"] = new(StringComparer.Ordinal) { "open" },
+        ["blockquote"] = new(StringComparer.Ordinal) { "cite" },
+        ["q"] = new(StringComparer.Ordinal) { "cite" },
+    };
+
     // people read what these hold, as they read the template's text
     private static readonly HashSet<string> TextAttributes = new(StringComparer.Ordinal) { "alt", "title", "aria-label", "label" };
 
@@ -104,7 +118,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
     };
 
-    private static readonly HashSet<string> AllowedAtRules = new(StringComparer.OrdinalIgnoreCase) { "media", "supports", "container", KeyframesAtRule };
+    private static readonly HashSet<string> AllowedAtRules = new(StringComparer.OrdinalIgnoreCase) { "media", "supports", "container", "starting-style", KeyframesAtRule };
 
     // the functions that load an image from a URL given as a string
     private static readonly HashSet<string> ImageFunctions = new(StringComparer.OrdinalIgnoreCase)
@@ -112,19 +126,63 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         "url", "src", "image", "image-set", "-webkit-image-set", "cross-fade", "-webkit-cross-fade",
     };
 
-    // the functions whose value is known only when the page is shown
-    private static readonly HashSet<string> LateValueFunctions = new(StringComparer.OrdinalIgnoreCase) { "var", "attr", "env" };
+    // the functions whose value is known only when the page is shown, with a custom --name() function
+    private static readonly HashSet<string> LateValueFunctions = new(StringComparer.OrdinalIgnoreCase) { "var", "attr", "env", "if" };
 
     private static readonly HashSet<string> ScriptProperties = new(StringComparer.OrdinalIgnoreCase) { "behavior", "-moz-binding" };
+
+    private static readonly HashSet<string> MotionProperties = new(StringComparer.OrdinalIgnoreCase) { "animation", "animation-name", "transition" };
+
+    private static readonly HashSet<string> ReducedMotionValues = new(StringComparer.OrdinalIgnoreCase) { "reduce", "no-preference" };
+
+    // the logical property for each physical one, which follows the page's direction
+    private static readonly Dictionary<string, string> LogicalProperties = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["margin-left"] = "margin-inline-start",
+        ["margin-right"] = "margin-inline-end",
+        ["padding-left"] = "padding-inline-start",
+        ["padding-right"] = "padding-inline-end",
+        ["left"] = "inset-inline-start",
+        ["right"] = "inset-inline-end",
+        ["border-left"] = "border-inline-start",
+        ["border-right"] = "border-inline-end",
+        ["border-left-width"] = "border-inline-start-width",
+        ["border-right-width"] = "border-inline-end-width",
+        ["border-left-style"] = "border-inline-start-style",
+        ["border-right-style"] = "border-inline-end-style",
+        ["border-left-color"] = "border-inline-start-color",
+        ["border-right-color"] = "border-inline-end-color",
+        ["border-top-left-radius"] = "border-start-start-radius",
+        ["border-top-right-radius"] = "border-start-end-radius",
+        ["border-bottom-left-radius"] = "border-end-start-radius",
+        ["border-bottom-right-radius"] = "border-end-end-radius",
+        ["scroll-margin-left"] = "scroll-margin-inline-start",
+        ["scroll-margin-right"] = "scroll-margin-inline-end",
+        ["scroll-padding-left"] = "scroll-padding-inline-start",
+        ["scroll-padding-right"] = "scroll-padding-inline-end",
+    };
+
+    // the logical values for left and right, by the property that takes them
+    private static readonly Dictionary<string, (string Left, string Right)> LogicalValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["text-align"] = ("start", "end"),
+        ["float"] = ("inline-start", "inline-end"),
+        ["clear"] = ("inline-start", "inline-end"),
+    };
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
     private static readonly Regex SettingIdPattern = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.None, RegexTimeout);
-    private static readonly Regex BindingPattern = new(@"\{\{\s*([^{}]*?)\s*\}\}", RegexOptions.None, RegexTimeout);
-    private static readonly Regex SingleBindingPattern = new(@"^\s*\{\{\s*([^{}]*?)\s*\}\}\s*$", RegexOptions.None, RegexTimeout);
+    // the path is trimmed after the match: a pattern that trims it backtracks over a long run of spaces
+    private static readonly Regex BindingPattern = new(@"\{\{([^{}]*)\}\}", RegexOptions.None, RegexTimeout);
+    private static readonly Regex SingleBindingPattern = new(@"^\s*\{\{([^{}]*)\}\}\s*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex PathPattern = new(@"^(settings|item)\.([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$", RegexOptions.None, RegexTimeout);
     private static readonly Regex IsoDatePattern = new(@"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$", RegexOptions.None, RegexTimeout);
 
+    // an escaped dot, slash or backslash, which a URL resolves as the character
+    private static readonly Regex EscapedPathPattern = new("%(?:2[eEfF]|5[cC])", RegexOptions.None, RegexTimeout);
+    private static readonly Regex AnchorPattern = new("^#[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.None, RegexTimeout);
+    private static readonly Regex ImageDataUrlPattern = new("^data:image/[a-z0-9.+-]+[;,]", RegexOptions.IgnoreCase, RegexTimeout);
     private static readonly Regex CssDocumentSelectorPattern = new(@"(?:^|[\s,>+~(])(?:html|body)(?=$|[\s,>+~.#:\[)])|:root(?![\w-])", RegexOptions.IgnoreCase, RegexTimeout);
     private static readonly Regex CssLiteralColorPattern = new(@"#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(", RegexOptions.IgnoreCase, RegexTimeout);
 
@@ -151,14 +209,22 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         ValidateShape(check, file);
 
-        if (GetPart(check, file, TemplateKey) is { } template && check.Settings != null)
+        // every pattern has a timeout, which refuses the type rather than fails the request
+        try
         {
-            ValidateTemplate(check, template);
-        }
+            if (GetPart(check, file, TemplateKey) is { } template && check.Settings != null)
+            {
+                ValidateTemplate(check, template);
+            }
 
-        if (GetPart(check, file, CssKey) is { } css)
+            if (GetPart(check, file, CssKey) is { } css)
+            {
+                ValidateCss(check, css);
+            }
+        }
+        catch (RegexMatchTimeoutException)
         {
-            ValidateCss(check, css);
+            check.AddError("the type takes too long to check: write its template and its CSS plainer");
         }
 
         AddWarnings(check);
@@ -374,10 +440,12 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
         using var document = parser.ParseDocument(DocumentStart + template);
         check.Template = template;
-        if (parseErrors.Count > 0)
+        // the missing doctype is the document's, not the template's
+        var templateErrors = parseErrors.Where(x => x.Position.Position > DocumentStart.Length).ToList();
+        if (templateErrors.Count > 0)
         {
             // the parser has mended what it reports, so the elements are not what was written
-            foreach (var error in parseErrors.Take(MaxParseErrors))
+            foreach (var error in templateErrors.Take(MaxParseErrors))
             {
                 var (line, column) = GetLocation(check, GetIndex(check, error.Position.Position));
                 check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template does not read as HTML at line {line}, column {column}: {error.Message}"));
@@ -400,6 +468,12 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return;
         }
 
+        if (roots[0].LocalName.StartsWith(CustomSectionKit.TagPrefix, StringComparison.Ordinal))
+        {
+            check.AddError($"the template's root is <{roots[0].LocalName}>, a kit tag, which renders a component and not the section: the root is an element of HTML");
+            return;
+        }
+
         // before the elements are walked, each in the call for its parent
         if (GetDepth(roots[0]) > MaxTemplateDepth)
         {
@@ -408,6 +482,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
 
         ValidateElement(check, roots[0], new TemplateScope(Each: null, IsRoot: true));
+        ValidateHeadings(check, roots[0]);
     }
 
     protected virtual void ValidateElement(CustomSectionCheck check, IElement element, TemplateScope scope)
@@ -430,6 +505,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             check.AddError($"{where} is not an element a custom section can hold");
             return;
         }
+
+        ValidateAccessibility(check, element, kitAttributes, where);
 
         var each = element.GetAttribute(EachAttribute) is { } eachPath ? ValidateEach(check, eachPath, where, scope) : scope.Each;
         var elementScope = scope with { Each = each };
@@ -464,6 +541,41 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         if (holdsNothing && hasContent)
         {
             check.AddError(kitAttributes != null ? $"{where} has content, which a kit tag does not have" : $"{where} has data-html and content of its own");
+        }
+    }
+
+    /// <summary>A screen reader lists the headings by level, so a level skipped on the way down reads as a part missing.</summary>
+    protected virtual void ValidateHeadings(CustomSectionCheck check, IElement root)
+    {
+        var levels = root.QuerySelectorAll("*").Prepend(root)
+            .Where(x => x.LocalName is "h1" or "h2" or "h3" or "h4" or "h5" or "h6")
+            .Select(x => x.LocalName[1] - '0')
+            .ToList();
+        var skip = levels.Zip(levels.Skip(1)).FirstOrDefault(x => x.Second > x.First + 1);
+        if (skip != default)
+        {
+            check.AddWarning(string.Create(CultureInfo.InvariantCulture,
+                $"the template's headings go from h{skip.First} to h{skip.Second}, skipping a level, which a screen reader lists as a part missing"));
+        }
+    }
+
+    /// <summary>What keeps an element from being read without the screen: the attributes are checked one by one with the others.</summary>
+    protected virtual void ValidateAccessibility(CustomSectionCheck check, IElement element, IReadOnlyDictionary<string, KitField> kitAttributes, string where)
+    {
+        switch (element.LocalName)
+        {
+            case "h1":
+                check.AddError($"{where} is an h1, which the page holds: a section's headings start at h2");
+                break;
+            case "img" when !element.HasAttribute(AltAttribute):
+                check.AddError($"{where} has no alt: bind it to a string setting, or write alt=\"\" for an image that only decorates");
+                break;
+            case "a" when !HasName(element):
+                check.AddError($"{where} is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt");
+                break;
+            case "vc-button" when kitAttributes?.ContainsKey(LabelAttribute) == true && string.IsNullOrWhiteSpace(element.GetAttribute(LabelAttribute)):
+                check.AddWarning($"{where} has no label, so a screen reader names the button by its icon or not at all");
+                break;
         }
     }
 
@@ -533,6 +645,21 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         {
             ValidateLink(check, name, value, where, scope);
         }
+        else if (ElementAttributes.TryGetValue(element.LocalName, out var own) && own.Contains(name))
+        {
+            switch (name)
+            {
+                case "cite":
+                    ValidateLink(check, name, value, where, scope);
+                    break;
+                case "poster":
+                    ValidateImage(check, name, value, where, scope);
+                    break;
+                default:
+                    ValidateBindings(check, value, where, scope);
+                    break;
+            }
+        }
         else if (name is "class")
         {
             ValidateClass(check, value, where, scope);
@@ -544,6 +671,10 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         else if (name is "src" or "srcset")
         {
             ValidateImage(check, name, value, where, scope);
+        }
+        else if (name == AltAttribute)
+        {
+            ValidateAlt(check, value, where, scope);
         }
         else if (AllowedAttributes.Contains(name) || name.StartsWith("aria-", StringComparison.Ordinal))
         {
@@ -565,6 +696,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         "style" => ": the section's CSS styles it",
         _ when name.StartsWith("on", StringComparison.Ordinal) => ": it runs script",
         _ when !name.StartsWith(DataPrefix, StringComparison.Ordinal) => string.Empty,
+        _ when CustomSectionKit.IsReservedBehavior(name[DataPrefix.Length..]) => ": the storefront writes data-sb- and data-pb- attributes itself",
         _ when !check.Kit.HasCatalog => ": it is no binding, and no schema catalog names the storefront's behaviors",
         _ when check.Kit.Behaviors == null => ": it is no binding, and the storefront offers no behaviors, as its catalog has no kit",
         _ => ": it is no binding and no behavior the storefront offers",
@@ -753,8 +885,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
 
         var tags = ReadKitEntries(kit["tags"], CustomSectionKit.TagPrefix, x => ReadKitFields(x["attributes"]));
+        // a stored catalog may name a behavior its upload would refuse now
         var behaviors = ReadKitEntries(kit["behaviors"], string.Empty,
-            x => new KitBehavior(x["value"] is JObject value ? ReadKitField(value) : null, ReadKitFields(x["options"])));
+                x => new KitBehavior(x["value"] is JObject value ? ReadKitField(value) : null, ReadKitFields(x["options"])))
+            .Where(x => !CustomSectionKit.IsReservedBehavior(x.Key))
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
 
         return new StorefrontKit(true, tags, behaviors);
     }
@@ -767,7 +902,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var literal = BindingPattern.Replace(value, match =>
         {
-            var path = match.Groups[1].Value;
+            var path = match.Groups[1].Value.Trim();
             if (ResolveValue(check, path, where, scope) is { } setting &&
                 (setting.Type != SelectFieldType || setting.Options == null || !setting.Options.All(x => IsOwnClasses(check.Type, x))))
             {
@@ -786,6 +921,28 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         {
             check.AddError($"{where} has the class '{Quote(name)}', which is not the type's own: '{check.Type}', or a name starting with '{check.Type}-' or '{check.Type}__'");
         }
+    }
+
+    /// <summary>An image's alt is read in the page's language, so it binds a string setting; a literal alt is saved with the text warning.</summary>
+    protected virtual void ValidateAlt(CustomSectionCheck check, string value, string where, TemplateScope scope)
+    {
+        var literal = BindingPattern.Replace(value, match =>
+        {
+            var path = match.Groups[1].Value.Trim();
+            if (ResolveValue(check, path, where, scope) is { } setting && setting.Type != StringFieldType)
+            {
+                check.AddError($"{where} has alt bound to '{path}', a {setting.Type} and not a string setting");
+            }
+
+            return " ";
+        });
+
+        if (HasBinding(literal) || literal.Contains("}}", StringComparison.Ordinal))
+        {
+            check.AddError($"{where} has a '{{{{' or a '}}}}' that is no binding, such as {{{{ settings.title }}}}");
+        }
+
+        AddText(check, literal);
     }
 
     /// <summary>A link opens a page in this window or a new one, and gives it no hold on the storefront's window; the value is written as it is.</summary>
@@ -857,7 +1014,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var literal = BindingPattern.Replace(text, match =>
         {
-            ResolveValue(check, match.Groups[1].Value, where, scope);
+            ResolveValue(check, match.Groups[1].Value.Trim(), where, scope);
             return " ";
         });
 
@@ -1048,49 +1205,95 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     protected virtual void ValidateCssTokens(CustomSectionCheck check, IList<CssTokenizer.Token> tokens)
     {
         var errors = new List<string>();
-        // the function or the block each token is in
+        var directions = new List<string>();
+        // the function or the block each token is in, the functions that load an image it is in, and whether each rule's block is for one
+        // direction, as :dir(rtl) { } is
         var blocks = new Stack<CssTokenizer.Token>();
+        var imageFunctions = new Stack<string>();
+        var directionRules = new Stack<bool>();
+        var preludeNamesDirection = false;
+        // a declaration starts a block or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
+        var atDeclarationStart = false;
         for (var i = 0; i < tokens.Count; i++)
         {
             var token = tokens[i];
             var block = blocks.Count > 0 ? blocks.Peek() : default;
             switch (token.Kind)
             {
+                case CssTokenizer.TokenKind.Function when string.Equals(token.Value, "dir", StringComparison.OrdinalIgnoreCase):
+                    preludeNamesDirection = true;
+                    break;
+                case CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly:
+                    preludeNamesDirection = false;
+                    break;
                 case CssTokenizer.TokenKind.AtKeyword:
                     ValidateCssAtRule(check, tokens, i, errors);
                     break;
                 case CssTokenizer.TokenKind.Url:
                     AddCssUrlError(check, token.Value, errors);
                     break;
-                case CssTokenizer.TokenKind.String when block.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(block.Value):
+                case CssTokenizer.TokenKind.String when imageFunctions.Count > 0:
                     AddCssUrlError(check, token.Value, errors);
                     break;
                 case CssTokenizer.TokenKind.Function when string.Equals(token.Value, "expression", StringComparison.OrdinalIgnoreCase):
                     errors.Add("the CSS has expression(), which runs script");
                     break;
-                case CssTokenizer.TokenKind.Function when LateValueFunctions.Contains(token.Value) && block.Kind == CssTokenizer.TokenKind.Function &&
-                    ImageFunctions.Contains(block.Value):
-                    errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {block.Value.ToLowerInvariant()}(), whose URL is then not known on save");
+                case CssTokenizer.TokenKind.Function when IsLateValueFunction(token.Value) && imageFunctions.Count > 0:
+                    errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {imageFunctions.Peek()}(), whose URL is then not known on save");
                     break;
-                case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly:
-                    ValidateCssDeclaration(tokens, i, errors);
+                case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly && atDeclarationStart:
+                    ValidateCssDeclaration(check, tokens, i, errors, directionRules.Peek() ? null : directions);
                     break;
+            }
+
+            if (token.Kind != CssTokenizer.TokenKind.Whitespace)
+            {
+                atDeclarationStart = token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly;
+            }
+
+            if (token.Kind == CssTokenizer.TokenKind.OpenCurly)
+            {
+                directionRules.Push((directionRules.Count > 0 && directionRules.Peek()) || preludeNamesDirection);
+                preludeNamesDirection = false;
             }
 
             if (token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.OpenParen or CssTokenizer.TokenKind.OpenSquare or
                 CssTokenizer.TokenKind.Function)
             {
                 blocks.Push(token);
+                if (token.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(token.Value))
+                {
+                    imageFunctions.Push(token.Value.ToLowerInvariant());
+                }
             }
             else if (token.Kind is CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.CloseParen or CssTokenizer.TokenKind.CloseSquare)
             {
-                blocks.Pop();
+                var closed = blocks.Pop();
+                if (closed.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(closed.Value))
+                {
+                    imageFunctions.Pop();
+                }
+
+                if (token.Kind == CssTokenizer.TokenKind.CloseCurly)
+                {
+                    directionRules.Pop();
+                }
             }
         }
 
         foreach (var error in errors.Distinct(StringComparer.Ordinal))
         {
             check.AddError(error);
+        }
+
+        foreach (var direction in directions.Distinct(StringComparer.Ordinal))
+        {
+            check.AddWarning(direction);
+        }
+
+        if (check.Animates && !HasReducedMotionQuery(tokens))
+        {
+            check.AddWarning("the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion");
         }
     }
 
@@ -1099,7 +1302,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         var name = tokens[index].Value;
         if (!AllowedAtRules.Contains(name))
         {
-            errors.Add($"the CSS has @{name}, and a custom section's CSS has only @media, @supports, @container and @keyframes");
+            errors.Add($"the CSS has @{name}, and a custom section's CSS has only {AllowedAtRulesText}");
             return;
         }
 
@@ -1108,17 +1311,23 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             return;
         }
 
-        // keyframes names are not scoped, so the type's own start with the type
+        // keyframes names are not scoped, and a type's name may start another's, so the type's own start with the type and '__'
+        var prefix = check.Type + "__";
         var keyframes = tokens.Skip(index + 1).FirstOrDefault(x => x.Kind != CssTokenizer.TokenKind.Whitespace);
-        if (keyframes.Kind is not (CssTokenizer.TokenKind.Ident or CssTokenizer.TokenKind.String) ||
-            (keyframes.Value != check.Type && !keyframes.Value.StartsWith(check.Type + "-", StringComparison.Ordinal)))
+        if (keyframes.Kind is not (CssTokenizer.TokenKind.Ident or CssTokenizer.TokenKind.String))
         {
-            errors.Add($"the CSS names @keyframes '{Quote(keyframes.Value ?? string.Empty)}', which does not start with the type, '{check.Type}': names are not scoped");
+            errors.Add("the CSS has @keyframes without a name");
+        }
+        else if (keyframes.Value.Length <= prefix.Length || !keyframes.Value.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            errors.Add($"the CSS names @keyframes '{Quote(keyframes.Value)}', which does not start with '{prefix}': keyframes names are not scoped");
         }
     }
 
     /// <summary>A declaration is a name and a colon in a block; a name, a colon and a block of its own is a nested rule, such as a:hover { }.</summary>
-    protected virtual void ValidateCssDeclaration(IList<CssTokenizer.Token> tokens, int index, IList<string> errors)
+    /// <param name="directions">Takes a warning for a side of the page that stays when the page reads right to left; <c>null</c> in a rule for one direction.</param>
+    protected virtual void ValidateCssDeclaration(CustomSectionCheck check, IList<CssTokenizer.Token> tokens, int index, IList<string> errors,
+        IList<string> directions)
     {
         var colon = index + 1;
         while (colon < tokens.Count && tokens[colon].Kind == CssTokenizer.TokenKind.Whitespace)
@@ -1156,9 +1365,19 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
 
         var name = tokens[index].Value;
+        check.Animates |= MotionProperties.Contains(name);
+        if (directions != null && GetLogicalDirection(name, value) is { } logical)
+        {
+            directions.Add($"the CSS sets {logical.Physical}, which stays on that side when the page reads right to left: use {logical.Logical}");
+        }
+
         if (ScriptProperties.Contains(name))
         {
             errors.Add($"the CSS sets {name.ToLowerInvariant()}, which runs script");
+        }
+        else if (RemovesFocusRing(name, value))
+        {
+            errors.Add($"the CSS sets {name.ToLowerInvariant()} to none or 0, which hides where the keyboard is on the page");
         }
         else if (string.Equals(name, "position", StringComparison.OrdinalIgnoreCase))
         {
@@ -1166,18 +1385,19 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
             {
                 errors.Add("the CSS has position: fixed, which puts the section over the page");
             }
-            else if (value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && LateValueFunctions.Contains(x.Value)) is { Value: { } function })
+            else if (value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && IsLateValueFunction(x.Value)) is { Value: { } function })
             {
                 errors.Add($"the CSS sets position with {function.ToLowerInvariant()}(), which could make it fixed");
             }
         }
     }
 
+    /// <summary>An image of the CSS may also be written into it as a data: URL, as an image loads no script and nothing else.</summary>
     protected virtual void AddCssUrlError(CustomSectionCheck check, string url, IList<string> errors)
     {
-        if (!IsAssetUrl(url))
+        if (!IsAssetUrl(url) && !ImageDataUrlPattern.IsMatch(url))
         {
-            errors.Add($"the CSS loads '{Quote(url)}', which is not a URL of the store's asset library");
+            errors.Add($"the CSS loads '{Quote(url)}', which is not a URL of the store's asset library or a data:image/ URL");
         }
     }
 
@@ -1204,8 +1424,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
                     }
 
                     break;
-                case ICssMediaRule or ICssSupportsRule or ICssContainerRule:
-                    ValidateCssRules(check, ((ICssGroupingRule)rule).Rules);
+                case ICssGroupingRule grouping:
+                    ValidateCssRules(check, grouping.Rules);
                     break;
             }
         }
@@ -1237,12 +1457,26 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         }
     }
 
-    /// <summary>A URL of the asset library starts with its public address, as the link of each of its files does.</summary>
-    protected virtual bool IsAssetUrl(string url) =>
-        GetAssetsBaseUrl() is { } baseUrl &&
-        !url.Any(char.IsControl) &&
-        url.StartsWith(baseUrl, StringComparison.OrdinalIgnoreCase) &&
-        Uri.TryCreate(url, UriKind.Absolute, out _);
+    /// <summary>
+    /// A URL of the asset library starts with its public address, as the link of each of its files does, once its dot segments are resolved
+    /// as a browser resolves them: '/../' or an escaped dot could otherwise climb out of the library on the same host.
+    /// </summary>
+    protected virtual bool IsAssetUrl(string url)
+    {
+        if (GetAssetsBaseUrl() is not { } baseUrl || url.Any(char.IsControl) || url.Contains('\\'))
+        {
+            return false;
+        }
+
+        var unescaped = EscapedPathPattern.Replace(url, x => x.Value.ToLowerInvariant() switch { "%2e" => ".", "%2f" => "/", _ => "\\" });
+        if (unescaped.Contains('\\') || EscapedPathPattern.IsMatch(unescaped))
+        {
+            return false;
+        }
+
+        return Uri.TryCreate(unescaped, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && string.IsNullOrEmpty(uri.UserInfo) &&
+            Uri.TryCreate(baseUrl, UriKind.Absolute, out var library) && uri.AbsoluteUri.StartsWith(library.AbsoluteUri, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>The public link of a file at the library's root without the file; <c>null</c> when the library gives none.</summary>
     protected virtual string GetAssetsBaseUrl()
@@ -1273,6 +1507,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         if (url.StartsWith('/'))
         {
             return url.Length == 1 || url[1] is not ('/' or '\\');
+        }
+
+        if (url.StartsWith('#'))
+        {
+            return AnchorPattern.IsMatch(url);
         }
 
         return LinkSchemes.Any(x => url.StartsWith(x, StringComparison.OrdinalIgnoreCase)) && Uri.TryCreate(url, UriKind.Absolute, out _);
@@ -1325,7 +1564,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     // the depth of the tags as written, without the parser: an element whose end tag is left out counts as open
     private static int GetScannedDepth(string template)
     {
-        var (depth, deepest) = (0, 0);
+        var open = new Stack<string>();
+        var deepest = 0;
         for (var start = template.IndexOf('<'); start >= 0 && start < template.Length; start = template.IndexOf('<', start))
         {
             if (template.AsSpan(start).StartsWith("<!--"))
@@ -1351,13 +1591,18 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
             var tagEnd = FindTagEnd(template, nameEnd);
             var isSelfClosing = tagEnd >= 2 && template[tagEnd - 1] == '>' && template[tagEnd - 2] == '/';
-            if (isEndTag)
+            var name = template[nameStart..nameEnd].ToLowerInvariant();
+            // an end tag closes the element it names and those left open inside it; one that names no open element closes nothing
+            if (isEndTag && open.Contains(name))
             {
-                depth = Math.Max(0, depth - 1);
+                while (open.Pop() != name)
+                {
+                }
             }
-            else if (!isSelfClosing && !VoidElements.Contains(template[nameStart..nameEnd]))
+            else if (!isEndTag && !isSelfClosing && !VoidElements.Contains(name))
             {
-                deepest = Math.Max(deepest, ++depth);
+                open.Push(name);
+                deepest = Math.Max(deepest, open.Count);
             }
 
             start = tagEnd;
@@ -1393,6 +1638,61 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         classes.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries)
             .All(x => x == type || x.StartsWith(type + "-", StringComparison.Ordinal) || x.StartsWith(type + "__", StringComparison.Ordinal));
 
+    private static (string Physical, string Logical)? GetLogicalDirection(string name, List<CssTokenizer.Token> value)
+    {
+        var property = name.ToLowerInvariant();
+        if (LogicalProperties.TryGetValue(property, out var logicalProperty))
+        {
+            return (property, logicalProperty);
+        }
+
+        if (!LogicalValues.TryGetValue(property, out var logicalValues))
+        {
+            return null;
+        }
+
+        var side = value.Find(x => x.Kind == CssTokenizer.TokenKind.Ident && x.Value.ToLowerInvariant() is "left" or "right").Value?.ToLowerInvariant();
+
+        return side == null ? null : ($"{property}: {side}", $"{property}: {(side == "left" ? logicalValues.Left : logicalValues.Right)}");
+    }
+
+    private static bool IsLateValueFunction(string name) => LateValueFunctions.Contains(name) || name.StartsWith("--", StringComparison.Ordinal);
+
+    private static bool RemovesFocusRing(string name, List<CssTokenizer.Token> value) => name.ToLowerInvariant() switch
+    {
+        "outline" => value.Exists(x => IsNone(x) || IsZero(x)),
+        "outline-style" => value.Exists(IsNone),
+        "outline-width" => value.Exists(IsZero),
+        _ => false,
+    };
+
+    private static bool IsNone(CssTokenizer.Token token) =>
+        token.Kind == CssTokenizer.TokenKind.Ident && string.Equals(token.Value, "none", StringComparison.OrdinalIgnoreCase);
+
+    // 0, or a length of 0 such as 0px
+    private static bool IsZero(CssTokenizer.Token token)
+    {
+        if (token.Kind is not (CssTokenizer.TokenKind.Number or CssTokenizer.TokenKind.Dimension))
+        {
+            return false;
+        }
+
+        var number = new string(token.Value.TakeWhile(x => char.IsAsciiDigit(x) || x is '.' or '+' or '-').ToArray());
+
+        return decimal.TryParse(number, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var zero) && zero == 0;
+    }
+
+    // a media query on prefers-reduced-motion, reduce or no-preference, in any block of the CSS
+    private static bool HasReducedMotionQuery(IList<CssTokenizer.Token> tokens)
+    {
+        var meaningful = tokens.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList();
+
+        return meaningful.Zip(meaningful.Skip(1), meaningful.Skip(2)).Any(x =>
+            x.First.Kind == CssTokenizer.TokenKind.Ident && string.Equals(x.First.Value, "prefers-reduced-motion", StringComparison.OrdinalIgnoreCase) &&
+            x.Second.Kind == CssTokenizer.TokenKind.Colon &&
+            x.Third.Kind == CssTokenizer.TokenKind.Ident && ReducedMotionValues.Contains(x.Third.Value));
+    }
+
     private static char GetOpener(CssTokenizer.TokenKind closer) => closer switch
     {
         CssTokenizer.TokenKind.CloseCurly => '{',
@@ -1404,7 +1704,7 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
     {
         var match = SingleBindingPattern.Match(value);
 
-        return match.Success ? match.Groups[1].Value : null;
+        return match.Success ? match.Groups[1].Value.Trim() : null;
     }
 
     private static bool HasBinding(string value) => value.Contains("{{", StringComparison.Ordinal);
@@ -1432,9 +1732,11 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     private static (int Line, int Column) GetLocation(CustomSectionCheck check, int index)
     {
-        var lineStart = index == 0 ? 0 : check.Template.LastIndexOf('\n', index - 1) + 1;
+        var lineStarts = check.LineStarts;
+        var found = lineStarts.BinarySearch(index);
+        var line = found >= 0 ? found : ~found - 1;
 
-        return (check.Template.AsSpan(0, index).Count('\n') + 1, index - lineStart + 1);
+        return (line + 1, index - lineStarts[line] + 1);
     }
 
     private static bool IsName(JToken name) => name switch
@@ -1461,6 +1763,14 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     private static KeyValuePair<string, KitField>? GetUnknownField(IEnumerable<KeyValuePair<string, KitField>> fields) =>
         fields.Where(x => !CustomSectionKit.FieldTypes.Contains(x.Value.Type ?? string.Empty)).Cast<KeyValuePair<string, KitField>?>().FirstOrDefault();
+
+    // text or a binding, which the storefront fills with text, an aria-label, rich text, or an image whose alt names it
+    private static bool HasName(IElement link) =>
+        !string.IsNullOrWhiteSpace(link.TextContent) ||
+        !string.IsNullOrWhiteSpace(link.GetAttribute("aria-label")) ||
+        link.HasAttribute(HtmlAttribute) ||
+        link.QuerySelectorAll("[data-html]").Length > 0 ||
+        link.QuerySelectorAll("img").Any(x => !string.IsNullOrWhiteSpace(x.GetAttribute(AltAttribute)));
 
     private static bool HasBehavior(IElement element, string attribute)
     {
@@ -1551,6 +1861,8 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
 
     protected sealed class CustomSectionCheck(string type, CustomSectionValidationResult result)
     {
+        private string _template = string.Empty;
+
         public string Type { get; } = type;
 
         public string File { get; } = ThemeStorage.GetCustomSectionFile(type);
@@ -1561,11 +1873,25 @@ public class CustomSectionValidator(IBlobUrlResolver blobUrlResolver) : ICustomS
         public IDictionary<string, CustomSectionSetting> Settings { get; set; }
 
         /// <summary>The template as written, which names the line of an element.</summary>
-        public string Template { get; set; } = string.Empty;
+        public string Template
+        {
+            get => _template;
+            set
+            {
+                _template = value;
+                LineStarts = [0, .. value.Select((x, i) => (x, i)).Where(x => x.x == '\n').Select(x => x.i + 1)];
+            }
+        }
+
+        /// <summary>Where each line of <see cref="Template"/> starts.</summary>
+        public List<int> LineStarts { get; private set; } = [0];
 
         public IList<string> Texts { get; } = [];
 
         public IList<string> ColorProperties { get; } = [];
+
+        /// <summary>The CSS has an animation or a transition.</summary>
+        public bool Animates { get; set; }
 
         public int ErrorCount => result.Errors.Count;
 

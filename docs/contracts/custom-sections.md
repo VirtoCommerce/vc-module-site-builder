@@ -52,9 +52,10 @@ designer runs the one and sends the other, and so are `"multiple": true` and any
 An HTML fragment with exactly one root element, the section's root. The storefront renders each section inside a
 wrapper element of its own, outside the scope root, with `contain: paint` and `isolation: isolate`, so that nothing a
 section draws leaves its box; the wrapper carries the section's anchor id and the preview attributes of a section. The
-root keeps `data-sb-type="{type}"` and a `style` holding the [setting variables](#setting-variables). It is HTML as
-written: markup an HTML parser has to mend, such as an element left open or a `/>` on a kit tag, is refused, and so
-are elements nested more than 32 deep, the root counted.
+root keeps `data-sb-type="{type}"` and a `style` holding the [setting variables](#setting-variables), so the root is an
+element of HTML, not a kit tag. It is HTML as written, read as the storefront's sanitizer reads it, with no doctype
+(quirks mode, where a `table` may stay inside a `p`): markup the parser has to mend, such as an element left open or a
+`/>` on a kit tag, is refused, and so are elements nested more than 32 deep, the root counted.
 
 - **Elements**: the elements the builder's HTML sanitizer keeps, without form controls (`form`, `input`, `select`,
   `textarea`, `button`, `option`, `optgroup`, `datalist`, `fieldset`, `legend`, `label`, `output`), plus the
@@ -62,16 +63,20 @@ are elements nested more than 32 deep, the root counted.
   their content are refused.
 - **Attributes**: `class`, `role`, `aria-*`, `alt`, `title`, `lang`, `dir`, `hidden`, `href`, `target`, `rel`, `src`,
   `srcset`, `sizes`, `loading`, `decoding`, `width`, `height`, `datetime`, `colspan`, `rowspan`, `scope`,
-  `data-each`, `data-if`, `data-html`, and the [behavior](#behaviors) attributes. No `id` (two instances on a page would
-  share it), no `style`, no `on*`.
+  `data-each`, `data-if`, `data-html`, and the [behavior](#behaviors) attributes. `video` also takes `autoplay`,
+  `muted`, `loop`, `playsinline`, `controls`, `preload` and `poster`; `source` takes `type` and `media`; `details` takes
+  `open`; `blockquote` and `q` take `cite`, which follows the link rule. No `id` (two instances on a page would share
+  it), no `style`, no `on*`.
 - **Classes**: `class` names the type's own classes only: the type itself, or a name starting with `{type}-` or
   `{type}__` (`custom-hero__title`, `custom-hero--dark`). A binding in it names a `select` setting whose options are such
   classes.
 - **Link targets**: `target` is `_self` or `_blank`, and `rel` does not hold `opener`; both are written as they are, with
   no binding.
-- **Links and images**: `href` is a path starting with `/`, an `https:`, `mailto:` or `tel:` URL, or a binding of a
-  `"format": "url"` field. `src` and `srcset` are a URL of the store's asset library or a binding of an `images`
-  field. A bound value that breaks the rule renders without the attribute.
+- **Links and images**: `href` is a path starting with `/`, an anchor on the page (`#` and a letter, then letters,
+  digits, `_` and `-`), an `https:`, `mailto:` or `tel:` URL, or a binding of a `"format": "url"` field. `src`,
+  `srcset` and a `video`'s `poster` are a URL of the store's asset library or a binding of an `images` field; a URL of
+  the library is read with its `..` and its escaped dots and slashes resolved, and one with a backslash is refused. A
+  bound value that breaks the rule renders without the attribute.
 
 ### Bindings
 
@@ -105,8 +110,8 @@ module cannot register a kit tag of the same name.
 A kit tag's name starts with `vc-`, and an element named `vc-…` that the catalog does not name is refused. Its
 attributes are those the catalog declares, and `data-if` and `data-each`; they take literals or bindings, and a literal
 the attribute's type does not take is refused on save. Whatever the catalog declares, a kit tag takes no `on*`, `style`,
-`id`, `is`, `class`, `srcdoc` or `form*` attribute, and `to`, `href` and `src` follow the link rule. A kit tag has no
-content.
+`id`, `is`, `class`, `srcdoc`, `form*`, `popover*`, `ping`, `srcset`, `poster` or `action` attribute, and `to`, `href`
+and `src` follow the link rule. A kit tag has no content.
 
 ### Behaviors
 
@@ -114,8 +119,10 @@ A behavior is a storefront directive an attribute switches on. It reads the elem
 or the element's text; the visuals are the section's CSS. With `prefers-reduced-motion: reduce` a behavior shows its end
 state at once. The catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior
 when the catalog has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or
-inside it, its value checked by the option's type. The storefront registers these, and their names are reserved: a
-module cannot register a behavior of the same name.
+inside it, its value checked by the option's type. No behavior is named `each`, `if` or `html`, which are bindings, or
+starts with `sb-` or `pb-`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
+writes one is refused. The storefront registers these, and their names are reserved: a module cannot register a
+behavior of the same name.
 
 | Attribute | Options | Effect |
 |---|---|---|
@@ -147,13 +154,16 @@ The root's `style` sets a variable per setting the CSS can use, named `--setting
 The storefront applies a type's CSS once per page, wrapped so it reaches only the type's sections:
 `@layer sections { @scope ([data-sb-type="{type}"]) { … } }`. `:scope` is the section's root.
 
-- **At-rules**: `@media`, `@supports`, `@container` and `@keyframes`. A keyframes name starts with the type
-  (`@keyframes custom-hero-fade`), since names are not scoped.
+- **At-rules**: `@media`, `@supports`, `@container`, `@starting-style` and `@keyframes`. A keyframes name starts with
+  the type and `__` (`@keyframes custom-hero__fade`), since names are not scoped and one type's name may start
+  another's.
+- **Images**: a URL of the store's asset library, or a `data:image/…` URL, as an image loads no script and nothing
+  else; the data counts in the CSS's size.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
-  selector naming `:root`, `html` or `body`; `position: fixed`, and `var()`, `attr()` or `env()` in `position`; a URL
-  other than an asset library URL, in `url()` or as a string of `image-set()` and the other functions that load an
-  image, custom properties included, and `var()`, `attr()` or `env()` inside such a function; `expression()`,
-  `behavior` and `-moz-binding`.
+  selector naming `:root`, `html` or `body`; `position: fixed`, and `var()`, `attr()`, `env()`, `if()` or a custom
+  `--name()` function in `position`; any other URL, in `url()` or as a string anywhere inside `image-set()` and the
+  other functions that load an image, at any depth, custom properties included, and `var()`, `attr()`, `env()`, `if()`
+  or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`.
 - **Read as a browser reads it**, from its tokens: a comment inside a string is text, and escapes are read. A string
   that a line break cuts off, and a `url(` whose unquoted URL holds a quote, a parenthesis or a space, are refused, and
   so is a block left open or closed without its pair, since the storefront's wrapping would close with it. Blocks nest
@@ -162,6 +172,26 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
   `currentColor`. A literal color is saved with a warning.
 - **Classes** are the type's own, as the template's `class` names them. The storefront's utility classes are not
   available: they would style the section from outside its CSS, such as fixed over the page.
+- **Right to left**: a page in a right-to-left language mirrors a section through logical properties and values only.
+  A physical side (`margin-left`, `padding-right`, `left`, `border-left`, `border-top-left-radius`,
+  `scroll-margin-right`, `text-align: left`, `float: right`, `clear: left` and the like) is saved with a warning that
+  names its logical replacement (`margin-inline-start`, `inset-inline-start`, `border-start-start-radius`,
+  `text-align: start`, `float: inline-start`), except in a rule for one direction, under `:dir(rtl)` or `:dir(ltr)`.
+
+## Accessibility
+
+A section is used with a keyboard and a screen reader as well as with a mouse. A save refuses:
+
+- an `h1`: the page holds its own, and a section's headings start at `h2`;
+- an `img` without `alt`: bind it to a `string` setting, or write `alt=""` for an image that only decorates; a literal
+  text in it is saved with the warning on text of the template's own;
+- a link with nothing to read: no text or binding inside, no `aria-label`, no rich text and no image with an `alt`;
+- CSS that hides the focus ring: `outline: none` or `0`, `outline-style: none`, `outline-width: 0`, in any rule.
+
+It saves with a warning a heading level skipped on the way down (`h2`, then `h4`), CSS with an `animation`,
+`animation-name` or `transition` and no `@media (prefers-reduced-motion: reduce)` or `(prefers-reduced-motion:
+no-preference)` block, and a `vc-button` without a `label` when the kit declares one. The template runs no code and
+holds no form controls, so a section is used from the keyboard only through its links, its kit tags and its behaviors.
 
 ## Validation
 
@@ -211,5 +241,6 @@ interface KitField {
 
 A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
 behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words, an attribute
-no kit tag takes, a behavior named `each`, `if` or `html`, or a field of another type or with other keys. A kit tag or
+no kit tag takes, a behavior named `each`, `if` or `html` or starting with `sb-` or `pb-`, or a field of another type
+or with other keys. A kit tag or
 a behavior that a catalog stored earlier declares with a field of another type is refused where a template uses it.
