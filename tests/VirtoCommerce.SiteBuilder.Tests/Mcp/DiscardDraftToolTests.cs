@@ -210,6 +210,23 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ACustomSectionTypeNeverPublished_IsRemoved_AndTheChangeSaysSo()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", McpTestContext.StatsSectionType, draft: true);
+        var type = new Dictionary<string, object> { ["kind"] = "theme_file", ["store_id"] = StoreA, ["theme_file"] = "default/custom-sections/custom-stats.json" };
+
+        var result = await _context.CallAsync(ThemeEditor(), Tool, await _context.ReviewAsync(ThemeEditor(), Tool, type));
+
+        var change = result.EnsureSucceeded().Read<SiteBuilderChange>();
+        var removed = Assert.Single(change.Changes);
+        Assert.Equal(("section type", "custom-stats"), (removed.Field, removed.From?.ToString()));
+        Assert.StartsWith("removed", removed.To?.ToString(), StringComparison.Ordinal);
+        Assert.Contains(change.Warnings, x => x.Contains("shows nothing in its place", StringComparison.Ordinal));
+        Assert.Null(_context.ReadThemeFile(StoreA, "custom-sections/custom-stats.json", draft: true));
+    }
+
+    [Fact]
     public async Task AThemeFileOfAnotherStore_IsForbidden()
     {
         await _context.SeedThemeAsync(StoreB);

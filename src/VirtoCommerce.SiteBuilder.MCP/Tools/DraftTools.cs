@@ -8,6 +8,7 @@ using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -36,7 +37,8 @@ public class DraftTools(
     [Authorize(Update)]
     [McpRequiresConfirmation(Fallback = McpConfirmationFallback.Refuse)]
     [Description("Discard the draft of a page or of a theme file: its unpublished changes are deleted and it is its " +
-        "published version again. Something never published has nothing to go back to and is refused. A page is a " +
+        "published version again. Something never published has nothing to go back to and is refused, but for a custom section " +
+        "type never published, whose discard removes the type. A page is a " +
         "database page by its id, or a page stored as a file by its path ('pages/about.page') with store_id; in git, its " +
         "draft is your own draft branch of the page. A theme file is a " +
         "template, the template rules, the header, the footer, the brand or a palette, named by its path as search_templates " +
@@ -97,7 +99,8 @@ public class DraftTools(
         return change;
     }
 
-    // The designer's discard silently keeps a draft that has no live file; here it is refused, as for a page.
+    // The designer's discard silently keeps a draft that has no live file; here it is refused, as for a page, but for a custom section type's,
+    // whose discard removes the type.
     private async Task<SiteBuilderChange> DiscardThemeFileAsync(RequestContext<CallToolRequestParams> context, string storeId, string themeFile,
         IDictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
     {
@@ -120,13 +123,12 @@ public class DraftTools(
                 $"{(status.Value.Drafts.Count == 0 ? "none" : string.Join(", ", status.Value.Drafts))}.");
         }
 
-        if (status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
+        var newType = status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase) ? ThemeCustomSections.GetCustomSectionType(pathInTheme) : null;
+        if (newType == null && status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
         {
             throw new McpException($"'{path}' was never published, so its draft is all there is and is not discarded. Change it with the design tools instead.");
         }
 
-        var draft = await ThemeFiles.ReadAsync(designerOperationService, context.User, storeId, path, cancellationToken);
-        var live = await ThemeFiles.ReadLiveAsync(contentQueryService, context.User, storeId, path, cancellationToken);
         var change = new SiteBuilderChange
         {
             Action = "discard_draft",
@@ -136,15 +138,25 @@ public class DraftTools(
             DryRun = true,
         };
 
-        var changes = ThemeFileEdits.Compare(path, draft.Content, live);
-        foreach (var item in changes)
+        if (newType != null)
         {
-            change.AddChange(item.Field, item.From, item.To);
+            change.AddChange("section type", newType, "removed: it was never published, so the theme no longer has it");
+            change.AddWarning($"A page or a template that places {newType} shows nothing in its place; get_publish_readiness names such a page.");
         }
-
-        if (changes.Count == 0)
+        else
         {
-            change.AddChange("draft", "saved draft", "published version");
+            var draft = await ThemeFiles.ReadAsync(designerOperationService, context.User, storeId, path, cancellationToken);
+            var live = await ThemeFiles.ReadLiveAsync(contentQueryService, context.User, storeId, path, cancellationToken);
+            var changes = ThemeFileEdits.Compare(path, draft.Content, live);
+            foreach (var item in changes)
+            {
+                change.AddChange(item.Field, item.From, item.To);
+            }
+
+            if (changes.Count == 0)
+            {
+                change.AddChange("draft", "saved draft", "published version");
+            }
         }
 
         var forbidden = $"You may not discard '{path}': it needs builder:update and {permission}, and builder:read in store '{storeId}'.";
