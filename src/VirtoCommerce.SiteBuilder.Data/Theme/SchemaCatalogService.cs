@@ -98,6 +98,14 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
             throw new ArgumentException($"The catalog's \"kit\" {kitError}.", nameof(catalogJson));
         }
 
+        // the rest of the module takes such a section for a type of the theme
+        if ((catalog[ModuleConstants.SchemaKinds.Sections] as JObject)?.Properties()
+            .FirstOrDefault(x => x.Name.StartsWith(ThemeStorage.CustomSectionTypePrefix, StringComparison.Ordinal) && !ThemeCustomSections.IsCustom((JObject)x.Value)) is { } section)
+        {
+            throw new ArgumentException($"The catalog's section \"{section.Name}\" starts with {ThemeStorage.CustomSectionTypePrefix}, which names the theme's " +
+                "own types, and is not marked custom.", nameof(catalogJson));
+        }
+
         return catalog;
     }
 

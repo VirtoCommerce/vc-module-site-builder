@@ -135,6 +135,18 @@ public class SchemaCatalogServiceTests
     }
 
     [Fact]
+    public async Task SaveAsync_BuiltInSectionNamedAsACustomType_IsRefused_ButACustomTypeIsKept()
+    {
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            Service().SaveAsync("s1", """{ "hash": "abc12345", "sections": { "custom-banner": { "name": "Banner" } } }""", Ct));
+        await Service().SaveAsync("s1", """{ "hash": "abc12345", "sections": { "custom-banner": { "name": "Banner", "custom": true } } }""", Ct);
+
+        Assert.StartsWith("The catalog's section \"custom-banner\" starts with custom-, which names the theme's own types, and is not marked custom.",
+            exception.Message);
+        Assert.NotNull(JObject.Parse(await Service().GetAsync("s1", null, Ct))["sections"]!["custom-banner"]);
+    }
+
+    [Fact]
     public async Task SaveAsync_KitOfItsShape_IsKept()
     {
         const string kit = """

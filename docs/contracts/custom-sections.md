@@ -14,10 +14,11 @@ below. Anything that needs logic comes from the storefront: a [kit tag](#kit-tag
 `custom-sections/{type}.json` in the theme folder, with its draft `{file}-draft` next to it as every theme file has.
 `type` matches `^custom-[a-z0-9]+(?:-[a-z0-9]+)*$` and is at most 64 characters; the file name is the type. Writing it
 takes `builder:theme`. A type is never renamed once a page or a template places it. Discarding the draft of a type that
-was never published removes the type. A theme's types are at most 256 KB of JSON together, since the snapshot carries
-every type to every page; the setting `SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes) changes the limit. A
-save checks the limit early, but two saves at once may pass it together: the publication enforces it, and
-`get_publish_readiness` names it.
+was never published removes the type. The prefix `custom-` is the theme's: the catalog's upload refuses a section whose
+key starts with it unless it is marked `"custom": true`. A theme's types are at most 256 KB of JSON together, since the
+snapshot carries every type to every page; the setting `SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes)
+changes the limit. A save checks the limit early, but two saves at once may pass it together: the publication enforces
+it, and `get_publish_readiness` names it.
 
 ```ts
 interface CustomSectionType {
