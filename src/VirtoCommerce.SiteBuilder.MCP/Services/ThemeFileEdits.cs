@@ -33,15 +33,30 @@ public sealed class ThemeFileChange : McpChangePreview
 
     [JsonPropertyName("contrast_failures")]
     public IList<ContrastFailureRow> ContrastFailures { get; set; }
+
+    // What refuses the change, on a dry run that answers them instead of failing.
+    [JsonPropertyName("errors")]
+    public IList<string> Errors { get; set; }
 }
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
 
 public static class ThemeFileEdits
 {
-    // The diff is of the content as stored: on a dry run, the sanitized content the save would write.
-    public static async Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
+    private const int MaxTextChange = 400;
+
+    // A custom section type's texts, compared by the lines that changed.
+    private static readonly string[] SectionTypeTexts = ["template", "css"];
+
+    public static Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
         string storeId, string catalogHash, IList<ThemeFileEdit> edits, bool dryRun, string permission, string readAgain,
+        CancellationToken cancellationToken) =>
+        SaveAsync(change, designerOperationService, user, storeId, catalogHash, edits, dryRun, permission, readAgain, answerErrors: false, cancellationToken);
+
+    // The diff is of the content as stored: on a dry run, the sanitized content the save would write. With answerErrors, a dry run
+    // the save refuses answers the errors in the change, with the diff of the content sent.
+    public static async Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
+        string storeId, string catalogHash, IList<ThemeFileEdit> edits, bool dryRun, string permission, string readAgain, bool answerErrors,
         CancellationToken cancellationToken)
     {
         change.DryRun = dryRun;
@@ -59,7 +74,15 @@ public static class ThemeFileEdits
 
         var files = changed.Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
         var result = await ThemeFiles.SaveAsync(designerOperationService, user, storeId, catalogHash, files, dryRun, cancellationToken);
-        ThemeFiles.EnsureSaved(result, change.ObjectName ?? change.ObjectId, permission, storeId, readAgain);
+        var refused = dryRun && answerErrors && result.Status == SiteBuilderOperationStatus.Invalid;
+        if (refused)
+        {
+            change.Errors = result.Errors?.Count > 0 ? [.. result.Errors] : [result.Error];
+        }
+        else
+        {
+            ThemeFiles.EnsureSaved(result, change.ObjectName ?? change.ObjectId, permission, storeId, readAgain);
+        }
 
         foreach (var edit in changed)
         {
@@ -79,7 +102,15 @@ public static class ThemeFileEdits
             }
         }
 
-        change.AddWarning("Customers see this change only after the theme is published (publish_theme), which a second person approves.");
+        foreach (var warning in (dryRun ? result.Preview?.Warnings : result.Value?.Warnings) ?? [])
+        {
+            change.AddWarning(warning);
+        }
+
+        if (!refused)
+        {
+            change.AddWarning("Customers see this change only after the theme is published (publish_theme), which a second person approves.");
+        }
     }
 
     public static IList<PageDocumentChange> Compare(string path, string before, string after)
@@ -88,6 +119,11 @@ public static class ThemeFileEdits
         if (file.Equals(ThemeStorage.TemplateRulesFile, StringComparison.OrdinalIgnoreCase))
         {
             return CompareRules(before, after);
+        }
+
+        if (ThemeCustomSections.GetSectionType(file) != null)
+        {
+            return CompareSectionType(before, after);
         }
 
         var kind = ThemeTemplateMainSections.GetTemplateKey(file) != null
@@ -157,10 +193,138 @@ public static class ThemeFileEdits
         return changes;
     }
 
-    private static List<PageDocumentChange> CompareValues(string before, string after)
+    // Its settings one by one, by their id, and its template and CSS by the lines that changed, so a small edit stays small.
+    private static List<PageDocumentChange> CompareSectionType(string before, string after)
     {
-        var from = Flatten(Parse(before));
-        var to = Flatten(Parse(after));
+        var fromNode = Parse(before);
+        var toNode = Parse(after);
+        if (fromNode is not (null or JsonObject) || toNode is not (null or JsonObject))
+        {
+            return CompareValues(before, after);
+        }
+
+        var from = fromNode as JsonObject ?? [];
+        var to = toNode as JsonObject ?? [];
+        var fromSettings = TakeSettings(from);
+        var toSettings = TakeSettings(to);
+        var fromTexts = SectionTypeTexts.ToDictionary(x => x, x => Take(from, x));
+        var toTexts = SectionTypeTexts.ToDictionary(x => x, x => Take(to, x));
+
+        var changes = CompareValues(Flatten(from), Flatten(to));
+        changes.AddRange(CompareSettings(fromSettings, toSettings));
+        foreach (var text in SectionTypeTexts)
+        {
+            if (CompareText(text, fromTexts[text], toTexts[text]) is { } change)
+            {
+                changes.Add(change);
+            }
+        }
+
+        return changes;
+    }
+
+    private static JsonArray TakeSettings(JsonObject type)
+    {
+        if (type["schema"] is not JsonObject schema)
+        {
+            return null;
+        }
+
+        var settings = schema["settings"] as JsonArray;
+        schema.Remove("settings");
+        if (schema.Count == 0)
+        {
+            type.Remove("schema");
+        }
+
+        return settings;
+    }
+
+    private static string Take(JsonObject type, string key)
+    {
+        var value = type[key] == null ? null : GetString(type[key]) ?? type[key].ToJsonString(PageDocumentEditor.WriteOptions);
+        type.Remove(key);
+
+        return value;
+    }
+
+    // A setting without an id, such as a header, is known by its place.
+    private static List<PageDocumentChange> CompareSettings(JsonArray before, JsonArray after)
+    {
+        var from = IndexSettings(before);
+        var to = IndexSettings(after);
+        var changes = new List<PageDocumentChange>();
+        foreach (var key in from.Select(x => x.Key).Union(to.Select(x => x.Key)))
+        {
+            var oldValue = from.FirstOrDefault(x => x.Key == key).Value?.ToJsonString(PageDocumentEditor.WriteOptions);
+            var newValue = to.FirstOrDefault(x => x.Key == key).Value?.ToJsonString(PageDocumentEditor.WriteOptions);
+            if (oldValue != newValue)
+            {
+                changes.Add(new($"schema.settings.{key}", oldValue, newValue));
+            }
+        }
+
+        var kept = from.Select(x => x.Key).Where(x => to.Any(y => y.Key == x)).ToList();
+        var reordered = to.Select(x => x.Key).Where(kept.Contains).ToList();
+        if (!kept.SequenceEqual(reordered))
+        {
+            changes.Add(new("order of schema.settings", string.Join(", ", kept), string.Join(", ", reordered)));
+        }
+
+        return changes;
+    }
+
+    private static List<KeyValuePair<string, JsonNode>> IndexSettings(JsonArray settings)
+    {
+        var result = new List<KeyValuePair<string, JsonNode>>();
+        for (var i = 0; i < (settings?.Count ?? 0); i++)
+        {
+            var key = settings[i] is JsonObject field && GetString(field["id"]) is { Length: > 0 } id ? id : $"#{i + 1}";
+            if (result.All(x => x.Key != key))
+            {
+                result.Add(KeyValuePair.Create(key, settings[i]));
+            }
+        }
+
+        return result;
+    }
+
+    // The lines from the first to the last that differ; a new text is all of its lines.
+    private static PageDocumentChange CompareText(string field, string before, string after)
+    {
+        if ((before ?? string.Empty) == (after ?? string.Empty))
+        {
+            return null;
+        }
+
+        var from = (before ?? string.Empty).Split('\n');
+        var to = (after ?? string.Empty).Split('\n');
+        var start = 0;
+        while (start < from.Length && start < to.Length && from[start] == to[start])
+        {
+            start++;
+        }
+
+        var end = 0;
+        while (end < from.Length - start && end < to.Length - start && from[^(end + 1)] == to[^(end + 1)])
+        {
+            end++;
+        }
+
+        var last = Math.Max(start + 1, to.Length - end);
+        var lines = last > start + 1 ? $"lines {start + 1}-{last}" : $"line {start + 1}";
+
+        return new($"{field} {lines}", before == null ? null : Shorten(string.Join('\n', from[start..^end])),
+            after == null ? null : Shorten(string.Join('\n', to[start..^end])));
+    }
+
+    private static string Shorten(string text) =>
+        text.Length > MaxTextChange ? $"{text[..MaxTextChange]}… ({text.Length - MaxTextChange} more characters)" : text;
+
+    private static List<PageDocumentChange> CompareValues(string before, string after) => CompareValues(Flatten(Parse(before)), Flatten(Parse(after)));
+
+    private static List<PageDocumentChange> CompareValues(Dictionary<string, string> from, Dictionary<string, string> to)
+    {
         var changes = new List<PageDocumentChange>();
         foreach (var key in from.Keys.Concat(to.Keys.Where(x => !from.ContainsKey(x))))
         {
