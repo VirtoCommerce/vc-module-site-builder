@@ -850,6 +850,32 @@ public class CustomSectionValidatorTests
     }
 
     [Theory]
+    [InlineData("""{ "en": "Hero" }""")]
+    [InlineData("""{ "title": "Hero" }""")]
+    [InlineData("""{ "en-US": "Hero", "de-DE": 5 }""")]
+    [InlineData("5")]
+    public void Validate_NameThatIsNeitherATextNorATextPerLanguage_IsRefused(string name)
+    {
+        var file = Section("<section></section>");
+        file["name"] = JToken.Parse(name);
+
+        Assert.Equal(["'name' is not a text, or a text per language"], _validator.Validate(Type, file, Catalog).Errors);
+    }
+
+    [Theory]
+    [InlineData("""{ "id": "title", "type": "string", "label": { "en-US": "Title" } }""", "setting 'title' has a label that is not a text")]
+    [InlineData("""{ "id": "title", "type": "string", "info": 5 }""", "setting 'title' has an info that is not a text")]
+    [InlineData("""{ "id": "title", "type": "string", "placeholder": [ "x" ] }""", "setting 'title' has a placeholder that is not a text")]
+    [InlineData("""{ "type": "header", "label": { "text": "Content" } }""", "setting 1 has a label that is not a text")]
+    [InlineData("""{ "id": "items", "type": "list", "element": [ { "id": "title", "type": "string", "label": 1 } ] }""", "setting 'items.title' has a label that is not a text")]
+    public void Validate_SettingTextThatIsNotAText_IsRefused(string field, string error)
+    {
+        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), Catalog);
+
+        Assert.Equal([error], result.Errors);
+    }
+
+    [Theory]
     [InlineData("""{ "id": "type", "type": "string" }""", "setting 'type'")]
     [InlineData("""{ "id": "id", "type": "string" }""", "setting 'id'")]
     [InlineData("""{ "id": "blocks", "type": "list", "element": [ { "id": "title", "type": "string" } ] }""", "setting 'blocks'")]

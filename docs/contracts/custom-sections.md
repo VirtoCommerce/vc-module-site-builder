@@ -22,7 +22,10 @@ save checks the limit early, but two saves at once may pass it together: the pub
 ```ts
 interface CustomSectionType {
   format: 1;
-  /** the name in the designer's section picker; translatable */
+  /**
+   * the name in the designer's section picker: a text, or a text per language keyed by culture names, at least one with a
+   * region (`en-US`), as the snapshot translates it
+   */
   name: string | Record<string, string>;
   schema: {
     /** the settings, as a section schema declares them */
@@ -46,11 +49,12 @@ one level deep: the fields of a list's rows or of an object. `string` and `text`
 
 A setting's `id` matches `^[A-Za-z][A-Za-z0-9_]*$` and is its own among its siblings; `header` and `paragraph` have
 none. No setting, a row's field included, is named `id`, `type`, `hidden`, `blocks` or `__group`: the designer writes a
-setting's value next to these keys of the section itself. A setting takes `id`, `type`, `label`, `default`, `translatable`, `tab`, `info`, `placeholder`, `required`,
-`multiline`, `format`, `options`, `element`, `min`, `max` and `step`. `visibility` and `request` are refused, since the
-designer runs the one and sends the other, and so are `"multiple": true` and any other key. A `default` is one the
-setting takes, or empty: a `select`'s is one of its options, a link's follows the link rule, and an `images` one is a
-URL of the store's asset library.
+setting's value next to these keys of the section itself. A setting takes `id`, `type`, `label`, `default`,
+`translatable`, `tab`, `info`, `placeholder`, `required`, `multiline`, `format`, `options`, `element`, `min`, `max` and
+`step`. `visibility` and `request` are refused, since the designer runs the one and sends the other, and so are
+`"multiple": true` and any other key. A setting's `label`, `info` and `placeholder` are texts, as the designer shows
+them. A `default` is one the setting takes, or empty: a `select`'s is one of its options, a link's follows the link
+rule, and an `images` one is a URL of the store's asset library.
 
 ## Template
 

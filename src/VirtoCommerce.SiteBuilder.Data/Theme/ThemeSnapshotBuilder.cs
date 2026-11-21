@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
@@ -17,11 +16,6 @@ public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy)
 
     private const string ProductPageType = "product";
     private const string CategoryPageType = "category";
-
-    private static readonly Regex CultureNamePattern = new("^[a-z]{2,3}(-[a-z0-9]{2,8})*$", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
-
-    // A dictionary has a culture name with a subtag, so that a row such as { "sku": "X1" } stays a row.
-    private static readonly Regex SubtaggedCultureNamePattern = new("^[a-z]{2,3}(-[a-z0-9]{2,8})+$", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
 
     // The storefront and the designer default to the same rules.
     public const string DefaultTemplateRulesJson = """
@@ -226,11 +220,7 @@ public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy)
         }
     }
 
-    protected virtual bool IsTranslation(JObject dictionary)
-    {
-        return dictionary.Properties().Any(x => SubtaggedCultureNamePattern.IsMatch(x.Name))
-            && dictionary.Properties().All(x => CultureNamePattern.IsMatch(x.Name) && x.Value.Type == JTokenType.String);
-    }
+    protected virtual bool IsTranslation(JObject dictionary) => ThemeTranslations.IsTranslation(dictionary);
 
     protected virtual string GetTranslation(JObject dictionary, string language, string defaultLanguage)
     {

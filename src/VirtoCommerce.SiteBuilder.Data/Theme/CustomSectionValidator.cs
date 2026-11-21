@@ -45,6 +45,8 @@ public class CustomSectionValidator(
         ObjectType,
     ];
 
+    private static readonly string[] TextKeys = ["label", "info", "placeholder"];
+
     private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
 
     // the fields the designer shows as text to read, which hold no value
@@ -267,6 +269,12 @@ public class CustomSectionValidator(
             check.AddError($"{setting} has a key a custom section's setting does not take, '{key}'");
         }
 
+        // the designer shows these as they are
+        foreach (var key in TextKeys.Where(x => field[x] is { Type: not (JTokenType.String or JTokenType.Null) }))
+        {
+            check.AddError($"{setting} has {(key == "info" ? "an" : "a")} {key} that is not a text");
+        }
+
         var isGroup = type is ListType or ObjectType;
         if (type == null || !FieldTypes.Contains(type))
         {
@@ -419,10 +427,11 @@ public class CustomSectionValidator(
 
     private static bool IsLink(string type, JObject field) => type == StringType && ThemeJson.GetString(field, FormatKey) == UrlFormat;
 
+    // a text per language is the shape the snapshot translates and the designer reads; any other object would show the type's id
     private static bool IsName(JToken name) => name switch
     {
         JValue { Type: JTokenType.String } text => !string.IsNullOrWhiteSpace((string)text),
-        JObject translations => translations.Count > 0 && translations.Properties().All(x => x.Value is JValue { Type: JTokenType.String } text && !string.IsNullOrWhiteSpace((string)text)),
+        JObject translations => ThemeTranslations.IsTranslation(translations) && translations.Properties().All(x => !string.IsNullOrWhiteSpace((string)x.Value)),
         _ => false,
     };
 
