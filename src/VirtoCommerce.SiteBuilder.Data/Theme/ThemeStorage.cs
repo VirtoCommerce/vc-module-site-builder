@@ -69,7 +69,7 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
 
     public static string GetCustomSectionFile(string type) => $"{CustomSectionsFolder}/{type}{JsonExtension}";
 
-    /// <summary>The type a file of the custom sections folder holds, valid or not, as the file is named by its type; null for a file that is not JSON.</summary>
+    /// <summary>The file name without .json, valid type or not; null for a file that is not JSON.</summary>
     public static string GetCustomSectionType(string fileName) =>
         fileName.EndsWith(JsonExtension, StringComparison.OrdinalIgnoreCase) ? fileName[..^JsonExtension.Length] : null;
 

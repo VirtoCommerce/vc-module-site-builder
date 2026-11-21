@@ -35,7 +35,6 @@ public static class ThemeCustomSections
     /// The catalog with the theme's types in its sections, as the storefront adds them, in place of the custom types the storefront's preview saw:
     /// a type just written is in no catalog yet, and an older catalog may hold a type the theme no longer has. Null for no catalog.
     /// </summary>
-    /// <param name="types">The file content of each type by its type.</param>
     public static JObject AddToCatalog(JObject catalog, IDictionary<string, JToken> types)
     {
         if (catalog == null)
