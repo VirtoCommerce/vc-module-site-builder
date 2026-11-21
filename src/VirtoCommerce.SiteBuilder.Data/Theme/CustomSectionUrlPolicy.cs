@@ -11,30 +11,26 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver)
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
-    // an escaped dot, slash or backslash, which a URL resolves as the character
     private static readonly Regex EscapedPathPattern = new("%(?:2[eEfF]|5[cC])", RegexOptions.None, RegexTimeout);
     private static readonly Regex AnchorPattern = new("^#[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex ImageDataUrlPattern = new("^data:image/[a-z0-9.+-]+[;,]", RegexOptions.IgnoreCase, RegexTimeout);
 
     /// <summary>
-    /// A URL of the asset library starts with its public address, as the link of each of its files does, once its dot segments are resolved
-    /// as a browser resolves them: '/../' or an escaped dot could otherwise climb out of the library on the same host.
+    /// A URL of the asset library is read as written, as the storefront reads it: its origin is the library's, and its path, once its
+    /// dot segments are resolved, starts with the library's. An escaped dot, slash or backslash is refused: a reader that decodes it may
+    /// end the host or climb out of the library elsewhere.
     /// </summary>
     public virtual bool IsAssetUrl(string url)
     {
-        if (GetAssetsBaseUrl() is not { } baseUrl || url.Any(char.IsControl) || url.Contains('\\'))
+        if (GetAssetsBaseUrl() is not { } baseUrl || url.Any(char.IsControl) || url.Contains('\\') || EscapedPathPattern.IsMatch(url))
         {
             return false;
         }
 
-        var unescaped = EscapedPathPattern.Replace(url, x => x.Value.ToLowerInvariant() switch { "%2e" => ".", "%2f" => "/", _ => "\\" });
-        if (unescaped.Contains('\\') || EscapedPathPattern.IsMatch(unescaped))
-        {
-            return false;
-        }
-
-        return Uri.TryCreate(unescaped, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && string.IsNullOrEmpty(uri.UserInfo) &&
-            Uri.TryCreate(baseUrl, UriKind.Absolute, out var library) && uri.AbsoluteUri.StartsWith(library.AbsoluteUri, StringComparison.OrdinalIgnoreCase);
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && string.IsNullOrEmpty(uri.UserInfo) &&
+            Uri.TryCreate(baseUrl, UriKind.Absolute, out var library) &&
+            string.Equals(uri.GetLeftPart(UriPartial.Authority), library.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase) &&
+            uri.AbsolutePath.StartsWith(library.AbsolutePath, StringComparison.Ordinal);
     }
 
     /// <summary>data:image/ is allowed too: an image runs no script and loads nothing else.</summary>

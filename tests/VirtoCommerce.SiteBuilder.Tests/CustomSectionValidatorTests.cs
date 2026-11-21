@@ -816,6 +816,19 @@ public class CustomSectionValidatorTests
         Assert.Equal([$"<img> at line 1 has src with 'https://cdn.example/assets/a.png', which is not a URL of the store's asset library"], result.Errors);
     }
 
+    [Theory]
+    [InlineData("https://cdn.example%2Fassets%2F@evil.example/x.png", false)]
+    [InlineData("https://cdn.example/assets/a%2Fb.png", false)]
+    [InlineData("https://cdn.example/ASSETS/a.png", false)]
+    [InlineData("https://user@cdn.example/assets/a.png", false)]
+    [InlineData("HTTPS://CDN.EXAMPLE/assets/a.png", true)]
+    [InlineData("https://cdn.example/assets/../assets/a.png", true)]
+    [InlineData("https://cdn.example/assets/a.png", true)]
+    public void IsAssetUrl_ReadsTheUrlAsWritten_AsTheStorefrontDoes(string url, bool isAsset)
+    {
+        Assert.Equal(isAsset, TestServices.CustomSectionUrlPolicy(Assets).IsAssetUrl(url));
+    }
+
     [Fact]
     public void Validate_IconNameOfAKitTag_IsOneOfTheKitsIcons()
     {
