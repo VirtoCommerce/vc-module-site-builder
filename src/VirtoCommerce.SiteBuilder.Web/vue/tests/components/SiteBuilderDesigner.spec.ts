@@ -634,3 +634,59 @@ describe("publishing a page at a permalink other pages have", () => {
     );
   });
 });
+
+describe("the theme's custom section types", () => {
+  const SEARCH = `/api/content/themes/${STORE}/search`;
+  const HERO = { format: 1, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [{ id: "title", type: "string" }] }, template: "<section></section>", css: "" };
+  const PROMO = { ...HERO, name: "Promo" };
+  let platform: FakePlatform;
+
+  async function openPage(drafts: string[]) {
+    platform = fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
+      .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({ "default/custom-sections/custom-hero.json": HERO, "default/custom-sections/custom-promo.json": PROMO }))
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts })
+      .on("GET", "/api/site-builder/designer/storefront", { url: "https://shop.test", previewPath: "/designer-preview" })
+      .on("GET", "/api/site-builder/catalog", {})
+      .on("GET", SEARCH, (request: { query: Record<string, string> }) =>
+        request.query.folderUrl === "default/custom-sections" ? [{ name: "custom-hero.json-draft" }, { name: "custom-promo.json" }] : [],
+      )
+      .install();
+    blade.param.value = "g1";
+    const wrapper = shallowMount(SiteBuilderDesigner, { attachTo: document.body, global: { plugins: [await routerAt("/")], stubs: { VcBlade: false } } });
+    await flushPromises();
+    const frame = wrapper.find("iframe").element as HTMLIFrameElement;
+    const posted = vi.spyOn(frame.contentWindow!, "postMessage");
+    const load = async (hash: string, sections: Record<string, unknown> = {}) => {
+      const data = { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [] };
+      window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data: { source: "preview", type: "loaded", data } }));
+      await flushPromises();
+    };
+    const lastDraft = () =>
+      posted.mock.calls
+        .map(([message]) => message as { type: string; theme?: Record<string, unknown> })
+        .filter((x) => x.type === "draft")
+        .at(-1);
+    return { load, lastDraft, designer: (wrapper.vm as unknown as { designer: Designer }).designer };
+  }
+
+  it("go to the preview in the draft, each as last saved, once one of them has a draft", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+  });
+
+  it("are left to the published snapshot, and not read, while none has a draft", async () => {
+    const page = await openPage(["templates/product.json"]);
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme).not.toHaveProperty("customSections");
+    expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/custom-sections")).toEqual([]);
+  });
+});

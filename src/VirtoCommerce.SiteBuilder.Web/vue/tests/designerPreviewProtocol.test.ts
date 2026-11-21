@@ -287,6 +287,14 @@ test("the draft carries the brand and the palette the Theme tab has, whatever th
   assert.deepEqual(draftMessage({ look: {}, capabilities: [] }), { type: "draft", theme: {} });
 });
 
+test("the draft carries the theme's custom section types, whatever the storefront renders of the templates and groups", () => {
+  const customSections = {
+    "custom-hero": { format: 1 as const, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [] }, template: "<section></section>", css: "" },
+  };
+  assert.deepEqual(draftMessage({ customSections, capabilities: [] }), { type: "draft", theme: { customSections } });
+  assert.deepEqual(draftMessage({ capabilities: ["templates", "groups"] }), { type: "draft", theme: {} });
+});
+
 test("after loaded: who the preview renders as, the inspector, light or dark, the draft, the render", () => {
   const draft = draftMessage({ capabilities: [] });
   const render = renderMessage({ preview: { template: doc([]), sharedComponentBoundaries: [] }, cultureName: "en-US" });
