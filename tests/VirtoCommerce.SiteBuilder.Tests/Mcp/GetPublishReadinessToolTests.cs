@@ -181,6 +181,25 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheTheme_WhoseCustomSectionTypesAreTooLargeTogether_IsBlocked_WithTheLimit()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        var type = System.Text.Json.Nodes.JsonNode.Parse(StatsSectionType)!;
+        type["css"] = $"/* {new string('x', 60 * 1024)} */";
+        foreach (var name in new[] { "custom-a", "custom-b", "custom-c", "custom-d", "custom-e" })
+        {
+            _context.SeedThemeFile(StoreA, $"custom-sections/{name}.json", type.ToJsonString(), draft: true);
+        }
+
+        var readiness = await CheckAsync(Reader(), new { theme = true, store_id = StoreA });
+
+        Assert.False(readiness.Ready);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "theme-refused");
+        Assert.Equal(McpFindingSeverities.Critical, finding.Severity);
+        Assert.Contains("of JSON together, more than 256 KB", finding.Evidence, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TheTheme_ListsItsDrafts()
     {
         await _context.SeedThemeAsync(StoreA);
