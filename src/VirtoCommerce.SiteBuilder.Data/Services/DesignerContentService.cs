@@ -349,7 +349,6 @@ public class DesignerContentService(
             preview.Objects.Add(CreateContentChange(ModuleConstants.ChangePreview.ThemeFile, file.Path, current.ETag, current.Content, file.Content));
         }
 
-
         return preview;
     }
 

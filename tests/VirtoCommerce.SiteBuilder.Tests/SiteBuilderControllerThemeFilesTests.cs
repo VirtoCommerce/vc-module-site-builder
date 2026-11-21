@@ -541,7 +541,6 @@ public class SiteBuilderControllerThemeFilesTests
         Files = JsonConvert.SerializeObject(new[] { new { path, type = "themes", content = new { content = Array.Empty<object>() } } }),
     };
 
-
     private SiteBuilderController Builder(IAuthorizationService authorization = null, IEventPublisher eventPublisher = null, IContentHistory history = null)
     {
         var options = Options.Create(new GitContentOptions { Enabled = true, Organization = "acme", Token = "t0ken", BaseBranch = "main" });
