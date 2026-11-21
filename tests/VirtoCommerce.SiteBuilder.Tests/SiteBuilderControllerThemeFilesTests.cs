@@ -545,7 +545,7 @@ public class SiteBuilderControllerThemeFilesTests
     private SiteBuilderController Builder(IAuthorizationService authorization = null, IEventPublisher eventPublisher = null, IContentHistory history = null)
     {
         var options = Options.Create(new GitContentOptions { Enabled = true, Organization = "acme", Token = "t0ken", BaseBranch = "main" });
-        var themePublisher = new ThemePublisher(_themeStorageFactory, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themeStorageFactory),
+        var themePublisher = new ThemePublisher(_themeStorageFactory, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themeStorageFactory),
             _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), GitHubConnections.CreatePolicy(options, new FakeSettingsManager(true), _ownership), null, null, new FakeGitContentProvisioner());
         var controller = TestServices.CreateSiteBuilderController(

@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
-using VirtoCommerce.AssetsModule.Core.Assets;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using Xunit;
 
@@ -129,7 +129,7 @@ public class CustomSectionValidatorTests
         }
         """);
 
-    private readonly CustomSectionValidator _validator = new(new AssetUrls(Assets));
+    private readonly CustomSectionValidator _validator = TestServices.CustomSectionValidator(Assets);
 
     [Fact]
     public void Validate_TypeWithinTheRules_HasNoErrorsAndNoWarnings()
@@ -727,14 +727,14 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(type, Section("<section></section>"), Catalog);
 
         Assert.Equal(
-            [$"custom-sections/{type}.json: '{type}' is not a custom section type, which is 'custom-' and lowercase words joined by '-', at most 64 characters"],
+            [$"custom-sections/{type}.json: '{type}' is not a custom section type, which matches ^custom-[a-z0-9]+(?:-[a-z0-9]+)*$ and has at most 64 characters"],
             result.Errors);
     }
 
     [Fact]
     public void Validate_WithoutAnAssetLibraryAddress_RefusesALiteralImageButNotABoundOne()
     {
-        var result = new CustomSectionValidator().Validate(Type, Section("""<section><img src="https://cdn.example/assets/a.png" alt=""><img src="{{ settings.image }}" alt=""></section>"""), Catalog);
+        var result = TestServices.CustomSectionValidator(assetsUrl: null).Validate(Type, Section("""<section><img src="https://cdn.example/assets/a.png" alt=""><img src="{{ settings.image }}" alt=""></section>"""), Catalog);
 
         Assert.Equal([$"{File}: <img> at line 1 has src with 'https://cdn.example/assets/a.png', which is not a URL of the store's asset library"], result.Errors);
     }
@@ -761,13 +761,11 @@ public class CustomSectionValidatorTests
         return file;
     }
 
-    private sealed class FailingValidator() : CustomSectionValidator(new AssetUrls(Assets))
+    private sealed class FailingValidator() : CustomSectionValidator(new CustomSectionTemplateValidator(Urls), new CustomSectionCssValidator(Urls),
+        NullLogger<CustomSectionValidator>.Instance)
     {
-        protected override void ValidateCss(CustomSectionCheck check, string css) => throw new NullReferenceException();
-    }
+        private static readonly CustomSectionUrlPolicy Urls = TestServices.CustomSectionUrlPolicy(Assets);
 
-    private sealed class AssetUrls(string publicUrl) : IBlobUrlResolver
-    {
-        public string GetAbsoluteUrl(string blobKey) => publicUrl + blobKey.TrimStart('/');
+        protected override void ValidateCss(CustomSectionCheck check, string css) => throw new NullReferenceException();
     }
 }

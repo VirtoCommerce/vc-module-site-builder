@@ -8,7 +8,7 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 
 public class ThemeValidatorTests
 {
-    private readonly ThemeValidator _validator = new();
+    private readonly ThemeValidator _validator = TestServices.ThemeValidator();
 
     [Fact]
     public void Validate_TypeMissingFromCatalog_ReturnsErrors()

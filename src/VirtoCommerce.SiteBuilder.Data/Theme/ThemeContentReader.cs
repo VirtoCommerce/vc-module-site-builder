@@ -85,7 +85,7 @@ public abstract class ThemeContentReader
         }
     }
 
-    protected static string GetString(JObject item, string name) => item[name] is JValue { Type: JTokenType.String } value ? (string)value : null;
+    public static string GetString(JObject item, string name) => item[name] is JValue { Type: JTokenType.String } value ? (string)value : null;
 
     protected static IEnumerable<string> GetStrings(JToken list) =>
         (list as JArray)?.OfType<JValue>().Where(x => x.Type == JTokenType.String).Select(x => (string)x) ?? [];

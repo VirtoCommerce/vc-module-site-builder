@@ -1,33 +1,34 @@
 namespace VirtoCommerce.SiteBuilder.Core.Theme;
 
-/// <summary>The lists a custom section type is checked against, for an author to read before writing one.</summary>
 public class CustomSectionRules
 {
-    /// <summary>The HTML elements a template may hold, besides the kit tags the storefront's catalog names.</summary>
+    /// <summary>The regular expression a type's name matches.</summary>
+    public string TypePattern { get; set; }
+
+    public int MaxTypeLength { get; set; }
+
+    /// <summary>Besides the kit tags the catalog names.</summary>
     public IList<string> Elements { get; set; } = [];
 
-    /// <summary>The attributes of an HTML element, besides aria-*, the binding attributes and the behaviors the storefront's catalog names.</summary>
+    /// <summary>Of any element, besides aria-*, the binding attributes and the catalog's behaviors.</summary>
     public IList<string> Attributes { get; set; } = [];
 
-    /// <summary>The attributes only these elements take, by the element.</summary>
+    /// <summary>By element: the attributes only it takes.</summary>
     public IDictionary<string, IList<string>> ElementAttributes { get; set; } = new Dictionary<string, IList<string>>();
 
-    /// <summary>The starts of the data- attributes the storefront writes itself, which no template and no behavior names.</summary>
+    /// <summary>The storefront writes these data- attributes itself.</summary>
     public IList<string> ReservedDataPrefixes { get; set; } = [];
 
-    /// <summary>The attributes that bind settings to elements: repeat, show and insert HTML.</summary>
     public IList<string> BindingAttributes { get; set; } = [];
 
-    /// <summary>The attributes people read, as they read the template's text: their text is the same in every language unless it is bound.</summary>
+    /// <summary>Read by people, so a literal value is untranslated text.</summary>
     public IList<string> TextAttributes { get; set; } = [];
 
-    /// <summary>The schemes a link written into the template may have, besides a path starting with '/'.</summary>
+    /// <summary>Besides a path starting with '/'.</summary>
     public IList<string> LinkSchemes { get; set; } = [];
 
-    /// <summary>The values of a link's target.</summary>
     public IList<string> LinkTargets { get; set; } = [];
 
-    /// <summary>The values a link's rel does not hold.</summary>
     public IList<string> RefusedRels { get; set; } = [];
 
     /// <summary>What follows the type in a class of the type's own; the type itself is one too.</summary>
@@ -44,19 +45,15 @@ public class CustomSectionRules
     /// <summary>What follows the type in a keyframes name, which is not scoped.</summary>
     public string KeyframesSeparator { get; set; }
 
-    /// <summary>The CSS properties that run script.</summary>
     public IList<string> ScriptProperties { get; set; } = [];
 
-    /// <summary>The CSS functions that load an image, whose URL is one of the asset library.</summary>
+    /// <summary>Their URL must be one of the asset library.</summary>
     public IList<string> ImageFunctions { get; set; } = [];
 
-    /// <summary>
-    /// The CSS functions whose value is known only when the page is shown, as a custom function (--name()) is too: not inside an image function,
-    /// not in position.
-    /// </summary>
+    /// <summary>Resolved only when rendered, as a custom --name() is: refused inside an image function and in position.</summary>
     public IList<string> LateValueFunctions { get; set; } = [];
 
-    /// <summary>The logical property or value for each physical one, which a save warns of outside a rule for one direction such as :dir(rtl).</summary>
+    /// <summary>Physical to logical; a save warns of the physical one outside a one-direction rule such as :dir(rtl).</summary>
     public IDictionary<string, string> LogicalProperties { get; set; } = new Dictionary<string, string>();
 
     /// <summary>The types of a kit tag's attribute, of a behavior's option and of a behavior's own value.</summary>
@@ -65,21 +62,19 @@ public class CustomSectionRules
     /// <summary>The attributes no kit tag takes, whatever the catalog declares; a name ending with '*' is a start of names.</summary>
     public IList<string> KitDeniedAttributes { get; set; } = [];
 
-    /// <summary>The attributes of a kit tag that follow the link rule, whatever type the catalog declares.</summary>
+    /// <summary>Checked as links, whatever type the catalog declares.</summary>
     public IList<string> KitLinkAttributes { get; set; } = [];
 
-    /// <summary>The depth of the template's elements at most, the root counted.</summary>
+    /// <summary>The root counts as 1.</summary>
     public int MaxTemplateDepth { get; set; }
 
-    /// <summary>The depth of the CSS's blocks at most.</summary>
     public int MaxCssDepth { get; set; }
 
-    /// <summary>The depth of the CSS's at-rules at most.</summary>
     public int MaxAtRuleDepth { get; set; }
 
-    /// <summary>The bytes of the template, and of the CSS, at most.</summary>
+    /// <summary>UTF-8 bytes, for the template and the CSS each.</summary>
     public int MaxPartSize { get; set; }
 
-    /// <summary>The bytes of JSON of every type of a theme together at most.</summary>
+    /// <summary>Bytes of JSON, for all the theme's types together.</summary>
     public int MaxTotalSize { get; set; }
 }

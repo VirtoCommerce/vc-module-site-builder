@@ -28,10 +28,11 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
     private const string FolderType = "folder";
     private const string JsonExtension = ".json";
     public const int CustomSectionTypeMaxLength = 64;
+    public const string CustomSectionTypePattern = "^custom-[a-z0-9]+(?:-[a-z0-9]+)*$";
 
     private static readonly Regex TemplateKeyPattern = new("^(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
-    private static readonly Regex CustomSectionTypePattern = new("^custom-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex CustomSectionTypeRegex = new(CustomSectionTypePattern, RegexOptions.None, TimeSpan.FromSeconds(1));
 
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
@@ -64,7 +65,7 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
     }
 
     public static bool IsCustomSectionType(string type) =>
-        type.Length <= CustomSectionTypeMaxLength && CustomSectionTypePattern.IsMatch(type);
+        type.Length <= CustomSectionTypeMaxLength && CustomSectionTypeRegex.IsMatch(type);
 
     public static string GetCustomSectionFile(string type) => $"{CustomSectionsFolder}/{type}{JsonExtension}";
 

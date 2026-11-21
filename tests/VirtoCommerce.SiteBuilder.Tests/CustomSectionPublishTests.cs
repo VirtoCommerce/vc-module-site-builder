@@ -50,7 +50,7 @@ public sealed class CustomSectionPublishTests : IDisposable
     public CustomSectionPublishTests()
     {
         _storageFactory = new ThemeStorageFactory(_stores, _storage, _storage, _storage);
-        _publisher = new ThemePublisher(_storageFactory, new ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory), _lock,
+        _publisher = new ThemePublisher(_storageFactory, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory), _lock,
             _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
             new ThemePaletteService());
         _snapshots = new ThemeSnapshotService(_stores, _storageFactory, _publisher, _cache, Options.Create(new ThemeSnapshotOptions()));
@@ -151,7 +151,7 @@ public sealed class CustomSectionPublishTests : IDisposable
         var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
 
         Assert.Equal(
-            ["custom-sections/Hero.json: 'Hero' is not a custom section type, which is 'custom-' and lowercase words joined by '-', at most 64 characters"],
+            ["custom-sections/Hero.json: 'Hero' is not a custom section type, which matches ^custom-[a-z0-9]+(?:-[a-z0-9]+)*$ and has at most 64 characters"],
             exception.Errors);
     }
 

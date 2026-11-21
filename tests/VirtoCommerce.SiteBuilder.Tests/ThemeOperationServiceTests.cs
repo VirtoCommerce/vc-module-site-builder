@@ -384,7 +384,7 @@ public class ThemeOperationServiceTests
         TestServices.ThemeOperations(authorization ?? new FakeAuthorizationService(true), Publisher(), history, StoreId);
 
     private ThemePublisher Publisher() =>
-        new(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_themes), _lock, _storage, new NoContentHistory(),
+        new(_themes, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _stores, new SchemaCatalogService(_themes), _lock, _storage, new NoContentHistory(),
             Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
 
     private ThemeController Controller() =>

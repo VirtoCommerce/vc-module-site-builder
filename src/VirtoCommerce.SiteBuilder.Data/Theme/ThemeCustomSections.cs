@@ -1,3 +1,4 @@
+using System.Globalization;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Theme;
@@ -13,6 +14,10 @@ public static class ThemeCustomSections
 
     // what of a type's schema the storefront adds to the catalog, as it adds a type
     private static readonly string[] CatalogSchemaKeys = ["settings", "targetTemplates", "limit", "icon"];
+
+    /// <summary>The rule a type's name follows, for a text that tells it.</summary>
+    public static string DescribeType(CustomSectionRules rules) =>
+        string.Create(CultureInfo.InvariantCulture, $"matches {rules.TypePattern} and has at most {rules.MaxTypeLength} characters");
 
     /// <summary>The type of a file by its path in the theme, valid or not; null for a file outside the folder or one that is not JSON.</summary>
     public static string GetCustomSectionType(string pathInTheme)

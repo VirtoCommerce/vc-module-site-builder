@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
@@ -30,8 +31,7 @@ public static class CustomSectionKit
     public static IReadOnlyList<string> DeniedAttributePrefixes { get; } = ["on", "form", "popover"];
 
     /// <summary>
-    /// The attributes no kit tag takes besides <see cref="DeniedAttributePrefixes"/>: they style or name the element, hold a document, or load or
-    /// ping a URL outside the link and image rules.
+    /// Besides <see cref="DeniedAttributePrefixes"/>: they style or name the element, hold a document, or load a URL past the link and image rules.
     /// </summary>
     public static IReadOnlySet<string> DeniedAttributes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -41,9 +41,9 @@ public static class CustomSectionKit
     /// <summary>The starts of the names no behavior takes, after data-: the attributes the storefront writes itself.</summary>
     public static IReadOnlyList<string> ReservedBehaviorPrefixes { get; } = ["sb-", "pb-"];
 
+    /// <summary>Checked as links, whatever type the catalog declares.</summary>
     public static IReadOnlySet<string> LinkAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "to", "href", "src" };
 
-    // the binding attributes of a template, which no behavior is named as
     private static readonly HashSet<string> BindingNames = new(StringComparer.Ordinal) { "each", "if", "html" };
 
     private static readonly HashSet<string> FieldKeys = new(StringComparer.Ordinal) { "type", "options", "min", "max", "description" };
@@ -52,19 +52,28 @@ public static class CustomSectionKit
     private static readonly Regex TagNamePattern = new("^vc-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex NamePattern = new("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
 
-    /// <summary>
-    /// An attribute that runs script, names the element, reaches a form or a popover, or loads or pings a URL outside the link and image
-    /// rules, which no kit tag takes whatever the catalog declares.
-    /// </summary>
     public static bool IsDeniedAttribute(string name) =>
         DeniedAttributePrefixes.Any(x => name.StartsWith(x, StringComparison.OrdinalIgnoreCase)) || DeniedAttributes.Contains(name.ToLowerInvariant());
 
-    /// <summary>A name no behavior takes: a binding's, or one of the attributes the storefront writes itself, data-sb- and data-pb-.</summary>
     public static bool IsReservedBehavior(string name) =>
         BindingNames.Contains(name) || ReservedBehaviorPrefixes.Any(x => name.StartsWith(x, StringComparison.Ordinal));
 
-    /// <summary>An attribute a component reads as a link, which follows the link rule whatever type the catalog declares.</summary>
-    public static bool IsLinkAttribute(string name) => LinkAttributes.Contains(name.ToLowerInvariant());
+    public static StorefrontKit Read(JObject catalog)
+    {
+        if (catalog?[KitKey] is not JObject kit)
+        {
+            return new StorefrontKit(catalog != null, Tags: null, Behaviors: null);
+        }
+
+        var tags = ReadEntries(kit["tags"], TagPrefix, x => ReadFields(x["attributes"]));
+        // a stored catalog may name a behavior its upload would refuse now
+        var behaviors = ReadEntries(kit["behaviors"], string.Empty,
+                x => new KitBehavior(x["value"] is JObject value ? ReadField(value) : null, ReadFields(x["options"])))
+            .Where(x => !IsReservedBehavior(x.Key))
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+
+        return new StorefrontKit(true, tags, behaviors);
+    }
 
     /// <returns>What is wrong with the kit's shape, naming where; <c>null</c> for a kit that is right or for none.</returns>
     public static string GetShapeError(JToken kit)
@@ -183,8 +192,34 @@ public static class CustomSectionKit
             : null;
     }
 
+    private static bool IsOption(JToken option) => GetOptionValue(option) != null;
+
     // a value, or an object with its value and its label
-    private static bool IsOption(JToken option) =>
-        option is JValue { Type: JTokenType.String or JTokenType.Integer or JTokenType.Float } ||
-        (option is JObject item && item["value"] is JValue { Type: JTokenType.String or JTokenType.Integer or JTokenType.Float });
+    private static JValue GetOptionValue(JToken option) =>
+        (option is JObject item ? item["value"] : option) as JValue is { Type: JTokenType.String or JTokenType.Integer or JTokenType.Float } value ? value : null;
+
+    private static Dictionary<string, T> ReadEntries<T>(JToken entries, string prefix, Func<JObject, T> read) =>
+        (entries as JObject)?.Properties()
+            .Where(x => x.Name.StartsWith(prefix, StringComparison.Ordinal) && x.Name.Length > prefix.Length && x.Value is JObject)
+            .ToDictionary(x => x.Name, x => read((JObject)x.Value), StringComparer.Ordinal)
+        ?? new Dictionary<string, T>(StringComparer.Ordinal);
+
+    private static IReadOnlyDictionary<string, KitField> ReadFields(JToken fields) =>
+        (fields as JObject)?.Properties()
+            .Where(x => x.Value is JObject)
+            .ToDictionary(x => x.Name, x => ReadField((JObject)x.Value), StringComparer.Ordinal)
+        ?? new Dictionary<string, KitField>(StringComparer.Ordinal);
+
+    private static KitField ReadField(JObject field) => new(
+        ThemeContentReader.GetString(field, "type"),
+        (field["options"] as JArray)?
+            .Select(GetOptionValue)
+            .Where(x => x != null)
+            .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture))
+            .ToList(),
+        GetNumber(field, "min"),
+        GetNumber(field, "max"));
+
+    private static decimal? GetNumber(JObject item, string name) =>
+        item[name] is JValue { Type: JTokenType.Integer or JTokenType.Float } value ? value.Value<decimal>() : null;
 }

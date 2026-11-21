@@ -381,7 +381,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton<IThemeStorageFactory>(ThemeStorage)
             .AddSingleton<ISchemaCatalogService>(new SchemaCatalogService(ThemeStorage))
             .AddSingleton<IThemePaletteService>(new ThemePaletteService())
-            .AddSingleton<ICustomSectionValidator>(new CustomSectionValidator())
+            .AddSingleton<ICustomSectionValidator>(TestServices.CustomSectionValidator())
             .AddSingleton<ICustomSectionService>(new CustomSectionService(ThemeStorage, GetDesigner().Themes))
             .AddSingleton(Previews.Object)
             .AddSingleton<IThemeOperationService>(provider => new ThemeOperationService(provider.GetRequiredService<IAuthorizationService>(),
@@ -457,7 +457,7 @@ internal sealed class McpTestContext : IAsyncDisposable
     public ThemeStorageFactory ThemeStorage => _themeStorage ??= new ThemeStorageFactory(Stores, Blobs, Blobs, Blobs);
 
     private ThemePublisher CreateThemePublisher() =>
-        new(ThemeStorage, new ThemeSnapshotBuilder(), new ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
+        new(ThemeStorage, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
             Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService());
 
     public Task SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null, string kit = null)

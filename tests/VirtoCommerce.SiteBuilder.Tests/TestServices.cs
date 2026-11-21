@@ -4,7 +4,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using VirtoCommerce.AssetsModule.Core.Assets;
 using VirtoCommerce.ContentModule.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
@@ -28,7 +30,22 @@ internal static class TestServices
 {
     public static SiteBuilderContentGuard ContentGuard { get; } = new(new SiteBuilderHtmlSanitizer());
 
+    public const string AssetsUrl = "https://cdn.example/assets/";
+
     public static ContentPermissionService Permissions(IAuthorizationService authorizationService) => new(authorizationService);
+
+    /// <param name="assetsUrl">The asset library's public address; <c>null</c> for a library that gives none.</param>
+    public static CustomSectionValidator CustomSectionValidator(string assetsUrl = AssetsUrl)
+    {
+        var urlPolicy = CustomSectionUrlPolicy(assetsUrl);
+
+        return new CustomSectionValidator(new CustomSectionTemplateValidator(urlPolicy), new CustomSectionCssValidator(urlPolicy),
+            NullLogger<CustomSectionValidator>.Instance);
+    }
+
+    public static CustomSectionUrlPolicy CustomSectionUrlPolicy(string assetsUrl = AssetsUrl) => new(new AssetUrls(assetsUrl));
+
+    public static ThemeValidator ThemeValidator() => new(CustomSectionValidator());
 
     public static FilePageDraftService FilePageDrafts(
         IOptions<GitContentOptions> options,
@@ -66,7 +83,7 @@ internal static class TestServices
 
         return new DesignerContentService(themeDrafts, themePublisher, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
             pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs(),
-            new CustomSectionService(themes, themeDrafts), new CustomSectionValidator());
+            new CustomSectionService(themes, themeDrafts), CustomSectionValidator());
     }
 
     public static DesignerOperationService DesignerOperations(
@@ -186,5 +203,10 @@ internal static class TestServices
         public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
+    }
+
+    private sealed class AssetUrls(string publicUrl) : IBlobUrlResolver
+    {
+        public string GetAbsoluteUrl(string blobKey) => publicUrl == null ? null : publicUrl + blobKey.TrimStart('/');
     }
 }

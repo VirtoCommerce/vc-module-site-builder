@@ -161,6 +161,9 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IThemeStorageFactory, ThemeStorageFactory>();
             serviceCollection.AddTransient<IThemeSnapshotBuilder, ThemeSnapshotBuilder>();
             serviceCollection.AddTransient<IThemeValidator, ThemeValidator>();
+            serviceCollection.AddTransient<CustomSectionUrlPolicy>();
+            serviceCollection.AddTransient<CustomSectionTemplateValidator>();
+            serviceCollection.AddTransient<CustomSectionCssValidator>();
             serviceCollection.AddTransient<ICustomSectionValidator, CustomSectionValidator>();
             serviceCollection.AddTransient<ICustomSectionService, CustomSectionService>();
             serviceCollection.AddTransient<ISchemaCatalogService, SchemaCatalogService>();

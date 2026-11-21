@@ -158,7 +158,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     [Fact]
     public async Task TheSectionKit_ListsTheStorefrontsKit_AndThePaletteTokens()
     {
-        await _context.SeedThemeAsync(StoreA, StorefrontKit);
+        await _context.SeedThemeAsync(StoreA, McpTestContext.StorefrontKit);
 
         var kit = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
 
@@ -172,7 +172,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     [Fact]
     public async Task TheSectionKit_GivesEachPaletteTokenItsLightAndDarkColor_FromTheDraftElseWhatIsLive()
     {
-        await _context.SeedThemeAsync(StoreA, StorefrontKit);
+        await _context.SeedThemeAsync(StoreA, McpTestContext.StorefrontKit);
         _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#0047ab" }""");
         _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#ff7a00", "color_neutral_950": "#111111" }""", draft: true);
         _context.SeedThemeFile(StoreA, "config/palette.dark.json", """{ "color_primary_500": "#ffb366", "color_neutral_950": "#f5f5f5" }""");
@@ -190,7 +190,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     public async Task TheSectionKit_ListsWhatTheValidatorChecks()
     {
         await _context.SeedThemeAsync(StoreA);
-        var rules = new CustomSectionValidator().GetRules();
+        var rules = TestServices.CustomSectionValidator().GetRules();
 
         var kit = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
 
@@ -230,13 +230,13 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     [Fact]
     public async Task TheSectionKit_StartsWithTheStorefrontsGuideAndDesign_ThenTheDesignRules()
     {
-        var kit = JObject.Parse(StorefrontKit);
+        var kit = JObject.Parse(McpTestContext.StorefrontKit);
         kit["guide"] = "# Writing a section\n\nUse the heading font for headings.";
         kit["design"] = JObject.Parse("""
             { "containerName": "sb-section", "containerMaxWidth": "80rem", "tokens": { "--vc-radius": { "fallback": "0.5rem", "description": "The default corner radius of controls." } } }
             """);
         await _context.SeedThemeAsync(StoreA, kit.ToString());
-        await _context.SeedThemeAsync(StoreB, StorefrontKit);
+        await _context.SeedThemeAsync(StoreB, McpTestContext.StorefrontKit);
 
         var section = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
         var withoutGuide = await ReadAsync(Reader(), "site-builder://stores/store-b/section-kit");
@@ -255,9 +255,9 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     [Fact]
     public void TheSectionKitsExample_PassesEveryRule_WithTheStorefrontsKit()
     {
-        var catalog = JObject.Parse($$"""{ "kit": {{StorefrontKit}} }""");
+        var catalog = JObject.Parse($$"""{ "kit": {{McpTestContext.StorefrontKit}} }""");
 
-        var result = new CustomSectionValidator().Validate(SectionKit.ExampleType, ThemeJson.Parse(SectionKit.ExampleFile), catalog);
+        var result = TestServices.CustomSectionValidator().Validate(SectionKit.ExampleType, ThemeJson.Parse(SectionKit.ExampleFile), catalog);
 
         Assert.Empty(result.Errors);
         Assert.Empty(result.Warnings);

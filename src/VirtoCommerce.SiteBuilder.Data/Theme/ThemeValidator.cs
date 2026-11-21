@@ -15,11 +15,6 @@ public class ThemeValidator(ICustomSectionValidator customSectionValidator) : Th
     // The designer adds this section to every page template.
     private const string PageContentSection = "page-content";
 
-    public ThemeValidator()
-        : this(new CustomSectionValidator())
-    {
-    }
-
     public virtual IList<string> Validate(ThemeSource source, JObject catalog)
     {
         var errors = source.InvalidFiles.Select(x => $"{x}: not valid JSON").ToList();

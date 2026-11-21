@@ -184,7 +184,7 @@ public class CustomSectionSaveTests
         var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/custom-sections/Hero.json", HeroFile))), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
-        Assert.Equal(["custom-sections/Hero.json: 'Hero' is not a custom section type, which is 'custom-' and lowercase words joined by '-', at most 64 characters"],
+        Assert.Equal(["custom-sections/Hero.json: 'Hero' is not a custom section type, which matches ^custom-[a-z0-9]+(?:-[a-z0-9]+)*$ and has at most 64 characters"],
             result.Errors);
     }
 
@@ -322,7 +322,7 @@ public class CustomSectionSaveTests
         var policy = GitHubConnections.CreatePolicy(options, new FakeSettingsManager(false), new FakeGitContentOwnership());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), policy, null, null, new FakeGitContentProvisioner());
         var themeDrafts = new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance);
-        var themePublisher = new ThemePublisher(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
+        var themePublisher = new ThemePublisher(_themes, new ThemeSnapshotBuilder(), TestServices.ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
             _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
 
         return TestServices.DesignerOperations(
