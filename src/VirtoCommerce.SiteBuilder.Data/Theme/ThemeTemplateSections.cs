@@ -19,7 +19,6 @@ public static class ThemeTemplateSections
         var schema = (catalog?["sections"] as JObject)?[sectionType] as JObject;
         if (template?["sections"] is JArray sections)
         {
-            // the list is of the storefront's built-in sections; a custom type names its templates itself
             return sections.Any(x => IsText(x, sectionType)) || (schema != null && ThemeCustomSections.IsCustom(schema) && IsTargeted(schema, key));
         }
 

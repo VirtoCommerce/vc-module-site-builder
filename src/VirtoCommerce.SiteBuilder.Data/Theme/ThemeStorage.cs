@@ -24,11 +24,11 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
     public const string PublicationRecordFileName = "publication.json";
     public const string CatalogsFolder = "catalogs";
     public const string CurrentCatalogFile = CatalogsFolder + "/current.json";
+    public const int CustomSectionTypeMaxLength = 64;
+    public const string CustomSectionTypePattern = "^custom-[a-z0-9]+(?:-[a-z0-9]+)*$";
 
     private const string FolderType = "folder";
     private const string JsonExtension = ".json";
-    public const int CustomSectionTypeMaxLength = 64;
-    public const string CustomSectionTypePattern = "^custom-[a-z0-9]+(?:-[a-z0-9]+)*$";
 
     private static readonly Regex TemplateKeyPattern = new("^(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?$", RegexOptions.None, TimeSpan.FromSeconds(1));
 

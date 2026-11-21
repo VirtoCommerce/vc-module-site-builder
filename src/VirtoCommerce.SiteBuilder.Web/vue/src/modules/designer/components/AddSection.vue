@@ -108,7 +108,6 @@ const { components: shared } = useSharedComponentSearch(
 );
 const sharedShown = computed(() => !!shared.value.length && props.designer.canPlaceShared.value && !props.group);
 
-// The theme's own types follow the storefront's, under a heading of their own.
 const lists = computed(() => {
   const custom = shown.value.filter((x) => x.schema.custom);
   const builtIn = shown.value.filter((x) => !x.schema.custom);

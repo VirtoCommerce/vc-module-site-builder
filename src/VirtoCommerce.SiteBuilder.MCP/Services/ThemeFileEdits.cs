@@ -38,7 +38,7 @@ public sealed class ThemeFileChange : McpChangePreview
     [JsonPropertyName("errors")]
     public IList<string> Errors { get; set; }
 
-    // What to do once the change is saved, such as publishing the theme; the warnings are about the change itself.
+    // What to do once the change is saved, such as publishing the theme.
     [JsonPropertyName("next_step")]
     public string NextStep { get; set; }
 }

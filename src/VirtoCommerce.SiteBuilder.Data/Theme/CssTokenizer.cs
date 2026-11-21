@@ -236,7 +236,7 @@ public static class CssTokenizer
             return new Token(TokenKind.Ident, name);
         }
 
-        // 4.3.6
+        // 4.3.6: an unquoted url(
         private Token ReadUrl()
         {
             var value = new StringBuilder();
