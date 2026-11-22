@@ -251,6 +251,21 @@ public sealed class CustomSectionPublishTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstPublication_ChecksEachTypeOnce_ReadingTheKitOnce()
+    {
+        var validator = new CountingValidator(TestServices.CustomSectionValidator());
+        var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
+            _lock, _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
+            new ThemePaletteService(), validator);
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/custom-sections/custom-promo.json")] = HeroFile;
+
+        await publisher.PublishFirstAsync(StoreId, Ct);
+
+        Assert.Equal((0, 1, 2), (validator.Validated, validator.Calls, validator.Checked));
+    }
+
+    [Fact]
     public async Task FirstPublication_LeavesOutATypeThatIsNotJson()
     {
         _storage.Files[Theme(Hero)] = HeroFile;
@@ -317,4 +332,31 @@ public sealed class CustomSectionPublishTests : IDisposable
             ["settings"] = new JObject(),
             ["content"] = new JArray(types.Select((x, i) => new JObject { ["id"] = $"s{i}", ["type"] = x })),
         }.ToString(Newtonsoft.Json.Formatting.None);
+
+    private sealed class CountingValidator(ICustomSectionValidator inner) : ICustomSectionValidator
+    {
+        public int Validated { get; private set; }
+
+        public int Calls { get; private set; }
+
+        public int Checked { get; private set; }
+
+        public CustomSectionValidationResult Validate(string type, JToken content, JObject catalog)
+        {
+            Validated++;
+            return inner.Validate(type, content, catalog);
+        }
+
+        public System.Collections.Generic.IList<CustomSectionValidationResult> ValidateTypes(System.Collections.Generic.IDictionary<string, JToken> types,
+            System.Collections.Generic.ICollection<string> checkedTypes, JObject catalog)
+        {
+            Calls += checkedTypes.Count > 0 ? 1 : 0;
+            Checked += checkedTypes.Count;
+            return inner.ValidateTypes(types, checkedTypes, catalog);
+        }
+
+        public long GetSize(System.Collections.Generic.IDictionary<string, JToken> types) => inner.GetSize(types);
+
+        public CustomSectionRules GetRules() => inner.GetRules();
+    }
 }

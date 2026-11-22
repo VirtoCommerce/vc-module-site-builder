@@ -173,7 +173,10 @@ public class ThemePublisher(
             LeaveOutFailingCustomSections(storeId, source, catalog);
         }
 
-        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts).Concat(ValidateCustomSections(source, catalog)).ToList();
+        // a first publication has left out what fails, so a second pass, whose verdict could differ, would only fail it
+        IList<string> customSectionErrors = catalogHash == null ? [] : ValidateCustomSections(source, catalog);
+
+        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts).Concat(customSectionErrors).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -256,13 +259,11 @@ public class ThemePublisher(
             logger.LogWarning("The first theme publication of store {StoreId} leaves out the custom section type of {File}: not valid JSON", storeId, file);
         }
 
-        foreach (var (type, content) in source.CustomSections.ToList())
+        var types = source.CustomSections.Keys.ToList();
+        // one result per type, in their order, before the folder's size
+        foreach (var (type, result) in types.Zip(customSectionValidator.ValidateTypes(source.CustomSections, types, catalog)).Where(x => x.Second.Errors.Count > 0))
         {
-            var result = customSectionValidator.Validate(type, content, catalog);
-            if (result.Errors.Count > 0)
-            {
-                LeaveOut(type, string.Join("; ", result.Errors));
-            }
+            LeaveOut(type, string.Join("; ", result.Errors));
         }
 
         while (source.CustomSections.Count > 0 && customSectionValidator.ValidateTypes(source.CustomSections, [], catalog).Count > 0)
