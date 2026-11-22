@@ -9,8 +9,16 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 public static class ThemeCustomSections
 {
     public const string CustomKey = "custom";
-    private const string NameKey = "name";
-    private const string SchemaKey = "schema";
+
+    // the keys of a type's file, custom-sections/{type}.json
+    public const string FormatKey = "format";
+    public const string NameKey = "name";
+    public const string SchemaKey = "schema";
+    public const string TemplateKey = "template";
+    public const string CssKey = "css";
+
+    /// <summary>The version of the type file's shape.</summary>
+    public const int Format = 1;
 
     // what of a type's schema the storefront adds to the catalog, as it adds a type
     private static readonly string[] CatalogSchemaKeys = ["settings", "targetTemplates", "limit", "icon"];

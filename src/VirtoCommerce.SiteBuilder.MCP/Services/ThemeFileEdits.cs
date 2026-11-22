@@ -50,7 +50,7 @@ public static class ThemeFileEdits
     private const int MaxTextChange = 400;
 
     // A custom section type's texts, compared by the lines that changed.
-    private static readonly string[] SectionTypeTexts = ["template", "css"];
+    private static readonly string[] SectionTypeTexts = [ThemeCustomSections.TemplateKey, ThemeCustomSections.CssKey];
 
     // The diff is of the content as stored: on a dry run, the sanitized content the save would write. A dry run the save refuses
     // answers the errors in the change, with the diff of the content sent.
@@ -235,11 +235,11 @@ public static class ThemeFileEdits
         return changes;
     }
 
-    private static JsonNode GetSettings(JsonObject type) => (type["schema"] as JsonObject)?["settings"];
+    private static JsonNode GetSettings(JsonObject type) => (type[ThemeCustomSections.SchemaKey] as JsonObject)?["settings"];
 
     private static JsonArray TakeSettings(JsonObject type)
     {
-        if (type["schema"] is not JsonObject schema)
+        if (type[ThemeCustomSections.SchemaKey] is not JsonObject schema)
         {
             return null;
         }

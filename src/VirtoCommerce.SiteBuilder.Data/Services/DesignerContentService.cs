@@ -53,20 +53,12 @@ public class DesignerContentService(
 
         var catalog = await GetCatalogAsync(storeId, catalogHash, cancellationToken);
         // each theme folder on its own: two themes may hold a file of the same name
-        var themes = new Dictionary<string, IDictionary<string, JToken>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, content) in files)
-        {
-            var themeName = SiteBuilderContentPaths.GetThemeName(path);
-            if (!themes.TryGetValue(themeName, out var contents))
-            {
-                themes[themeName] = contents = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
-            }
-
-            contents[SiteBuilderContentPaths.GetPathInTheme(path)] = content;
-        }
+        var themes = GroupByTheme(files).ToDictionary(x => x.Key,
+            x => (IDictionary<string, JToken>)x.ToDictionary(file => SiteBuilderContentPaths.GetPathInTheme(file.Key), file => file.Value, StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
 
         var customSections = await GetCustomSectionsAsync(storeId, files, cancellationToken);
-        var catalogs = customSections.ToDictionary(x => x.Key, x => ThemeCustomSections.AddToCatalog(catalog, x.Value), StringComparer.OrdinalIgnoreCase);
+        var catalogs = customSections.ToDictionary(x => x.Key, x => GetThemeCatalog(catalog, x.Value), StringComparer.OrdinalIgnoreCase);
         var customSectionResults = ValidateCustomSections(files, customSections, catalog);
         await DropSizeErrorsOfSavesThatDoNotGrowAsync(storeId, customSections, customSectionResults, cancellationToken);
         var errors = files
@@ -86,7 +78,7 @@ public class DesignerContentService(
         }
 
         var sectionErrors = new List<string>();
-        foreach (var theme in files.GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key), StringComparer.OrdinalIgnoreCase))
+        foreach (var theme in GroupByTheme(files))
         {
             sectionErrors.AddRange(await GetSectionErrorsAsync(storeId, theme.ToDictionary(x => x.Key, x => x.Value), catalogs[theme.Key], cancellationToken));
         }
@@ -133,7 +125,7 @@ public class DesignerContentService(
         CancellationToken cancellationToken)
     {
         var result = new Dictionary<string, IDictionary<string, JToken>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var theme in files.GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key), StringComparer.OrdinalIgnoreCase))
+        foreach (var theme in GroupByTheme(files))
         {
             result[theme.Key] = theme.Any(x => IsCustomSectionFile(SiteBuilderContentPaths.GetPathInTheme(x.Key)) || ThemeCustomSections.PlacesCustomType(x.Value))
                 ? await customSectionService.GetTypesAsync(storeId, theme.Key, files, cancellationToken)
@@ -197,11 +189,18 @@ public class DesignerContentService(
         var page = catalog != null && pagePlacesCustomType
             ? ThemeCustomSections.AddToCatalog(catalog, await customSectionService.GetTypesAsync(storeId, themeName: null, themeFiles, cancellationToken))
             : catalog;
-        var themes = customSections.ToDictionary(x => x.Key, x => x.Value.Count == 0 ? catalog : ThemeCustomSections.AddToCatalog(catalog, x.Value),
+        var themes = customSections.ToDictionary(x => x.Key, x => GetThemeCatalog(catalog, x.Value),
             StringComparer.OrdinalIgnoreCase);
 
         return (page, themes);
     }
+
+    /// <summary>The catalog with the theme's custom section types in it; the catalog as it is for a theme whose types were not read.</summary>
+    protected virtual JObject GetThemeCatalog(JObject catalog, IDictionary<string, JToken> customSections) =>
+        customSections.Count == 0 ? catalog : ThemeCustomSections.AddToCatalog(catalog, customSections);
+
+    private static IEnumerable<IGrouping<string, KeyValuePair<string, JToken>>> GroupByTheme(IDictionary<string, JToken> files) =>
+        files.GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key), StringComparer.OrdinalIgnoreCase);
 
     /// <param name="file">The path with the theme folder.</param>
     private static IEnumerable<string> GetSectionGroupErrors(string file, JToken content)

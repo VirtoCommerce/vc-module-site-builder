@@ -24,10 +24,6 @@ public class CustomSectionValidator(
     /// <summary>UTF-8 bytes, for the template and the CSS each.</summary>
     public const int MaxPartSize = 64 * 1024;
 
-    private const string NameKey = "name";
-    private const string SchemaKey = "schema";
-    private const string TemplateKey = "template";
-    private const string CssKey = "css";
     private const string HeaderType = "header";
     private const string ParagraphType = "paragraph";
 
@@ -47,7 +43,10 @@ public class CustomSectionValidator(
 
     private static readonly string[] TextKeys = ["label", "info", "placeholder"];
 
-    private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal) { FormatKey, NameKey, SchemaKey, TemplateKey, CssKey };
+    private static readonly HashSet<string> TypeKeys = new(StringComparer.Ordinal)
+    {
+        ThemeCustomSections.FormatKey, ThemeCustomSections.NameKey, ThemeCustomSections.SchemaKey, ThemeCustomSections.TemplateKey, ThemeCustomSections.CssKey,
+    };
 
     // the fields the designer shows as text to read, which hold no value
     private static readonly HashSet<string> LabelFieldTypes = new(StringComparer.Ordinal) { HeaderType, ParagraphType };
@@ -163,12 +162,12 @@ public class CustomSectionValidator(
         {
             check.Kit = kit.Value;
             ValidateShape(check, file);
-            if (GetPart(check, file, TemplateKey) is { } template && check.Settings != null)
+            if (GetPart(check, file, ThemeCustomSections.TemplateKey) is { } template && check.Settings != null)
             {
                 templateValidator.Validate(check, template);
             }
 
-            if (GetPart(check, file, CssKey) is { } css)
+            if (GetPart(check, file, ThemeCustomSections.CssKey) is { } css)
             {
                 cssValidator.Validate(check, css);
             }
@@ -214,17 +213,17 @@ public class CustomSectionValidator(
             check.AddError($"'{key}' is not a key of a custom section type, which has format, name, schema, template and css");
         }
 
-        if (file[FormatKey] is not JValue { Value: 1L })
+        if (file[ThemeCustomSections.FormatKey] is not JValue { Value: (long)ThemeCustomSections.Format })
         {
             check.AddError("'format' is not 1");
         }
 
-        if (!IsName(file[NameKey]))
+        if (!IsName(file[ThemeCustomSections.NameKey]))
         {
             check.AddError("'name' is not a text, or a text per language");
         }
 
-        if (file[SchemaKey] is JObject schema)
+        if (file[ThemeCustomSections.SchemaKey] is JObject schema)
         {
             ValidateSchema(check, schema);
         }

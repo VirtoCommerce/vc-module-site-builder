@@ -138,11 +138,11 @@ public class SectionTypeTools(
 
         var content = new JsonObject
         {
-            ["format"] = 1,
-            ["name"] = request.Name.DeepClone(),
-            ["schema"] = request.Schema.DeepClone(),
-            ["template"] = request.Template,
-            ["css"] = request.Css ?? string.Empty,
+            [ThemeCustomSections.FormatKey] = ThemeCustomSections.Format,
+            [ThemeCustomSections.NameKey] = request.Name.DeepClone(),
+            [ThemeCustomSections.SchemaKey] = request.Schema.DeepClone(),
+            [ThemeCustomSections.TemplateKey] = request.Template,
+            [ThemeCustomSections.CssKey] = request.Css ?? string.Empty,
         }.ToJsonString(PageDocumentEditor.WriteOptions);
 
         var change = new ThemeFileChange

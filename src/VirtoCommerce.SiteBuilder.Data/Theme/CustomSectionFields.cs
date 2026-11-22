@@ -4,6 +4,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 public static class CustomSectionFields
 {
     public const string SettingsKey = "settings";
+    /// <summary>Of a setting: "url" for a string that holds a link.</summary>
     public const string FormatKey = "format";
     public const string UrlFormat = "url";
 

@@ -14,7 +14,6 @@ using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
-using static VirtoCommerce.SiteBuilder.MCP.Resources.SiteBuilderResources;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Resources;
 
@@ -29,7 +28,7 @@ public class SectionTypeResources(
     IThemeOperationService themeOperationService,
     ICustomSectionValidator customSectionValidator)
 {
-    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit", Name = "section_kit", MimeType = JsonMimeType)]
+    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit", Name = "section_kit", MimeType = SiteBuilderResources.JsonMimeType)]
     [McpPermission(Read)]
     [Description("Everything to write a custom section type with create_section_type or change_section_type: the elements and attributes a template may hold, " +
         "the bindings, the setting types, the setting variables, the CSS rules, the store's palette tokens, the kit tags and behaviors " +
@@ -45,7 +44,7 @@ public class SectionTypeResources(
         return SiteBuilderResources.Serialize(SectionKitGuide.Describe(store_id, catalog, customSectionValidator.GetRules(), palette));
     }
 
-    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/section-kit/icons", Name = "section_kit_icons", MimeType = JsonMimeType)]
+    [McpServerResource(UriTemplate = SiteBuilderResources.SectionKitIconsUri, Name = "section_kit_icons", MimeType = SiteBuilderResources.JsonMimeType)]
     [McpPermission(Read)]
     [Description("Every icon name the storefront draws, as its catalog lists them: the values of a kit attribute whose field has " +
         "\"optionsFrom\": \"icons\", such as vc-icon's name or vc-button's prepend-icon. A name the list does not hold is refused.")]
@@ -54,7 +53,7 @@ public class SectionTypeResources(
         var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
         if (catalog == null)
         {
-            return SiteBuilderResources.Serialize(NoCatalog(store_id));
+            return SiteBuilderResources.Serialize(SiteBuilderResources.NoCatalog(store_id));
         }
 
         var icons = (catalog[CustomSectionKit.KitKey] as JsonObject)?[CustomSectionKit.IconsKey] as JsonArray;
@@ -88,7 +87,7 @@ public class SectionTypeResources(
         }
     }
 
-    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/custom-sections/{type}", Name = "custom_section", MimeType = JsonMimeType)]
+    [McpServerResource(UriTemplate = "site-builder://stores/{store_id}/custom-sections/{type}", Name = "custom_section", MimeType = SiteBuilderResources.JsonMimeType)]
     [McpPermission(Read)]
     [Description("A custom section type of the store's theme as change_section_type takes it: name, schema, template and css, as its draft " +
         "holds them, else as they are live, with its version_token and whether it is published. A type only in draft shows nothing " +
@@ -132,10 +131,10 @@ public class SectionTypeResources(
             VersionToken = file.ETag,
             Published = !status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
             HasDraft = status.Value.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
-            Name = content?["name"]?.DeepClone(),
-            Schema = content?["schema"]?.DeepClone(),
-            Template = content?["template"]?.DeepClone(),
-            Css = content?["css"]?.DeepClone(),
+            Name = content?[ThemeCustomSections.NameKey]?.DeepClone(),
+            Schema = content?[ThemeCustomSections.SchemaKey]?.DeepClone(),
+            Template = content?[ThemeCustomSections.TemplateKey]?.DeepClone(),
+            Css = content?[ThemeCustomSections.CssKey]?.DeepClone(),
             Content = content == null ? file.Content : null,
         });
     }

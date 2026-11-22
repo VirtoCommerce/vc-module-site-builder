@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
+using VirtoCommerce.SiteBuilder.MCP.Resources;
 using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionText;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
@@ -330,7 +331,7 @@ public static class SectionKitGuide
         return target;
     }
 
-    public static string GetIconsUri(string storeId) => $"site-builder://stores/{storeId}/section-kit/icons";
+    private static string GetIconsUri(string storeId) => SiteBuilderResources.SectionKitIconsUri.Replace("{store_id}", storeId, StringComparison.Ordinal);
 
     private static string GetString(JsonNode node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 

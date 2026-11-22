@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -30,6 +31,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 using CustomerPermissions = VirtoCommerce.CustomerModule.Core.ModuleConstants.Security.Permissions;
 using CustomerSettings = VirtoCommerce.CustomerModule.Core.ModuleConstants.Settings.General;
+using Formatting = Newtonsoft.Json.Formatting;
+using JsonReaderException = Newtonsoft.Json.JsonReaderException;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Resources;
 
@@ -47,6 +50,7 @@ public class SiteBuilderResources(
     ILogger<SiteBuilderResources> logger)
 {
     public const string SchemasUri = "site-builder://stores/{store_id}/schemas";
+    public const string SectionKitIconsUri = "site-builder://stores/{store_id}/section-kit/icons";
 
     internal const string JsonMimeType = "application/json";
     private const string NameKey = "name";
@@ -68,13 +72,13 @@ public class SiteBuilderResources(
         }
 
         var language = (await storeService.GetNoCloneAsync(store_id))?.DefaultLanguage;
-        var kinds = SchemaKindsListed.ToDictionary(x => x, x => ListSchemas(catalog[x] as JsonObject, language));
+        var kinds = SchemaKindsListed.ToDictionary(x => x, x => ListSchemas(catalog[x] as JObject, language));
 
         return Serialize(new
         {
             StoreId = store_id,
             Available = true,
-            CatalogHash = ThemeFiles.GetCatalogHash(catalog),
+            CatalogHash = ThemeJson.GetString(catalog, ThemeFiles.CatalogHashKey),
             Kinds = kinds,
             Note = $"Read one schema with its settings at site-builder://stores/{store_id}/schemas/{{kind}}/{{key}}, for example .../schemas/sections/hero-banner. " +
                 $"A custom section type is the theme's own: read it whole at site-builder://stores/{store_id}/custom-sections/{{type}} and change it with change_section_type; " +
@@ -94,7 +98,7 @@ public class SiteBuilderResources(
             return Serialize(NoCatalog(store_id));
         }
 
-        if ((catalog[kind ?? string.Empty] as JsonObject)?[key ?? string.Empty] is not JsonObject schema)
+        if ((catalog[kind ?? string.Empty] as JObject)?[key ?? string.Empty] is not JObject schema)
         {
             return Serialize(new
             {
@@ -104,7 +108,7 @@ public class SiteBuilderResources(
             });
         }
 
-        return Serialize(new { StoreId = store_id, Available = true, Kind = kind, Key = key, Schema = schema.DeepClone() });
+        return Serialize(new { StoreId = store_id, Available = true, Kind = kind, Key = key, Schema = JsonNode.Parse(schema.ToString(Formatting.None)) });
     }
 
     [McpServerResource(UriTemplate = "site-builder://template-rule-conditions", Name = "template_rule_conditions", MimeType = JsonMimeType)]
@@ -204,16 +208,16 @@ public class SiteBuilderResources(
     }
 
     // With the theme's custom section types, which the storefront's preview may not have seen yet.
-    private async Task<JsonObject> ReadThemeCatalogAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
+    private async Task<JObject> ReadThemeCatalogAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
     {
         await EnsureStoreAsync(authorizationService, user, storeId);
         var json = await schemaCatalogService.GetAsync(storeId, hash: null, cancellationToken);
-        Newtonsoft.Json.Linq.JObject catalog;
+        JObject catalog;
         try
         {
             catalog = string.IsNullOrEmpty(json) ? null : ThemeJson.ParseObject(json);
         }
-        catch (Newtonsoft.Json.JsonReaderException)
+        catch (JsonReaderException)
         {
             return null;
         }
@@ -225,7 +229,7 @@ public class SiteBuilderResources(
 
         var types = await customSectionService.GetTypesAsync(storeId, themeName: null, cancellationToken: cancellationToken);
 
-        return JsonNode.Parse(ThemeCustomSections.AddToCatalog(catalog, types).ToString(Newtonsoft.Json.Formatting.None)) as JsonObject;
+        return ThemeCustomSections.AddToCatalog(catalog, types);
     }
 
     internal static Task EnsureStoreAsync(IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId)
@@ -245,21 +249,19 @@ public class SiteBuilderResources(
         Reason = "Not available: the storefront of the store has not sent its schema catalog yet. Open the store once in the designer; its preview sends it.",
     };
 
-    private static List<SchemaRow> ListSchemas(JsonObject schemas, string language) =>
-        schemas?.Select(x => new SchemaRow(x.Key, GetName((x.Value as JsonObject)?[NameKey], language) ?? x.Key, IsCustom(x.Value as JsonObject) ? true : null))
+    private static List<SchemaRow> ListSchemas(JObject schemas, string language) =>
+        schemas?.Properties()
+            .Select(x => new SchemaRow(x.Name, GetName((x.Value as JObject)?[NameKey], language) ?? x.Name, x.Value is JObject schema && ThemeCustomSections.IsCustom(schema) ? true : null))
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .ToList() ?? [];
 
     // A custom section type may name itself per language, which the store's default language reads.
-    private static string GetName(JsonNode name, string language) => name switch
+    private static string GetName(JToken name, string language) => name switch
     {
-        JsonValue value when value.TryGetValue<string>(out var text) => string.IsNullOrWhiteSpace(text) ? null : text,
-        JsonObject translations when ThemeJson.ParseObject(translations.ToJsonString()) is var dictionary && ThemeTranslations.IsTranslation(dictionary) =>
-            ThemeTranslations.Translate(dictionary, language, language),
+        JValue { Type: JTokenType.String } value => string.IsNullOrWhiteSpace((string)value) ? null : (string)value,
+        JObject translations when ThemeTranslations.IsTranslation(translations) => ThemeTranslations.Translate(translations, language, language),
         _ => null,
     };
-
-    private static bool IsCustom(JsonObject schema) => schema?[ThemeCustomSections.CustomKey] is JsonValue custom && custom.TryGetValue<bool>(out var value) && value;
 
     internal static string Serialize(object value) => JsonSerializer.Serialize(value, McpSerialization.Options);
 }
