@@ -36,8 +36,9 @@ Designer to preview: `{ source: "builder", type, ...payload }`. Preview to desig
 1. The designer loads the iframe.
 2. On every iframe `load` the designer sends `connect`.
 3. The storefront answers `loaded` once its schemas are ready. It also sends `loaded` unasked when it starts, in case
-   `connect` came before its listener, and again when a `draft` changes the set of custom section types, whose schemas
-   the catalog carries.
+   `connect` came before its listener, and again whenever what the catalog carries of the custom section types or the
+   kit changes: a type added or removed by a `draft`, a type's name, settings, target templates, limit or icon, or a
+   kit tag or a behavior registered late.
 4. On every `loaded` the designer uploads the catalog when the server does not have its `hash`, then sends `auth`,
    `inspector`, `colorScheme`, `draft` and `render`, in that order: after a reload the frame has lost them all.
 5. The storefront shows the page after the first `render`; until then the frame stays blank. Until told otherwise
@@ -209,7 +210,7 @@ before it expires.
 
 | Type | Data | When |
 |---|---|---|
-| `loaded` | see [Handshake](#handshake) | in answer to `connect`, once unasked, and when a `draft` changes the set of custom section types |
+| `loaded` | see [Handshake](#handshake) | in answer to `connect`, once unasked, and when the catalog's custom section types or kit change |
 | `select` | `{ sectionId: string, blockId?: string }` | the visitor clicked a section or a block while the inspector is on |
 | `hover` | `{ sectionId: string \| null }` | the pointer entered or left a section |
 | `edit` | `{ itemId: string, path: (string \| number)[], value: string, cultureName?: string }` | a text edited in place changed |

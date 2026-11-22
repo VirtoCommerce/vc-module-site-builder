@@ -169,7 +169,7 @@ public static class SectionKitGuide
                     "it reaches only the type's sections, and :scope is the section's root.",
                 AtRules = rules.AtRules,
                 Keyframes = $"A @keyframes name is the type, {rules.KeyframesSeparator} and a name, such as custom-stats-band{rules.KeyframesSeparator}rise: " +
-                    "keyframes names are not scoped.",
+                    "keyframes names are not scoped. A @keyframes stands at the top level or inside @media, @supports or @container.",
                 Reading = "The CSS is read as a browser reads it, from its tokens: a comment inside a string is text, and escapes are read.",
                 Refused = new[]
                 {

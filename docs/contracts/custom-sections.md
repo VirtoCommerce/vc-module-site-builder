@@ -142,11 +142,11 @@ behavior of the same name.
 |---|---|---|
 | `data-inview` | `data-inview-threshold` (0–1, default 0.2), `data-inview-once` | sets `data-visible` while that share of the element is on screen; with `-once` it stays |
 | `data-scroll-progress` | | `--scroll-progress` from 0 (the element enters the viewport) to 1 (it leaves) |
-| `data-pointer` | | `--pointer-x`, `--pointer-y` (0–1 inside the element) and `--pointer-active` (0 or 1); off on touch screens |
+| `data-pointer` | | `--pointer-x`, `--pointer-y` (0–1 inside the element), `--pointer-inline` (0 at the inline start, so it flips in right-to-left text) and `--pointer-active` (0 or 1); off on touch screens |
 | `data-count-up="{number}"` | `data-count-up-duration` (ms, up to 5000), `data-count-up-decimals` (0–4) | the text counts up to the number, formatted in the page's language, when the element first shows |
 | `data-countdown="{date}"` | | children with `data-countdown-part="days"`, `hours`, `minutes` or `seconds` show the time left until the ISO 8601 date; `data-ended` is set when it passes |
 | `data-copy="{text}"` | | a click copies the text and sets `data-copied` for 2 seconds |
-| `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run |
+| `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run, and `--marquee-shift` the distance to animate `translate` by, toward the inline start; `data-paused` is set while the pointer is over it or the focus inside |
 
 A behavior may declare the type of its own attribute's value under `value`, such as a number for `data-count-up` and a
 date for `data-countdown`, and the value is checked as an option's is; a behavior that declares none takes any text.
@@ -183,7 +183,8 @@ scope. `:scope` is the section's root.
 
 - **At-rules**: `@media`, `@supports`, `@container`, `@starting-style` and `@keyframes`. A keyframes name starts with
   the type and `__` (`@keyframes custom-hero__fade`), since names are not scoped and one type's name may start
-  another's.
+  another's. A `@keyframes` stands at the top level or inside `@media`, `@supports` and `@container`, whose
+  conditions the storefront keeps around it outside the scope; the name rule holds either way.
 - **Images**: a URL of the store's asset library, or a `data:image/…` URL, as an image loads no script and nothing
   else; the data counts in the CSS's size.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
@@ -261,10 +262,11 @@ binding or rule the lists above do not allow is left out.
 
 ## Catalog
 
-The storefront adds each custom type to the catalog's `sections` under its type, with its `name`, `settings`,
+The storefront adds each custom type to the catalog's `sections` under its type, with its `type`, `name`, `settings`,
 `targetTemplates`, `limit` and `icon`, and `"custom": true`. The `name` is as the type stores it: a text, or a text per
-language. It sends `loaded` again when the draft changes the set of
-custom types.
+language. It sends `loaded` again whenever what the catalog carries of the custom types or the kit changes: a type
+added or removed by a draft, a type's name, settings, target templates, limit or icon, or a kit tag or a behavior
+registered late. The designer builds a custom type's settings form from these schemas only.
 
 The catalog's `kit` names the kit tags and the behaviors the storefront offers, its own and those its modules add:
 
