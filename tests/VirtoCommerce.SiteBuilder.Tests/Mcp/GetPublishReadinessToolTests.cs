@@ -229,6 +229,27 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AFilePageThatPlacesACustomSectionTypeOnlyInDraft_IsWarned_ToPublishTheThemeFirst()
+    {
+        const string path = "landing/spring.page";
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedFilePage(StoreA, path, """{ "settings": { "name": "Spring" }, "content": [] }""");
+        _context.SeedFilePage(StoreA, path, """{ "settings": { "name": "Spring" }, "content": [ { "id": "s1", "type": "custom-stats" } ] }""", draft: true);
+        var preview = new SiteBuilderChangePreview { AffectsPublished = true };
+        preview.AddObject("file-page", path).AddField("content", "Draft", "Published");
+        _context.FilePageOperations
+            .Setup(x => x.PublishAsync(It.Is<FilePagePublishOperationRequest>(r => r.DryRun), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SiteBuilderOperationResult.DryRun<FilePageShipment>(preview));
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "pages/" + path, store_id = StoreA });
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-unpublished");
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task APageThatPlacesAPublishedCustomSectionType_IsNotWarned()
     {
         await _context.SeedThemeAsync(StoreA);
