@@ -219,6 +219,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal(rules.AtRules, Strings(kit.GetProperty("css").GetProperty("at_rules")));
         Assert.Contains("starting-style", rules.AtRules);
         Assert.Contains("custom-stats-band__rise", kit.GetProperty("css").GetProperty("keyframes").GetString(), StringComparison.Ordinal);
+        Assert.Contains("inside @media, @supports or @container", kit.GetProperty("css").GetProperty("keyframes").GetString(), StringComparison.Ordinal);
         Assert.Contains("autoplay", Strings(kit.GetProperty("template").GetProperty("element_attributes").GetProperty("video")));
         Assert.Contains("data-sb-*", kit.GetProperty("template").GetProperty("attributes_note").GetString(), StringComparison.Ordinal);
         Assert.Equal("margin-inline-start", kit.GetProperty("css").GetProperty("logical_properties").GetProperty("margin-left").GetString());

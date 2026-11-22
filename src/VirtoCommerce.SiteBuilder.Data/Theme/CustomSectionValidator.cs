@@ -95,6 +95,7 @@ public class CustomSectionValidator(
         result.FieldTypes = [.. FieldTypes];
         result.FieldKeys = [.. FieldKeys];
         result.AtRules = [.. CustomSectionCssValidator.AtRules];
+        result.KeyframesHolders = [.. CustomSectionCssValidator.KeyframesHolders];
         result.KeyframesSeparator = CustomSectionCssValidator.KeyframesSeparator;
         result.ScriptProperties = CustomSectionCssValidator.ScriptProperties.Order(StringComparer.Ordinal).ToList();
         result.RefusedFunctions = [.. CustomSectionCssValidator.RefusedFunctions.Keys];

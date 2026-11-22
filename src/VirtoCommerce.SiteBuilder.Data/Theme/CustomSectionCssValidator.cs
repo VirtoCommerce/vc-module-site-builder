@@ -9,6 +9,8 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
 {
     private const int MaxSamples = 3;
     private const string KeyframesAtRule = "keyframes";
+    private const string StyleRuleBlock = "";
+    private const string KeyframeBlock = "keyframe";
 
     public const int MaxDepth = 32;
     public const int MaxAtRuleDepth = 4;
@@ -17,6 +19,9 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     public const string KeyframesSeparator = "__";
 
     public static IReadOnlyList<string> AtRules { get; } = ["media", "supports", "container", "starting-style", KeyframesAtRule];
+
+    /// <summary>The at-rules a @keyframes may stand in, besides the top level; the storefront drops one anywhere else.</summary>
+    public static IReadOnlyList<string> KeyframesHolders { get; } = ["media", "supports", "container"];
 
     public static IReadOnlySet<string> ScriptProperties { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "-moz-binding", "behavior" };
 
@@ -193,6 +198,8 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         // a declaration starts the CSS or a block, or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
         var atDeclarationStart = true;
         var prelude = new List<CssTokenizer.Token>();
+        // what opened each block: an at-rule's name, a keyframe, or a style rule
+        var openers = new Stack<string>();
         for (var i = 0; i < tokens.Count; i++)
         {
             var token = tokens[i];
@@ -239,6 +246,13 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                 directionRules.Push((directionRules.Count > 0 && directionRules.Peek()) || preludeNamesDirection);
                 preludeNamesDirection = false;
                 ValidateCssSelector(prelude, findings);
+                var opener = GetBlockOpener(prelude, openers);
+                if (GetCssBlockError(opener, openers) is { } blockError)
+                {
+                    findings.Errors.Add(blockError);
+                }
+
+                openers.Push(opener);
             }
 
             if (token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.Semicolon)
@@ -270,6 +284,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                 if (token.Kind == CssTokenizer.TokenKind.CloseCurly)
                 {
                     directionRules.Pop();
+                    openers.Pop();
                 }
             }
         }
@@ -286,15 +301,16 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
 
         if (findings.Animates && !HasReducedMotionQuery(tokens))
         {
-            check.AddWarning("the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion");
+            check.AddWarning("the CSS animates with no @media (prefers-reduced-motion: reduce) or (prefers-reduced-motion: no-preference) block, so it moves " +
+                "for people who ask for less motion");
         }
 
         AddColorWarning(check, findings);
     }
 
     /// <summary>
-    /// A rule's selector may not name :root, html or body. The storefront scopes the CSS to the section, where they match nothing, but a
-    /// browser without @scope would apply them to the page. Nor may any other part of it match outside the section (<see cref="CustomSectionCssSelector"/>).
+    /// A rule's selector may not name :root, html or body: the storefront drops such a rule, as html or body short of the subject reads the
+    /// page outside the section. Nor may any other part of it match outside the section (<see cref="CustomSectionCssSelector"/>).
     /// </summary>
     protected virtual void ValidateCssSelector(IList<CssTokenizer.Token> prelude, CssFindings findings)
     {
@@ -327,6 +343,31 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         }
     }
 
+    /// <param name="opener">What opens the block: an at-rule's name, a keyframe, or a style rule.</param>
+    /// <param name="enclosing">What opened each enclosing block, the innermost first.</param>
+    /// <returns>Why the block may not stand there; <c>null</c> when it may.</returns>
+    protected virtual string GetCssBlockError(string opener, IEnumerable<string> enclosing)
+    {
+        var parent = enclosing.FirstOrDefault();
+        if (parent == KeyframesAtRule)
+        {
+            return opener == KeyframeBlock ? null : $"the CSS has {DescribeBlock(opener)} inside @keyframes, which holds only its keyframes, such as from {{ }} or 50% {{ }}";
+        }
+
+        if (parent == KeyframeBlock)
+        {
+            return "the CSS has a block inside a keyframe of @keyframes, which holds only declarations";
+        }
+
+        if (opener == KeyframesAtRule && enclosing.FirstOrDefault(x => !KeyframesHolders.Contains(x)) is { } holder)
+        {
+            return $"the CSS has @keyframes inside {DescribeBlock(holder)}, where the storefront drops it: a @keyframes stands at the top level or inside " +
+                JoinOr(KeyframesHolders.Select(x => "@" + x));
+        }
+
+        return null;
+    }
+
     protected virtual void ValidateCssAtRule(CustomSectionCheck check, IList<CssTokenizer.Token> tokens, int index, CssFindings findings)
     {
         var name = tokens[index].Value;
@@ -348,7 +389,11 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         {
             findings.Errors.Add("the CSS has @keyframes without a name");
         }
-        else if (keyframes.Value.Length <= prefix.Length || !keyframes.Value.StartsWith(prefix, StringComparison.Ordinal))
+        else if (keyframes.Value == prefix)
+        {
+            findings.Errors.Add($"the CSS names @keyframes '{Quote(keyframes.Value)}', the type and {KeyframesSeparator} with no name after them");
+        }
+        else if (!keyframes.Value.StartsWith(prefix, StringComparison.Ordinal))
         {
             findings.Errors.Add($"the CSS names @keyframes '{Quote(keyframes.Value)}', which does not start with '{prefix}': keyframes names are not scoped");
         }
@@ -494,6 +539,19 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
             _ => false,
         };
     }
+
+    private static string GetBlockOpener(IList<CssTokenizer.Token> prelude, Stack<string> openers)
+    {
+        var first = prelude.FirstOrDefault(x => x.Kind != CssTokenizer.TokenKind.Whitespace);
+        if (first.Kind == CssTokenizer.TokenKind.AtKeyword)
+        {
+            return first.Value.ToLowerInvariant();
+        }
+
+        return openers.Count > 0 && openers.Peek() == KeyframesAtRule ? KeyframeBlock : StyleRuleBlock;
+    }
+
+    private static string DescribeBlock(string opener) => opener == StyleRuleBlock ? "a style rule" : "@" + opener;
 
     private static string WriteCss(IEnumerable<CssTokenizer.Token> tokens) =>
         string.Concat(tokens.Select(x => x.Kind switch

@@ -186,13 +186,16 @@ The storefront applies a type's CSS once per page, wrapped so it reaches only th
 `@layer custom-sections { @scope ([data-sb-type="{type}"]) { … } }`, with its `@keyframes` in the layer outside the
 scope. `:scope` is the section's root.
 
-- **At-rules**: `@media`, `@supports`, `@container`, `@starting-style` and `@keyframes`. A keyframes name starts with
-  the type and `__` (`@keyframes custom-hero__fade`), since names are not scoped and one type's name may start
+- **At-rules**: `@media`, `@supports`, `@container`, `@starting-style` and `@keyframes`. A keyframes name is the type,
+  `__` and a name (`@keyframes custom-hero__fade`), since names are not scoped and one type's name may start
   another's. A `@keyframes` stands at the top level or inside `@media`, `@supports` and `@container`, whose
-  conditions the storefront keeps around it outside the scope; the name rule holds either way.
+  conditions the storefront keeps around it outside the scope; the name rule holds either way. One inside a style
+  rule or `@starting-style` is refused, as the storefront drops it, and a `@keyframes` holds only its keyframes, each
+  only declarations.
 - **Images**: a URL of the store's asset library, or a `data:image/…` URL, as an image loads no script and nothing
   else; the data counts in the CSS's size.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
+  `@keyframes` inside a style rule or `@starting-style`, and anything but keyframes inside a `@keyframes`; a
   selector naming `:root`, `html` or `body`; a `position` other than `static`, `relative`, `absolute`, `sticky`,
   `inherit`, `initial`, `unset` or `revert`, such as `fixed`, and `var()`, `attr()`, `env()`, `if()` or a custom
   `--name()` function in `position`; any other URL, in `url()` or as a string anywhere inside `image-set()` and the

@@ -42,6 +42,9 @@ public class CustomSectionRules
 
     public IList<string> AtRules { get; set; } = [];
 
+    /// <summary>The at-rules a @keyframes may stand in, besides the top level.</summary>
+    public IList<string> KeyframesHolders { get; set; } = [];
+
     /// <summary>What follows the type in a keyframes name, which is not scoped.</summary>
     public string KeyframesSeparator { get; set; }
 

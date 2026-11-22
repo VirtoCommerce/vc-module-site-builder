@@ -454,9 +454,9 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><h2>{{ settings.title }}</h2><h4>{{ settings.title }}</h4></section>""", "",
         "the template's headings go from h2 to h4, skipping a level, which a screen reader lists as a part missing")]
     [InlineData("<section></section>", """.a { transition: opacity .2s; }""",
-        "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion")]
+        "the CSS animates with no @media (prefers-reduced-motion: reduce) or (prefers-reduced-motion: no-preference) block, so it moves for people who ask for less motion")]
     [InlineData("<section></section>", """.a { animation-name: custom-hero-fade; } @media (prefers-reduced-motion: no-change) { .a { animation: none; } }""",
-        "the CSS animates with no @media (prefers-reduced-motion: reduce) block, so it moves for people who ask for less motion")]
+        "the CSS animates with no @media (prefers-reduced-motion: reduce) or (prefers-reduced-motion: no-preference) block, so it moves for people who ask for less motion")]
     public void Validate_TypeHarderToUseWithoutTheScreen_IsSavedWithAWarning(string template, string css, string warning)
     {
         var result = _validator.Validate(Type, Section(template, css), Catalog);
@@ -698,7 +698,24 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { -moz-binding: url(https://cdn.example/assets/x.xml#y); }""", "the CSS sets -moz-binding, which runs script")]
     [InlineData("""@keyframes fade { from { opacity: 0; } }""", "the CSS names @keyframes 'fade', which does not start with 'custom-hero__': keyframes names are not scoped")]
     [InlineData("""@keyframes custom-hero-banner-fade { from { opacity: 0; } }""", "the CSS names @keyframes 'custom-hero-banner-fade', which does not start with 'custom-hero__': keyframes names are not scoped")]
-    [InlineData("""@keyframes custom-hero__ { from { opacity: 0; } }""", "the CSS names @keyframes 'custom-hero__', which does not start with 'custom-hero__': keyframes names are not scoped")]
+    [InlineData("""@keyframes custom-hero__ { from { opacity: 0; } }""", "the CSS names @keyframes 'custom-hero__', the type and __ with no name after them")]
+    [InlineData(""".custom-hero__title { animation: custom-hero__fade 1s; @keyframes custom-hero__fade { from { opacity: 0 } } }""",
+        "the CSS has @keyframes inside a style rule, where the storefront drops it: a @keyframes stands at the top level or inside @media, @supports or @container")]
+    [InlineData(""".a { @media (width > 1px) { @keyframes custom-hero__x { from { opacity: 0 } } } }""",
+        "the CSS has @keyframes inside a style rule, where the storefront drops it: a @keyframes stands at the top level or inside @media, @supports or @container")]
+    [InlineData("""@starting-style { @keyframes custom-hero__x { from { opacity: 0 } } }""",
+        "the CSS has @keyframes inside @starting-style, where the storefront drops it: a @keyframes stands at the top level or inside @media, @supports or @container")]
+    [InlineData("""@keyframes custom-hero__x { @media (width > 1px) { from { opacity: 0 } } }""",
+        "the CSS has @media inside @keyframes, which holds only its keyframes, such as from { } or 50% { }")]
+    [InlineData("""@keyframes custom-hero__x { from { .a { opacity: 0 } } }""",
+        "the CSS has a block inside a keyframe of @keyframes, which holds only declarations")]
+    [InlineData(""".a { background: src("https://evil.example/x.png"); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { background: image("https://evil.example/x.png"); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { background: -webkit-image-set("https://evil.example/x.png" 1x); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { background: -webkit-cross-fade("https://evil.example/x.png", url(data:image/png;base64,AA), 50%); }""",
+        "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL")]
+    [InlineData(""".a { background: image-set(attr(data-x) 1x); }""", "the CSS has attr() inside image-set(), whose URL is then not known on save")]
+    [InlineData(""".a { background: image(env(x)); }""", "the CSS has env() inside image(), whose URL is then not known on save")]
     [InlineData("""@keyframes""", "the CSS has @keyframes without a name")]
     [InlineData(""".custom-x { background-image: image-s\65t(if(else: "https://evil.example/p.png")); }""", "the CSS has if() inside image-set(), whose URL is then not known on save")]
     [InlineData(""".custom-x { background-image: image-s\65t(if(else: "https://evil.example/p.png")); }""", "the CSS loads 'https://evil.example/p.png', which is not a URL of the store's asset library or a data:image/ URL")]
@@ -746,6 +763,7 @@ public class CustomSectionValidatorTests
     [InlineData(""".html, [data-tone="body"] .a { font-family: Tan, serif; grid-area: navy; }""")]
     [InlineData("""a:hover { text-decoration: underline; } :scope:focus-within { gap: 1rem; }""")]
     [InlineData(""".a { position: sticky; } .b { position: RELATIVE !important; } .c { position: unset; } .d { posit\69on: st\61tic; }""")]
+    [InlineData("""@media (min-width: 1px) { @supports (rotate: 1turn) { @keyframes custom-hero__in { from { opacity: 0; } } } } @container sb-section (min-width: 40rem) { @keyframes custom-hero__up { 0%, 50% { opacity: 0; } to { opacity: 1; } } }""")]
     public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);

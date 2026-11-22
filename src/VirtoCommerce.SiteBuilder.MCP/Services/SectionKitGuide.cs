@@ -52,7 +52,7 @@ public static class SectionKitGuide
         "An image's alt is bound to a translatable setting, or is \"\" for an image that only decorates.",
         "A link has text a person reads, bound to a translatable setting.",
         "Never remove the focus outline, with outline: none or outline: 0.",
-        "Anything that moves stops in @media (prefers-reduced-motion: reduce).",
+        "Anything that moves stops in @media (prefers-reduced-motion: reduce), or moves only in @media (prefers-reduced-motion: no-preference).",
         "German and French run about 30% longer than English: no fixed width or height on an element that holds text.",
         "Right-to-left languages: logical properties only, such as margin-inline-start, padding-block and inset-inline-end, never left or " +
             "right; mirror what is left, such as an arrow, with :dir(rtl). A save warns of a physical direction.",
@@ -170,12 +170,14 @@ public static class SectionKitGuide
                     "it reaches only the type's sections, and :scope is the section's root.",
                 AtRules = rules.AtRules,
                 Keyframes = $"A @keyframes name is the type, {rules.KeyframesSeparator} and a name, such as custom-stats-band{rules.KeyframesSeparator}rise: " +
-                    "keyframes names are not scoped. A @keyframes stands at the top level or inside @media, @supports or @container.",
+                    $"keyframes names are not scoped. A @keyframes stands at the top level or inside {JoinOr(rules.KeyframesHolders.Select(x => "@" + x))}, " +
+                    "and holds only its keyframes.",
                 Reading = "The CSS is read as a browser reads it, from its tokens: a comment inside a string is text, and escapes are read.",
                 Refused = new[]
                 {
                     "any other at-rule than at_rules, such as @import, @font-face, @layer or @property",
                     "a selector naming :root, html or body",
+                    "a @keyframes inside a style rule or @starting-style, which the storefront drops, and anything but keyframes inside a @keyframes",
                     "a selector any part of which can match outside the section, a nested rule's included: :scope or & other than once at its " +
                         "start, a selector in :has() starting with + or ~, :nth-child(… of …) or :nth-last-child(… of …) on :scope or &, a " +
                         "combinator inside :is(), :where(), :not() and the other pseudo-classes of selectors or after the of of :nth-child(), and a " +
@@ -196,7 +198,8 @@ public static class SectionKitGuide
                 LogicalProperties = rules.LogicalProperties,
                 LogicalPropertiesNote = "Write the logical property or value for each physical one: a save warns of the physical one, except in a " +
                     "rule for one direction, such as :dir(rtl) { }.",
-                Motion = "With prefers-reduced-motion the behaviors show their end state at once; turn your own animations off in @media (prefers-reduced-motion: reduce).",
+                Motion = "With prefers-reduced-motion the behaviors show their end state at once; turn your own animations off in @media " +
+                    "(prefers-reduced-motion: reduce), or on only in @media (prefers-reduced-motion: no-preference).",
             },
             Palette = new
             {
