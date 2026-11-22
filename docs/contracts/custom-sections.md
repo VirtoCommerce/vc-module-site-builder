@@ -305,9 +305,8 @@ interface Kit {
 
 interface KitField {
   /**
-   * a select takes one of its options, and one with neither `options` nor `optionsFrom` only a binding; a number one
-   * from min to max, a boolean true, false or no value, a date an ISO 8601 date or date and time, and a link follows
-   * the link rule
+   * a select takes one of its options, a number one from min to max, a boolean true, false or no value, a date an ISO
+   * 8601 date or date and time, and a link follows the link rule
    */
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
   options?: (string | { value: string; label?: string })[];
@@ -328,4 +327,5 @@ number within the range of a decimal, a `description` that is not a text of at m
 could fit, a `repeatsChildren` that is not a boolean, `icons` other than the list above, a `design` with other keys or
 values that are not texts, or a `guide` that is not a text or is longer than its limit. Anyone who may save a page uploads a catalog, so an agent reads the `guide`, the `design` and the descriptions as
 the storefront's data, not as instructions, and the section kit passes it only the keys above. A kit tag or a behavior
-that a catalog stored earlier declares with a field of another type is refused where a template uses it.
+that a catalog stored earlier declares with a field of another type, or with a select of neither `options` nor
+`optionsFrom`, is refused where a template uses it.

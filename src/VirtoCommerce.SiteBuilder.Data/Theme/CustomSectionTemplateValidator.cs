@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using AngleSharp.Common;
@@ -125,7 +126,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return;
         }
 
-        ValidateElement(check, roots[0], new TemplateScope(Each: null, IsRoot: true, context));
+        ValidateElement(check, roots[0], new TemplateScope(Each: null, IsRoot: true, context, Repeating: null, Behaviors: ImmutableHashSet<string>.Empty));
         ValidateHeadings(check, roots[0]);
         AddTextWarning(check, context);
     }
@@ -154,13 +155,15 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         ValidateAccessibility(check, element, where);
 
         var each = element.GetAttribute(EachAttribute) is { } eachPath ? ValidateEach(check, eachPath, where, scope) : scope.Each;
-        var elementScope = scope with { Each = each };
+        var behaviors = element.Attributes.Select(x => FindBehavior(check, x.Name)).Where(x => x is { Option: null }).Select(x => x.Value.Name).ToList();
+        var elementScope = scope with { Each = each, Behaviors = scope.Behaviors.Union(behaviors) };
         foreach (var attribute in element.Attributes)
         {
             ValidateAttribute(check, element, attribute.Name, attribute.Value, kitAttributes, where, elementScope);
         }
 
-        var childScope = scope with { Each = each, IsRoot = false };
+        var repeating = behaviors.Find(x => check.Kit.Behaviors[x].RepeatsChildren);
+        var childScope = elementScope with { IsRoot = false, Repeating = repeating == null ? scope.Repeating : DataPrefix + repeating };
         var holdsNothing = kitAttributes != null || element.HasAttribute(HtmlAttribute);
         var hasContent = false;
         foreach (var node in element.ChildNodes)
@@ -233,15 +236,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return "is a kit tag, and the storefront offers none: its catalog has no kit";
         }
 
-        if (!check.Kit.Tags.TryGetValue(tag, out var attributes))
+        if (!check.Kit.Tags.ContainsKey(tag))
         {
             return "is not a kit tag the storefront offers";
         }
 
-        // an older catalog may hold a kit its upload would refuse now
-        return GetUnknownField(attributes) is { } unknown
-            ? $"is a kit tag the catalog declares with the attribute '{unknown.Key}' of a type the server does not know, '{unknown.Value.Type}'"
-            : null;
+        return check.Kit.TagFaults.TryGetValue(tag, out var fault) ? $"is a kit tag the catalog declares with the attribute {fault}" : null;
     }
 
     /// <param name="kitAttributes">The attributes of the kit tag the element is; <c>null</c> for an element of HTML.</param>
@@ -450,8 +450,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
                 return value is "" or "true" or "false" ? null : "true, false or no value";
             case CustomSectionKit.SelectType when field.OptionsFrom == CustomSectionKit.IconsKey:
                 return check.Kit.Icons == null || check.Kit.Icons.Contains(value) ? null : "an icon name of the storefront, as the kit's icons list them";
-            case CustomSectionKit.SelectType when field.Options == null:
-                return "one binding, as the catalog declares no options";
             case CustomSectionKit.SelectType:
                 return field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
             case CustomSectionKit.DateType:
@@ -471,16 +469,15 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     {
         var attribute = DataPrefix + behavior;
         var kitBehavior = check.Kit.Behaviors[behavior];
-        var fields = kitBehavior.Value == null ? kitBehavior.Options : kitBehavior.Options.Append(KeyValuePair.Create("value", kitBehavior.Value));
-        if (GetUnknownField(fields) is { } unknown)
+        if (kitBehavior.Fault != null)
         {
-            check.AddError($"{where} has {name}, and the catalog declares {attribute} with '{unknown.Key}' of a type the server does not know, '{unknown.Value.Type}'");
+            check.AddError($"{where} has {name}, and the catalog declares {attribute} with {kitBehavior.Fault}");
             return;
         }
 
         if (option == null)
         {
-            if (kitBehavior.RepeatsChildren && FindRepeatingAncestor(check, element) is { } outer)
+            if (kitBehavior.RepeatsChildren && scope.Repeating is { } outer)
             {
                 check.AddError($"{where} has {name}, which repeats what it holds, inside an element with {outer}, which repeats it too: " +
                     "each level would multiply the page");
@@ -504,29 +501,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return;
         }
 
-        if (!HasBehavior(element, attribute))
+        if (!scope.Behaviors.Contains(behavior))
         {
             check.AddError($"{where} has {name}, an option of {attribute}, outside an element with {attribute}");
         }
 
         ValidateKitValue(check, attribute, field, name, value, where, scope);
-    }
-
-    /// <returns>The attribute of the nearest ancestor whose behavior repeats what it holds; <c>null</c> for none.</returns>
-    protected virtual string FindRepeatingAncestor(CustomSectionCheck check, IElement element)
-    {
-        for (var ancestor = element.ParentElement; ancestor != null; ancestor = ancestor.ParentElement)
-        {
-            var repeating = ancestor.Attributes
-                .Select(x => FindBehavior(check, x.Name) is { Option: null } behavior && check.Kit.Behaviors[behavior.Name].RepeatsChildren ? x.Name : null)
-                .FirstOrDefault(x => x != null);
-            if (repeating != null)
-            {
-                return repeating;
-            }
-        }
-
-        return null;
     }
 
     /// <summary>The behavior a data- attribute switches on, with the option it sets; the longest name wins, so count-up-duration is an option of count-up.</summary>
@@ -543,9 +523,16 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return (name, null);
         }
 
-        var behavior = check.Kit.Behaviors.Keys.Where(x => name.StartsWith(x + "-", StringComparison.Ordinal)).MaxBy(x => x.Length);
+        // from the right, so the longest behavior wins; no prefix longer than the longest behavior can name one
+        for (var end = name.LastIndexOf('-', Math.Min(name.Length - 1, check.Kit.MaxBehaviorLength)); end > 0; end = name.LastIndexOf('-', end - 1))
+        {
+            if (check.Kit.Behaviors.ContainsKey(name[..end]))
+            {
+                return (name[..end], name[(end + 1)..]);
+            }
+        }
 
-        return behavior == null ? null : (behavior, name[(behavior.Length + 1)..]);
+        return null;
     }
 
     /// <summary>
@@ -858,9 +845,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         return (line + 1, index - lineStarts[line] + 1);
     }
 
-    private static KeyValuePair<string, KitField>? GetUnknownField(IEnumerable<KeyValuePair<string, KitField>> fields) =>
-        fields.Where(x => !CustomSectionKit.FieldTypes.Contains(x.Value.Type ?? string.Empty)).Cast<KeyValuePair<string, KitField>?>().FirstOrDefault();
-
     // text or a binding, which the storefront fills with text, an aria-label, rich text, or an image whose alt names it
     private static bool HasName(IElement link) =>
         !string.IsNullOrWhiteSpace(link.TextContent) ||
@@ -868,19 +852,6 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         link.HasAttribute(HtmlAttribute) ||
         link.QuerySelectorAll("[data-html]").Length > 0 ||
         link.QuerySelectorAll("img").Any(x => !string.IsNullOrWhiteSpace(x.GetAttribute(AltAttribute)));
-
-    private static bool HasBehavior(IElement element, string attribute)
-    {
-        for (var current = element; current != null; current = current.ParentElement)
-        {
-            if (current.HasAttribute(attribute))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     private static bool IsIsoDate(string value) =>
         IsoDatePattern.IsMatch(value) && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _);
@@ -896,7 +867,9 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     private static string FormatNumber(decimal number) => number.ToString("0.##########", CultureInfo.InvariantCulture);
 
     /// <param name="Each">The list the element repeats for, or one of its ancestors does.</param>
-    protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot, TemplateContext Context);
+    /// <param name="Repeating">The attribute of the nearest ancestor whose behavior repeats what it holds; <c>null</c> for none.</param>
+    /// <param name="Behaviors">The behaviors the element and its ancestors switch on, whose options it may take.</param>
+    protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot, TemplateContext Context, string Repeating, IImmutableSet<string> Behaviors);
 
     /// <summary>The template as written, for the line numbers of errors, and the text it holds of its own, for the warning.</summary>
     protected sealed class TemplateContext(string template)

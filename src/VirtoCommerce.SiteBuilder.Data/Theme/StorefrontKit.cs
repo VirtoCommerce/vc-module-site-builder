@@ -5,12 +5,36 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 /// <param name="Behaviors">Each behavior by its name; <c>null</c> for a catalog without a kit.</param>
 /// <param name="Icons">The storefront's icon names; <c>null</c> when the kit lists none, and an icon name is not checked.</param>
 public sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, IReadOnlyDictionary<string, KitField>> Tags,
-    IReadOnlyDictionary<string, KitBehavior> Behaviors, IReadOnlySet<string> Icons);
+    IReadOnlyDictionary<string, KitBehavior> Behaviors, IReadOnlySet<string> Icons)
+{
+    /// <summary>By kit tag: its first attribute the server cannot check, named with why; a stored catalog may hold one its upload would refuse now.</summary>
+    public IReadOnlyDictionary<string, string> TagFaults { get; } = (Tags ?? new Dictionary<string, IReadOnlyDictionary<string, KitField>>())
+        .Select(x => KeyValuePair.Create(x.Key, KitField.GetFirstFault(x.Value)))
+        .Where(x => x.Value != null)
+        .ToDictionary(StringComparer.Ordinal);
+
+    /// <summary>The longest behavior name, beyond which no prefix of an attribute can name a behavior.</summary>
+    public int MaxBehaviorLength { get; } = Behaviors?.Keys.Select(x => x.Length).DefaultIfEmpty().Max() ?? 0;
+}
 
 /// <param name="Type">string, number, boolean, select, date or link; any other refuses the kit tag or the behavior that declares it.</param>
 /// <param name="OptionsFrom">Where a select's values are listed instead of its options: "icons" for the kit's icon names.</param>
-public sealed record KitField(string Type, IReadOnlyList<string> Options, decimal? Min, decimal? Max, string OptionsFrom = null);
+public sealed record KitField(string Type, IReadOnlyList<string> Options, decimal? Min, decimal? Max, string OptionsFrom = null)
+{
+    /// <summary>Why the server cannot check a value of the field, to follow its name; <c>null</c> when it can.</summary>
+    public string Fault { get; } = !CustomSectionKit.FieldTypes.Contains(Type ?? string.Empty)
+        ? $" of a type the server does not know, '{Type}'"
+        : Type == CustomSectionKit.SelectType && Options == null && OptionsFrom == null ? ", a select with neither options nor optionsFrom" : null;
+
+    /// <returns>The first field the server cannot check, as 'name' and why; <c>null</c> for none.</returns>
+    public static string GetFirstFault(IEnumerable<KeyValuePair<string, KitField>> fields) =>
+        fields.Where(x => x.Value.Fault != null).Select(x => $"'{x.Key}'{x.Value.Fault}").FirstOrDefault();
+}
 
 /// <param name="Value">The type of the behavior attribute's own value; <c>null</c> when it declares none.</param>
 /// <param name="RepeatsChildren">The behavior copies what its element holds, as a marquee does, so it may not stand inside another that does.</param>
-public sealed record KitBehavior(KitField Value, IReadOnlyDictionary<string, KitField> Options, bool RepeatsChildren = false);
+public sealed record KitBehavior(KitField Value, IReadOnlyDictionary<string, KitField> Options, bool RepeatsChildren = false)
+{
+    /// <summary>Its first option or value the server cannot check, named with why; a stored catalog may hold one its upload would refuse now.</summary>
+    public string Fault { get; } = KitField.GetFirstFault(Value == null ? Options : Options.Append(KeyValuePair.Create("value", Value)));
+}

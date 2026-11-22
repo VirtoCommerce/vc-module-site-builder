@@ -315,16 +315,20 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
-    public void Validate_LiteralOfAKitSelectWithoutOptions_IsRefusedAndABindingIsTaken()
+    public void Validate_KitSelectWithoutOptionsInAStoredCatalog_RefusesItsTagAndBehavior_AsAFieldOfAnUnknownType()
     {
         var catalog = (JObject)Catalog.DeepClone();
         catalog["kit"]!["tags"]!["vc-button"]!["attributes"]!["tone"] = JObject.Parse("""{ "type": "select" }""");
+        catalog["kit"]!["behaviors"]!["inview"]!["options"]!["axis"] = JObject.Parse("""{ "type": "select", "options": null }""");
 
-        var literal = _validator.Validate(Type, Section("""<section><vc-button tone="warm"></vc-button></section>"""), catalog);
-        var bound = _validator.Validate(Type, Section("""<section><vc-button tone="{{ settings.title }}"></vc-button></section>"""), catalog);
+        var bound = _validator.Validate(Type, Section("""<section><vc-button tone="{{ settings.title }}"></vc-button><p data-inview>x</p></section>"""), catalog);
 
-        Assert.Equal(["<vc-button> at line 1 has tone=\"warm\", which vc-button does not take: it takes one binding, as the catalog declares no options"], literal.Errors);
-        Assert.Empty(bound.Errors);
+        Assert.Equal(
+            [
+                "<vc-button> at line 1 is a kit tag the catalog declares with the attribute 'tone', a select with neither options nor optionsFrom",
+                "<p> at line 1 has data-inview, and the catalog declares data-inview with 'axis', a select with neither options nor optionsFrom",
+            ],
+            bound.Errors.Where(x => !x.Contains("text of its own", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -545,6 +549,23 @@ public class CustomSectionValidatorTests
 
         Assert.Equal(["the template has more than 1500 tags, counting each '<' followed by a letter as written"], result.Errors);
         Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
+    }
+
+    [Fact]
+    public void Validate_ManyAttributesAboveManyRepeatingBehaviors_IsCheckedOnceEach()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["behaviors"]!["marquee"]!["repeatsChildren"] = true;
+        var attributes = string.Concat(Enumerable.Range(0, 3000).Select(x => $" data-a{x}"));
+        var template = $"<div class=\"custom-hero\"{attributes}>" + string.Concat(Enumerable.Repeat("<i data-marquee></i>", 1400)) + "</div>";
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+
+        var result = _validator.Validate(Type, Section(template), catalog);
+
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - allocated < 64 * 1024 * 1024, $"allocated {GC.GetAllocatedBytesForCurrentThread() - allocated} bytes");
+        Assert.Equal(3000, result.Errors.Count);
+        Assert.Equal("<div> at line 1 has an attribute a custom section cannot use, 'data-a2999': it is no binding and no behavior the storefront offers",
+            result.Errors[^1]);
     }
 
     [Fact]
