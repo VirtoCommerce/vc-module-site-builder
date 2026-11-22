@@ -1427,7 +1427,9 @@ async function reopen() {
 }
 
 async function checkAssistantSave() {
-  if (!(await designer.pageChangedOnServer().catch(() => false))) return;
+  // The assistant may also have created a custom section type, which the picker offers once the theme status shows it.
+  const [changed] = await Promise.all([designer.pageChangedOnServer().catch(() => false), designer.refreshThemeStatus()]);
+  if (!changed) return;
   notifyPagesChanged();
   if (designer.dirty.value) notification.warning(t("SITE_BUILDER.DESIGNER.ASSISTANT_CHANGED"));
   else await reopen().catch(() => undefined);

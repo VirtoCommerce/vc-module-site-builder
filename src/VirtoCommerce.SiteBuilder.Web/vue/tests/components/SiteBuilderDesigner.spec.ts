@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
-import { flushPromises, mount, shallowMount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import type { IBladeToolbar } from "@vc-shell/framework";
 import { VcBlade } from "@vc-shell/framework/ui";
@@ -29,6 +29,19 @@ async function routerAt(address: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/:any(.*)*", component: { render: () => null } }] });
   await router.push(address);
   return router;
+}
+
+// As vc-shell's AI agent service: the panel's state, and the assistant's messages passed on to each listener.
+function fakeAgent() {
+  const listeners = new Set<(message: { type: string }) => void>();
+  return {
+    isOpen: ref(true),
+    onMessage: (listener: (message: { type: string }) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    send: (type: string) => listeners.forEach((listener) => listener({ type })),
+  };
 }
 
 const toolbarItem = (wrapper: VueWrapper, id: string) =>
@@ -242,19 +255,6 @@ describe("a page the AI assistant saves", () => {
   let platform: FakePlatform;
   let served: { content: string; eTag: string };
   let agent: ReturnType<typeof fakeAgent>;
-
-  // As vc-shell's AI agent service: the panel's state, and the assistant's messages passed on to each listener.
-  function fakeAgent() {
-    const listeners = new Set<(message: { type: string }) => void>();
-    return {
-      isOpen: ref(true),
-      onMessage: (listener: (message: { type: string }) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      },
-      send: (type: string) => listeners.forEach((listener) => listener({ type })),
-    };
-  }
 
   async function openPage() {
     served = { content: JSON.stringify(PAGE), eTag: '"v1"' };
@@ -640,8 +640,13 @@ describe("the theme's custom section types", () => {
   const HERO = { format: 1, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [{ id: "title", type: "string" }] }, template: "<section></section>", css: "" };
   const PROMO = { ...HERO, name: "Promo" };
   let platform: FakePlatform;
+  // A change of the draft goes to the preview once changes pause for 120 ms.
+  const draftSent = async () => {
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  };
 
-  async function openPage(drafts: string[]) {
+  async function openPage(drafts: string[], agent?: ReturnType<typeof fakeAgent>) {
     platform = fakePlatform()
       .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
       .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
@@ -656,7 +661,8 @@ describe("the theme's custom section types", () => {
       )
       .install();
     blade.param.value = "g1";
-    const wrapper = shallowMount(SiteBuilderDesigner, { attachTo: document.body, global: { plugins: [await routerAt("/")], stubs: { VcBlade: false } } });
+    const provide = agent ? { [AiAgentServiceKey]: agent } : {};
+    const wrapper = shallowMount(SiteBuilderDesigner, { attachTo: document.body, global: { plugins: [await routerAt("/")], provide, stubs: { VcBlade: false } } });
     await flushPromises();
     const frame = wrapper.find("iframe").element as HTMLIFrameElement;
     const posted = vi.spyOn(frame.contentWindow!, "postMessage");
@@ -710,6 +716,18 @@ describe("the theme's custom section types", () => {
     expect(page.designer.schemas.value.sections["custom-hero"].name).toBe("Hero");
   });
 
+  it("are read again when the AI assistant creates one without placing it", async () => {
+    const agent = fakeAgent();
+    const page = await openPage([], agent);
+    await page.load("0badc0de");
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: ["custom-sections/custom-hero.json"] });
+
+    agent.send("RELOAD_BLADE");
+    await draftSent();
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+  });
+
   it("are left to the published snapshot, and not read, while none has a draft", async () => {
     const page = await openPage(["templates/product.json"]);
 
@@ -719,4 +737,3 @@ describe("the theme's custom section types", () => {
     expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/custom-sections")).toEqual([]);
   });
 });
-
