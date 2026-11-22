@@ -658,7 +658,7 @@ describe("the theme's custom section types", () => {
       .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
       .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({ "default/custom-sections/custom-hero.json": HERO, "default/custom-sections/custom-promo.json": PROMO }))
       .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts })
-      .on("GET", "/api/site-builder/designer/storefront", { url: "https://shop.test", previewPath: "/designer-preview" })
+      .on("GET", "/api/site-builder/designer/storefront", { url: "https://shop.test", previewPath: "/designer-preview", assetsBaseUrl: "https://cdn.test/assets/" })
       .on("GET", "/api/site-builder/catalog", {})
       .on("GET", SEARCH, (request: { query: Record<string, string> }) =>
         request.query.folderUrl === "default/custom-sections" ? [{ name: "custom-hero.json-draft" }, { name: "custom-promo.json" }] : [],
@@ -785,6 +785,14 @@ describe("the theme's custom section types", () => {
 
     expect(reloads).toHaveBeenCalledTimes(1);
     reloads.mockRestore();
+  });
+
+  it("go with the asset library's base, which a store never published has in no snapshot", async () => {
+    const page = await openPage([]);
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme?.assetsBaseUrl).toBe("https://cdn.test/assets/");
   });
 
   it("are left to the published snapshot, and not read, while none has a draft", async () => {

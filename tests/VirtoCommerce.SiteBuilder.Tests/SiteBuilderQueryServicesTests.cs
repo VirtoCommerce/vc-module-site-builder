@@ -186,7 +186,7 @@ public class SiteBuilderQueryServicesTests
     {
         var result = await Controller().GetDesignerStorefront("s1");
 
-        Assert.Equal("""{"url":"https://shop.example/","previewPath":"/designer-preview"}""", PlatformJson.SerializeBody(result));
+        Assert.Equal("""{"url":"https://shop.example/","previewPath":"/designer-preview","assetsBaseUrl":"https://cdn.example/assets/"}""", PlatformJson.SerializeBody(result));
     }
 
     [Fact]
@@ -474,7 +474,7 @@ public class SiteBuilderQueryServicesTests
 
     private SiteBuilderPreviewQueryService Previews(FakeAuthorizationService authorization = null) =>
         new(authorization ?? new FakeAuthorizationService(true), RequestValidators.Content("s1", "s2"), _stores, new FakeSettingsManager(), _pages,
-            ContentQueries(authorization), new FakeGitContentPolicy(enabled: false), null, null, Options.Create(new GitContentOptions()));
+            ContentQueries(authorization), new FakeGitContentPolicy(enabled: false), null, null, Options.Create(new GitContentOptions()), TestServices.CustomSectionUrlPolicy());
 
     private SiteBuilderPublishStatusQueryService PublishStatuses(FakeAuthorizationService authorization = null) =>
         new(authorization ?? new FakeAuthorizationService(true), RequestValidators.Content("s1", "s2"), _pages, _live, new FakeGitContentPolicy(enabled: false),

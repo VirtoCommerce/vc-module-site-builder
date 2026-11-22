@@ -794,7 +794,7 @@ const device = ref<(typeof devices)[number]["id"]>("desktop");
 
 const frame = ref<HTMLIFrameElement>();
 const url = ref<string>();
-const storefront = ref<{ url?: string; previewPath: string }>();
+const storefront = ref<{ url?: string; previewPath: string; assetsBaseUrl?: string }>();
 const storefrontChecked = ref(false);
 const openFailed = ref(false);
 
@@ -855,6 +855,7 @@ function draft(groups = designer.groupsPreview.value): DraftMessage {
     groups,
     look: look.draft.value,
     customSections: savedCustomSections.value,
+    assetsBaseUrl: storefront.value?.assetsBaseUrl,
     capabilities: designer.handshake.value?.capabilities ?? [],
   });
 }

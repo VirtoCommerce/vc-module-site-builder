@@ -188,7 +188,7 @@ internal static class TestServices
         var contentQueries = new SiteBuilderContentQueryService(authorizationService, requestValidator, pathResolver, blobContentStorageProviderFactory,
             publishingService, themeStorageFactory, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions, gitContentHistory);
         var previews = new SiteBuilderPreviewQueryService(authorizationService, requestValidator, storeService, settingsManager, groupedPageService,
-            contentQueries, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions);
+            contentQueries, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions, CustomSectionUrlPolicy());
         var publishStatuses = new SiteBuilderPublishStatusQueryService(authorizationService, requestValidator, groupedPageService, publishingService,
             gitContentPolicy, gitContentRepository, gitContentPublisher, gitLivePageService, gitHubConnectionService, gitContentOptions);
 

@@ -52,6 +52,8 @@ export interface ThemeDraft {
   /** null: the theme has no palette, so the storefront's preset shows. */
   palette?: Palette | null;
   customSections?: Record<string, CustomSectionType>;
+  /** The asset library's base, which the storefront takes while its published snapshot has none. */
+  assetsBaseUrl?: string;
 }
 
 export interface DraftMessage {
@@ -264,6 +266,7 @@ export interface DraftInput {
   templates?: Record<string, PageDocument>;
   look?: { brand?: Brand; palette?: Palette | null };
   customSections?: Record<string, CustomSectionType>;
+  assetsBaseUrl?: string;
   capabilities: string[];
 }
 
@@ -280,6 +283,7 @@ export function draftMessage(input: DraftInput): DraftMessage {
       ...(input.look?.brand ? { brand: input.look.brand } : {}),
       ...(input.look?.palette !== undefined ? { palette: input.look.palette } : {}),
       ...(input.customSections ? { customSections: input.customSections } : {}),
+      ...(input.assetsBaseUrl ? { assetsBaseUrl: input.assetsBaseUrl } : {}),
     },
   };
 }

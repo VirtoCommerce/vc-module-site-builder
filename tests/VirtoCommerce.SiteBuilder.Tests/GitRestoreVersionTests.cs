@@ -345,6 +345,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
             var storefront = Assert.IsType<DesignerStorefront>(Assert.IsType<OkObjectResult>(result.Result).Value);
             Assert.Equal("https://vccom.example", storefront.Url);
             Assert.Equal(expectedPath, storefront.PreviewPath);
+            Assert.Equal(TestServices.CustomSectionUrlPolicy().GetAssetsBaseUrl(), storefront.AssetsBaseUrl);
+            Assert.NotNull(storefront.AssetsBaseUrl);
         }
 
         [Fact]

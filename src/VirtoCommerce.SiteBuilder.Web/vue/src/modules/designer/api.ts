@@ -165,10 +165,11 @@ export async function loadStorefront(storeId: string) {
     // the store adds only the catalog context and the languages, so a user who may not read it still gets the preview
     loadStore(storeId).catch((): Store => ({})),
     call(`/api/site-builder/designer/storefront?${new URLSearchParams({ storeId })}`).then((res) => res.json()),
-  ])) as [Store, { url?: string; previewPath: string }];
+  ])) as [Store, { url?: string; previewPath: string; assetsBaseUrl?: string }];
   return {
     url: storefront.url || undefined,
     previewPath: storefront.previewPath,
+    assetsBaseUrl: storefront.assetsBaseUrl || undefined,
     catalog: { storeId, cultureName: store.defaultLanguage || "en-US", currencyCode: store.defaultCurrency || "USD" } as CatalogContext,
     languages: Array.isArray(store.languages) ? store.languages.filter((x): x is string => typeof x === "string") : [],
   };

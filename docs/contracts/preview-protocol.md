@@ -143,9 +143,17 @@ interface Draft {
     palette?: Palette | null;
     /** every custom section type of the theme as last saved, its draft else its live file; replaces the published ones */
     customSections?: Record<string, CustomSectionType>;
+    /**
+     * the asset library's public base, as the snapshot's `assetsBaseUrl` holds it; the storefront takes it only while its
+     * published snapshot has none, so a store never published shows custom section images in the designer
+     */
+    assetsBaseUrl?: string;
   };
 }
 ```
+
+The designer reads the base from `GET /api/site-builder/designer/storefront`, whose answer it already reads for the
+storefront's address, and sends it in every draft once it is known.
 
 The types are those of the [theme snapshot](theme-snapshot.md#snapshot), except that translatable values may be
 dictionaries: the storefront shows the current language. A menu the draft names and the published snapshot does not
