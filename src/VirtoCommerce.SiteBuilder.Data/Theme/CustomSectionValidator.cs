@@ -186,9 +186,16 @@ public class CustomSectionValidator(
     }
 
     /// <returns><c>null</c> when the types together fit what the snapshot carries to every page.</returns>
+    public virtual long GetSize(IDictionary<string, JToken> types)
+    {
+        ArgumentNullException.ThrowIfNull(types);
+
+        return types.Values.Where(x => x != null).Sum(x => (long)Encoding.UTF8.GetByteCount(x.ToString(Formatting.None)));
+    }
+
     protected virtual string GetSizeError(IDictionary<string, JToken> types)
     {
-        var size = types.Values.Where(x => x != null).Sum(x => (long)Encoding.UTF8.GetByteCount(x.ToString(Formatting.None)));
+        var size = GetSize(types);
         var maxSize = options.Value.CustomSectionsMaxSize;
         if (size <= maxSize)
         {

@@ -14,6 +14,9 @@ public interface ICustomSectionValidator
     /// <returns>One result per checked type, and one for the folder when the types together are more than the snapshot carries.</returns>
     IList<CustomSectionValidationResult> ValidateTypes(IDictionary<string, JToken> types, ICollection<string> checkedTypes, JObject catalog);
 
+    /// <summary>The JSON of the types together, in bytes, as their size limit counts it.</summary>
+    long GetSize(IDictionary<string, JToken> types);
+
     /// <summary>The lists <see cref="Validate"/> checks against.</summary>
     CustomSectionRules GetRules();
 }

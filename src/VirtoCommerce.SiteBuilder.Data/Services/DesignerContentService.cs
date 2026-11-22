@@ -68,6 +68,7 @@ public class DesignerContentService(
         var customSections = await GetCustomSectionsAsync(storeId, files, cancellationToken);
         var catalogs = customSections.ToDictionary(x => x.Key, x => ThemeCustomSections.AddToCatalog(catalog, x.Value), StringComparer.OrdinalIgnoreCase);
         var customSectionResults = ValidateCustomSections(files, customSections, catalog);
+        await DropSizeErrorsOfSavesThatDoNotGrowAsync(storeId, customSections, customSectionResults, cancellationToken);
         var errors = files
             .SelectMany(x => contentGuard.GuardThemeFile(SiteBuilderContentPaths.GetPathInTheme(x.Key), x.Value, catalogs[SiteBuilderContentPaths.GetThemeName(x.Key)]).Errors)
             .Concat(customSectionResults.Values.SelectMany(ThemeCustomSections.GetErrors))
@@ -160,6 +161,28 @@ public class DesignerContentService(
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// A save that does not grow the theme's types is not refused on their size, so types over the limit, after two saves at once or a lower
+    /// limit, can still shrink; the publication holds the limit as it is. The types before the save are read only for a theme over it.
+    /// </summary>
+    protected virtual async Task DropSizeErrorsOfSavesThatDoNotGrowAsync(string storeId, IDictionary<string, IDictionary<string, JToken>> customSections,
+        IDictionary<string, IList<CustomSectionValidationResult>> results, CancellationToken cancellationToken)
+    {
+        foreach (var (themeName, themeResults) in results)
+        {
+            if (themeResults.FirstOrDefault(x => x.File == ThemeStorage.CustomSectionsFolder) is not { } sizeResult)
+            {
+                continue;
+            }
+
+            var before = await customSectionService.GetTypesAsync(storeId, themeName, files: null, cancellationToken);
+            if (customSectionValidator.GetSize(customSections[themeName]) <= customSectionValidator.GetSize(before))
+            {
+                themeResults.Remove(sizeResult);
+            }
+        }
     }
 
     /// <summary>

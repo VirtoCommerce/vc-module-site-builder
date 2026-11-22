@@ -382,6 +382,23 @@ public class CustomSectionSaveTests
         Assert.EndsWith("more than 256 KB: the snapshot carries every type to every page", result.Errors[0]);
     }
 
+    [Theory]
+    [InlineData(false, SiteBuilderOperationStatus.Succeeded)]
+    [InlineData(true, SiteBuilderOperationStatus.Invalid)]
+    public async Task SaveAsync_TypesAlreadyOverTheLimit_IsRefusedOnlyWhenItGrowsThem(bool grows, SiteBuilderOperationStatus status)
+    {
+        await SaveCatalogAsync();
+        var padding = $"/* {new string('x', 60 * 1024)} */";
+        foreach (var type in new[] { "custom-a", "custom-b", "custom-c", "custom-d", "custom-e", "custom-hero" })
+        {
+            _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroWith(css: padding);
+        }
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: grows ? padding + padding : null)))), _user, Ct);
+
+        Assert.Equal(status, result.Status);
+    }
+
     private static string HeroWith(string template = null, string css = null)
     {
         var hero = JObject.Parse(HeroFile);
@@ -457,6 +474,8 @@ public class CustomSectionSaveTests
             Checked += checkedTypes.Count;
             return inner.ValidateTypes(types, checkedTypes, catalog);
         }
+
+        public long GetSize(IDictionary<string, JToken> types) => inner.GetSize(types);
 
         public CustomSectionRules GetRules() => inner.GetRules();
     }

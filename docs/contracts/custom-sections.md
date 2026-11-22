@@ -18,7 +18,8 @@ was never published removes the type. The prefix `custom-` is the theme's: the c
 key starts with it unless it is marked `"custom": true`. A theme's types are at most 256 KB of JSON together, since the
 snapshot carries every type to every page; the setting `SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes)
 changes the limit. A save checks the limit early, but two saves at once may pass it together: the publication enforces
-it, and `get_publish_readiness` names it.
+it, and `get_publish_readiness` names it. A save is refused on the limit only when it grows the types past it, so types
+already over it, after two such saves or a lower limit, can still shrink; the publication holds the limit as it is.
 
 ```ts
 interface CustomSectionType {
