@@ -80,6 +80,9 @@ public class CustomSectionRules
     /// <summary>Of each tag, counted as written: a template with a tag of more is refused before it is parsed.</summary>
     public int MaxTemplateAttributes { get; set; }
 
+    /// <summary>The caps of the catalog's kit, by what they count, as its upload holds it to them.</summary>
+    public IDictionary<string, int> KitLimits { get; set; } = new Dictionary<string, int>();
+
     public int MaxCssDepth { get; set; }
 
     public int MaxAtRuleDepth { get; set; }

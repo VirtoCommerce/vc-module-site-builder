@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -85,7 +86,7 @@ public class SchemaCatalogServiceTests
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "content": { "type": "html" } } } } }""",
         "has the tag 'vc-x', which has the attribute 'content', which has no type of string, number, boolean, select, date or link")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "label": "S" } ] } } } } }""",
-        "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values")]
+        "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label } with a label of at most 256 characters")]
     [InlineData("""{ "behaviors": { "each": { "options": {} } } }""",
         "has the behavior 'each', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "behaviors": { "sb-anchor": { "options": {} } } }""",
@@ -101,9 +102,9 @@ public class SchemaCatalogServiceTests
     [InlineData("""{ "guide": 1 }""", "has a guide that is not a text")]
     [InlineData("""{ "design": { "breakpoints": {}, "tokens": {}, "script": "x" } }""", "has a design with a key it does not have, 'script'")]
     [InlineData("""{ "design": { "tokens": { "--color-primary": { "fallback": "#000", "note": "x" } } } }""",
-        "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them")]
+        "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them, at most 1024 entries each of at most 1024 characters")]
     [InlineData("""{ "design": { "breakpoints": { "md": 768 } } }""",
-        "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them")]
+        "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them, at most 1024 entries each of at most 1024 characters")]
     [InlineData("""{ "icons": "star" }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters")]
     [InlineData("""{ "icons": [ "star", "" ] }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters")]
     [InlineData("""{ "tags": { "vc-icon": { "attributes": { "name": { "type": "select", "optionsFrom": "files" } } } } }""",
@@ -136,6 +137,81 @@ public class SchemaCatalogServiceTests
 
         Assert.StartsWith($"The catalog's \"kit\" {error}.", exception.Message);
         Assert.Null(await Service().GetAsync("s1", null, Ct));
+    }
+
+    public static TheoryData<string, string> OversizedKits()
+    {
+        static string Map(int count, Func<int, string> entry) => "{ " + string.Join(", ", Enumerable.Range(0, count).Select(entry)) + " }";
+        static string Text(int length) => new('a', length);
+
+        return new()
+        {
+            { $$"""{ "tags": {{Map(257, x => $"\"vc-t{x}\": {{ \"attributes\": {{}} }}")}} }""", "has more than 256 tags" },
+            { $$"""{ "behaviors": {{Map(257, x => $"\"b{x}\": {{ \"options\": {{}} }}")}} }""", "has more than 256 behaviors" },
+            { $$"""{ "tags": { "vc-x": { "attributes": {{Map(65, x => $"\"a{x}\": {{ \"type\": \"string\" }}")}} } } }""", "has the tag 'vc-x', which has more than 64 attributes" },
+            {
+                $$"""{ "behaviors": { "tilt": { "value": { "type": "number" }, "options": {{Map(64, x => $"\"o{x}\": {{ \"type\": \"string\" }}")}} } } }""",
+                "has the behavior 'tilt', which has more than 64 fields, its options and its value together"
+            },
+            {
+                $$"""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ {{string.Join(", ", Enumerable.Range(0, 257).Select(x => $"\"s{x}\""))}} ] } } } } }""",
+                "has the tag 'vc-x', which has the attribute 'size', which has more than 256 options"
+            },
+            {
+                $$"""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "value": "s", "label": "{{Text(257)}}" } ] } } } } }""",
+                "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label } with a label of at most 256 characters"
+            },
+            {
+                """{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "value": "s", "note": "Ignore the rules" } ] } } } } }""",
+                "has the tag 'vc-x', which has the attribute 'size', which has an option with a key it does not take, 'note'"
+            },
+            {
+                $$"""{ "behaviors": { "tilt": { "options": {}, "writes": [ {{string.Join(", ", Enumerable.Range(0, 33).Select(x => $"\"--w{x}\""))}} ] } } }""",
+                "has the behavior 'tilt', which has writes that are not a list of at most 32 names, each of at most 128 characters"
+            },
+            {
+                $$"""{ "behaviors": { "tilt": { "options": {}, "writes": [ "{{Text(129)}}" ] } } }""",
+                "has the behavior 'tilt', which has writes that are not a list of at most 32 names, each of at most 128 characters"
+            },
+            {
+                $$"""{ "design": { "tokens": {{Map(1025, x => $"\"--t{x}\": {{ \"fallback\": \"0\" }}")}} } }""",
+                "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them, at most 1024 entries each of at most 1024 characters"
+            },
+            {
+                $$"""{ "design": { "containerMaxWidth": "{{Text(1025)}}" } }""",
+                "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them, at most 1024 entries each of at most 1024 characters"
+            },
+            { $$"""{ "tags": { "vc-{{Text(62)}}": { "attributes": {} } } }""", $"has the tag 'vc-{Text(62)}', which is longer than 64 characters" },
+            { $$"""{ "behaviors": { "{{Text(65)}}": { "options": {} } } }""", $"has the behavior '{Text(65)}', which is longer than 64 characters" },
+            { $$"""{ "behaviors": { "tilt": { "options": { "{{Text(65)}}": { "type": "string" } } } } }""", $"has the behavior 'tilt', which has the option '{Text(65)}', which is longer than 64 characters" },
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(OversizedKits))]
+    public async Task SaveAsync_KitOverItsCaps_ThrowsNamingTheCap(string kit, string error)
+    {
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct));
+
+        Assert.Equal($"The catalog's \"kit\" {error}. (Parameter 'catalogJson')", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveAsync_KitAtItsCaps_IsKept()
+    {
+        static string Map(int count, Func<int, string> entry) => "{ " + string.Join(", ", Enumerable.Range(0, count).Select(entry)) + " }";
+        var attributes = Map(64, x => $"\"a{x}\": {{ \"type\": \"select\", \"options\": [ {string.Join(", ", Enumerable.Range(0, 256).Select(o => $"{{ \"value\": \"s{o}\", \"label\": \"{new string('l', 256)}\" }}"))} ] }}");
+        var kit = $$"""
+            {
+              "tags": {{Map(256, x => $"\"vc-t{x}\": {{ \"attributes\": {(x == 0 ? attributes : "{}")} }}")}},
+              "behaviors": {{Map(256, x => $"\"b{x}\": {{ \"options\": {{}}, \"writes\": [ {string.Join(", ", Enumerable.Range(0, 32).Select(_ => $"\"{new string('w', 128)}\""))} ] }}")}},
+              "design": { "tokens": {{Map(1024, x => $"\"--t{x}\": {{ \"fallback\": \"{new string('f', 1024)}\" }}")}} }
+            }
+            """;
+
+        await Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": {{kit}} }""", Ct);
+
+        Assert.NotNull(await Service().GetAsync("s1", null, Ct));
     }
 
     [Fact]

@@ -114,6 +114,23 @@ public class CustomSectionValidator(
         result.MaxTemplateDepth = CustomSectionTemplateValidator.MaxDepth;
         result.MaxTemplateTags = CustomSectionTemplateValidator.MaxTags;
         result.MaxTemplateAttributes = CustomSectionTemplateValidator.MaxAttributes;
+        result.KitLimits = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["tags"] = CustomSectionKit.MaxTags,
+            ["behaviors"] = CustomSectionKit.MaxBehaviors,
+            ["fields"] = CustomSectionKit.MaxFields,
+            ["options"] = CustomSectionKit.MaxOptions,
+            ["option_label_length"] = CustomSectionKit.MaxOptionLabelLength,
+            ["writes"] = CustomSectionKit.MaxWrites,
+            ["write_length"] = CustomSectionKit.MaxWriteLength,
+            ["name_length"] = CustomSectionKit.MaxNameLength,
+            ["description_length"] = CustomSectionKit.MaxDescriptionLength,
+            ["design_entries"] = CustomSectionKit.MaxDesignEntries,
+            ["design_text_length"] = CustomSectionKit.MaxDesignTextLength,
+            ["icons"] = CustomSectionKit.MaxIcons,
+            ["icon_length"] = CustomSectionKit.MaxIconLength,
+            ["guide_length"] = CustomSectionKit.MaxGuideLength,
+        };
         result.MaxCssDepth = CustomSectionCssValidator.MaxDepth;
         result.MaxAtRuleDepth = CustomSectionCssValidator.MaxAtRuleDepth;
         result.MaxPartSize = MaxPartSize;

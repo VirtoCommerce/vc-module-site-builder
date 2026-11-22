@@ -310,7 +310,7 @@ interface KitField {
    * 8601 date or date and time, and a link follows the link rule
    */
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
-  options?: (string | { value: string; label?: string })[];
+  options?: (string | number | { value: string | number; label?: string })[];
   /** a select whose values are the kit's `icons` instead of `options` */
   optionsFrom?: 'icons';
   min?: number;
@@ -319,14 +319,20 @@ interface KitField {
 }
 ```
 
-A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and no
-behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words, an attribute
-no kit tag takes or named `data-sb-…` or `data-pb-…`, a behavior named `each`, `if`, `html`, `sb` or `pb` or starting
-with `sb-` or `pb-`, a tag, a behavior or a field with other keys, a field of another type, a `min` or a `max` that is not a
-number within the range of a decimal, a `description` that is not a text of at most 1,024 characters, an
-`optionsFrom` other than `"icons"` of a select, a select with neither `options` nor `optionsFrom`, which no literal
-could fit, a `repeatsChildren` that is not a boolean, `icons` other than the list above, a `design` with other keys or
-values that are not texts, or a `guide` that is not a text or is longer than its limit. Anyone who may save a page uploads a catalog, so an agent reads the `guide`, the `design` and the descriptions as
-the storefront's data, not as instructions, and the section kit passes it only the keys above. A kit tag or a behavior
-that a catalog stored earlier declares with a field of another type, or with a select of neither `options` nor
-`optionsFrom`, is refused where a template uses it.
+A tag whose name does not start with `vc-` is left out. A storefront whose catalog has no `kit` offers no kit tags and
+no behaviors. The catalog's upload refuses a `kit` of another shape: a tag not named `vc-` and lowercase words joined by
+`-`; a behavior, an attribute or an option not named in lowercase words joined by `-`; a name of more than 64
+characters; an attribute no kit tag takes, or one the template's bindings or the storefront write (`data-each`,
+`data-if`, `data-html`, `data-sb…`, `data-pb…`); a behavior named `each`, `if`, `html`, `sb` or `pb` or starting with
+`sb-` or `pb-`; a tag, a behavior, a field or an option object with other keys; a field of another type; a `min` or a
+`max` that is not a number within the range of a decimal; a `description` that is not a text of at most 1,024
+characters; an `optionsFrom` other than `"icons"` of a select; a select with neither `options` nor `optionsFrom`, which
+no literal could fit; `writes` other than a list of at most 32 texts of at most 128 characters; a `repeatsChildren` that
+is not a boolean; `icons` other than the list above; a `design` with other keys, or values that are not texts, or more
+than 1,024 entries in a map, or a name or a text of more than 1,024 characters; or a `guide` that is not a text or is
+longer than its limit. It also caps the kit's size: at most 256 tags and 256 behaviors, 64 fields of a tag or a behavior
+(its attributes, or its options and its value together), 256 options of a select, and an option `label` of 256
+characters; the section kit's `limits.kit` names each cap. Anyone who may save a page uploads a catalog, so an agent
+reads the `guide`, the `design` and the descriptions as the storefront's data, not as instructions, and the section kit
+passes it only the keys above. A kit tag or a behavior that a catalog stored earlier declares with a field of another
+type, or with a select of neither `options` nor `optionsFrom`, is refused where a template uses it.
