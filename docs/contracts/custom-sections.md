@@ -92,13 +92,13 @@ is parsed.
   classes.
 - **Link targets**: `target` is `_self` or `_blank`, case counting, and `rel` does not hold `opener`; both are written
   as they are, with no binding.
-- **Links and images**: `href` is a path starting with `/`, an anchor on the page (`#` and a letter, then letters,
-  digits, `_` and `-`), an `https:`, `mailto:` or `tel:` URL, or a binding of a `"format": "url"` field; a link holds no
-  backslash, tab or line break, which a browser could read as leaving the site. `src`,
-  `srcset` and a `video`'s `poster` are a URL of the store's asset library or a binding of an `images` field. A URL of
-  the library is read as written: its origin is the library's (case aside), no user info, and its path, once its `..` is
-  resolved, starts with the library's path (case counts); one with an escaped dot, slash or backslash (`%2e`, `%2f`,
-  `%5c`) or a backslash is refused. A bound value that breaks the rule renders without the attribute.
+- **Links and images**: `href` is a path starting with a single `/` (not `//`), an anchor on the page (`#` and a letter,
+  then letters, digits, `_` and `-`), an `https:`, `mailto:` or `tel:` URL, or a binding of a `"format": "url"` field; a
+  link holds no backslash, tab or line break, which a browser could read as leaving the site. `src`, `srcset` and a
+  `video`'s `poster` are a URL of the store's asset library or a binding of an `images` field. A URL of the library is
+  read as written: its origin is the library's (case aside), no user info, and its path, once its `..` is resolved,
+  starts with the library's path (case counts); one with an escaped dot, slash or backslash (`%2e`, `%2f`, `%5c`) or a
+  backslash is refused. A bound value that breaks the rule renders without the attribute.
 
 ### Bindings
 

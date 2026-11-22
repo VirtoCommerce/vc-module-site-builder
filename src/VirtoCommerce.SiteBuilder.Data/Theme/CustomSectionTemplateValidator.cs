@@ -72,7 +72,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     /// <summary>Read by people, so a literal value is untranslated text.</summary>
     public static IReadOnlySet<string> TextAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "alt", "aria-label", "label", "title" };
 
-    /// <summary>Besides a path starting with '/'.</summary>
+    /// <summary>Besides a path starting with a single '/' and an anchor on the page.</summary>
     public static IReadOnlyList<string> LinkSchemes { get; } = ["https:", "mailto:", "tel:"];
 
     public static IReadOnlyList<string> LinkTargets { get; } = ["_self", "_blank"];
@@ -614,7 +614,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
         else if (!urlPolicy.IsLink(value, LinkSchemes))
         {
-            check.AddError($"{where} has {name}=\"{Quote(value)}\", which is not a path starting with '/', or an {JoinOr(LinkSchemes)} URL");
+            check.AddError($"{where} has {name}=\"{Quote(value)}\", which is not a path starting with a single '/', an anchor such as #reviews, or an {JoinOr(LinkSchemes)} URL");
         }
     }
 

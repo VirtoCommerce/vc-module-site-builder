@@ -181,6 +181,8 @@ public class SchemaCatalogServiceTests
                 $$"""{ "design": { "containerMaxWidth": "{{Text(1025)}}" } }""",
                 "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them, at most 1024 entries each of at most 1024 characters"
             },
+            { $$"""{ "icons": [ {{string.Join(", ", Enumerable.Range(0, 10001).Select(x => $"\"i{x}\""))}} ] }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters" },
+            { $$"""{ "icons": [ "{{Text(101)}}" ] }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters" },
             { $$"""{ "tags": { "vc-{{Text(62)}}": { "attributes": {} } } }""", $"has the tag 'vc-{Text(62)}', which is longer than 64 characters" },
             { $$"""{ "behaviors": { "{{Text(65)}}": { "options": {} } } }""", $"has the behavior '{Text(65)}', which is longer than 64 characters" },
             { $$"""{ "behaviors": { "tilt": { "options": { "{{Text(65)}}": { "type": "string" } } } } }""", $"has the behavior 'tilt', which has the option '{Text(65)}', which is longer than 64 characters" },

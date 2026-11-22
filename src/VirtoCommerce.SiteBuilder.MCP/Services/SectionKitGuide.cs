@@ -135,7 +135,7 @@ public static class SectionKitGuide
                 ElementAttributesNote = "Attributes only these elements take. cite is a link and poster an image, by the rules below.",
                 Classes = $"class names the type's own classes only: the type itself, or a name starting with the type and {JoinOr(rules.ClassSeparators.Select(x => $"'{x}'").ToList())}, " +
                     "such as custom-stats-band__value or custom-stats-band-dark. A binding in class names a select setting whose options are such classes.",
-                Links = $"href is a path starting with '/', a URL starting with {JoinOr(rules.LinkSchemes)}, an anchor on the page such as #reviews " +
+                Links = $"href is a path starting with a single '/', a URL starting with {JoinOr(rules.LinkSchemes)}, an anchor on the page such as #reviews " +
                     "(a letter, then letters, digits, '-' and '_'), or one binding of a string setting with \"format\": \"url\"; a link holds no " +
                     "backslash, tab or line break.",
                 LinkTargets = $"target is {JoinOr(rules.LinkTargets)}, case counting, and rel does not hold {JoinOr(rules.RefusedRels)}; both are written as they " +

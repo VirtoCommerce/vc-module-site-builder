@@ -27,7 +27,7 @@ public class CustomSectionRules
     /// <summary>Read by people, so a literal value is untranslated text.</summary>
     public IList<string> TextAttributes { get; set; } = [];
 
-    /// <summary>Besides a path starting with '/'.</summary>
+    /// <summary>Besides a path starting with a single '/' and an anchor on the page.</summary>
     public IList<string> LinkSchemes { get; set; } = [];
 
     public IList<string> LinkTargets { get; set; } = [];

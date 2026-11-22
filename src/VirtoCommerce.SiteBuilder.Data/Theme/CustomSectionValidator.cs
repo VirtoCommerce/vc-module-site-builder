@@ -445,7 +445,7 @@ public class CustomSectionValidator(
             .ToList();
         if (IsLink(type, field) && texts.Exists(x => x == null || (x.Length > 0 && !urlPolicy.IsLink(x, CustomSectionTemplateValidator.LinkSchemes))))
         {
-            return $"that is not a path starting with '/', or an {JoinOr(CustomSectionTemplateValidator.LinkSchemes)} URL";
+            return $"that is not a path starting with a single '/', an anchor such as #reviews, or an {JoinOr(CustomSectionTemplateValidator.LinkSchemes)} URL";
         }
 
         return type == ImagesType && texts.Exists(x => x == null || (x.Length > 0 && !urlPolicy.IsAssetUrl(x)))

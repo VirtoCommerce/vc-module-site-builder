@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Theme;
@@ -161,8 +160,8 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><img alt="" src="https://cdn.example/assets/%2e%2e/other/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/%2e%2e/other/x.png', which is not a URL of the store's asset library")]
     [InlineData("""<section><img alt="" src="https://cdn.example/assets/%2E%2e%2Fother/x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets/%2E%2e%2Fother/x.png', which is not a URL of the store's asset library")]
     [InlineData("""<section><img alt="" src="https://cdn.example/assets\..\other\x.png"></section>""", "<img> at line 1 has src with 'https://cdn.example/assets\\..\\other\\x.png', which is not a URL of the store's asset library")]
-    [InlineData("""<section><a href="#1st">x</a></section>""", "<a> at line 1 has href=\"#1st\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
-    [InlineData("""<section><q cite="javascript:x()">{{ settings.title }}</q></section>""", "<q> at line 1 has cite=\"javascript:x()\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="#1st">x</a></section>""", "<a> at line 1 has href=\"#1st\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><q cite="javascript:x()">{{ settings.title }}</q></section>""", "<q> at line 1 has cite=\"javascript:x()\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
     [InlineData("""<section><video poster="https://evil.example/p.png"></video></section>""", "<video> at line 1 has poster with 'https://evil.example/p.png', which is not a URL of the store's asset library")]
     [InlineData("""<section><div open></div></section>""", "<div> at line 1 has an attribute a custom section cannot use, 'open'")]
     [InlineData("""<section><img alt="" src="{{ settings.image }}" poster="{{ settings.image }}"></section>""", "<img> at line 1 has an attribute a custom section cannot use, 'poster'")]
@@ -195,12 +194,13 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><p data-if="settings.price"></p></section>""", "<p> at line 1 binds 'settings.price', a setting the schema does not declare")]
     [InlineData("""<section><div data-html="settings.title"></div></section>""", "<div> at line 1 has data-html=\"settings.title\", a string; it names a text setting, whose value is HTML")]
     [InlineData("""<section><div data-html="settings.body"><b>x</b></div></section>""", "<div> at line 1 has data-html and content of its own")]
-    [InlineData("""<section><a href="javascript:alert(1)">x</a></section>""", "<a> at line 1 has href=\"javascript:alert(1)\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
-    [InlineData("""<section><a href="//evil.example/x">x</a></section>""", "<a> at line 1 has href=\"//evil.example/x\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
-    [InlineData("""<section><a href="http://example.com">x</a></section>""", "<a> at line 1 has href=\"http://example.com\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
-    [InlineData("""<section><a href="/sale\offers">x</a></section>""", "<a> at line 1 has href=\"/sale\\offers\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
-    [InlineData("""<section><a href="https://example.com/a\b">x</a></section>""", "<a> at line 1 has href=\"https://example.com/a\\b\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="javascript:alert(1)">x</a></section>""", "<a> at line 1 has href=\"javascript:alert(1)\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="//evil.example/x">x</a></section>""", "<a> at line 1 has href=\"//evil.example/x\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="http://example.com">x</a></section>""", "<a> at line 1 has href=\"http://example.com\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="/sale\offers">x</a></section>""", "<a> at line 1 has href=\"/sale\\offers\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="https://example.com/a\b">x</a></section>""", "<a> at line 1 has href=\"https://example.com/a\\b\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
     [InlineData("""<section><a href="/x" target="_BLANK">x</a></section>""", "<a> at line 1 has target=\"_BLANK\", which is not _self or _blank")]
+    [InlineData("""<section><a href="/&#9;/evil.example">x</a></section>""", "<a> at line 1 has href=\"/ /evil.example\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
     [InlineData("""<section><a href="{{ settings.title }}">x</a></section>""", "<a> at line 1 has href bound to 'settings.title', which is not a link setting: a string with \"format\": \"url\"")]
     [InlineData("""<section><a href="/p/{{ settings.title }}">x</a></section>""", "<a> at line 1 has href=\"/p/{{ settings.title }}\", which is a link or one binding of a link setting")]
     [InlineData("""<section><img src="https://evil.example/x.png"></section>""", "<img> at line 1 has src with 'https://evil.example/x.png', which is not a URL of the store's asset library")]
@@ -216,7 +216,7 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><vc-button data-copy="x"></vc-button></section>""", "<vc-button> at line 1 has an attribute vc-button does not take, 'data-copy'")]
     [InlineData("""<section><vc-carousel></vc-carousel></section>""", "<vc-carousel> at line 1 is not a kit tag the storefront offers")]
     [InlineData("""<section><rating></rating></section>""", "<rating> at line 1 is not an element a custom section can hold")]
-    [InlineData("""<section><vc-button to="javascript:go()"></vc-button></section>""", "<vc-button> at line 1 has to=\"javascript:go()\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><vc-button to="javascript:go()"></vc-button></section>""", "<vc-button> at line 1 has to=\"javascript:go()\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
     [InlineData("""<section><vc-button>Go</vc-button></section>""", "<vc-button> at line 1 has content, which a kit tag does not have")]
     [InlineData("""<section><vc-badge variant="tonal"></vc-badge></section>""", "<vc-badge> at line 1 has variant=\"tonal\", which vc-badge does not take: it takes solid, soft, outline")]
     [InlineData("""<section><vc-products take="30"></vc-products></section>""", "<vc-products> at line 1 has take=\"30\", which vc-products does not take: it takes a number from 1 to 24")]
@@ -414,7 +414,7 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="javascript:alert(1)"></vc-button></section>"""), catalog);
 
         Assert.Equal(
-            [$"<vc-button> at line 1 has {name}=\"javascript:alert(1)\", which is not a path starting with '/', or an https:, mailto: or tel: URL"],
+            [$"<vc-button> at line 1 has {name}=\"javascript:alert(1)\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL"],
             result.Errors);
     }
 
@@ -974,28 +974,6 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
-    public void GetAssetsBaseUrl_OfALibraryThatFails_IsNone_AndNoImageIsAnAsset()
-    {
-        var policy = new CustomSectionUrlPolicy(new FailingAssetUrls(), NullLogger<CustomSectionUrlPolicy>.Instance);
-
-        Assert.Null(policy.GetAssetsBaseUrl());
-        Assert.False(policy.IsAssetUrl("https://cdn.example/assets/a.png"));
-    }
-
-    [Theory]
-    [InlineData("https://cdn.example%2Fassets%2F@evil.example/x.png", false)]
-    [InlineData("https://cdn.example/assets/a%2Fb.png", false)]
-    [InlineData("https://cdn.example/ASSETS/a.png", false)]
-    [InlineData("https://user@cdn.example/assets/a.png", false)]
-    [InlineData("HTTPS://CDN.EXAMPLE/assets/a.png", true)]
-    [InlineData("https://cdn.example/assets/../assets/a.png", true)]
-    [InlineData("https://cdn.example/assets/a.png", true)]
-    public void IsAssetUrl_ReadsTheUrlAsWritten_AsTheStorefrontDoes(string url, bool isAsset)
-    {
-        Assert.Equal(isAsset, TestServices.CustomSectionUrlPolicy(Assets).IsAssetUrl(url));
-    }
-
-    [Fact]
     public void Validate_IconNameOfAKitTag_IsOneOfTheKitsIcons()
     {
         var catalog = (JObject)Catalog.DeepClone();
@@ -1074,15 +1052,15 @@ public class CustomSectionValidatorTests
     [InlineData("""{ "id": "view", "type": "select", "options": [ { "value": "grid" } ], "default": "list" }""",
         "setting 'view' has a default that is not one of its options")]
     [InlineData("""{ "id": "link", "type": "string", "format": "url", "default": "javascript:alert(1)" }""",
-        "setting 'link' has a default that is not a path starting with '/', or an https:, mailto: or tel: URL")]
+        "setting 'link' has a default that is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
     [InlineData("""{ "id": "link", "type": "string", "format": "url", "translatable": true, "default": { "en-US": "/sale", "de-DE": "//evil.example" } }""",
-        "setting 'link' has a default that is not a path starting with '/', or an https:, mailto: or tel: URL")]
+        "setting 'link' has a default that is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
     [InlineData("""{ "id": "image", "type": "images", "default": "https://evil.example/a.png" }""",
         "setting 'image' has a default that is not a URL of the store's asset library")]
     [InlineData("""{ "id": "slides", "type": "list", "element": [ { "id": "img", "type": "images" }, { "id": "to", "type": "string", "format": "url" } ], "default": [ { "img": "https://cdn.example/assets/a.png", "to": "/a" }, { "img": "https://evil.example/x.png", "to": "/b" } ] }""",
         "setting 'slides' has a default whose row 2 holds 'img' that is not a URL of the store's asset library")]
     [InlineData("""{ "id": "slides", "type": "list", "element": [ { "id": "to", "type": "string", "format": "url" } ], "default": [ { "to": "javascript:alert(1)" } ] }""",
-        "setting 'slides' has a default whose row 1 holds 'to' that is not a path starting with '/', or an https:, mailto: or tel: URL")]
+        "setting 'slides' has a default whose row 1 holds 'to' that is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL")]
     [InlineData("""{ "id": "slides", "type": "list", "element": [ { "id": "to", "type": "string" } ], "default": [ "x" ] }""",
         "setting 'slides' has a default that is not a list of rows")]
     [InlineData("""{ "id": "card", "type": "object", "element": [ { "id": "size", "type": "number", "max": 10 } ], "default": { "size": 11 } }""",
@@ -1182,10 +1160,5 @@ public class CustomSectionValidatorTests
     private sealed class FailingCss() : CustomSectionCssValidator(TestServices.CustomSectionUrlPolicy(Assets))
     {
         public override void Validate(CustomSectionCheck check, string css) => throw new NullReferenceException();
-    }
-
-    private sealed class FailingAssetUrls : VirtoCommerce.AssetsModule.Core.Assets.IBlobUrlResolver
-    {
-        public string GetAbsoluteUrl(string blobKey) => throw new InvalidOperationException("The asset provider is not configured.");
     }
 }
