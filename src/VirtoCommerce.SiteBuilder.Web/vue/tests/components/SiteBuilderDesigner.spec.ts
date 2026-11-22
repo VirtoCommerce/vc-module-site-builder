@@ -728,6 +728,45 @@ describe("the theme's custom section types", () => {
     expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
   });
 
+  it("keep the later read when an earlier one answers last", async () => {
+    const HERO_PATH = "default/custom-sections/custom-hero.json";
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+    await page.load("0badc0de");
+    let answerEarlier = () => {};
+    const earlier = new Promise<void>((resolve) => (answerEarlier = resolve));
+    const files = themeFileAnswer({ [HERO_PATH]: HERO, "default/custom-sections/custom-promo.json": PROMO });
+    let heroReads = 0;
+    platform.on("GET", "/api/site-builder/designer/theme-file", async (request: { query: Record<string, string> }) => {
+      if (request.query.path !== HERO_PATH) return files(request as never);
+      if (++heroReads > 1) return themeFileAnswer({ [HERO_PATH]: { ...HERO, name: "Later" } })(request as never);
+      await earlier;
+      return themeFileAnswer({ [HERO_PATH]: { ...HERO, name: "Earlier" } })(request as never);
+    });
+
+    for (const publication of [4, 5]) {
+      platform.on("GET", "/api/site-builder/theme/status", { publication, drafts: ["custom-sections/custom-hero.json"] });
+      await page.designer.refreshThemeStatus();
+      await flushPromises();
+    }
+    answerEarlier();
+    await draftSent();
+
+    expect(heroReads).toBe(2);
+    expect((page.lastDraft()?.theme?.customSections as Record<string, { name: string }>)["custom-hero"].name).toBe("Later");
+  });
+
+  it("keep the types read before when a read fails", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+    await page.load("0badc0de");
+    platform.on("GET", "/api/site-builder/designer/theme-file", status(500));
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 4, drafts: ["custom-sections/custom-hero.json"] });
+
+    await page.designer.refreshThemeStatus();
+    await draftSent();
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+  });
+
   it("are left to the published snapshot, and not read, while none has a draft", async () => {
     const page = await openPage(["templates/product.json"]);
 
