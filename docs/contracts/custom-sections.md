@@ -55,7 +55,10 @@ setting's value next to these keys of the section itself. A setting takes `id`, 
 `step`. `visibility` and `request` are refused, since the designer runs the one and sends the other, and so are
 `"multiple": true` and any other key. A setting's `label`, `info` and `placeholder` are texts, as the designer shows
 them. A `default` is one the setting takes, or empty: a `select`'s is one of its options, a link's follows the link
-rule, and an `images` one is a URL of the store's asset library.
+rule, an `images` one is a URL of the store's asset library, a `number`'s or a `slider`'s is a number within its `min`
+and `max`, a `checkbox`'s is `true` or `false`, and a `color-token`'s is one of the catalog's palette tokens when the
+catalog lists them, with or without `color_`. A `list`'s default is a list of rows and an `object`'s one row, each
+field of which holds a default that field takes.
 
 ## Template
 

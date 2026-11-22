@@ -1079,9 +1079,24 @@ public class CustomSectionValidatorTests
         "setting 'link' has a default that is not a path starting with '/', or an https:, mailto: or tel: URL")]
     [InlineData("""{ "id": "image", "type": "images", "default": "https://evil.example/a.png" }""",
         "setting 'image' has a default that is not a URL of the store's asset library")]
+    [InlineData("""{ "id": "slides", "type": "list", "element": [ { "id": "img", "type": "images" }, { "id": "to", "type": "string", "format": "url" } ], "default": [ { "img": "https://cdn.example/assets/a.png", "to": "/a" }, { "img": "https://evil.example/x.png", "to": "/b" } ] }""",
+        "setting 'slides' has a default whose row 2 holds 'img' that is not a URL of the store's asset library")]
+    [InlineData("""{ "id": "slides", "type": "list", "element": [ { "id": "to", "type": "string", "format": "url" } ], "default": [ { "to": "javascript:alert(1)" } ] }""",
+        "setting 'slides' has a default whose row 1 holds 'to' that is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""{ "id": "slides", "type": "list", "element": [ { "id": "to", "type": "string" } ], "default": [ "x" ] }""",
+        "setting 'slides' has a default that is not a list of rows")]
+    [InlineData("""{ "id": "card", "type": "object", "element": [ { "id": "size", "type": "number", "max": 10 } ], "default": { "size": 11 } }""",
+        "setting 'card' has a default that holds 'size' that is more than its max")]
+    [InlineData("""{ "id": "count", "type": "number", "default": "abc" }""", "setting 'count' has a default that is not a number")]
+    [InlineData("""{ "id": "count", "type": "slider", "min": 1, "max": 5, "default": 0 }""", "setting 'count' has a default that is less than its min")]
+    [InlineData("""{ "id": "shown", "type": "checkbox", "default": "yes" }""", "setting 'shown' has a default that is not true or false")]
+    [InlineData("""{ "id": "tone", "type": "color-token", "default": "brand_blue" }""", "setting 'tone' has a default that is not one of the palette's tokens")]
     public void Validate_DefaultTheSettingDoesNotTake_IsRefused(string field, string error)
     {
-        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), Catalog);
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["paletteTokens"] = JObject.Parse("""{ "light": [ "color_primary_500" ], "dark": [ "color_primary_500" ] }""");
+
+        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), catalog);
 
         Assert.Equal([error], result.Errors);
     }
@@ -1092,9 +1107,23 @@ public class CustomSectionValidatorTests
     [InlineData("""{ "id": "link", "type": "string", "format": "url", "default": "/sale" }""")]
     [InlineData("""{ "id": "image", "type": "images", "default": "https://cdn.example/assets/a.png" }""")]
     [InlineData("""{ "id": "title", "type": "string", "default": "javascript: is fine as text" }""")]
+    [InlineData("""{ "id": "slides", "type": "list", "element": [ { "id": "img", "type": "images" }, { "id": "n", "type": "number" } ], "default": [ { "img": "https://cdn.example/assets/a.png", "n": 2 }, {} ] }""")]
+    [InlineData("""{ "id": "card", "type": "object", "element": [ { "id": "shown", "type": "checkbox" } ], "default": { "shown": false } }""")]
+    [InlineData("""{ "id": "count", "type": "slider", "min": 1, "max": 5, "default": 2.5 }""")]
+    [InlineData("""{ "id": "tone", "type": "color-token", "default": "color_primary_500" }""")]
+    [InlineData("""{ "id": "tone", "type": "color-token", "default": "primary_500" }""")]
     public void Validate_DefaultTheSettingTakes_IsAccepted(string field)
     {
-        Assert.Empty(_validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), Catalog).Errors);
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["paletteTokens"] = JObject.Parse("""{ "light": [ "color_primary_500" ], "dark": [] }""");
+
+        Assert.Empty(_validator.Validate(Type, Section("<section></section>", settings: $"[ {field} ]"), catalog).Errors);
+    }
+
+    [Fact]
+    public void Validate_ColorTokenDefaultWithACatalogOfNoPalette_IsNotChecked()
+    {
+        Assert.Empty(_validator.Validate(Type, Section("<section></section>", settings: """[ { "id": "tone", "type": "color-token", "default": "brand_blue" } ]"""), Catalog).Errors);
     }
 
     [Fact]

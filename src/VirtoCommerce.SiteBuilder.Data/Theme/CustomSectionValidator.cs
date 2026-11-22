@@ -41,7 +41,7 @@ public class CustomSectionValidator(
 
     public static IReadOnlyList<string> FieldTypes { get; } =
     [
-        HeaderType, ParagraphType, StringType, TextType, "number", "slider", "checkbox", SelectType, "color-token", ImagesType, "calendar", ListType,
+        HeaderType, ParagraphType, StringType, TextType, NumberType, SliderType, CheckboxType, SelectType, ColorTokenType, ImagesType, "calendar", ListType,
         ObjectType,
     ];
 
@@ -380,7 +380,7 @@ public class CustomSectionValidator(
             check.AddError($"{setting} has an element, which only a list or an object has");
         }
 
-        if (field["default"] is { Type: not JTokenType.Null } value && GetDefaultError(type, field, value) is { } error)
+        if (field["default"] is { Type: not JTokenType.Null } value && GetDefaultError(check, type, field, value) is { } error)
         {
             check.AddError($"{setting} has a default {error}");
         }
@@ -388,11 +388,32 @@ public class CustomSectionValidator(
 
     /// <summary>The storefront leaves out a default it does not take, so a save refuses it; an empty one is none.</summary>
     /// <returns><c>null</c> for a default the setting takes.</returns>
-    protected virtual string GetDefaultError(string type, JObject field, JToken value)
+    protected virtual string GetDefaultError(CustomSectionCheck check, string type, JObject field, JToken value)
     {
         if (value is JValue { Type: JTokenType.String } empty && ((string)empty).Length == 0)
         {
             return null;
+        }
+
+        switch (type)
+        {
+            case ListType:
+                return value is JArray rows && rows.All(x => x is JObject)
+                    ? rows.Select((row, i) => GetRowError(check, field, (JObject)row) is { } error ? string.Create(CultureInfo.InvariantCulture, $"whose row {i + 1} holds {error}") : null)
+                        .FirstOrDefault(x => x != null)
+                    : "that is not a list of rows";
+            case ObjectType:
+                return value is JObject row ? (GetRowError(check, field, row) is { } rowError ? $"that holds {rowError}" : null) : "that is not an object of its fields";
+            case NumberType or SliderType:
+                return GetNumberError(field, value);
+            case CheckboxType:
+                return value.Type == JTokenType.Boolean ? null : "that is not true or false";
+            case ColorTokenType:
+                // a token without color_ is written with it, as the setting variable is
+                return check.Kit?.PaletteTokens is not { Count: > 0 } tokens || value is JValue { Type: JTokenType.String } token &&
+                    (tokens.Contains((string)token) || tokens.Contains(ColorTokenPrefix + (string)token))
+                    ? null
+                    : "that is not one of the palette's tokens";
         }
 
         if (type == SelectType)
@@ -412,6 +433,27 @@ public class CustomSectionValidator(
 
         return type == ImagesType && texts.Exists(x => x == null || (x.Length > 0 && !urlPolicy.IsAssetUrl(x)))
             ? "that is not a URL of the store's asset library"
+            : null;
+    }
+
+    // each field of a list's row or of an object by its own rule
+    private string GetRowError(CustomSectionCheck check, JObject field, JObject row) =>
+        (field["element"] as JArray)?.OfType<JObject>()
+            .Select(x => (Id: ThemeJson.GetString(x, "id"), Field: x))
+            .Where(x => x.Id != null && row[x.Id] is { Type: not JTokenType.Null })
+            .Select(x => GetDefaultError(check, ThemeJson.GetString(x.Field, "type"), x.Field, row[x.Id]) is { } error ? $"'{x.Id}' {error}" : null)
+            .FirstOrDefault(x => x != null);
+
+    private static string GetNumberError(JObject field, JToken value)
+    {
+        if (value.Type is not (JTokenType.Integer or JTokenType.Float))
+        {
+            return "that is not a number";
+        }
+
+        var number = value.Value<double>();
+        return field["min"] is JValue { Type: JTokenType.Integer or JTokenType.Float } min && number < min.Value<double>() ? "that is less than its min"
+            : field["max"] is JValue { Type: JTokenType.Integer or JTokenType.Float } max && number > max.Value<double>() ? "that is more than its max"
             : null;
     }
 

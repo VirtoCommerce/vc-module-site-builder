@@ -13,6 +13,9 @@ public sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, 
         .Where(x => x.Value != null)
         .ToDictionary(StringComparer.Ordinal);
 
+    /// <summary>The palette's tokens the catalog lists, light and dark; <c>null</c> when it lists none, and a token is not checked.</summary>
+    public IReadOnlySet<string> PaletteTokens { get; init; }
+
     /// <summary>The longest behavior name, beyond which no prefix of an attribute can name a behavior.</summary>
     public int MaxBehaviorLength { get; } = Behaviors?.Keys.Select(x => x.Length).DefaultIfEmpty().Max() ?? 0;
 }
