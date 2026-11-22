@@ -9,6 +9,9 @@ public static class PageDocumentChanges
 {
     private const int MaxValueLength = 300;
 
+    // shown on their own; __group is compared as a value, so a move to another group shows
+    private static readonly string[] StructureKeys = [IdKey, TypeKey, HiddenKey, BlocksKey];
+
     public static IList<PageDocumentChange> Compare(PageDocumentEditor before, PageDocumentEditor after)
     {
         var changes = new List<PageDocumentChange>();
@@ -68,7 +71,7 @@ public static class PageDocumentChanges
             changes.Add(new($"{label} hidden", wasHidden ? "true" : "false", IsHidden(after) ? "true" : "false"));
         }
 
-        CompareValues(changes, label, Flatten(before, ItemKeys), Flatten(after, ItemKeys));
+        CompareValues(changes, label, Flatten(before, StructureKeys), Flatten(after, StructureKeys));
         CompareItems(changes, $"{label} block", $"{label} order of blocks", Items(before == null ? null : GetBlocks(before)), Items(GetBlocks(after)));
     }
 
@@ -88,7 +91,7 @@ public static class PageDocumentChanges
     private static List<JsonObject> Items(JsonArray items) =>
         items?.OfType<JsonObject>().Where(x => !string.IsNullOrEmpty(GetId(x))).ToList() ?? [];
 
-    private static Dictionary<string, JsonNode> Flatten(JsonObject item, IReadOnlyList<string> skippedKeys)
+    private static Dictionary<string, JsonNode> Flatten(JsonObject item, string[] skippedKeys)
     {
         var values = new Dictionary<string, JsonNode>(StringComparer.Ordinal);
         if (item != null)
