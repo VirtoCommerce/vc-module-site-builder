@@ -136,28 +136,33 @@ setting that is not set, it is left out, so it is off. The native boolean attrib
 `muted`, `loop`, `playsinline` and `controls`, and `details`'s `open`, follow the same rule: one that says `false`, such
 as `open="false"`, which HTML alone would read as on, or is bound to a setting that is not set, is off. Whatever the
 catalog declares, a kit tag takes no `on*`, `style`, `id`, `is`, `class`, `srcdoc`, `form*`, `popover*`, `ping`,
-`srcset`, `poster` or `action` attribute, and `to`, `href` and `src` follow the link rule. A kit tag has no content.
+`srcset`, `poster`, `action`, `command`, `commandfor` or `interestfor` attribute, and `to`, `href` and `src` follow the
+link rule. A kit tag has no content. A kit tag may declare its `cost`, the most elements one of it renders, which the
+render budget counts, and `hasSideEffects`, for one whose copy would repeat its work, such as a request or an analytics
+view: such a tag is refused inside an element whose behavior has `repeatsChildren`, and the storefront leaves it out
+there.
 
 ### Behaviors
 
 A behavior is a storefront directive an attribute switches on. It reads the element and writes CSS variables, attributes
 or the element's text; the visuals are the section's CSS. With `prefers-reduced-motion: reduce` a behavior shows its end
-state at once. The catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior
-when the catalog has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or
-inside it, its value checked by the option's type. No behavior is named `each`, `if` or `html`, which are bindings, or
-is `sb` or `pb`, or starts with `sb-` or `pb-`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
-writes one is refused, whatever a catalog names. The storefront registers these, and their names are reserved: a module cannot register a
-behavior of the same name.
+state at once, and a behavior starts again when its value, one of its options or the motion preference changes. The
+catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior when the catalog
+has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or inside it, its value
+checked by the option's type. No behavior is named `each`, `if` or `html`, which are bindings, or is `sb` or `pb`, or
+starts with `sb-` or `pb-`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
+writes one is refused, whatever a catalog names. The storefront registers these, and their names are reserved: a module
+cannot register a behavior of the same name.
 
 | Attribute | Options | Effect |
 |---|---|---|
-| `data-inview` | `data-inview-threshold` (0–1, default 0.2), `data-inview-once` | sets `data-visible` while that share of the element is on screen, or that share of the screen for an element taller than the screen; with `-once` it stays |
+| `data-inview` | `data-inview-threshold` (0–1, default 0.2), `data-inview-once` | sets `data-visible` while that share is on screen: the visible share on each axis, each against the smaller of the element and the screen, multiplied; with `-once` it stays |
 | `data-scroll-progress` | | `--scroll-progress` from 0 (the element enters the viewport) to 1 (it leaves) |
 | `data-pointer` | | `--pointer-x`, `--pointer-y` (0–1 inside the element), `--pointer-inline` (0 at the inline start, so it flips in right-to-left text) and `--pointer-active` (0 or 1); off on touch screens |
 | `data-count-up="{number}"` | `data-count-up-duration` (ms, up to 5000), `data-count-up-decimals` (0–4) | the text counts up to the number, formatted in the page's language, when the element first shows |
 | `data-countdown="{date}"` | | children with `data-countdown-part="days"`, `hours`, `minutes` or `seconds` show the time left until the ISO 8601 date; `data-ended` is set when it passes |
 | `data-copy="{text}"` | | a click copies the text and sets `data-copied` for 2 seconds |
-| `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run, and `--marquee-shift` the distance to animate `translate` by, toward the inline start; `data-paused` is set while the pointer is over it or the focus inside |
+| `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run, and `--marquee-shift` the distance to animate `translate` by, toward the inline start; `data-paused` is set while the pointer is over it or the focus inside; a run that holds nothing focusable makes the element focusable, so the keyboard can pause it |
 
 A behavior may declare the type of its own attribute's value under `value`, such as a number for `data-count-up` and a
 date for `data-countdown`, and the value is checked as an option's is; a behavior that declares none takes any text.
@@ -170,11 +175,14 @@ and both hold the same items: text that is not blank renders in a plain `<span>`
 
 ### Render budget
 
-The storefront renders a section within a budget of 5,000. Each element counts 1, plus 1 per behavior on it, counted as
-written, whatever `data-if` hides; an element with `data-each` counts, with what it holds, once per row of its list.
-What an element with a `repeatsChildren` behavior holds counts twice. A kit tag counts 1, and text 0, a repeated run's
-`<span>` included. A section over the budget renders nothing. A save does not check the budget, since the rows are the
-page's content: the storefront holds a section to it when it renders.
+The storefront renders a section within a budget of 5,000 and a text cap of 262,144 characters. For the budget, each
+element counts 1, plus 1 per behavior on it, counted as written, whatever `data-if` hides; an element with `data-each`
+counts, with what it holds, once per row of its list. What an element with a `repeatsChildren` behavior holds counts
+twice. A kit tag counts its `cost`, 1 when the catalog declares none, and rich text the elements it holds once
+sanitized; text counts 0, a repeated run's `<span>` included. The text cap counts, the same way, every bound value in
+text and in attributes and the sanitized rich text's HTML; text written in the template counts for neither. A section
+over either renders nothing. A save checks neither, since the rows are the page's content: the storefront holds a
+section to them when it renders. The section kit's `limits` gives both, as `render_budget` and `render_text`.
 
 ## Setting variables
 
@@ -199,8 +207,9 @@ scope. `:scope` is the section's root.
   conditions the storefront keeps around it outside the scope; the name rule holds either way. One inside a style
   rule or `@starting-style` is refused, as the storefront drops it, and a `@keyframes` holds only its keyframes, each
   only declarations.
-- **Images**: a URL of the store's asset library, or a `data:image/…` URL, as an image loads no script and nothing
-  else; the data counts in the CSS's size.
+- **Images**: a URL of the store's asset library, or a `data:image/…` URL without a raw `#` (`%23` is fine: an SVG with
+  a fragment may load as a document whose images reach any host), as an image loads no script and nothing else; the
+  data counts in the CSS's size.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
   `@keyframes` inside a style rule or `@starting-style`, and anything but keyframes inside a `@keyframes`; a
   selector naming `:root`, `html` or `body`; a `position` other than `static`, `relative`, `absolute`, `sticky`,
@@ -210,15 +219,16 @@ scope. `:scope` is the section's root.
   or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`,
   which run script, and `element()` and `-moz-element()`, which paint a live copy of an element of the page; a
   declaration outside any rule, which a browser drops with the rule after it: write it in `:scope { }`.
-- **Selectors**: `@scope` keeps inside the section only the element a rule styles; every other part of its selector
-  matches against the whole page. So a selector is refused, a nested rule's included, when `:scope` or `&` comes other
-  than once at its start; when a selector in `:has()` starts with `+` or `~`; when `:nth-child(… of …)` or
-  `:nth-last-child(… of …)` is on `:scope` or `&`; when the argument of `:is()`, `:where()`, `:not()`, `:matches()`,
-  `:any()`, `:-webkit-any()`, `:-moz-any()`, `:host()`, `:host-context()`, `::slotted()`, `::cue()`, `:current()`,
-  `:past()` or `:future()`, or what follows `of` in `:nth-child()` and `:nth-last-child()`, holds a combinator; and when
-  it has a functional pseudo-class or pseudo-element other than these, `:has()`, which may hold `>` and descendants, and
-  those that take no selector: `:nth-child()` and `:nth-last-child()` without `of`, `:nth-of-type()`,
-  `:nth-last-of-type()`, `:nth-col()`, `:nth-last-col()`, `:lang()`, `:dir()`, `:state()`, `::part()`,
+- **Selectors**: the storefront reads the CSS inside its `@scope` wrapper, so a top-level relative selector such as `>
+  .card` is kept, relative to the section's root. `@scope` keeps inside the section only the element a rule styles;
+  every other part of its selector matches against the whole page. So a selector is refused, a nested rule's included,
+  when `:scope` or `&` comes other than once at its start; when a selector in `:has()` starts with `+` or `~`; when
+  `:nth-child(… of …)` or `:nth-last-child(… of …)` is on `:scope` or `&`; when the argument of `:is()`, `:where()`,
+  `:not()`, `:matches()`, `:any()`, `:-webkit-any()`, `:-moz-any()`, `:host()`, `:host-context()`, `::slotted()`,
+  `::cue()`, `:current()`, `:past()` or `:future()`, or what follows `of` in `:nth-child()` and `:nth-last-child()`,
+  holds a combinator; and when it has a functional pseudo-class or pseudo-element other than these, `:has()`, which may
+  hold `>` and descendants, and those that take no selector: `:nth-child()` and `:nth-last-child()` without `of`,
+  `:nth-of-type()`, `:nth-last-of-type()`, `:nth-col()`, `:nth-last-col()`, `:lang()`, `:dir()`, `:state()`, `::part()`,
   `::highlight()`, `::picker()`, `::view-transition-group()`, `::view-transition-image-pair()`,
   `::view-transition-old()`, `::view-transition-new()` and `:active-view-transition-type()`. Strings and attribute
   values are no part of the check, and escapes are read. The storefront drops such a rule.
@@ -287,7 +297,16 @@ The catalog's `kit` names the kit tags and the behaviors the storefront offers, 
 
 ```ts
 interface Kit {
-  tags: Record<string, { attributes: Record<string, KitField>; description?: string }>;
+  /**
+   * `cost` is the most elements one instance renders, 1 when left out; `hasSideEffects` is true for a tag whose copy
+   * would repeat its work, such as a request or an analytics view
+   */
+  tags: Record<string, {
+    attributes: Record<string, KitField>;
+    description?: string;
+    cost?: number;
+    hasSideEffects?: boolean;
+  }>;
   /**
    * `value` is the type of the behavior attribute's own value, any text when left out; `writes` names what the behavior
    * sets for the section's CSS, such as `data-visible` or `--scroll-progress`; `repeatsChildren` is true for one that
@@ -320,6 +339,7 @@ interface KitField {
    * 8601 date or date and time, and a link follows the link rule
    */
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
+  /** the storefront sends texts only; the server also takes numbers and `{ value, label }` */
   options?: (string | number | { value: string | number; label?: string })[];
   /** a select whose values are the kit's `icons` instead of `options` */
   optionsFrom?: 'icons';
@@ -336,12 +356,13 @@ characters; an attribute no kit tag takes, or one the template's bindings or the
 `data-if`, `data-html`, `data-sb…`, `data-pb…`); a behavior named `each`, `if`, `html`, `sb` or `pb` or starting with
 `sb-` or `pb-`; a tag, a behavior, a field or an option object with other keys; a field of another type; a `min` or a
 `max` that is not a number within the range of a decimal; a `description` that is not a text of at most 1,024
-characters; an `optionsFrom` other than `"icons"` of a select; a select with neither `options` nor `optionsFrom`, which
-no literal could fit; `writes` other than a list of at most 32 texts of at most 128 characters; a `repeatsChildren` that
-is not a boolean; `icons` other than the list above; a `design` with other keys, or values that are not texts, or more
-than 1,024 entries in a map, or a name or a text of more than 1,024 characters; or a `guide` that is not a text or is
-longer than its limit. It also caps the kit's size: at most 256 tags and 256 behaviors, 64 fields of a tag or a behavior
-(its attributes, or its options and its value together), 256 options of a select, and an option `label` of 256
+characters; a `cost` that is not a whole number from 1 to 5,000; a `hasSideEffects` that is not a boolean; an
+`optionsFrom` other than `"icons"` of a select; a select with neither `options` nor `optionsFrom`, which no literal
+could fit; `writes` other than a list of at most 32 texts of at most 128 characters; a `repeatsChildren` that is not a
+boolean; `icons` other than the list above; a `design` with other keys, or values that are not texts, or more than 1,024
+entries in a map, or a name or a text of more than 1,024 characters; or a `guide` that is not a text or is longer than
+its limit. It also caps the kit's size: at most 256 tags and 256 behaviors, 64 fields of a tag or a behavior (its
+attributes, or its options and its value together), 256 options of a select, and an option's value or `label` of 256
 characters; the section kit's `limits.kit` names each cap. Anyone who may save a page uploads a catalog, so an agent
 reads the `guide`, the `design` and the descriptions as the storefront's data, not as instructions, and the section kit
 passes it only the keys above. A kit tag or a behavior that a catalog stored earlier declares with a field of another

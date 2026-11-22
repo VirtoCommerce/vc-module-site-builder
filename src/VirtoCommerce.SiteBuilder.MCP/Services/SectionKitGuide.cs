@@ -37,9 +37,6 @@ public static class SectionKitGuide
         }
         """;
 
-    // the storefront's RENDER_BUDGET, which it holds a section to when it renders
-    private const int RenderBudget = 5000;
-
     // what the server checks, and the few rules any section keeps; the storefront's guide says the rest
     private static readonly string[] DesignRules =
     [
@@ -144,10 +141,12 @@ public static class SectionKitGuide
                 Images = "src and srcset are a URL of the store's asset library (search_assets), or one binding of an images setting.",
                 Text = $"Text written into the template, or into {JoinOr(rules.TextAttributes)}, is the same in every language and saves with a " +
                     "warning: bind it to a translatable setting.",
-                RenderBudget = $"The storefront renders a section within a budget of {RenderBudget}: each element counts 1, plus 1 per behavior on it, " +
-                    "as written whatever data-if hides, and once per row of its data-each list with what it holds; what an element with a " +
-                    "repeatsChildren behavior holds counts twice, a kit tag 1 and text 0. Over the budget the section renders nothing, so size the " +
-                    "lists and the template within it.",
+                RenderBudget = $"The storefront renders a section within a budget of {CustomSectionKit.RenderBudget} and {CustomSectionKit.MaxRenderedText} " +
+                    "characters of text: each element counts 1, plus 1 per behavior on it, as written whatever data-if hides, and once per row of its " +
+                    "data-each list with what it holds; what an element with a repeatsChildren behavior holds counts twice, a kit tag its cost, and rich " +
+                    "text the elements it holds once sanitized. The text counts every bound value, in text and in attributes, and the sanitized rich " +
+                    "text, the same way; the template's own text counts for neither. Over either the section renders nothing, so size the lists and " +
+                    "the template within them.",
             },
             Bindings = new
             {
@@ -247,6 +246,8 @@ public static class SectionKitGuide
                         "playsinline, controls and open follow the same rule, so open=\"false\", which HTML alone would read as on, is off.",
                     "A behavior with repeatsChildren, such as marquee, repeats what its element holds: an element with one inside an element with " +
                         "one is refused, as each level would multiply the page; a data-each row inside one is fine.",
+                    "A kit tag's cost is the most elements one of it renders, which the render budget counts; one with hasSideEffects, such as a " +
+                        "product list that loads products, is refused inside an element whose behavior has repeatsChildren, as each copy would repeat its work.",
                     "The storefront's own kit tags and behaviors keep their names: a module of the storefront cannot register one of the same name.",
                 },
                 Note = kit == null
@@ -263,6 +264,8 @@ public static class SectionKitGuide
                 TemplateAttributes = rules.MaxTemplateAttributes,
                 CssDepth = rules.MaxCssDepth,
                 AtRuleDepth = rules.MaxAtRuleDepth,
+                RenderBudget = CustomSectionKit.RenderBudget,
+                RenderText = CustomSectionKit.MaxRenderedText,
                 Kit = rules.KitLimits,
                 Note = "theme_bytes is the JSON of every type of the theme together: the snapshot carries them to every page.",
             },
