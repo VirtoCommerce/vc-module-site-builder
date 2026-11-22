@@ -27,28 +27,3 @@ public sealed record CustomSectionSetting(string Id, string Type, bool IsLink, I
     /// <summary>The list of a data-each that names none: the items of its rows are not checked.</summary>
     public static CustomSectionSetting UnknownList { get; } = new(string.Empty, CustomSectionFields.ListType, IsLink: false, Element: null);
 }
-
-public static class CustomSectionText
-{
-    private const int MaxQuoteLength = 60;
-
-    public static char[] Whitespace { get; } = [' ', '\t', '\n', '\r', '\f'];
-
-    public static string Quote(string value)
-    {
-        var line = string.Join(' ', value.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries));
-
-        return line.Length > MaxQuoteLength ? line[..MaxQuoteLength] + "…" : line;
-    }
-
-    public static string JoinOr(IEnumerable<string> items) => Join(items, "or");
-
-    public static string JoinAnd(IEnumerable<string> items) => Join(items, "and");
-
-    private static string Join(IEnumerable<string> items, string last)
-    {
-        var list = items.ToList();
-
-        return list.Count < 2 ? string.Concat(list) : $"{string.Join(", ", list[..^1])} {last} {list[^1]}";
-    }
-}
