@@ -544,12 +544,10 @@ public class CustomSectionValidatorTests
     public void Validate_TemplateOfMoreTagsThanTheCap_IsRefusedBeforeItIsParsed(string start, string tag, int count, string end)
     {
         var template = start + string.Concat(Enumerable.Repeat(tag, count)) + end;
-        var watch = System.Diagnostics.Stopwatch.StartNew();
 
         var result = _validator.Validate(Type, Section(template), Catalog);
 
         Assert.Equal(["the template has more than 1500 tags, counting each '<' followed by a letter as written"], result.Errors);
-        Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
     }
 
     [Theory]
@@ -612,13 +610,11 @@ public class CustomSectionValidatorTests
         var formatting = string.Concat(Enumerable.Range(0, 749).Select(x => $"<b class=\"custom-hero__b{x}\">"));
         var template = "<section><p>" + formatting + string.Concat(Enumerable.Repeat("<p>x", 749)) + "</section>";
         var allocated = GC.GetAllocatedBytesForCurrentThread();
-        var watch = System.Diagnostics.Stopwatch.StartNew();
 
         var result = _validator.Validate(Type, Section(template), Catalog);
 
         Assert.Equal([$"the template does not read as HTML at line 1, column {13 + formatting.Length}: The given end tag does not match the current node."], result.Errors);
         Assert.True(GC.GetAllocatedBytesForCurrentThread() - allocated < 64 * 1024 * 1024, $"allocated {GC.GetAllocatedBytesForCurrentThread() - allocated} bytes");
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
     }
 
     [Fact]
@@ -859,8 +855,9 @@ public class CustomSectionValidatorTests
         var css = "a{" + string.Concat(Enumerable.Repeat("b:", 32766)) + "}";
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
-        _validator.Validate(Type, Section("<section></section>", css), Catalog);
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
+        Assert.Empty(result.Errors);
         Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
     }
 

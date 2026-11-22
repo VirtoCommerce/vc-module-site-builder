@@ -139,13 +139,15 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Theory]
-    [InlineData("""{ "de-DE": "Zahlen", "en-US": "Stats" }""", "Stats")]
-    [InlineData("""{ "de-DE": "Zahlen", "en-GB": "Figures" }""", "Figures")]
-    [InlineData("""{ "de-DE": "Zahlen" }""", "Zahlen")]
-    [InlineData("\"\"", "custom-stats")]
-    [InlineData("""{ "title": "Stats" }""", "custom-stats")]
-    public async Task TheSchemas_NameACustomTypeInTheStoresLanguage_ElseByItsType(string name, string shown)
+    [InlineData("en-US", """{ "de-DE": "Zahlen", "en-US": "Stats" }""", "Stats")]
+    [InlineData("de-DE", """{ "en-US": "Stats", "de-DE": "Zahlen" }""", "Zahlen")]
+    [InlineData("en-US", """{ "de-DE": "Zahlen", "en-GB": "Figures" }""", "Figures")]
+    [InlineData("en-US", """{ "de-DE": "Zahlen" }""", "Zahlen")]
+    [InlineData("en-US", "\"\"", "custom-stats")]
+    [InlineData("en-US", """{ "title": "Stats" }""", "custom-stats")]
+    public async Task TheSchemas_NameACustomTypeInTheStoresLanguage_ElseByItsType(string storeLanguage, string name, string shown)
     {
+        (await _context.Stores.GetAsync([StoreA], clone: false))[0].DefaultLanguage = storeLanguage;
         await _context.SeedCatalogAsync(StoreA, ["hero-banner"]);
         var type = System.Text.Json.Nodes.JsonNode.Parse(StatsSectionType)!;
         type["name"] = System.Text.Json.Nodes.JsonNode.Parse(name);
