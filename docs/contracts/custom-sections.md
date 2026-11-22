@@ -65,9 +65,9 @@ section draws leaves its box; the wrapper carries the section's anchor id and th
 root keeps `data-sb-type="{type}"` and a `style` holding the [setting variables](#setting-variables), so the root is an
 element of HTML, not a kit tag. It is HTML as written, read as the storefront's sanitizer reads it, with no doctype
 (quirks mode, where a `table` may stay inside a `p`): markup the parser has to mend, such as an element left open or a
-`/>` on a kit tag, is refused, and so are elements nested more than 32 deep, the root counted. A template of more than
-1,500 tags, counting each `<` followed by a letter as written, in comments and attribute values too, is refused before
-it is parsed.
+`/>` on a kit tag, is refused at the first place it breaks, where the parse stops, and so are elements nested more than
+32 deep, the root counted. A template of more than 1,500 tags, counting each `<` followed by a letter as written, in
+comments and attribute values too, is refused before it is parsed.
 
 - **Elements**: the elements the builder's HTML sanitizer keeps, without form controls (`form`, `input`, `select`,
   `textarea`, `button`, `option`, `optgroup`, `datalist`, `fieldset`, `legend`, `label`, `output`), plus the

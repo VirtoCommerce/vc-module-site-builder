@@ -113,9 +113,9 @@ public static class SectionKitGuide
                 Root = "One root element of HTML, the section's root, never a kit tag: it keeps data-sb-type and the setting variables in its style. The " +
                     "storefront renders each section in a wrapper of its own, with contain: paint and isolation: isolate, that holds the anchor id and " +
                     "the preview's attributes.",
-                Markup = $"HTML as written: markup a parser has to mend, such as an element left open or a /> on a kit tag, is refused, and so are " +
-                    $"elements nested more than {rules.MaxTemplateDepth} deep, the root counted, and a template of more than {rules.MaxTemplateTags} " +
-                    "tags, counting each '<' followed by a letter as written, in comments and attribute values too.",
+                Markup = $"HTML as written: markup a parser has to mend, such as an element left open or a /> on a kit tag, is refused at the first " +
+                    $"place it breaks, and so are elements nested more than {rules.MaxTemplateDepth} deep, the root counted, and a template of more " +
+                    $"than {rules.MaxTemplateTags} tags, counting each '<' followed by a letter as written, in comments and attribute values too.",
                 Elements = rules.Elements,
                 ElementsNote = "And the kit tags below. Anything else is refused, such as svg, script, style, iframe and form controls.",
                 Attributes = rules.Attributes,

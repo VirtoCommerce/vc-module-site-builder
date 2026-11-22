@@ -532,6 +532,21 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
+    public void Validate_FormattingTheParserWouldRebuildOnEachParagraph_IsRefusedAtTheFirstError()
+    {
+        var formatting = string.Concat(Enumerable.Range(0, 749).Select(x => $"<b class=\"custom-hero__b{x}\">"));
+        var template = "<section><p>" + formatting + string.Concat(Enumerable.Repeat("<p>x", 749)) + "</section>";
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal([$"the template does not read as HTML at line 1, column {13 + formatting.Length}: The given end tag does not match the current node."], result.Errors);
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - allocated < 64 * 1024 * 1024, $"allocated {GC.GetAllocatedBytesForCurrentThread() - allocated} bytes");
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
+    }
+
+    [Fact]
     public void Validate_BindingLeftOpenOverALongRun_IsRefusedWithoutTimingOut()
     {
         var template = "<section><p>{{" + new string(' ', 60000) + "</p></section>";

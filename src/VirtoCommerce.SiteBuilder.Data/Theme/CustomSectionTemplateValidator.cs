@@ -1,7 +1,8 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using AngleSharp.Common;
 using AngleSharp.Dom;
-using AngleSharp.Html.Dom.Events;
+using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using static VirtoCommerce.SiteBuilder.Data.Theme.CustomSectionFields;
@@ -12,11 +13,11 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 /// <summary>A custom section type's template: its elements and attributes, its bindings to the settings, the kit it uses, and what a screen reader needs.</summary>
 public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 {
-    private const int MaxParseErrors = 3;
     private const int MaxSamples = 3;
 
-    // no doctype, as the storefront's sanitizer parses: a document without one is read in quirks mode, where a table may stay in a p
-    private const string DocumentStart = "<html><head></head><body>";
+    // quirks mode, where a table may stay in a p, as the storefront's sanitizer reads a document without a doctype; a strict parse refuses a
+    // missing doctype, hence a legacy one that asks for quirks mode
+    private const string DocumentStart = "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\"><html><head></head><body>";
 
     private const string EachAttribute = "data-each";
     private const string IfAttribute = "data-if";
@@ -90,23 +91,10 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return;
         }
 
-        var parser = new HtmlParser(new HtmlParserOptions { IsKeepingSourceReferences = true });
-        var parseErrors = new List<HtmlErrorEvent>();
-        parser.Error += (_, error) => parseErrors.Add((HtmlErrorEvent)error);
-
-        using var document = parser.ParseDocument(DocumentStart + template);
         var context = new TemplateContext(template);
-        // skip the wrapper's own errors, such as its missing doctype
-        var templateErrors = parseErrors.Where(x => x.Position.Position > DocumentStart.Length).ToList();
-        if (templateErrors.Count > 0)
+        using var document = Parse(check, context);
+        if (document == null)
         {
-            // the parser has mended what it reports, so the elements are not what was written
-            foreach (var error in templateErrors.Take(MaxParseErrors))
-            {
-                var (line, column) = GetLocation(context, GetIndex(context, error.Position.Position));
-                check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template does not read as HTML at line {line}, column {column}: {error.Message}"));
-            }
-
             return;
         }
 
@@ -832,6 +820,28 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         return GetLocation(context, index).Line;
+    }
+
+    /// <summary>
+    /// Stops at the first parse error: the parser mends what it reports, so the elements would not be what was written, and mending misnested
+    /// formatting rebuilds every open formatting element on each paragraph, which makes elements by the square of the tags.
+    /// </summary>
+    /// <returns>The document; <c>null</c> when the template does not read as HTML.</returns>
+    private static IHtmlDocument Parse(CustomSectionCheck check, TemplateContext context)
+    {
+        var parser = new HtmlParser(new HtmlParserOptions { IsKeepingSourceReferences = true, IsStrictMode = true });
+        try
+        {
+            return parser.ParseDocument(DocumentStart + context.Template);
+        }
+        catch (HtmlParseException error)
+        {
+            var (line, column) = GetLocation(context, GetIndex(context, error.Position.Position));
+            var message = ((HtmlParseError)error.Code).GetMessage();
+            check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template does not read as HTML at line {line}, column {column}: {message}"));
+
+            return null;
+        }
     }
 
     // the parser counts lines without the line breaks of indentation, while its place in the text is right
