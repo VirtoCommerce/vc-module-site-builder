@@ -214,6 +214,27 @@ public sealed class CustomSectionPublishTests : IDisposable
     }
 
     [Fact]
+    public async Task PublishAsync_TypesTogetherOverTheLimit_IsRefusedAndPublishesNothing()
+    {
+        await SaveCatalogAsync();
+        var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
+            _lock, _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
+            new ThemePaletteService(), TestServices.CustomSectionValidator(options: new ThemeSnapshotOptions { CustomSectionsMaxSize = 3 * 1024 }));
+        var padded = JObject.Parse(HeroFile);
+        padded["css"] = $":scope {{ color: var(--color-neutral-900); }} /* {new string('x', 2000)} */";
+        // each under the limit on its own: the live type and the draft only together are over it
+        _storage.Files[Theme("default/custom-sections/custom-live.json")] = padded.ToString();
+        _storage.Files[Theme($"{Hero}-draft")] = padded.ToString();
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Contains(exception.Errors, x => x.StartsWith("custom-sections: the custom section types are ", StringComparison.Ordinal));
+        Assert.False(_storage.Files.ContainsKey(Theme(Pointer)));
+        Assert.False(_storage.Files.ContainsKey(Theme(Hero)));
+        Assert.True(_storage.Files.ContainsKey(Theme($"{Hero}-draft")));
+    }
+
+    [Fact]
     public async Task FirstPublication_LeavesOutTheLargestTypesUntilTheRestFit()
     {
         var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
