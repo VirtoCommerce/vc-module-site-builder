@@ -230,6 +230,8 @@ public static class SectionKitGuide
                     $"An attribute's, an option's or a value's type is {JoinOr(rules.KitFieldTypes)}: a select takes one of its options, and one with " +
                         "neither options nor optionsFrom only a binding, a number one from min to max, a boolean true, false or no value, a date an ISO " +
                         "8601 date or date and time, such as 2026-12-31, and a link follows the link rule. Each is a literal of its type, or one binding.",
+                    "A boolean is on unless it says false, and off when bound to a setting that is not set. The native hidden, autoplay, muted, loop, " +
+                        "playsinline, controls and open follow the same rule, so open=\"false\", which HTML alone would read as on, is off.",
                     "A behavior with repeatsChildren, such as marquee, repeats what its element holds: an element with one inside an element with " +
                         "one is refused, as each level would multiply the page; a data-each row inside one is fine.",
                     "The storefront's own kit tags and behaviors keep their names: a module of the storefront cannot register one of the same name.",

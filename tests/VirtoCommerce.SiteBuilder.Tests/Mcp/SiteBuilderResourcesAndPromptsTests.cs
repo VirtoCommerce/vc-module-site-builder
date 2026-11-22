@@ -234,6 +234,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
             x => x.GetString()!.Contains("takes no on*, form*, popover*, style, id, is, class, srcdoc, ping, srcset, poster or action", StringComparison.Ordinal));
         Assert.StartsWith("The storefront's catalog names no kit", kit.GetProperty("kit").GetProperty("note").GetString(), StringComparison.Ordinal);
+        Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
+            x => x.GetString()!.StartsWith("A boolean is on unless it says false", StringComparison.Ordinal) && x.GetString()!.Contains("open=\"false\"", StringComparison.Ordinal));
         Assert.Contains(kit.GetProperty("css").GetProperty("refused").EnumerateArray(),
             x => x.GetString()!.StartsWith("a selector any part of which can match outside the section", StringComparison.Ordinal));
         Assert.Contains(kit.GetProperty("css").GetProperty("refused").EnumerateArray(),

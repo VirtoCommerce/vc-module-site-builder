@@ -123,9 +123,12 @@ module cannot register a kit tag of the same name.
 
 A kit tag's name starts with `vc-`, and an element named `vc-…` that the catalog does not name is refused. Its
 attributes are those the catalog declares, and `data-if` and `data-each`; they take literals or bindings, and a literal
-the attribute's type does not take is refused on save. Whatever the catalog declares, a kit tag takes no `on*`, `style`,
-`id`, `is`, `class`, `srcdoc`, `form*`, `popover*`, `ping`, `srcset`, `poster` or `action` attribute, and `to`, `href`
-and `src` follow the link rule. A kit tag has no content.
+the attribute's type does not take is refused on save. A boolean attribute is on unless it says `false`; bound to a
+setting that is not set, it is left out, so it is off. The native boolean attributes, `hidden`, `video`'s `autoplay`,
+`muted`, `loop`, `playsinline` and `controls`, and `details`'s `open`, follow the same rule: one that says `false`, such
+as `open="false"`, which HTML alone would read as on, or is bound to a setting that is not set, is off. Whatever the
+catalog declares, a kit tag takes no `on*`, `style`, `id`, `is`, `class`, `srcdoc`, `form*`, `popover*`, `ping`,
+`srcset`, `poster` or `action` attribute, and `to`, `href` and `src` follow the link rule. A kit tag has no content.
 
 ### Behaviors
 
@@ -140,7 +143,7 @@ behavior of the same name.
 
 | Attribute | Options | Effect |
 |---|---|---|
-| `data-inview` | `data-inview-threshold` (0–1, default 0.2), `data-inview-once` | sets `data-visible` while that share of the element is on screen; with `-once` it stays |
+| `data-inview` | `data-inview-threshold` (0–1, default 0.2), `data-inview-once` | sets `data-visible` while that share of the element is on screen, or that share of the screen for an element taller than the screen; with `-once` it stays |
 | `data-scroll-progress` | | `--scroll-progress` from 0 (the element enters the viewport) to 1 (it leaves) |
 | `data-pointer` | | `--pointer-x`, `--pointer-y` (0–1 inside the element), `--pointer-inline` (0 at the inline start, so it flips in right-to-left text) and `--pointer-active` (0 or 1); off on touch screens |
 | `data-count-up="{number}"` | `data-count-up-duration` (ms, up to 5000), `data-count-up-decimals` (0–4) | the text counts up to the number, formatted in the page's language, when the element first shows |
@@ -154,15 +157,16 @@ Either may be a binding.
 
 A behavior that repeats what its element holds, as `data-marquee` does, has `repeatsChildren` in the catalog. An element
 with one inside an element with one is refused, since each level would multiply the page; a `data-each` row inside one
-is not.
+is not. The storefront renders what the element holds as a run and its copy, which is hidden from assistive technology,
+and both hold the same items: text that is not blank renders in a plain `<span>`, in the run as in the copy.
 
 ### Render budget
 
 The storefront renders a section within a budget of 5,000. Each element counts 1, plus 1 per behavior on it, counted as
 written, whatever `data-if` hides; an element with `data-each` counts, with what it holds, once per row of its list.
-What an element with a `repeatsChildren` behavior holds counts twice. A kit tag counts 1, and text 0. A section over
-the budget renders nothing. A save does not check the budget, since the rows are the page's content: the storefront
-holds a section to it when it renders.
+What an element with a `repeatsChildren` behavior holds counts twice. A kit tag counts 1, and text 0, a repeated run's
+`<span>` included. A section over the budget renders nothing. A save does not check the budget, since the rows are the
+page's content: the storefront holds a section to it when it renders.
 
 ## Setting variables
 
