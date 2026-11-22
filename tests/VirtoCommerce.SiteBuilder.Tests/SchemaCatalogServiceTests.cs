@@ -151,6 +151,15 @@ public class SchemaCatalogServiceTests
     }
 
     [Fact]
+    public async Task SaveAsync_CustomTypeNamedPerLanguage_IsKeptAsSent()
+    {
+        await Service().SaveAsync("s1", """{ "hash": "abc12345", "sections": { "custom-stats": { "name": { "en-US": "Stats", "de-DE": "Zahlen" }, "custom": true } } }""", Ct);
+
+        var name = JObject.Parse(await Service().GetAsync("s1", null, Ct))["sections"]!["custom-stats"]!["name"];
+        Assert.True(JToken.DeepEquals(JObject.Parse("""{ "en-US": "Stats", "de-DE": "Zahlen" }"""), name));
+    }
+
+    [Fact]
     public async Task SaveAsync_KitOfItsShape_IsKept()
     {
         const string kit = """

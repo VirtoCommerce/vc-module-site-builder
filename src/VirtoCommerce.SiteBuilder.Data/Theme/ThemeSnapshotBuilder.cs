@@ -222,24 +222,8 @@ public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy)
 
     protected virtual bool IsTranslation(JObject dictionary) => ThemeTranslations.IsTranslation(dictionary);
 
-    protected virtual string GetTranslation(JObject dictionary, string language, string defaultLanguage)
-    {
-        var languagePart = GetLanguagePart(language);
-
-        string Find(Func<string, bool> matches) =>
-            dictionary.Properties().FirstOrDefault(x => matches(x.Name))?.Value.Value<string>();
-
-        return Find(x => string.Equals(x, language, StringComparison.OrdinalIgnoreCase))
-            ?? Find(x => string.Equals(x, languagePart, StringComparison.OrdinalIgnoreCase))
-            ?? Find(x => string.Equals(GetLanguagePart(x), languagePart, StringComparison.OrdinalIgnoreCase))
-            ?? Find(x => string.Equals(x, defaultLanguage, StringComparison.OrdinalIgnoreCase))
-            ?? dictionary.Properties().First().Value.Value<string>();
-    }
-
-    private static string GetLanguagePart(string cultureName)
-    {
-        return cultureName.Split('-')[0];
-    }
+    protected virtual string GetTranslation(JObject dictionary, string language, string defaultLanguage) =>
+        ThemeTranslations.Translate(dictionary, language, defaultLanguage);
 
     [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
         Justification = "null leaves the section group out of the snapshot; an empty object would be published as a group without content.")]

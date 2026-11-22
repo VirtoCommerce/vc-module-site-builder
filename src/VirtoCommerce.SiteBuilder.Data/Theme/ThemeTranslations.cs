@@ -14,4 +14,22 @@ public static class ThemeTranslations
     public static bool IsTranslation(JObject dictionary) =>
         dictionary.Properties().Any(x => SubtaggedCultureNamePattern.IsMatch(x.Name)) &&
         dictionary.Properties().All(x => CultureNamePattern.IsMatch(x.Name) && x.Value.Type == JTokenType.String);
+
+    /// <summary>The text of the language, else of another region of it, else of the default language, else the first.</summary>
+    /// <param name="dictionary">A translation, as <see cref="IsTranslation"/> tells.</param>
+    public static string Translate(JObject dictionary, string language, string defaultLanguage)
+    {
+        var languagePart = GetLanguagePart(language);
+
+        string Find(Func<string, bool> matches) =>
+            dictionary.Properties().FirstOrDefault(x => matches(x.Name))?.Value.Value<string>();
+
+        return Find(x => string.Equals(x, language, StringComparison.OrdinalIgnoreCase))
+            ?? Find(x => string.Equals(x, languagePart, StringComparison.OrdinalIgnoreCase))
+            ?? Find(x => string.Equals(GetLanguagePart(x), languagePart, StringComparison.OrdinalIgnoreCase))
+            ?? Find(x => string.Equals(x, defaultLanguage, StringComparison.OrdinalIgnoreCase))
+            ?? dictionary.Properties().First().Value.Value<string>();
+    }
+
+    private static string GetLanguagePart(string cultureName) => cultureName?.Split('-')[0];
 }

@@ -138,6 +138,25 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal("title", schema.GetProperty("schema").GetProperty("settings")[0].GetProperty("id").GetString());
     }
 
+    [Theory]
+    [InlineData("""{ "de-DE": "Zahlen", "en-US": "Stats" }""", "Stats")]
+    [InlineData("""{ "de-DE": "Zahlen", "en-GB": "Figures" }""", "Figures")]
+    [InlineData("""{ "de-DE": "Zahlen" }""", "Zahlen")]
+    [InlineData("\"\"", "custom-stats")]
+    [InlineData("""{ "title": "Stats" }""", "custom-stats")]
+    public async Task TheSchemas_NameACustomTypeInTheStoresLanguage_ElseByItsType(string name, string shown)
+    {
+        await _context.SeedCatalogAsync(StoreA, ["hero-banner"]);
+        var type = System.Text.Json.Nodes.JsonNode.Parse(StatsSectionType)!;
+        type["name"] = System.Text.Json.Nodes.JsonNode.Parse(name);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", type.ToJsonString(), draft: true);
+
+        var schemas = await ReadAsync(Reader(), "site-builder://stores/store-a/schemas");
+
+        var section = schemas.GetProperty("kinds").GetProperty("sections").EnumerateArray().First(x => x.GetProperty("key").GetString() == "custom-stats");
+        Assert.Equal(shown, section.GetProperty("name").GetString());
+    }
+
     [Fact]
     public async Task ACustomSectionType_IsReadAsItsDraft_WithItsVersion()
     {

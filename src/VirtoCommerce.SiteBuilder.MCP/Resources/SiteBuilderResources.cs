@@ -67,7 +67,8 @@ public class SiteBuilderResources(
             return Serialize(NoCatalog(store_id));
         }
 
-        var kinds = SchemaKindsListed.ToDictionary(x => x, x => ListSchemas(catalog[x] as JsonObject));
+        var language = (await storeService.GetNoCloneAsync(store_id))?.DefaultLanguage;
+        var kinds = SchemaKindsListed.ToDictionary(x => x, x => ListSchemas(catalog[x] as JsonObject, language));
 
         return Serialize(new
         {
@@ -244,16 +245,17 @@ public class SiteBuilderResources(
         Reason = "Not available: the storefront of the store has not sent its schema catalog yet. Open the store once in the designer; its preview sends it.",
     };
 
-    private static List<SchemaRow> ListSchemas(JsonObject schemas) =>
-        schemas?.Select(x => new SchemaRow(x.Key, GetName((x.Value as JsonObject)?[NameKey]) ?? x.Key, IsCustom(x.Value as JsonObject) ? true : null))
+    private static List<SchemaRow> ListSchemas(JsonObject schemas, string language) =>
+        schemas?.Select(x => new SchemaRow(x.Key, GetName((x.Value as JsonObject)?[NameKey], language) ?? x.Key, IsCustom(x.Value as JsonObject) ? true : null))
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .ToList() ?? [];
 
-    // A custom section type may name itself per language.
-    private static string GetName(JsonNode name) => name switch
+    // A custom section type may name itself per language, which the store's default language reads.
+    private static string GetName(JsonNode name, string language) => name switch
     {
-        JsonValue value when value.TryGetValue<string>(out var text) => text,
-        JsonObject translations => translations.Select(x => GetName(x.Value)).FirstOrDefault(x => x != null),
+        JsonValue value when value.TryGetValue<string>(out var text) => string.IsNullOrWhiteSpace(text) ? null : text,
+        JsonObject translations when ThemeJson.ParseObject(translations.ToJsonString()) is var dictionary && ThemeTranslations.IsTranslation(dictionary) =>
+            ThemeTranslations.Translate(dictionary, language, language),
         _ => null,
     };
 
