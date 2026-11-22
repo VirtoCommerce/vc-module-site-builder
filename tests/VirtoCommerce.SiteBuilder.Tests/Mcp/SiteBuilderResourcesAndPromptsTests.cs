@@ -258,6 +258,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal((5000, 262144), (kit.GetProperty("limits").GetProperty("render_budget").GetInt32(), kit.GetProperty("limits").GetProperty("render_text").GetInt32()));
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
             x => x.GetString()!.Contains("hasSideEffects", StringComparison.Ordinal) && x.GetString()!.Contains("cost", StringComparison.Ordinal));
+        Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
+            x => x.GetString()!.StartsWith("A date alone, such as 2026-12-31, is 00:00 UTC of that day", StringComparison.Ordinal));
         Assert.StartsWith("The storefront renders a section within a budget of 5000 and 262144 characters of text:", kit.GetProperty("template").GetProperty("render_budget").GetString(),
             StringComparison.Ordinal);
     }
@@ -386,6 +388,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.All(tokens, x => Assert.Contains(x.Name, new[] { "--vc-radius", "--vc-base-font-family", "--vc-heading-font-family" }));
         Assert.All(tokens, x => Assert.True(x.HasFallback, x.Name));
         Assert.DoesNotContain("<h1", ThemeJson.Parse(SectionKitGuide.ExampleFile)["template"]!.ToString(), StringComparison.Ordinal);
+        Assert.Contains("data-count-up=\"{{ item.value }}\">{{ item.value }}</span>", ThemeJson.Parse(SectionKitGuide.ExampleFile)["template"]!.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

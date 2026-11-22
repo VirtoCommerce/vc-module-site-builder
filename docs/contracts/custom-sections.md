@@ -62,7 +62,8 @@ them. A `default` is one the setting takes, or empty: a `select`'s is one of its
 rule, an `images` one is a URL of the store's asset library, a `number`'s or a `slider`'s is a number within its `min`
 and `max`, a `checkbox`'s is `true` or `false`, and a `color-token`'s is one of the catalog's palette tokens when the
 catalog lists them, with or without `color_`. A `list`'s default is a list of rows and an `object`'s one row, each
-field of which holds a default that field takes.
+field of which holds a default that field takes. A default applies wherever a placed section has no value of its own,
+a setting added to the type after the section was placed included.
 
 ## Template
 
@@ -160,7 +161,7 @@ cannot register a behavior of the same name.
 | `data-scroll-progress` | | `--scroll-progress` from 0 (the element enters the viewport) to 1 (it leaves) |
 | `data-pointer` | | `--pointer-x`, `--pointer-y` (0–1 inside the element), `--pointer-inline` (0 at the inline start, so it flips in right-to-left text) and `--pointer-active` (0 or 1); off on touch screens |
 | `data-count-up="{number}"` | `data-count-up-duration` (ms, up to 5000), `data-count-up-decimals` (0–4) | the text counts up to the number, formatted in the page's language, when the element first shows |
-| `data-countdown="{date}"` | | children with `data-countdown-part="days"`, `hours`, `minutes` or `seconds` show the time left until the ISO 8601 date; `data-ended` is set when it passes |
+| `data-countdown="{date}"` | | children with `data-countdown-part="days"`, `hours`, `minutes` or `seconds` show the time left until the ISO 8601 date; a date alone is 00:00 UTC of that day, the same moment for every visitor, so write a date and a time with an offset for another; `data-ended` is set when it passes |
 | `data-copy="{text}"` | | a click copies the text and sets `data-copied` for 2 seconds |
 | `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run, and `--marquee-shift` the distance to animate `translate` by, toward the inline start; `data-paused` is set while the pointer is over it or the focus inside; a run that holds nothing focusable makes the element focusable, so the keyboard can pause it |
 
@@ -336,7 +337,8 @@ interface Kit {
 interface KitField {
   /**
    * a select takes one of its options, a number one from min to max, a boolean true, false or no value, a date an ISO
-   * 8601 date or date and time, and a link follows the link rule
+   * 8601 date or date and time, and a link follows the link rule; a date alone is 00:00 UTC of that day, the same
+   * moment for every visitor
    */
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
   /** the storefront sends texts only; the server also takes numbers and `{ value, label }` */
