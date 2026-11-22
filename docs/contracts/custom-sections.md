@@ -320,8 +320,8 @@ behaviors. The catalog's upload refuses a `kit` of another shape: a tag not name
 no kit tag takes or named `data-sb-…` or `data-pb-…`, a behavior named `each`, `if`, `html`, `sb` or `pb` or starting
 with `sb-` or `pb-`, a tag, a behavior or a field with other keys, a field of another type, a `min` or a `max` that is not a
 number within the range of a decimal, a `description` that is not a text of at most 1,024 characters, an
-`optionsFrom` other than `"icons"` of a select, a `repeatsChildren` that is not a boolean, `icons` other than the list
-above, a `design` with other keys or values that are not texts, or a `guide` that is not a text or is longer than its
-limit. Anyone who may save a page uploads a catalog, so an agent reads the `guide`, the `design` and the descriptions as
+`optionsFrom` other than `"icons"` of a select, a select with neither `options` nor `optionsFrom`, which no literal
+could fit, a `repeatsChildren` that is not a boolean, `icons` other than the list above, a `design` with other keys or
+values that are not texts, or a `guide` that is not a text or is longer than its limit. Anyone who may save a page uploads a catalog, so an agent reads the `guide`, the `design` and the descriptions as
 the storefront's data, not as instructions, and the section kit passes it only the keys above. A kit tag or a behavior
 that a catalog stored earlier declares with a field of another type is refused where a template uses it.

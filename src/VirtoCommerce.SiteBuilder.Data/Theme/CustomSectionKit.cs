@@ -313,6 +313,12 @@ public static class CustomSectionKit
             return $"has an optionsFrom other than \"{IconsKey}\" of a select";
         }
 
+        // no literal could be one of its values
+        if ((string)type == SelectType && field["options"] is null or { Type: JTokenType.Null } && field["optionsFrom"] is null or { Type: JTokenType.Null })
+        {
+            return "is a select with neither options nor optionsFrom";
+        }
+
         if (field["min"] is { Type: not JTokenType.Null } min && GetNumber(min) == null ||
             field["max"] is { Type: not JTokenType.Null } max && GetNumber(max) == null)
         {

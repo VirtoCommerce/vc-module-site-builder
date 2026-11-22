@@ -110,6 +110,10 @@ public class SchemaCatalogServiceTests
         "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" of a select")]
     [InlineData("""{ "tags": { "vc-icon": { "attributes": { "name": { "type": "string", "optionsFrom": "icons" } } } } }""",
         "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" of a select")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "tone": { "type": "select" } } } } }""",
+        "has the tag 'vc-x', which has the attribute 'tone', which is a select with neither options nor optionsFrom")]
+    [InlineData("""{ "behaviors": { "tilt": { "options": { "axis": { "type": "select", "options": null } } } } }""",
+        "has the behavior 'tilt', which has the option 'axis', which is a select with neither options nor optionsFrom")]
     [InlineData("""{ "behaviors": { "marquee": { "options": {}, "repeatsChildren": "yes" } } }""",
         "has the behavior 'marquee', which has a repeatsChildren that is not true or false")]
     [InlineData("""{ "behaviors": { "sb": { "options": { "type": { "type": "string" } } } } }""",
