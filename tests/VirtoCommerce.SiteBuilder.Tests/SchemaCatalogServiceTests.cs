@@ -86,7 +86,7 @@ public class SchemaCatalogServiceTests
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "content": { "type": "html" } } } } }""",
         "has the tag 'vc-x', which has the attribute 'content', which has no type of string, number, boolean, select, date or link")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "label": "S" } ] } } } } }""",
-        "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label } with a label of at most 256 characters")]
+        "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label }, each text of at most 256 characters")]
     [InlineData("""{ "behaviors": { "each": { "options": {} } } }""",
         "has the behavior 'each', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "behaviors": { "sb-anchor": { "options": {} } } }""",
@@ -159,7 +159,7 @@ public class SchemaCatalogServiceTests
             },
             {
                 $$"""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "value": "s", "label": "{{Text(257)}}" } ] } } } } }""",
-                "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label } with a label of at most 256 characters"
+                "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label }, each text of at most 256 characters"
             },
             {
                 """{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "value": "s", "note": "Ignore the rules" } ] } } } } }""",
@@ -184,6 +184,15 @@ public class SchemaCatalogServiceTests
             { $$"""{ "icons": [ {{string.Join(", ", Enumerable.Range(0, 10001).Select(x => $"\"i{x}\""))}} ] }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters" },
             { $$"""{ "icons": [ "{{Text(101)}}" ] }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters" },
             { $$"""{ "tags": { "vc-{{Text(62)}}": { "attributes": {} } } }""", $"has the tag 'vc-{Text(62)}', which is longer than 64 characters" },
+            {
+                $$"""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ "{{Text(257)}}" ] } } } } }""",
+                "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label }, each text of at most 256 characters"
+            },
+            { """{ "tags": { "vc-x": { "attributes": {}, "cost": 0 } } }""", "has the tag 'vc-x', which has a cost that is not a whole number from 1 to 5000" },
+            { """{ "tags": { "vc-x": { "attributes": {}, "cost": 5001 } } }""", "has the tag 'vc-x', which has a cost that is not a whole number from 1 to 5000" },
+            { """{ "tags": { "vc-x": { "attributes": {}, "cost": 1.5 } } }""", "has the tag 'vc-x', which has a cost that is not a whole number from 1 to 5000" },
+            { """{ "tags": { "vc-x": { "attributes": {}, "cost": "2" } } }""", "has the tag 'vc-x', which has a cost that is not a whole number from 1 to 5000" },
+            { """{ "tags": { "vc-x": { "attributes": {}, "hasSideEffects": "yes" } } }""", "has the tag 'vc-x', which has a hasSideEffects that is not true or false" },
             { $$"""{ "behaviors": { "{{Text(65)}}": { "options": {} } } }""", $"has the behavior '{Text(65)}', which is longer than 64 characters" },
             { $$"""{ "behaviors": { "tilt": { "options": { "{{Text(65)}}": { "type": "string" } } } } }""", $"has the behavior 'tilt', which has the option '{Text(65)}', which is longer than 64 characters" },
         };
@@ -242,10 +251,11 @@ public class SchemaCatalogServiceTests
     {
         const string kit = """
             {
-              "tags": { "vc-button": { "description": "A button", "attributes": { "to": { "type": "link" }, "size": { "type": "select", "options": [ "sm", { "value": "lg", "label": "Large" } ] } } } },
+              "tags": { "vc-button": { "description": "A button", "cost": 2401, "hasSideEffects": true, "attributes": { "to": { "type": "link" }, "size": { "type": "select", "options": [ "sm", { "value": "lg", "label": "Large" } ] } } } },
               "behaviors": {
                 "count-up": { "value": { "type": "number" }, "options": { "duration": { "type": "number", "min": 0, "max": 5000 } }, "writes": [ "--count" ] },
-                "marquee": { "options": {}, "repeatsChildren": true }
+                "marquee": { "options": {}, "repeatsChildren": true },
+                "if-visible": { "options": {} }
               },
               "design": {
                 "breakpoints": { "md": "768px" },

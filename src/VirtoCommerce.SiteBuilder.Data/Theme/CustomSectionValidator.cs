@@ -121,7 +121,7 @@ public class CustomSectionValidator(
             ["behaviors"] = CustomSectionKit.MaxBehaviors,
             ["fields"] = CustomSectionKit.MaxFields,
             ["options"] = CustomSectionKit.MaxOptions,
-            ["option_label_length"] = CustomSectionKit.MaxOptionLabelLength,
+            ["option_length"] = CustomSectionKit.MaxOptionLength,
             ["writes"] = CustomSectionKit.MaxWrites,
             ["write_length"] = CustomSectionKit.MaxWriteLength,
             ["name_length"] = CustomSectionKit.MaxNameLength,

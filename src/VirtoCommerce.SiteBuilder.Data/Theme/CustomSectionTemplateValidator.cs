@@ -157,6 +157,10 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             }
 
             kitAttributes = check.Kit.Tags[tag];
+            if (check.Kit.SideEffectTags?.Contains(tag) == true && scope.Repeating is { } repeatingAncestor)
+            {
+                check.AddError($"{where} has side effects, such as a request, inside an element with {repeatingAncestor}, which repeats what it holds: each copy would repeat them");
+            }
         }
         else if (!Elements.Contains(tag))
         {

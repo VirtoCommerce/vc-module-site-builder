@@ -245,7 +245,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal("target is _self or _blank, case counting, and rel does not hold opener; both are written as they are, with no binding.",
             kit.GetProperty("template").GetProperty("link_targets").GetString());
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
-            x => x.GetString()!.Contains("takes no on*, form*, popover*, style, id, is, class, srcdoc, ping, srcset, poster or action", StringComparison.Ordinal));
+            x => x.GetString()!.Contains("takes no on*, form*, popover*, style, id, is, class, srcdoc, ping, srcset, poster, action, command, commandfor or interestfor", StringComparison.Ordinal));
         Assert.StartsWith("The storefront's catalog names no kit", kit.GetProperty("kit").GetProperty("note").GetString(), StringComparison.Ordinal);
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
             x => x.GetString()!.StartsWith("A boolean is on unless it says false", StringComparison.Ordinal) && x.GetString()!.Contains("open=\"false\"", StringComparison.Ordinal));

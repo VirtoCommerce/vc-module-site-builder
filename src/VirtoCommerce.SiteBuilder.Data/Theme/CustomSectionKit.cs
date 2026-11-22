@@ -50,7 +50,14 @@ public static class CustomSectionKit
     /// <summary>Of a select.</summary>
     public const int MaxOptions = 256;
 
-    public const int MaxOptionLabelLength = 256;
+    /// <summary>Of an option's value or label.</summary>
+    public const int MaxOptionLength = 256;
+
+    /// <summary>The storefront's render budget: a kit tag's cost, the most elements one instance renders, is at most it.</summary>
+    public const int RenderBudget = 5000;
+
+    /// <summary>The most characters of bound values and rich text the storefront renders in a section.</summary>
+    public const int MaxRenderedText = 262_144;
     public const int MaxWrites = 32;
     public const int MaxWriteLength = 128;
 
@@ -76,7 +83,7 @@ public static class CustomSectionKit
     /// </summary>
     public static IReadOnlySet<string> DeniedAttributes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        "style", "id", "is", "class", "srcdoc", "ping", "srcset", "poster", "action",
+        "style", "id", "is", "class", "srcdoc", "ping", "srcset", "poster", "action", "command", "commandfor", "interestfor",
     };
 
     /// <summary>The starts of the names no behavior takes, after data-: the attributes the storefront writes itself.</summary>
@@ -88,12 +95,14 @@ public static class CustomSectionKit
     private static readonly HashSet<string> BindingNames = new(StringComparer.Ordinal) { "each", "if", "html" };
 
     private const string DescriptionKey = "description";
+    private const string CostKey = "cost";
+    private const string HasSideEffectsKey = "hasSideEffects";
 
     /// <summary>The keys a kit field takes; the section kit passes the agent these only.</summary>
     public static IReadOnlySet<string> FieldKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "type", "options", "optionsFrom", "min", "max", DescriptionKey };
 
     /// <summary>The keys a kit tag takes.</summary>
-    public static IReadOnlySet<string> TagKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "attributes", DescriptionKey };
+    public static IReadOnlySet<string> TagKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "attributes", DescriptionKey, CostKey, HasSideEffectsKey };
 
     /// <summary>The keys a behavior takes.</summary>
     public static IReadOnlySet<string> BehaviorKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "value", "options", "writes", "repeatsChildren", DescriptionKey };
@@ -147,7 +156,12 @@ public static class CustomSectionKit
             .Select(x => (string)x)
             .ToFrozenSet(StringComparer.Ordinal);
 
-        return new StorefrontKit(true, tags, behaviors, icons) { PaletteTokens = paletteTokens, TemplateKeys = templateKeys };
+        var sideEffectTags = (kit["tags"] as JObject)?.Properties()
+            .Where(x => x.Value is JObject tag && tag[HasSideEffectsKey] is JValue { Type: JTokenType.Boolean } sideEffects && (bool)sideEffects)
+            .Select(x => x.Name)
+            .ToFrozenSet(StringComparer.Ordinal);
+
+        return new StorefrontKit(true, tags, behaviors, icons) { PaletteTokens = paletteTokens, TemplateKeys = templateKeys, SideEffectTags = sideEffectTags };
     }
 
     /// <returns>What is wrong with the kit's shape, naming where; <c>null</c> for a kit that is right or for none.</returns>
@@ -262,6 +276,9 @@ public static class CustomSectionKit
 
     private static string GetTagError(JObject tag) =>
         GetKeysError(tag, TagKeys)
+        ?? (tag[CostKey] is null or { Type: JTokenType.Null } or JValue { Type: JTokenType.Integer, Value: >= 1L and <= (long)RenderBudget } ? null
+            : string.Create(CultureInfo.InvariantCulture, $"has a cost that is not a whole number from 1 to {RenderBudget}"))
+        ?? (tag[HasSideEffectsKey] is null or { Type: JTokenType.Null or JTokenType.Boolean } ? null : "has a hasSideEffects that is not true or false")
         ?? ((tag["attributes"] as JObject)?.Count > MaxFields ? string.Create(CultureInfo.InvariantCulture, $"has more than {MaxFields} attributes") : null)
         ?? GetFieldsError(tag["attributes"], "attribute",
             x => IsDeniedAttribute(x) ? "no kit tag takes" : IsReservedDataAttribute(x) ? "the storefront writes itself" : null);
@@ -373,7 +390,7 @@ public static class CustomSectionKit
 
         if (field["options"] is { Type: not JTokenType.Null } options && !(options is JArray list && list.All(IsOption)))
         {
-            return string.Create(CultureInfo.InvariantCulture, $"has options that are not a list of values, or of {{ value, label }} with a label of at most {MaxOptionLabelLength} characters");
+            return string.Create(CultureInfo.InvariantCulture, $"has options that are not a list of values, or of {{ value, label }}, each text of at most {MaxOptionLength} characters");
         }
 
         if (field["optionsFrom"] is { Type: not JTokenType.Null } optionsFrom &&
@@ -398,8 +415,8 @@ public static class CustomSectionKit
     }
 
     private static bool IsOption(JToken option) =>
-        GetOptionValue(option) != null &&
-        (option is not JObject item || item["label"] is null or { Type: JTokenType.Null } || item["label"] is JValue { Type: JTokenType.String } label && ((string)label).Length <= MaxOptionLabelLength);
+        GetOptionValue(option) is { } value && (value.Type != JTokenType.String || ((string)value).Length <= MaxOptionLength) &&
+        (option is not JObject item || item["label"] is null or { Type: JTokenType.Null } || item["label"] is JValue { Type: JTokenType.String } label && ((string)label).Length <= MaxOptionLength);
 
     // a value, or an object with its value and its label
     private static JValue GetOptionValue(JToken option) =>

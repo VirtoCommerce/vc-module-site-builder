@@ -35,7 +35,8 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     }
 
     /// <summary>data:image/ is allowed too: an image runs no script and loads nothing else.</summary>
-    public virtual bool IsImageDataUrl(string url) => ImageDataUrlPattern.IsMatch(url);
+    /// <remarks>Not with a raw '#': data:image/svg+xml with a fragment may load as a document whose images reach any host.</remarks>
+    public virtual bool IsImageDataUrl(string url) => ImageDataUrlPattern.IsMatch(url) && !url.Contains('#');
 
     /// <summary>A URL parser drops tabs and line breaks, and reads '\' as '/', so either could make a path start with '//', another site; the storefront refuses both anywhere.</summary>
     /// <param name="schemes">Besides a path starting with '/' or an anchor, such as "https:".</param>

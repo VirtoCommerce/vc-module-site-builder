@@ -470,7 +470,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     {
         if (!urlPolicy.IsAssetUrl(url) && !urlPolicy.IsImageDataUrl(url))
         {
-            findings.Errors.Add($"the CSS loads '{Quote(url)}', which is not a URL of the store's asset library or a data:image/ URL");
+            findings.Errors.Add($"the CSS loads '{Quote(url)}', which is not a URL of the store's asset library or a data:image/ URL without a raw #");
         }
     }
 
