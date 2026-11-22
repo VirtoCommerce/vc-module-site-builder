@@ -643,8 +643,12 @@ describe("the theme's custom section types", () => {
   // A change of the draft goes to the preview once changes pause for 120 ms.
   const draftSent = async () => {
     await flushPromises();
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await vi.advanceTimersByTimeAsync(150);
+    await flushPromises();
   };
+
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
+  afterEach(() => vi.useRealTimers());
 
   async function openPage(drafts: string[], agent?: ReturnType<typeof fakeAgent>) {
     platform = fakePlatform()
@@ -691,7 +695,7 @@ describe("the theme's custom section types", () => {
     const page = await openPage([]);
     // Hashes no other test loads: the designer remembers the catalogs the server has for as long as it runs.
     await page.load("c0ffee01", { text: { name: "Text" }, "custom-old": { name: "Old", custom: true, settings: [] } });
-    const sections = { text: { name: "Text" }, "custom-hero": { name: { "en-US": "Hero", "de-DE": "Held" }, custom: true, settings: [] } };
+    const sections = { text: { name: "Text" }, "custom-hero": { name: { "de-DE": "Held", "en-US": "Hero" }, custom: true, settings: [] } };
 
     await page.load("c0ffee02", sections);
     await page.load("c0ffee02", sections);
@@ -743,8 +747,8 @@ describe("the theme's custom section types", () => {
       return themeFileAnswer({ [HERO_PATH]: { ...HERO, name: "Earlier" } })(request as never);
     });
 
-    for (const publication of [4, 5]) {
-      platform.on("GET", "/api/site-builder/theme/status", { publication, drafts: ["custom-sections/custom-hero.json"] });
+    // each status read is a new status, so each reads the drafted types again
+    for (let i = 0; i < 2; i++) {
       await page.designer.refreshThemeStatus();
       await flushPromises();
     }
@@ -759,12 +763,28 @@ describe("the theme's custom section types", () => {
     const page = await openPage(["custom-sections/custom-hero.json"]);
     await page.load("0badc0de");
     platform.on("GET", "/api/site-builder/designer/theme-file", status(500));
-    platform.on("GET", "/api/site-builder/theme/status", { publication: 4, drafts: ["custom-sections/custom-hero.json"] });
+    const reads = platform.to("/api/site-builder/designer/theme-file").length;
 
     await page.designer.refreshThemeStatus();
     await draftSent();
 
+    expect(platform.to("/api/site-builder/designer/theme-file").length).toBeGreaterThan(reads);
     expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+  });
+
+  it("reload the preview once a publication makes them live, as its snapshot is the one it started with", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+    await page.load("0badc0de");
+    const reloads = vi.spyOn(HTMLIFrameElement.prototype, "src", "set");
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 4, drafts: [] });
+
+    await page.designer.refreshThemeStatus();
+    await flushPromises();
+    await page.designer.refreshThemeStatus();
+    await flushPromises();
+
+    expect(reloads).toHaveBeenCalledTimes(1);
+    reloads.mockRestore();
   });
 
   it("are left to the published snapshot, and not read, while none has a draft", async () => {

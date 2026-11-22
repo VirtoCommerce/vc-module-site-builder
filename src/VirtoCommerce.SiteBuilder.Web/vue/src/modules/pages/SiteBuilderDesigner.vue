@@ -1797,6 +1797,13 @@ const templateKeysNotice = ref<string>();
 const readSavedTemplates = savedTemplatesReader();
 const readSavedCustomSections = savedCustomSectionsReader();
 let themeFilesRead = 0;
+// The preview reads the published theme from the snapshot it started with, so a publication reloads it.
+watch(
+  () => [designer.storeId.value, designer.themeStatus.value?.publication] as const,
+  ([storeId, publication], [storeBefore, publicationBefore]) => {
+    if (storeId === storeBefore && publicationBefore !== undefined && publication !== publicationBefore) reloadPreview();
+  },
+);
 watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => {
   const request = ++themeFilesRead;
   const storeId = designer.storeId.value;
