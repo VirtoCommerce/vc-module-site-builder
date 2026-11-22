@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
@@ -93,19 +94,26 @@ public static class SectionKitGuide
             File = new
             {
                 Path = $"{ThemeStorage.CustomSectionsFolder}/{{type}}.json in the theme; create_section_type and change_section_type write its draft.",
-                Type = $"The type {ThemeCustomSections.DescribeType()}, such as {ExampleType}. Keep the type of one a page places.",
+                Type = string.Create(CultureInfo.InvariantCulture,
+                    $"The type matches {rules.TypePattern} and has at most {rules.MaxTypeLength} characters, such as {ExampleType}. Keep the type of one a page places."),
                 Name = "A text, or a text per language: the name in the designer's section picker.",
                 SchemaKeys = rules.SchemaKeys,
+                TargetTemplates = "targetTemplates names the templates that offer the type, by the keys of the catalog's templates, as the schemas " +
+                    "resource lists them, such as product; a save warns of a key the catalog does not name. Left out, every template offers it.",
                 FieldTypes = rules.FieldTypes,
                 FieldKeys = rules.FieldKeys,
                 Fields = new[]
                 {
                     "A setting is { id, type, label, ... } as a section schema declares it; header and paragraph are labels and hold no value.",
-                    "An id is letters, digits and '_', starting with a letter.",
+                    "An id is letters, digits and '_', starting with a letter. No setting, a row's field included, has the id " +
+                        $"{JoinOr(rules.ReservedSettingIds)}: a section holds these keys itself.",
                     "string holds a text, with \"format\": \"url\" a link; text holds rich text (HTML); string and text take \"translatable\": true.",
                     "select has options, each { value, label }; list and object have element, the fields of a row or of the object, one level deep.",
                     "images holds one image of the asset library; color-token holds a palette token below, such as color_primary_500.",
                     "A setting holds one value: no multiple.",
+                    "A default is one the setting takes, or empty: one of a select's options, a link by the link rule, an image of the asset library, " +
+                        "a number within min and max, true or false for a checkbox, a palette token below for a color-token, and rows of such values " +
+                        "for a list or an object.",
                 },
             },
             Template = new

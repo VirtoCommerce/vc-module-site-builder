@@ -29,7 +29,8 @@ public class SectionTypeTools(
 
     private const string TypeDescription = $"The type, matching {ThemeStorage.CustomSectionTypePattern}, for example 'custom-stats-band'.";
     private const string NameDescription = "The name in the designer's section picker: a text, or a text per language such as { \"en-US\": \"Stats band\" }.";
-    private const string SchemaDescription = "The settings schema: { \"settings\": [fields], \"targetTemplates\"?: [template keys], \"limit\"?: number, \"icon\"?: text }.";
+    private const string SchemaDescription = "The settings schema: { \"settings\": [fields], \"targetTemplates\"?: [keys of the catalog's templates, as the " +
+        "schemas resource lists them], \"limit\"?: number, \"icon\"?: text }.";
     private const string TemplateDescription = "The HTML template: one root element, the section's root, with the settings bound into it.";
     private const string CssDescription = "The CSS, which reaches only the type's sections; :scope is the section's root. Omit it for none.";
     private const string DryRunDescription = "true to check the type and return its errors, its warnings and what it would change, without saving it.";

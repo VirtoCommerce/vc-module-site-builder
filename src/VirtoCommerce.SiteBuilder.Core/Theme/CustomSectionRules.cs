@@ -7,6 +7,9 @@ public class CustomSectionRules
 
     public int MaxTypeLength { get; set; }
 
+    /// <summary>The keys a section holds itself, which no setting takes as its id.</summary>
+    public IList<string> ReservedSettingIds { get; set; } = [];
+
     /// <summary>Besides the kit tags the catalog names.</summary>
     public IList<string> Elements { get; set; } = [];
 

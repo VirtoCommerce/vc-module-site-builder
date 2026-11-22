@@ -32,7 +32,10 @@ interface CustomSectionType {
   schema: {
     /** the settings, as a section schema declares them */
     settings: Field[];
-    /** the templates it may be placed on; any when left out */
+    /**
+     * the templates that offer it, by their keys in the catalog's `templates`, as the `schemas` resource lists them; any
+     * when left out. A save warns of a key the catalog does not name.
+     */
     targetTemplates?: string[];
     limit?: number;
     icon?: string;

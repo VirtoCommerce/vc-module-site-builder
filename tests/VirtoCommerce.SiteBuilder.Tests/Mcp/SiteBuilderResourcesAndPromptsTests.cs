@@ -228,6 +228,12 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.DoesNotContain("input", rules.Elements);
         Assert.Equal(rules.MaxPartSize, kit.GetProperty("limits").GetProperty("template_bytes").GetInt32());
         Assert.Equal((1500, 64), (kit.GetProperty("limits").GetProperty("template_tags").GetInt32(), kit.GetProperty("limits").GetProperty("template_attributes").GetInt32()));
+        Assert.Contains(kit.GetProperty("file").GetProperty("fields").EnumerateArray(),
+            x => x.GetString()!.Contains("No setting, a row's field included, has the id id, type, hidden, blocks or __group", StringComparison.Ordinal));
+        Assert.Contains(kit.GetProperty("file").GetProperty("fields").EnumerateArray(),
+            x => x.GetString()!.StartsWith("A default is one the setting takes", StringComparison.Ordinal));
+        Assert.Contains(rules.TypePattern, kit.GetProperty("file").GetProperty("type").GetString(), StringComparison.Ordinal);
+        Assert.Contains("keys of the catalog's templates", kit.GetProperty("file").GetProperty("target_templates").GetString(), StringComparison.Ordinal);
         Assert.Equal((256, 256, 64, 256), (kit.GetProperty("limits").GetProperty("kit").GetProperty("tags").GetInt32(),
             kit.GetProperty("limits").GetProperty("kit").GetProperty("behaviors").GetInt32(), kit.GetProperty("limits").GetProperty("kit").GetProperty("fields").GetInt32(),
             kit.GetProperty("limits").GetProperty("kit").GetProperty("options").GetInt32()));

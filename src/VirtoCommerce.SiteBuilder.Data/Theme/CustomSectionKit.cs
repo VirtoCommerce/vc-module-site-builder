@@ -30,6 +30,8 @@ public static class CustomSectionKit
 
     /// <summary>The catalog's palette tokens, beside its kit.</summary>
     public const string PaletteTokensKey = "paletteTokens";
+
+    private const string TemplatesKey = "templates";
     public const string DesignKey = "design";
 
     public const int MaxGuideLength = 16 * 1024;
@@ -126,9 +128,10 @@ public static class CustomSectionKit
             .Where(x => x.Name is "light" or "dark")
             .SelectMany(x => (x.Value as JArray)?.OfType<JValue>().Where(v => v.Type == JTokenType.String).Select(v => (string)v) ?? [])
             .ToFrozenSet(StringComparer.Ordinal);
+        var templateKeys = (catalog?[TemplatesKey] as JObject)?.Properties().Select(x => x.Name).ToFrozenSet(StringComparer.Ordinal);
         if (catalog?[KitKey] is not JObject kit)
         {
-            return new StorefrontKit(catalog != null, Tags: null, Behaviors: null, Icons: null) { PaletteTokens = paletteTokens };
+            return new StorefrontKit(catalog != null, Tags: null, Behaviors: null, Icons: null) { PaletteTokens = paletteTokens, TemplateKeys = templateKeys };
         }
 
         var tags = ReadEntries(kit["tags"], TagPrefix, x => ReadFields(x["attributes"]));
@@ -144,7 +147,7 @@ public static class CustomSectionKit
             .Select(x => (string)x)
             .ToFrozenSet(StringComparer.Ordinal);
 
-        return new StorefrontKit(true, tags, behaviors, icons) { PaletteTokens = paletteTokens };
+        return new StorefrontKit(true, tags, behaviors, icons) { PaletteTokens = paletteTokens, TemplateKeys = templateKeys };
     }
 
     /// <returns>What is wrong with the kit's shape, naming where; <c>null</c> for a kit that is right or for none.</returns>

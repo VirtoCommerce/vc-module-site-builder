@@ -13,6 +13,9 @@ public sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, 
         .Where(x => x.Value != null)
         .ToDictionary(StringComparer.Ordinal);
 
+    /// <summary>The keys of the catalog's templates, which a type's targetTemplates name; <c>null</c> when it lists none, and they are not checked.</summary>
+    public IReadOnlySet<string> TemplateKeys { get; init; }
+
     /// <summary>The palette's tokens the catalog lists, light and dark; <c>null</c> when it lists none, and a token is not checked.</summary>
     public IReadOnlySet<string> PaletteTokens { get; init; }
 

@@ -1121,6 +1121,23 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
+    public void Validate_TargetTemplateTheCatalogDoesNotName_IsSavedWithAWarning()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["templates"] = JObject.Parse("""{ "product": {}, "page": {} }""");
+        var section = Section("<section></section>");
+        section["schema"]!["targetTemplates"] = new JArray("product", "product.b2c");
+
+        var result = _validator.Validate(Type, section, catalog);
+        var withoutTemplates = _validator.Validate(Type, section, Catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(["'schema.targetTemplates' names 'product.b2c', which is no template key of the storefront's catalog, so no template offers the type: " +
+            "the schemas resource lists the catalog's templates"], result.Warnings);
+        Assert.Empty(withoutTemplates.Warnings);
+    }
+
+    [Fact]
     public void Validate_ColorTokenDefaultWithACatalogOfNoPalette_IsNotChecked()
     {
         Assert.Empty(_validator.Validate(Type, Section("<section></section>", settings: """[ { "id": "tone", "type": "color-token", "default": "brand_blue" } ]"""), Catalog).Errors);

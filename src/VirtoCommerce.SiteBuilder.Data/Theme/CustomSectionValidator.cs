@@ -79,6 +79,7 @@ public class CustomSectionValidator(
     {
         var result = AbstractTypeFactory<CustomSectionRules>.TryCreateInstance();
         result.TypePattern = ThemeStorage.CustomSectionTypePattern;
+        result.ReservedSettingIds = [.. SiteBuilderPageItems.ItemKeys];
         result.MaxTypeLength = ThemeStorage.CustomSectionTypeMaxLength;
         result.Elements = CustomSectionTemplateValidator.Elements.Order(StringComparer.Ordinal).ToList();
         result.Attributes = CustomSectionTemplateValidator.Attributes.Order(StringComparer.Ordinal).ToList();
@@ -252,6 +253,15 @@ public class CustomSectionValidator(
         if (schema["targetTemplates"] is { } targets && !(targets is JArray list && list.All(x => x is JValue { Type: JTokenType.String } key && !string.IsNullOrWhiteSpace((string)key))))
         {
             check.AddError("'schema.targetTemplates' is not a list of template names");
+        }
+        else if (check.Kit?.TemplateKeys is { } templateKeys)
+        {
+            // only a warning: a catalog uploaded earlier may lack a template the storefront has now
+            foreach (var key in (schema["targetTemplates"] as JArray ?? []).Select(x => (string)x).Where(x => !templateKeys.Contains(x)))
+            {
+                check.AddWarning($"'schema.targetTemplates' names '{Quote(key)}', which is no template key of the storefront's catalog, so no template offers " +
+                    "the type: the schemas resource lists the catalog's templates");
+            }
         }
 
         if (schema["limit"] is { } limit && limit is not JValue { Value: >= 1L })
