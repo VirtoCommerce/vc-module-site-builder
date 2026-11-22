@@ -127,8 +127,10 @@ public static class SectionKitGuide
                 Classes = $"class names the type's own classes only: the type itself, or a name starting with the type and {JoinOr(rules.ClassSeparators.Select(x => $"'{x}'").ToList())}, " +
                     "such as custom-stats-band__value or custom-stats-band-dark. A binding in class names a select setting whose options are such classes.",
                 Links = $"href is a path starting with '/', a URL starting with {JoinOr(rules.LinkSchemes)}, an anchor on the page such as #reviews " +
-                    "(a letter, then letters, digits, '-' and '_'), or one binding of a string setting with \"format\": \"url\".",
-                LinkTargets = $"target is {JoinOr(rules.LinkTargets)}, and rel does not hold {JoinOr(rules.RefusedRels)}; both are written as they are, with no binding.",
+                    "(a letter, then letters, digits, '-' and '_'), or one binding of a string setting with \"format\": \"url\"; a link holds no " +
+                    "backslash, tab or line break.",
+                LinkTargets = $"target is {JoinOr(rules.LinkTargets)}, case counting, and rel does not hold {JoinOr(rules.RefusedRels)}; both are written as they " +
+                    "are, with no binding.",
                 Images = "src and srcset are a URL of the store's asset library (search_assets), or one binding of an images setting.",
                 Text = $"Text written into the template, or into {JoinOr(rules.TextAttributes)}, is the same in every language and saves with a " +
                     "warning: bind it to a translatable setting.",
@@ -177,11 +179,13 @@ public static class SectionKitGuide
                         "start, a selector in :has() starting with + or ~, :nth-child(… of …) or :nth-last-child(… of …) on :scope or &, a " +
                         "combinator inside :is(), :where(), :not() and the other pseudo-classes of selectors or after the of of :nth-child(), and a " +
                         "functional pseudo-class or pseudo-element the storefront does not take; :has() may hold > and descendants",
-                    "a declaration outside any rule, which would apply to the section's root unchecked: write it in :scope { }",
-                    $"position: fixed, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} in position",
+                    "a declaration outside any rule, which a browser drops with the rule after it: write it in :scope { }",
+                    $"a position other than {JoinOr(rules.PositionValues)}, such as fixed, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} " +
+                        "in position",
                     $"a URL other than one of the store's asset library or a data:image/ URL in {JoinOr(Functions(rules.ImageFunctions))}, custom " +
                         $"properties included, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} inside them",
-                    $"expression(), and the properties {JoinOr(rules.ScriptProperties)}, which run script",
+                    $"{JoinAnd(Functions(rules.RefusedFunctions))}, which run script or paint a live copy of an element of the page, and the properties " +
+                        $"{JoinOr(rules.ScriptProperties)}, which run script",
                     "a string that a line break cuts off, and a url( whose unquoted URL holds a quote, a parenthesis or a space: quote the URL",
                     $"a block left open or closed without its pair, blocks nested deeper than {rules.MaxCssDepth}, and at-rules nested deeper than {rules.MaxAtRuleDepth}",
                 },
@@ -223,9 +227,9 @@ public static class SectionKitGuide
                     "A behavior is switched on with data-<name> and set with data-<name>-<option> on the element or inside it. Its own value is checked by " +
                         "the type the kit declares under value, such as a number for count-up or a date for countdown; one that declares none takes any text. " +
                         "It writes what its writes names, such as data-visible, --scroll-progress or the text: style that in the CSS.",
-                    $"An attribute's, an option's or a value's type is {JoinOr(rules.KitFieldTypes)}: a select takes one of its options, a number one from " +
-                        "min to max, a boolean true, false or no value, a date an ISO 8601 date or date and time, such as 2026-12-31, and a link follows " +
-                        "the link rule. Each is a literal of its type, or one binding.",
+                    $"An attribute's, an option's or a value's type is {JoinOr(rules.KitFieldTypes)}: a select takes one of its options, and one with " +
+                        "neither options nor optionsFrom only a binding, a number one from min to max, a boolean true, false or no value, a date an ISO " +
+                        "8601 date or date and time, such as 2026-12-31, and a link follows the link rule. Each is a literal of its type, or one binding.",
                     "A behavior with repeatsChildren, such as marquee, repeats what its element holds: an element with one inside an element with " +
                         "one is refused, as each level would multiply the page; a data-each row inside one is fine.",
                     "The storefront's own kit tags and behaviors keep their names: a module of the storefront cannot register one of the same name.",

@@ -47,6 +47,12 @@ public class CustomSectionRules
 
     public IList<string> ScriptProperties { get; set; } = [];
 
+    /// <summary>Functions refused anywhere: they run script or paint a live copy of an element of the page.</summary>
+    public IList<string> RefusedFunctions { get; set; } = [];
+
+    /// <summary>The only values of position.</summary>
+    public IList<string> PositionValues { get; set; } = [];
+
     /// <summary>Their URL must be one of the asset library.</summary>
     public IList<string> ImageFunctions { get; set; } = [];
 

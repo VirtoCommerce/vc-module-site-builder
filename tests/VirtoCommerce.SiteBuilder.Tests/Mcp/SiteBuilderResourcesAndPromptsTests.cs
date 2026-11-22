@@ -210,13 +210,17 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal((32, 32, 4), (kit.GetProperty("limits").GetProperty("template_depth").GetInt32(), kit.GetProperty("limits").GetProperty("css_depth").GetInt32(),
             kit.GetProperty("limits").GetProperty("at_rule_depth").GetInt32()));
         Assert.Contains("'-' or '__'", kit.GetProperty("template").GetProperty("classes").GetString(), StringComparison.Ordinal);
-        Assert.Equal("target is _self or _blank, and rel does not hold opener; both are written as they are, with no binding.",
+        Assert.Equal("target is _self or _blank, case counting, and rel does not hold opener; both are written as they are, with no binding.",
             kit.GetProperty("template").GetProperty("link_targets").GetString());
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
             x => x.GetString()!.Contains("takes no on*, form*, popover*, style, id, is, class, srcdoc, ping, srcset, poster or action", StringComparison.Ordinal));
         Assert.StartsWith("The storefront's catalog names no kit", kit.GetProperty("kit").GetProperty("note").GetString(), StringComparison.Ordinal);
         Assert.Contains(kit.GetProperty("css").GetProperty("refused").EnumerateArray(),
             x => x.GetString()!.StartsWith("a selector any part of which can match outside the section", StringComparison.Ordinal));
+        Assert.Contains(kit.GetProperty("css").GetProperty("refused").EnumerateArray(),
+            x => x.GetString()!.StartsWith("a position other than static, relative, absolute, sticky, inherit, initial, unset or revert", StringComparison.Ordinal));
+        Assert.Contains(kit.GetProperty("css").GetProperty("refused").EnumerateArray(),
+            x => x.GetString()!.StartsWith("expression(), element() and -moz-element()", StringComparison.Ordinal));
         Assert.StartsWith("The storefront renders a section within a budget of 5000:", kit.GetProperty("template").GetProperty("render_budget").GetString(),
             StringComparison.Ordinal);
     }

@@ -450,8 +450,10 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
                 return value is "" or "true" or "false" ? null : "true, false or no value";
             case CustomSectionKit.SelectType when field.OptionsFrom == CustomSectionKit.IconsKey:
                 return check.Kit.Icons == null || check.Kit.Icons.Contains(value) ? null : "an icon name of the storefront, as the kit's icons list them";
+            case CustomSectionKit.SelectType when field.Options == null:
+                return "one binding, as the catalog declares no options";
             case CustomSectionKit.SelectType:
-                return field.Options == null || field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
+                return field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
             case CustomSectionKit.DateType:
                 return IsIsoDate(value) ? null : "an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z";
             default:
@@ -588,7 +590,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         {
             check.AddError($"{where} has {name}=\"{Quote(value)}\", which is written as it is, without a binding");
         }
-        else if (name == "target" && !LinkTargets.Contains(value, StringComparer.OrdinalIgnoreCase))
+        else if (name == "target" && !LinkTargets.Contains(value.Trim(), StringComparer.Ordinal))
         {
             check.AddError($"{where} has target=\"{Quote(value)}\", which is not {JoinOr(LinkTargets)}");
         }

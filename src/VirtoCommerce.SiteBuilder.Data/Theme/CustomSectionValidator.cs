@@ -97,6 +97,8 @@ public class CustomSectionValidator(
         result.AtRules = [.. CustomSectionCssValidator.AtRules];
         result.KeyframesSeparator = CustomSectionCssValidator.KeyframesSeparator;
         result.ScriptProperties = CustomSectionCssValidator.ScriptProperties.Order(StringComparer.Ordinal).ToList();
+        result.RefusedFunctions = [.. CustomSectionCssValidator.RefusedFunctions.Keys];
+        result.PositionValues = [.. CustomSectionCssValidator.PositionValues];
         result.ImageFunctions = [.. CustomSectionCssValidator.ImageFunctions];
         result.LateValueFunctions = [.. CustomSectionCssValidator.LateValueFunctions];
         result.LogicalProperties = CustomSectionCssValidator.LogicalProperties

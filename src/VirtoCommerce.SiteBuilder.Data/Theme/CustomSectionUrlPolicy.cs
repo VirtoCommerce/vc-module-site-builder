@@ -37,18 +37,18 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     /// <summary>data:image/ is allowed too: an image runs no script and loads nothing else.</summary>
     public virtual bool IsImageDataUrl(string url) => ImageDataUrlPattern.IsMatch(url);
 
-    /// <summary>A URL parser drops tabs and line breaks, and reads '\' as '/', so either could make a path start with '//', another site.</summary>
+    /// <summary>A URL parser drops tabs and line breaks, and reads '\' as '/', so either could make a path start with '//', another site; the storefront refuses both anywhere.</summary>
     /// <param name="schemes">Besides a path starting with '/' or an anchor, such as "https:".</param>
     public virtual bool IsLink(string url, IEnumerable<string> schemes)
     {
-        if (url.Length == 0 || url.Any(char.IsControl))
+        if (url.Length == 0 || url.Any(char.IsControl) || url.Contains('\\'))
         {
             return false;
         }
 
         if (url.StartsWith('/'))
         {
-            return url.Length == 1 || url[1] is not ('/' or '\\');
+            return url.Length == 1 || url[1] != '/';
         }
 
         if (url.StartsWith('#'))

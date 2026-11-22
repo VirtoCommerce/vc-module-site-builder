@@ -20,6 +20,17 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
 
     public static IReadOnlySet<string> ScriptProperties { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "-moz-binding", "behavior" };
 
+    /// <summary>By function: what it does, which the storefront drops it for.</summary>
+    public static IReadOnlyDictionary<string, string> RefusedFunctions { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["expression"] = "runs script",
+        ["element"] = "paints a live copy of an element of the page",
+        ["-moz-element"] = "paints a live copy of an element of the page",
+    };
+
+    /// <summary>The only values of position the storefront keeps.</summary>
+    public static IReadOnlyList<string> PositionValues { get; } = ["static", "relative", "absolute", "sticky", "inherit", "initial", "unset", "revert"];
+
     /// <summary>Their URL must be one of the asset library.</summary>
     public static IReadOnlySet<string> ImageFunctions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -203,14 +214,14 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                 case CssTokenizer.TokenKind.String when imageFunctions.Count > 0:
                     AddCssUrlError(token.Value, findings);
                     break;
-                case CssTokenizer.TokenKind.Function when string.Equals(token.Value, "expression", StringComparison.OrdinalIgnoreCase):
-                    findings.Errors.Add("the CSS has expression(), which runs script");
+                case CssTokenizer.TokenKind.Function when RefusedFunctions.TryGetValue(token.Value, out var refused):
+                    findings.Errors.Add($"the CSS has {token.Value.ToLowerInvariant()}(), which {refused}");
                     break;
                 case CssTokenizer.TokenKind.Function when IsLateValueFunction(token.Value) && imageFunctions.Count > 0:
                     findings.Errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {imageFunctions.Peek()}(), whose URL is then not known on save");
                     break;
                 case CssTokenizer.TokenKind.Ident when blocks.Count == 0 && atDeclarationStart && ReadDeclarationValue(tokens, i) != null:
-                    // the storefront's @scope would apply it to the section's root, where no check of a rule reaches it
+                    // a browser drops it, with the rule after it
                     findings.Errors.Add($"the CSS has the declaration '{token.Value}' outside any rule: write it in :scope {{ }}");
                     break;
                 case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly && atDeclarationStart:
@@ -381,7 +392,24 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
             {
                 findings.Errors.Add($"the CSS sets position with {function.ToLowerInvariant()}(), which could make it fixed");
             }
+            else if (!PositionValues.Contains(GetKeyword(value), StringComparer.OrdinalIgnoreCase))
+            {
+                findings.Errors.Add($"the CSS sets position to '{Quote(WriteCss(value))}', and a custom section's position is {JoinOr(PositionValues)}");
+            }
         }
+    }
+
+    /// <returns>The one keyword a value is, !important aside; <c>null</c> for any other value.</returns>
+    private static string GetKeyword(List<CssTokenizer.Token> value)
+    {
+        var tokens = value.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList();
+        if (tokens.Count == 3 && tokens[1] is { Kind: CssTokenizer.TokenKind.Delim, Value: "!" } &&
+            tokens[2] is { Kind: CssTokenizer.TokenKind.Ident } important && string.Equals(important.Value, "important", StringComparison.OrdinalIgnoreCase))
+        {
+            tokens.RemoveRange(1, 2);
+        }
+
+        return tokens is [{ Kind: CssTokenizer.TokenKind.Ident } keyword] ? keyword.Value : null;
     }
 
     protected virtual void AddColorWarning(CustomSectionCheck check, CssFindings findings)

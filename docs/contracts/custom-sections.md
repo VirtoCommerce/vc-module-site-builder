@@ -82,10 +82,11 @@ comments and attribute values too, is refused before it is parsed.
 - **Classes**: `class` names the type's own classes only: the type itself, or a name starting with `{type}-` or
   `{type}__` (`custom-hero__title`, `custom-hero--dark`). A binding in it names a `select` setting whose options are such
   classes.
-- **Link targets**: `target` is `_self` or `_blank`, and `rel` does not hold `opener`; both are written as they are, with
-  no binding.
+- **Link targets**: `target` is `_self` or `_blank`, case counting, and `rel` does not hold `opener`; both are written
+  as they are, with no binding.
 - **Links and images**: `href` is a path starting with `/`, an anchor on the page (`#` and a letter, then letters,
-  digits, `_` and `-`), an `https:`, `mailto:` or `tel:` URL, or a binding of a `"format": "url"` field. `src`,
+  digits, `_` and `-`), an `https:`, `mailto:` or `tel:` URL, or a binding of a `"format": "url"` field; a link holds no
+  backslash, tab or line break, which a browser could read as leaving the site. `src`,
   `srcset` and a `video`'s `poster` are a URL of the store's asset library or a binding of an `images` field. A URL of
   the library is read as written: its origin is the library's (case aside), no user info, and its path, once its `..` is
   resolved, starts with the library's path (case counts); one with an escaped dot, slash or backslash (`%2e`, `%2f`,
@@ -186,12 +187,13 @@ scope. `:scope` is the section's root.
 - **Images**: a URL of the store's asset library, or a `data:image/…` URL, as an image loads no script and nothing
   else; the data counts in the CSS's size.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
-  selector naming `:root`, `html` or `body`; `position: fixed`, and `var()`, `attr()`, `env()`, `if()` or a custom
+  selector naming `:root`, `html` or `body`; a `position` other than `static`, `relative`, `absolute`, `sticky`,
+  `inherit`, `initial`, `unset` or `revert`, such as `fixed`, and `var()`, `attr()`, `env()`, `if()` or a custom
   `--name()` function in `position`; any other URL, in `url()` or as a string anywhere inside `image-set()` and the
   other functions that load an image, at any depth, custom properties included, and `var()`, `attr()`, `env()`, `if()`
-  or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`;
-  a declaration outside any rule, which the wrapping would apply to the section's root unchecked: write it in
-  `:scope { }`.
+  or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`,
+  which run script, and `element()` and `-moz-element()`, which paint a live copy of an element of the page; a
+  declaration outside any rule, which a browser drops with the rule after it: write it in `:scope { }`.
 - **Selectors**: `@scope` keeps inside the section only the element a rule styles; every other part of its selector
   matches against the whole page. So a selector is refused, a nested rule's included, when `:scope` or `&` comes other
   than once at its start; when a selector in `:has()` starts with `+` or `~`; when `:nth-child(… of …)` or
@@ -297,8 +299,9 @@ interface Kit {
 
 interface KitField {
   /**
-   * a select takes one of its options, a number one from min to max, a boolean true, false or no value, a date an ISO
-   * 8601 date or date and time, and a link follows the link rule
+   * a select takes one of its options, and one with neither `options` nor `optionsFrom` only a binding; a number one
+   * from min to max, a boolean true, false or no value, a date an ISO 8601 date or date and time, and a link follows
+   * the link rule
    */
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
   options?: (string | { value: string; label?: string })[];

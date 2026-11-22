@@ -197,6 +197,9 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><a href="javascript:alert(1)">x</a></section>""", "<a> at line 1 has href=\"javascript:alert(1)\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
     [InlineData("""<section><a href="//evil.example/x">x</a></section>""", "<a> at line 1 has href=\"//evil.example/x\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
     [InlineData("""<section><a href="http://example.com">x</a></section>""", "<a> at line 1 has href=\"http://example.com\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="/sale\offers">x</a></section>""", "<a> at line 1 has href=\"/sale\\offers\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="https://example.com/a\b">x</a></section>""", "<a> at line 1 has href=\"https://example.com/a\\b\", which is not a path starting with '/', or an https:, mailto: or tel: URL")]
+    [InlineData("""<section><a href="/x" target="_BLANK">x</a></section>""", "<a> at line 1 has target=\"_BLANK\", which is not _self or _blank")]
     [InlineData("""<section><a href="{{ settings.title }}">x</a></section>""", "<a> at line 1 has href bound to 'settings.title', which is not a link setting: a string with \"format\": \"url\"")]
     [InlineData("""<section><a href="/p/{{ settings.title }}">x</a></section>""", "<a> at line 1 has href=\"/p/{{ settings.title }}\", which is a link or one binding of a link setting")]
     [InlineData("""<section><img src="https://evil.example/x.png"></section>""", "<img> at line 1 has src with 'https://evil.example/x.png', which is not a URL of the store's asset library")]
@@ -309,6 +312,19 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section($"""<section><vc-button {name}="{value}"></vc-button></section>"""), catalog);
 
         Assert.Equal([$"<vc-button> at line 1 has '{name}', which no kit tag takes, whatever the catalog declares"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_LiteralOfAKitSelectWithoutOptions_IsRefusedAndABindingIsTaken()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-button"]!["attributes"]!["tone"] = JObject.Parse("""{ "type": "select" }""");
+
+        var literal = _validator.Validate(Type, Section("""<section><vc-button tone="warm"></vc-button></section>"""), catalog);
+        var bound = _validator.Validate(Type, Section("""<section><vc-button tone="{{ settings.title }}"></vc-button></section>"""), catalog);
+
+        Assert.Equal(["<vc-button> at line 1 has tone=\"warm\", which vc-button does not take: it takes one binding, as the catalog declares no options"], literal.Errors);
+        Assert.Empty(bound.Errors);
     }
 
     [Fact]
@@ -614,6 +630,11 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { outline-style: none; }""", "the CSS sets outline-style to none or 0, which hides where the keyboard is on the page")]
     [InlineData(""".a { & .b { outline-width: 0px; } }""", "the CSS sets outline-width to none or 0, which hides where the keyboard is on the page")]
     [InlineData(""".a { width: expression(alert(1)); }""", "the CSS has expression(), which runs script")]
+    [InlineData(""".a { --bg: element(#secret); }""", "the CSS has element(), which paints a live copy of an element of the page")]
+    [InlineData(""".a { background: -MOZ-element(#secret); }""", "the CSS has -moz-element(), which paints a live copy of an element of the page")]
+    [InlineData(""".a { position: -webkit-sticky; }""", "the CSS sets position to '-webkit-sticky', and a custom section's position is static, relative, absolute, sticky, inherit, initial, unset or revert")]
+    [InlineData(""".a { position: revert-layer; }""", "the CSS sets position to 'revert-layer', and a custom section's position is static, relative, absolute, sticky, inherit, initial, unset or revert")]
+    [InlineData(""".a { position: relative absolute; }""", "the CSS sets position to 'relative absolute', and a custom section's position is static, relative, absolute, sticky, inherit, initial, unset or revert")]
     [InlineData(""".a { behavior: url(https://cdn.example/assets/x.htc); }""", "the CSS sets behavior, which runs script")]
     [InlineData(""".a { -moz-binding: url(https://cdn.example/assets/x.xml#y); }""", "the CSS sets -moz-binding, which runs script")]
     [InlineData("""@keyframes fade { from { opacity: 0; } }""", "the CSS names @keyframes 'fade', which does not start with 'custom-hero__': keyframes names are not scoped")]
@@ -665,6 +686,7 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { background: color-mix(in srgb, var(--color-primary-500) 40%, transparent); }""")]
     [InlineData(""".html, [data-tone="body"] .a { font-family: Tan, serif; grid-area: navy; }""")]
     [InlineData("""a:hover { text-decoration: underline; } :scope:focus-within { gap: 1rem; }""")]
+    [InlineData(""".a { position: sticky; } .b { position: RELATIVE !important; } .c { position: unset; } .d { posit\69on: st\61tic; }""")]
     public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
