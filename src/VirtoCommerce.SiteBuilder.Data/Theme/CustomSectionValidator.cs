@@ -113,6 +113,7 @@ public class CustomSectionValidator(
         result.KitLinkAttributes = [.. CustomSectionKit.LinkAttributes];
         result.MaxTemplateDepth = CustomSectionTemplateValidator.MaxDepth;
         result.MaxTemplateTags = CustomSectionTemplateValidator.MaxTags;
+        result.MaxTemplateAttributes = CustomSectionTemplateValidator.MaxAttributes;
         result.MaxCssDepth = CustomSectionCssValidator.MaxDepth;
         result.MaxAtRuleDepth = CustomSectionCssValidator.MaxAtRuleDepth;
         result.MaxPartSize = MaxPartSize;

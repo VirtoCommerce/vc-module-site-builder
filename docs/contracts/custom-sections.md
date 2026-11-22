@@ -67,7 +67,8 @@ element of HTML, not a kit tag. It is HTML as written, read as the storefront's 
 (quirks mode, where a `table` may stay inside a `p`): markup the parser has to mend, such as an element left open or a
 `/>` on a kit tag, is refused at the first place it breaks, where the parse stops, and so are elements nested more than
 32 deep, the root counted. A template of more than 1,500 tags, counting each `<` followed by a letter as written, in
-comments and attribute values too, is refused before it is parsed.
+comments and attribute values too, or with a tag of more than 64 attributes, counted as written, is refused before it
+is parsed.
 
 - **Elements**: the elements the builder's HTML sanitizer keeps, without form controls (`form`, `input`, `select`,
   `textarea`, `button`, `option`, `optgroup`, `datalist`, `fieldset`, `legend`, `label`, `output`), plus the

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -551,20 +552,57 @@ public class CustomSectionValidatorTests
         Assert.True(watch.Elapsed < System.TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
     }
 
+    [Theory]
+    [InlineData("<section{0}></section>", 65)]
+    [InlineData("<section><p title=\"a > b\"{0}>x</p></section>", 64)]
+    [InlineData("<section><!-- <p{0}> --></section>", 65)]
+    public void Validate_ElementOfMoreAttributesThanTheCap_IsRefusedBeforeItIsParsed(string template, int count)
+    {
+        var attributes = string.Concat(Enumerable.Range(0, count).Select(x => $" data-a{x}=\"{x}\""));
+
+        var result = _validator.Validate(Type, Section(string.Format(CultureInfo.InvariantCulture, template, attributes)), Catalog);
+
+        Assert.Equal(["the template has an element with more than 64 attributes, counting them as written"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_ElementOfAttributesUpToTheCap_IsParsed()
+    {
+        var attributes = string.Concat(Enumerable.Range(0, 63).Select(x => $" data-a{x}='{x}'"));
+
+        var result = _validator.Validate(Type, Section($"<section class=\"custom-hero\"{attributes}></section>"), Catalog);
+
+        Assert.Equal(63, result.Errors.Count(x => x.Contains("it is no binding", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Validate_TemplateOfThousandsOfShortAttributes_IsRefusedBeforeItIsParsed()
+    {
+        static string Name(int number) => number < 26 ? ((char)('a' + number)).ToString() : Name((number / 26) - 1) + (char)('a' + (number % 26));
+        var template = "<div " + string.Join(" ", Enumerable.Range(0, 16000).Select(Name)) + "></div>";
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+
+        var result = _validator.Validate(Type, Section(template), Catalog);
+
+        Assert.Equal(["the template has an element with more than 64 attributes, counting them as written"], result.Errors);
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - allocated < 8 * 1024 * 1024, $"allocated {GC.GetAllocatedBytesForCurrentThread() - allocated} bytes");
+    }
+
     [Fact]
     public void Validate_ManyAttributesAboveManyRepeatingBehaviors_IsCheckedOnceEach()
     {
         var catalog = (JObject)Catalog.DeepClone();
         catalog["kit"]!["behaviors"]!["marquee"]!["repeatsChildren"] = true;
-        var attributes = string.Concat(Enumerable.Range(0, 3000).Select(x => $" data-a{x}"));
-        var template = $"<div class=\"custom-hero\"{attributes}>" + string.Concat(Enumerable.Repeat("<i data-marquee></i>", 1400)) + "</div>";
+        var ancestors = Enumerable.Range(0, 30).Select(level => "<div" + string.Concat(Enumerable.Range(0, 64).Select(x => $" data-a{level}x{x}")) + ">").ToList();
+        var template = "<section>" + string.Concat(ancestors) + string.Concat(Enumerable.Repeat("<i data-marquee></i>", 1400)) +
+            string.Concat(Enumerable.Repeat("</div>", ancestors.Count)) + "</section>";
         var allocated = GC.GetAllocatedBytesForCurrentThread();
 
         var result = _validator.Validate(Type, Section(template), catalog);
 
         Assert.True(GC.GetAllocatedBytesForCurrentThread() - allocated < 64 * 1024 * 1024, $"allocated {GC.GetAllocatedBytesForCurrentThread() - allocated} bytes");
-        Assert.Equal(3000, result.Errors.Count);
-        Assert.Equal("<div> at line 1 has an attribute a custom section cannot use, 'data-a2999': it is no binding and no behavior the storefront offers",
+        Assert.Equal(30 * 64, result.Errors.Count);
+        Assert.Equal("<div> at line 1 has an attribute a custom section cannot use, 'data-a29x63': it is no binding and no behavior the storefront offers",
             result.Errors[^1]);
     }
 

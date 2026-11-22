@@ -40,6 +40,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     /// </summary>
     public const int MaxTags = 1500;
 
+    /// <summary>
+    /// Of each tag, counted in the template as written, in comments too: the HTML parser takes seconds over thousands of attributes on one
+    /// element, so a template with a tag over this count is not parsed at all.
+    /// </summary>
+    public const int MaxAttributes = 64;
+
     /// <summary>Besides the kit tags the catalog names.</summary>
     public static IReadOnlySet<string> Elements { get; } =
         SiteBuilderHtmlSanitizer.AllowedTags.Where(x => !FormControls.Contains(x)).ToHashSet(StringComparer.Ordinal);
@@ -89,6 +95,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         if (CountTags(template) > MaxTags)
         {
             check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template has more than {MaxTags} tags, counting each '<' followed by a letter as written"));
+            return;
+        }
+
+        if (CountMostAttributes(template) > MaxAttributes)
+        {
+            check.AddError(string.Create(CultureInfo.InvariantCulture, $"the template has an element with more than {MaxAttributes} attributes, counting them as written"));
             return;
         }
 
@@ -767,6 +779,85 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         return deepest;
+    }
+
+    // each tag as the HTML tokenizer reads its attributes, from one tag's end to the next tag, so the scan stays linear
+    private static int CountMostAttributes(string template)
+    {
+        var most = 0;
+        for (var i = template.IndexOf('<'); i >= 0 && i < template.Length - 1; i = template.IndexOf('<', i + 1))
+        {
+            if (char.IsAsciiLetter(template[i + 1]))
+            {
+                (var count, i) = CountAttributes(template, i + 1);
+                most = Math.Max(most, count);
+            }
+        }
+
+        return most;
+    }
+
+    /// <returns>The attributes of the tag whose name starts at <paramref name="index"/>, and where the tag ends.</returns>
+    private static (int Count, int End) CountAttributes(string template, int index)
+    {
+        static bool IsSpace(char value) => value is ' ' or '\t' or '\n' or '\r' or '\f';
+
+        var i = index;
+        while (i < template.Length && !IsSpace(template[i]) && template[i] is not ('/' or '>'))
+        {
+            i++;
+        }
+
+        var count = 0;
+        while (i < template.Length && template[i] != '>')
+        {
+            if (IsSpace(template[i]) || template[i] == '/')
+            {
+                i++;
+                continue;
+            }
+
+            count++;
+            i++;
+            while (i < template.Length && !IsSpace(template[i]) && template[i] is not ('/' or '>' or '='))
+            {
+                i++;
+            }
+
+            while (i < template.Length && IsSpace(template[i]))
+            {
+                i++;
+            }
+
+            if (i < template.Length && template[i] == '=')
+            {
+                i = SkipAttributeValue(template, i + 1);
+            }
+        }
+
+        return (count, i);
+
+        static int SkipAttributeValue(string text, int start)
+        {
+            var at = start;
+            while (at < text.Length && IsSpace(text[at]))
+            {
+                at++;
+            }
+
+            if (at < text.Length && text[at] is '"' or '\'')
+            {
+                var close = text.IndexOf(text[at], at + 1);
+                return close < 0 ? text.Length : close + 1;
+            }
+
+            while (at < text.Length && !IsSpace(text[at]) && text[at] != '>')
+            {
+                at++;
+            }
+
+            return at;
+        }
     }
 
     private static int CountTags(string template)

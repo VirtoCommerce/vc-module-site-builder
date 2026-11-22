@@ -226,6 +226,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Contains("section", rules.Elements);
         Assert.DoesNotContain("input", rules.Elements);
         Assert.Equal(rules.MaxPartSize, kit.GetProperty("limits").GetProperty("template_bytes").GetInt32());
+        Assert.Equal((1500, 64), (kit.GetProperty("limits").GetProperty("template_tags").GetInt32(), kit.GetProperty("limits").GetProperty("template_attributes").GetInt32()));
         Assert.Equal((32, 32, 4), (kit.GetProperty("limits").GetProperty("template_depth").GetInt32(), kit.GetProperty("limits").GetProperty("css_depth").GetInt32(),
             kit.GetProperty("limits").GetProperty("at_rule_depth").GetInt32()));
         Assert.Contains("'-' or '__'", kit.GetProperty("template").GetProperty("classes").GetString(), StringComparison.Ordinal);

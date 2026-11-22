@@ -77,6 +77,9 @@ public class CustomSectionRules
     /// <summary>Each '&lt;' followed by a letter in the template as written, in comments and attribute values too.</summary>
     public int MaxTemplateTags { get; set; }
 
+    /// <summary>Of each tag, counted as written: a template with a tag of more is refused before it is parsed.</summary>
+    public int MaxTemplateAttributes { get; set; }
+
     public int MaxCssDepth { get; set; }
 
     public int MaxAtRuleDepth { get; set; }
