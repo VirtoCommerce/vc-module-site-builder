@@ -222,7 +222,8 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
         var removed = Assert.Single(change.Changes);
         Assert.Equal(("section type", "custom-stats"), (removed.Field, removed.From?.ToString()));
         Assert.StartsWith("removed", removed.To?.ToString(), StringComparison.Ordinal);
-        Assert.Contains(change.Warnings, x => x.Contains("shows nothing in its place", StringComparison.Ordinal));
+        Assert.Contains(change.Warnings, x => x.Contains("A page that places it shows nothing in its place", StringComparison.Ordinal) &&
+            x.Contains("a template draft that places it blocks publish_theme until the section is removed", StringComparison.Ordinal));
         Assert.Null(_context.ReadThemeFile(StoreA, "custom-sections/custom-stats.json", draft: true));
     }
 

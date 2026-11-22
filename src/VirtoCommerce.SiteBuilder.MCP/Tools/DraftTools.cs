@@ -41,7 +41,7 @@ public class DraftTools(
         "type never published, whose discard removes the type. A page is a " +
         "database page by its id, or a page stored as a file by its path ('pages/about.page') with store_id; in git, its " +
         "draft is your own draft branch of the page. A theme file is a " +
-        "template, the template rules, the header, the footer, the brand or a palette, named by its path as search_templates " +
+        "template, the template rules, the header, the footer, the brand, a palette or a custom section type, named by its path as search_templates " +
         "and list_versions name it; discarding it needs builder:templates for templates and rules, builder:theme for the others. " +
         "First call it with dryRun: it shows the changes the discard undoes and answers expected_versions. Then call it without " +
         "dryRun and with those expected_versions unchanged: a draft saved again in between is not discarded, and a call without " +
@@ -52,7 +52,8 @@ public class DraftTools(
         [Description("What to discard the draft of: 'page' or 'theme_file'.")] string kind,
         [Description("page: id of a Landing Page or of a language version (search_site_pages), or the path of a page stored as a file.")] string page_id = null,
         [Description("theme_file, or a page stored as a file: the store of the theme or of the page.")] string store_id = null,
-        [Description("theme_file: the file with the theme folder, for example 'default/templates/product.bicycles.json' or 'default/config/palette.json'.")] string theme_file = null,
+        [Description("theme_file: the file with the theme folder, for example 'default/templates/product.bicycles.json', 'default/config/palette.json' or " +
+            "'default/custom-sections/custom-stats.json'.")] string theme_file = null,
         [Description(ReviewedVersions.Description)] Dictionary<string, string> expected_versions = null,
         [Description("true to return what the discard would undo, without discarding.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
@@ -141,7 +142,8 @@ public class DraftTools(
         if (newType != null)
         {
             change.AddChange("section type", newType, "removed: it was never published, so the theme no longer has it");
-            change.AddWarning($"A page or a template that places {newType} shows nothing in its place; get_publish_readiness names such a page.");
+            change.AddWarning($"A page that places it shows nothing in its place, and get_publish_readiness names such a page; a template draft that " +
+                $"places it blocks publish_theme until the section is removed, as the theme no longer has {newType}.");
         }
         else
         {
