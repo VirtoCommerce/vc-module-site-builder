@@ -258,6 +258,33 @@ public sealed class ChangePageSettingsToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheValuesOfAMultilanguagePage_AreRefusedWhenTheyReachALanguageVersionTheReviewDidNotShow()
+    {
+        var reached = new List<string> { "fr" };
+        _context.MultilanguagePageOperations
+            .Setup(x => x.UpdateAsync(It.IsAny<MultilanguagePageSaveOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageSaveOperationRequest _, ClaimsPrincipal _, CancellationToken _) =>
+            {
+                var preview = Preview("permalink", "/ml-a", "/about", "multilanguage-page", "ml-a", affectsPublished: true, eTag: "root-v1");
+                foreach (var language in reached)
+                {
+                    preview.Objects.Add(new SiteBuilderObjectChange { ObjectType = "page", ObjectId = language, ETag = $"{language}-v1" });
+                }
+
+                return SiteBuilderOperationResult.DryRun<MultilanguagePage>(preview);
+            });
+
+        var call = await _context.ReviewAsync(Editor(), Tool, new Dictionary<string, object> { ["multilanguage_page_id"] = "ml-a", ["permalink"] = "/about" });
+        reached.Add("de");
+        var result = await _context.CallAsync(Editor(), Tool, call, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("changed since the dry run", result.Error);
+        _context.MultilanguagePageOperations.Verify(x => x.UpdateAsync(It.Is<MultilanguagePageSaveOperationRequest>(r => !r.DryRun),
+            It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task AValueAndItsClear_AreRefused()
     {
         var result = await _context.CallAsync(Editor(), Tool, new { page_id = "new", end_date = DateTime.UtcNow, clear = new[] { "end_date" }, unpublished_only = true });

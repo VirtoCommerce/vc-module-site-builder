@@ -326,8 +326,7 @@ public class FilePageOperationService(
             return moved.As<FilePageShipment>();
         }
 
-        if (request.ExpectedContentVersion != null &&
-            !string.Equals(SiteBuilderContentVersion.CreateForFileContent(published), request.ExpectedContentVersion.Trim(), StringComparison.Ordinal))
+        if (IsPublishedContentChanged(published, request))
         {
             return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage).As<FilePageShipment>();
         }
@@ -335,7 +334,7 @@ public class FilePageOperationService(
         var committed = await CommitUnpublishAsync(location, baseBranch, storeId, path, user, cancellationToken);
 
         // pinned to the deletion, so a commit made to the branch while the merge waits for the checks is not shipped with it
-        var pinnedHead = request.ExpectedDraftHead == null && !request.ExpectNoDraftBranch ? null : committed;
+        var pinnedHead = IsDraftHeadExpected(request) ? committed : null;
         var shipment = await ShipDraftAsync(location, GetPublishBranch(request, user), pinnedHead, $"unpublish {path} (store: {storeId})", path,
             canRebase: false, cancellationToken);
         if (shipment.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
@@ -345,6 +344,13 @@ public class FilePageOperationService(
 
         return Shipped(shipment, request);
     }
+
+    private static bool IsPublishedContentChanged(string published, FilePageShipOperationRequest request) =>
+        request.ExpectedContentVersion != null &&
+        !string.Equals(SiteBuilderContentVersion.CreateForFileContent(published), request.ExpectedContentVersion.Trim(), StringComparison.Ordinal);
+
+    private static bool IsDraftHeadExpected(FilePageShipOperationRequest request) =>
+        request.ExpectedDraftHead != null || request.ExpectNoDraftBranch;
 
     private async Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishInBlobStorageAsync(FilePageShipOperationRequest request,
         CancellationToken cancellationToken)

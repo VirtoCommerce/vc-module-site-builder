@@ -10,6 +10,7 @@ using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Security;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
@@ -31,6 +32,7 @@ public class TranslationTools(
     private const int MaxItems = 1000;
     private const int MaxPages = 200;
     private const int MaxPreviewPages = 10;
+    private const int MaxNamedProblems = 10;
 
     [McpServerTool(Name = "set_translations", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
@@ -80,7 +82,7 @@ public class TranslationTools(
         if (problems.Count > 0)
         {
             throw new McpException($"{problems.Count} pages cannot take their translations, so nothing was saved: " +
-                string.Join("; ", problems.Take(10).Select(x => $"{x.PageId}: {x.Problem}")) + ". Fix them, or leave those pages out, and call again.");
+                string.Join("; ", problems.Take(MaxNamedProblems).Select(x => $"{x.PageId}: {x.Problem}")) + ". Fix them, or leave those pages out, and call again.");
         }
 
         var payload = new SetTranslationsJobPayload
@@ -114,29 +116,9 @@ public class TranslationTools(
         for (var i = 0; i < translations.Length; i++)
         {
             var item = translations[i] ?? throw new McpException($"Translation {i + 1} is empty.");
-            if (string.IsNullOrWhiteSpace(item.PageId) || string.IsNullOrWhiteSpace(item.VersionToken) || string.IsNullOrWhiteSpace(item.SettingPath) ||
-                string.IsNullOrWhiteSpace(item.Language) || item.Text == null)
-            {
-                throw new McpException($"Translation {i + 1} needs page_id, version_token, setting_path, language and text.");
-            }
+            ValidateItem(item, i + 1);
 
-            if (!SiteBuilderPageItems.IsLanguageCode(item.Language))
-            {
-                throw new McpException($"Translation {i + 1}: '{item.Language}' is not a language code such as fr-FR.");
-            }
-
-            var page = pages.FirstOrDefault(x => x.PageId == item.PageId);
-            if (page == null)
-            {
-                page = new SetTranslationsJobPage { PageId = item.PageId, VersionToken = item.VersionToken, SourceRevisionDate = item.SourceRevisionDate };
-                pages.Add(page);
-            }
-            else if (page.VersionToken != item.VersionToken || page.SourceRevisionDate != item.SourceRevisionDate)
-            {
-                throw new McpException($"Translation {i + 1}: the texts of page '{item.PageId}' name different version_token or source_revision_date values; " +
-                    "pass the ones of the version you read.");
-            }
-
+            var page = FindOrAddPage(pages, item, i + 1);
             page.Texts.Add(new SetTranslationsJobText
             {
                 SectionId = string.IsNullOrWhiteSpace(item.SectionId) ? null : item.SectionId,
@@ -154,17 +136,48 @@ public class TranslationTools(
         return pages;
     }
 
+    private static void ValidateItem(TranslationItem item, int number)
+    {
+        if (LacksLocation(item) || LacksText(item))
+        {
+            throw new McpException($"Translation {number} needs page_id, version_token, setting_path, language and text.");
+        }
+
+        if (!SiteBuilderPageItems.IsLanguageCode(item.Language))
+        {
+            throw new McpException($"Translation {number}: '{item.Language}' is not a language code such as fr-FR.");
+        }
+    }
+
+    private static bool LacksLocation(TranslationItem item) =>
+        string.IsNullOrWhiteSpace(item.PageId) || string.IsNullOrWhiteSpace(item.VersionToken) || string.IsNullOrWhiteSpace(item.SettingPath);
+
+    private static bool LacksText(TranslationItem item) =>
+        string.IsNullOrWhiteSpace(item.Language) || item.Text == null;
+
+    private static SetTranslationsJobPage FindOrAddPage(List<SetTranslationsJobPage> pages, TranslationItem item, int number)
+    {
+        var page = pages.FirstOrDefault(x => x.PageId == item.PageId);
+        if (page == null)
+        {
+            page = new SetTranslationsJobPage { PageId = item.PageId, VersionToken = item.VersionToken, SourceRevisionDate = item.SourceRevisionDate };
+            pages.Add(page);
+        }
+        else if (page.VersionToken != item.VersionToken || page.SourceRevisionDate != item.SourceRevisionDate)
+        {
+            throw new McpException($"Translation {number}: the texts of page '{item.PageId}' name different version_token or source_revision_date values; " +
+                "pass the ones of the version you read.");
+        }
+
+        return page;
+    }
+
     private async Task CheckAsync(ClaimsPrincipal user, SetTranslationsJobPage page, bool markUpToDate, TranslationPreview preview, CancellationToken cancellationToken)
     {
         var group = await groupedPageService.LoadPageAsync(authorizationService, user, page.PageId);
 
         var result = await runner.RunAsync(user, page.PageId, page.VersionToken, TranslationOperations.Create(page.Texts), dryRun: true, cancellationToken);
-        var problem = result.Outcome switch
-        {
-            PageJobOutcome.Changed or PageJobOutcome.Unchanged => null,
-            PageJobOutcome.Skipped => "it changed since you read it; read it again with search_site_pages (page_id) and translate that version",
-            _ => result.Reason,
-        };
+        var problem = GetProblem(result);
 
         string markProblem = null;
         if (problem == null && markUpToDate)
@@ -172,6 +185,19 @@ public class TranslationTools(
             markProblem = await translationSources.GetProblemAsync(user, group.Id, page.SourceRevisionDate, cancellationToken);
         }
 
+        AddToPreview(preview, group, page, result, problem, markProblem);
+    }
+
+    private static string GetProblem(PageJobResult result) => result.Outcome switch
+    {
+        PageJobOutcome.Changed or PageJobOutcome.Unchanged => null,
+        PageJobOutcome.Skipped => "it changed since you read it; read it again with search_site_pages (page_id) and translate that version",
+        _ => result.Reason,
+    };
+
+    private static void AddToPreview(TranslationPreview preview, GroupedSiteBuilderPage group, SetTranslationsJobPage page, PageJobResult result, string problem,
+        string markProblem)
+    {
         var label = $"page '{group.Name}' ({group.Id}, {group.CultureName})";
         if (preview.Pages.Count < MaxPreviewPages)
         {

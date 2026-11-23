@@ -738,20 +738,25 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
 
             if (condition.SourceGroupId != null)
             {
-                var source = await repository.GroupedSiteBuilderPages.AsNoTracking()
-                    .Where(x => x.Id == condition.SourceGroupId)
-                    .Select(x => new { x.SourceRevisionDate })
-                    .FirstOrDefaultAsync(cancellationToken);
-                if (source == null || source.SourceRevisionDate != condition.ExpectedSourceRevisionDate)
-                {
-                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
-                }
+                await CheckSourceRevisionAsync(repository, condition, cancellationToken);
             }
 
             if (condition.ExpectedMultilanguagePageVersion != null && !string.Equals(await GetRootVersionAsync(repository, group, existing, cancellationToken),
                     condition.ExpectedMultilanguagePageVersion.Trim(), StringComparison.Ordinal))
             {
                 throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
+            }
+        }
+
+        private static async Task CheckSourceRevisionAsync(ISiteBuilderRepository repository, GroupedPageSaveCondition condition, CancellationToken cancellationToken)
+        {
+            var source = await repository.GroupedSiteBuilderPages.AsNoTracking()
+                .Where(x => x.Id == condition.SourceGroupId)
+                .Select(x => new { x.SourceRevisionDate })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (source == null || source.SourceRevisionDate != condition.ExpectedSourceRevisionDate)
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
             }
         }
 

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -27,6 +28,8 @@ public class AssetTools(
 {
     private const int MaxPagesPerAsset = 10;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "search_assets", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
     [Authorize(PlatformConstants.Security.Permissions.AssetRead)]
@@ -138,10 +141,18 @@ public sealed class AssetRow
             ContentType = blob?.ContentType,
             Size = blob?.Size,
             ModifiedDate = entry.ModifiedDate,
-            References = references == null || string.IsNullOrEmpty(normalizedUrl)
-                ? null
-                : references.TryGetValue(normalizedUrl, out var row) ? row : new AssetReferencesRow { Pages = [] },
+            References = GetReferences(references, normalizedUrl),
         };
+    }
+
+    private static AssetReferencesRow GetReferences(IDictionary<string, AssetReferencesRow> references, string normalizedUrl)
+    {
+        if (references == null || string.IsNullOrEmpty(normalizedUrl))
+        {
+            return null;
+        }
+
+        return references.TryGetValue(normalizedUrl, out var row) ? row : new AssetReferencesRow { Pages = [] };
     }
 }
 

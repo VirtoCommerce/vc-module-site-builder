@@ -298,6 +298,17 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AnEmptyLanguage_IsRefusedWithItsReason()
+    {
+        SeedMultilanguagePage();
+
+        var result = await _context.CallAsync(Publisher(), "publish_page", new { multilanguage_page_id = "ml", languages = new[] { "fr-FR", null }, dryRun = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("an empty one is not a language", result.Error);
+    }
+
+    [Fact]
     public async Task ChosenLanguages_WhoseDraftChangedSinceTheReview_AreNotPublished()
     {
         SeedMultilanguagePage();

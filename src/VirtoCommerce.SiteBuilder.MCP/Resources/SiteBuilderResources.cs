@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -32,6 +33,8 @@ using CustomerSettings = VirtoCommerce.CustomerModule.Core.ModuleConstants.Setti
 
 namespace VirtoCommerce.SiteBuilder.MCP.Resources;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerResourceType]
 [McpScope(McpScopes.Admin)]
 public class SiteBuilderResources(

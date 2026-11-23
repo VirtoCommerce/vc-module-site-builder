@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
@@ -37,6 +38,8 @@ public class PageSettingsTools(
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
         SiteBuilderChanges.NeedsApproval(arguments) && ReviewedVersions.AreGiven(arguments);
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "change_page_settings", ReadOnly = false, Destructive = true, Idempotent = true)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -153,9 +156,20 @@ public class PageSettingsTools(
         await SiteBuilderChanges.RunAsync(change, RunAsync,
             x => EnsureSucceeded(x, change, $"Multilanguage Page '{root.Id}'", PageLookup.ForbiddenMultilanguagePage(root)),
             call.DryRun, call.UnpublishedOnly,
-            checkAsync: x => Pin(call, change, x));
+            checkAsync: x => PinWithLanguageVersions(call, change, x));
 
         return change;
+    }
+
+    // The values of a Multilanguage Page reach the language versions that inherit them, so the versions it reaches are pinned too.
+    private static Task PinWithLanguageVersions(SettingsCall call, SiteBuilderChange change, SiteBuilderOperationResult check)
+    {
+        var versions = (check.Preview?.Objects ?? [])
+            .Where(x => x.ObjectId != null)
+            .Select(x => new KeyValuePair<string, string>(x.ObjectId, x.ETag));
+        ReviewedVersions.Pin(change, versions, call.ExpectedVersions, call.DryRun, optional: call.UnpublishedOnly);
+
+        return Task.CompletedTask;
     }
 
     private static Task Pin(SettingsCall call, SiteBuilderChange change, SiteBuilderOperationResult check)
@@ -187,12 +201,22 @@ public class PageSettingsTools(
     {
         public void Validate()
         {
+            ValidateClear();
+            ValidateNotBoth();
+            ValidateAnyGiven();
+        }
+
+        private void ValidateClear()
+        {
             var unknown = Clear.Where(x => !ClearableFields.Contains(x)).ToList();
             if (unknown.Count > 0)
             {
                 throw new McpException($"clear takes {string.Join(", ", ClearableFields)}; not {string.Join(", ", unknown)}.");
             }
+        }
 
+        private void ValidateNotBoth()
+        {
             var both = new List<string>();
             AddIfBoth(both, UserGroupsField, UserGroups);
             AddIfBoth(both, OrganizationField, OrganizationId);
@@ -202,13 +226,21 @@ public class PageSettingsTools(
             {
                 throw new McpException($"Pass a value or clear it, not both: {string.Join(", ", both)}.");
             }
+        }
 
-            if (Name == null && Permalink == null && Language == null && Visible == null && UserGroups == null && OrganizationId == null &&
-                StartDate == null && EndDate == null && Clear.Length == 0)
+        private void ValidateAnyGiven()
+        {
+            if (HasNoText && HasNoAudience && HasNoDates && Clear.Length == 0)
             {
                 throw new McpException("Pass at least one setting to change.");
             }
         }
+
+        private bool HasNoText => Name == null && Permalink == null && Language == null;
+
+        private bool HasNoAudience => Visible == null && UserGroups == null && OrganizationId == null;
+
+        private bool HasNoDates => StartDate == null && EndDate == null;
 
         public GroupedSiteBuilderPage ApplyTo(GroupedSiteBuilderPage page)
         {
@@ -241,8 +273,15 @@ public class PageSettingsTools(
         }
 
         // One comma-separated text, as the page editor writes it.
-        private string GetUserGroups(string current) =>
-            Clear.Contains(UserGroupsField) ? null : UserGroups == null ? current : string.Join(",", UserGroups.Select(x => x.Trim()).Where(x => x.Length > 0));
+        private string GetUserGroups(string current)
+        {
+            if (Clear.Contains(UserGroupsField))
+            {
+                return null;
+            }
+
+            return UserGroups == null ? current : string.Join(",", UserGroups.Select(x => x.Trim()).Where(x => x.Length > 0));
+        }
 
         private T Get<T>(string field, T value, T current) => Clear.Contains(field) ? default : value ?? current;
 

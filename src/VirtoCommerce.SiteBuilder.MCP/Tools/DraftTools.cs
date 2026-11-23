@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -15,6 +16,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class DraftTools(
@@ -31,6 +34,8 @@ public class DraftTools(
     public const string PageKind = "page";
     public const string ThemeFileKind = "theme_file";
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "discard_draft", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]

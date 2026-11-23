@@ -371,18 +371,10 @@ public class GroupedPageOperationService(
 
         if (request.DryRun)
         {
-            var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
-            foreach (var conflictingGroup in conflictingGroups)
-            {
-                var published = await pageContentService.LoadGroupContentAsync(conflictingGroup, draft: false, cancellationToken);
-                dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft).ETag = published.ETag;
-            }
-
-            return dryRun;
+            return await PreviewPublishDraftAsync(groupedPage, conflictingGroups, cancellationToken);
         }
 
-        if (request.ExpectedSettingsVersion != null &&
-            !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(groupedPage), request.ExpectedSettingsVersion.Trim(), StringComparison.Ordinal))
+        if (IsSettingsChanged(groupedPage, request))
         {
             return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.SettingsChangedMessage);
         }
@@ -412,6 +404,23 @@ public class GroupedPageOperationService(
 
         return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
+
+    private async Task<SiteBuilderOperationResult> PreviewPublishDraftAsync(GroupedSiteBuilderPage groupedPage, IList<GroupedSiteBuilderPage> conflictingGroups,
+        CancellationToken cancellationToken)
+    {
+        var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
+        foreach (var conflictingGroup in conflictingGroups)
+        {
+            var published = await pageContentService.LoadGroupContentAsync(conflictingGroup, draft: false, cancellationToken);
+            dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft).ETag = published.ETag;
+        }
+
+        return dryRun;
+    }
+
+    private static bool IsSettingsChanged(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request) =>
+        request.ExpectedSettingsVersion != null &&
+        !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(groupedPage), request.ExpectedSettingsVersion.Trim(), StringComparison.Ordinal);
 
     private async Task<SiteBuilderOperationResult> UnpublishAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
         CancellationToken cancellationToken)

@@ -3,7 +3,6 @@ using VirtoCommerce.MCP.Core.Extensions;
 using VirtoCommerce.Platform.Core.Jobs;
 using VirtoCommerce.SiteBuilder.MCP.Jobs;
 using VirtoCommerce.SiteBuilder.MCP.Services;
-using VirtoCommerce.SiteBuilder.MCP.Tools;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Extensions;
 

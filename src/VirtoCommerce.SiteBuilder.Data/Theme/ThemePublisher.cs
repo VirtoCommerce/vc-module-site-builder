@@ -45,6 +45,7 @@ public class ThemePublisher(
     private const string SectionTextColor = "color";
     private const string SectionBackground = "background";
     private const double TextContrastRatio = 4.5;
+    private const int RatioDecimals = 2;
 
     private static readonly Dictionary<string, Action<ThemeSource, JToken>> ThemeParts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -265,9 +266,7 @@ public class ThemePublisher(
     {
         var text = GetString(item, SectionTextColor);
         var background = GetString(item, SectionBackground);
-        if (text == null || background == null
-            || !colors.TryGetValue(text, out var textValue) || !PaletteColor.TryParse(textValue, out var textColor)
-            || !colors.TryGetValue(background, out var backgroundValue) || !PaletteColor.TryParse(backgroundValue, out var backgroundColor))
+        if (!TryResolveColor(text, colors, out var textValue, out var textColor) || !TryResolveColor(background, colors, out var backgroundValue, out var backgroundColor))
         {
             return null;
         }
@@ -279,7 +278,15 @@ public class ThemePublisher(
         }
 
         return string.Create(CultureInfo.InvariantCulture,
-            $"{file}: '{GetString(item, "id")}' has a contrast of {Math.Round(ratio, 2):0.##}:1 in the {scheme} palette ({text} {textValue} on {background} {backgroundValue}), less than the {TextContrastRatio:0.##}:1 WCAG 2.2 AA asks for");
+            $"{file}: '{GetString(item, "id")}' has a contrast of {Math.Round(ratio, RatioDecimals):0.##}:1 in the {scheme} palette ({text} {textValue} on {background} {backgroundValue}), less than the {TextContrastRatio:0.##}:1 WCAG 2.2 AA asks for");
+    }
+
+    private static bool TryResolveColor(string name, IDictionary<string, string> colors, out string value, out PaletteColor color)
+    {
+        value = null;
+        color = default;
+
+        return name != null && colors.TryGetValue(name, out value) && PaletteColor.TryParse(value, out color);
     }
 
     // the sections of a section group or a template, and their blocks

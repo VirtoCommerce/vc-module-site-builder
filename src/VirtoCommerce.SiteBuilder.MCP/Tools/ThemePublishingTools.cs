@@ -55,32 +55,7 @@ public class ThemePublishingTools(
             context.User, cancellationToken);
         EnsurePublished(check, store_id);
 
-        var change = new ThemePublication
-        {
-            Action = "publish_theme",
-            ObjectType = "theme",
-            ObjectId = store_id,
-            ObjectName = $"The theme of store '{store_id}'",
-            StoreId = store_id,
-            DryRun = true,
-        };
-
-        foreach (var draft in check.Preview?.Objects ?? [])
-        {
-            change.AddChange(draft.ObjectId, "draft", "published");
-            change.ExpectedVersions[draft.ObjectId] = draft.ETag;
-            change.Drafts.Add(new ThemeDraftRow { Path = draft.ObjectId, ChangedBy = draft.ChangedBy?.Name ?? draft.ChangedBy?.Login, ChangedDate = draft.ChangedDate });
-        }
-
-        foreach (var warning in check.Preview?.Warnings ?? [])
-        {
-            change.AddWarning(warning);
-        }
-
-        if (change.Drafts.Count == 0)
-        {
-            change.AddWarning("The theme has no drafts: the publication puts out the live files again, and nothing customers see changes.");
-        }
+        var change = DescribeDrafts(check, store_id);
 
         // Checked on a dry run too: the approval repeats it, so moved drafts stay pending for the approver to reject.
         if (expected_versions != null && !SameVersions(expected_versions, change.ExpectedVersions))
@@ -111,6 +86,38 @@ public class ThemePublishingTools(
 
         change.DryRun = false;
         change.Publication = result.Value?.Publication;
+
+        return change;
+    }
+
+    private static ThemePublication DescribeDrafts(SiteBuilderOperationResult<ThemePublicationPointer> check, string storeId)
+    {
+        var change = new ThemePublication
+        {
+            Action = "publish_theme",
+            ObjectType = "theme",
+            ObjectId = storeId,
+            ObjectName = $"The theme of store '{storeId}'",
+            StoreId = storeId,
+            DryRun = true,
+        };
+
+        foreach (var draft in check.Preview?.Objects ?? [])
+        {
+            change.AddChange(draft.ObjectId, "draft", "published");
+            change.ExpectedVersions[draft.ObjectId] = draft.ETag;
+            change.Drafts.Add(new ThemeDraftRow { Path = draft.ObjectId, ChangedBy = draft.ChangedBy?.Name ?? draft.ChangedBy?.Login, ChangedDate = draft.ChangedDate });
+        }
+
+        foreach (var warning in check.Preview?.Warnings ?? [])
+        {
+            change.AddWarning(warning);
+        }
+
+        if (change.Drafts.Count == 0)
+        {
+            change.AddWarning("The theme has no drafts: the publication puts out the live files again, and nothing customers see changes.");
+        }
 
         return change;
     }

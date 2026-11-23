@@ -108,8 +108,9 @@ public class TemplateRuleTools(
         }
 
         var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, store_id, cancellationToken);
-        await ThemeFileEdits.SaveAsync(change, designerOperationService, context.User, store_id, catalogHash, [new ThemeFileEdit(file.Path, file, rules.Write())],
-            dryRun, Templates, "Read the rules again with search_templates and repeat the edit with the new rules_version_token.", cancellationToken);
+        await ThemeFileEdits.SaveAsync(change, designerOperationService, context.User,
+            new ThemeFileSaveTarget(store_id, catalogHash, dryRun, Templates, "Read the rules again with search_templates and repeat the edit with the new rules_version_token."),
+            [new ThemeFileEdit(file.Path, file, rules.Write())], cancellationToken);
 
         change.Rules = TemplateRuleRow.From(rules);
         WarnAboutShadowedRules(rules, change);
@@ -118,6 +119,16 @@ public class TemplateRuleTools(
     }
 
     private static void Apply(TemplateRulesDocument rules, RuleEditOperation operation, ISet<string> templates, ThemeFileChange change)
+    {
+        ApplyOperation(rules, operation, templates);
+
+        if (operation.Op?.Trim().ToLowerInvariant() is "add" or "change" && operation.When?.Keys.Any(TemplateRuleConditions.IsPluginCondition) == true)
+        {
+            change.AddWarning("A condition of a storefront plugin is kept as given: the server does not check it, and a storefront without that plugin never matches the rule.");
+        }
+    }
+
+    private static void ApplyOperation(TemplateRulesDocument rules, RuleEditOperation operation, ISet<string> templates)
     {
         switch (operation.Op?.Trim().ToLowerInvariant())
         {
@@ -141,11 +152,6 @@ public class TemplateRuleTools(
                 break;
             default:
                 throw new RuleEditException($"'{operation.Op}' is not an operation. Use add, change, move, enable, disable or remove.");
-        }
-
-        if (operation.Op?.Trim().ToLowerInvariant() is "add" or "change" && operation.When?.Keys.Any(TemplateRuleConditions.IsPluginCondition) == true)
-        {
-            change.AddWarning("A condition of a storefront plugin is kept as given: the server does not check it, and a storefront without that plugin never matches the rule.");
         }
     }
 
@@ -366,7 +372,7 @@ public class TemplateRuleTools(
         new("The template rules changed since you read them, or version_token is not their version. Read them again with " +
             "search_templates and make the edit with its rules_version_token.");
 
-    private sealed class RuleEditException(string message) : Exception(message);
+    public sealed class RuleEditException(string message) : Exception(message);
 }
 
 public sealed class RuleEditOperation

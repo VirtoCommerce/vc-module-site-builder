@@ -28,25 +28,7 @@ public sealed class SiteBuilderPageDocument
             return null;
         }
 
-        SiteBuilderPageDocument result = null;
-        if (root is JsonObject document && document["content"] is JsonArray sections)
-        {
-            result = new SiteBuilderPageDocument
-            {
-                Settings = (document["settings"] as JsonObject)?.DeepClone() as JsonObject ?? [],
-                Sections = (JsonArray)sections.DeepClone(),
-            };
-        }
-        else if (root is JsonArray legacy && legacy.Count > 0 && legacy[0] is JsonObject legacySettings)
-        {
-            result = new SiteBuilderPageDocument
-            {
-                Settings = (JsonObject)legacySettings.DeepClone(),
-                Sections = [.. legacy.Skip(1).Select(x => x?.DeepClone())],
-                IsLegacyShape = true,
-            };
-        }
-
+        var result = FromPage(root) ?? FromLegacy(root);
         if (result != null)
         {
             SiteBuilderPageItems.AssignMissingIds(result.Sections);
@@ -54,4 +36,23 @@ public sealed class SiteBuilderPageDocument
 
         return result;
     }
+
+    private static SiteBuilderPageDocument FromPage(JsonNode root) =>
+        root is JsonObject document && document["content"] is JsonArray sections
+            ? new SiteBuilderPageDocument
+            {
+                Settings = (document["settings"] as JsonObject)?.DeepClone() as JsonObject ?? [],
+                Sections = (JsonArray)sections.DeepClone(),
+            }
+            : null;
+
+    private static SiteBuilderPageDocument FromLegacy(JsonNode root) =>
+        root is JsonArray legacy && legacy.Count > 0 && legacy[0] is JsonObject legacySettings
+            ? new SiteBuilderPageDocument
+            {
+                Settings = (JsonObject)legacySettings.DeepClone(),
+                Sections = [.. legacy.Skip(1).Select(x => x?.DeepClone())],
+                IsLegacyShape = true,
+            }
+            : null;
 }

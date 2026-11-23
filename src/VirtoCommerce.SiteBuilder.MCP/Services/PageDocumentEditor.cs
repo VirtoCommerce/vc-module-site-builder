@@ -29,6 +29,8 @@ public enum PageDocumentKind
 
 public sealed class PageDocumentEditor
 {
+    private const int BlockSettingStart = 2;
+
     public static readonly JsonSerializerOptions WriteOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private static readonly string[] PageOwnedSettings = ["name", "permalink", "cultureName", TypeKey];
@@ -131,47 +133,14 @@ public sealed class PageDocumentEditor
 
     private async Task ApplyAsync(PageEditOperation operation, IPageEditSources sources, CancellationToken cancellationToken)
     {
-        switch (operation.Op?.Trim().ToLowerInvariant())
+        var name = operation.Op?.Trim().ToLowerInvariant();
+        if (ApplySectionOperation(name, operation) || ApplyBlockOperation(name, operation))
         {
-            case "add_section":
-                Insert(Sections, NewItem(operation, block: false), operation, PageEnd(), sectionList: true);
-                break;
-            case "duplicate_section":
-                DuplicateSection(operation);
-                break;
-            case "move_section":
-                Move(Sections, FindSection(operation.SectionId), operation, sectionList: true);
-                break;
-            case "hide_section":
-                SetHidden(EditableSection(operation.SectionId, "be hidden"), hidden: true);
-                break;
-            case "show_section":
-                SetHidden(EditableSection(operation.SectionId, "be hidden"), hidden: false);
-                break;
-            case "remove_section":
-                Sections.Remove(FindSection(operation.SectionId));
-                break;
-            case "set_section_settings":
-                SetSectionSettings(operation);
-                break;
-            case "add_block":
-                AddBlock(operation);
-                break;
-            case "duplicate_block":
-                DuplicateBlock(operation);
-                break;
-            case "move_block":
-                MoveBlock(operation);
-                break;
-            case "hide_block":
-                SetHidden(FindBlock(operation).Block, hidden: true);
-                break;
-            case "show_block":
-                SetHidden(FindBlock(operation).Block, hidden: false);
-                break;
-            case "remove_block":
-                RemoveBlock(operation);
-                break;
+            return;
+        }
+
+        switch (name)
+        {
             case "set_page_settings":
                 if (_kind == PageDocumentKind.SectionGroup)
                 {
@@ -193,6 +162,63 @@ public sealed class PageDocumentEditor
                 throw new EditException($"'{operation.Op}' is not an operation. Use add_section, duplicate_section, move_section, hide_section, " +
                     "show_section, remove_section, set_section_settings, add_block, duplicate_block, move_block, hide_block, show_block, " +
                     "remove_block, set_page_settings, copy_sections_from, place_shared_component or detach_shared_component.");
+        }
+    }
+
+    private bool ApplySectionOperation(string name, PageEditOperation operation)
+    {
+        switch (name)
+        {
+            case "add_section":
+                Insert(Sections, NewItem(operation, block: false), operation, PageEnd(), sectionList: true);
+                return true;
+            case "duplicate_section":
+                DuplicateSection(operation);
+                return true;
+            case "move_section":
+                Move(Sections, FindSection(operation.SectionId), operation, sectionList: true);
+                return true;
+            case "hide_section":
+                SetHidden(EditableSection(operation.SectionId, "be hidden"), hidden: true);
+                return true;
+            case "show_section":
+                SetHidden(EditableSection(operation.SectionId, "be hidden"), hidden: false);
+                return true;
+            case "remove_section":
+                Sections.Remove(FindSection(operation.SectionId));
+                return true;
+            case "set_section_settings":
+                SetSectionSettings(operation);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool ApplyBlockOperation(string name, PageEditOperation operation)
+    {
+        switch (name)
+        {
+            case "add_block":
+                AddBlock(operation);
+                return true;
+            case "duplicate_block":
+                DuplicateBlock(operation);
+                return true;
+            case "move_block":
+                MoveBlock(operation);
+                return true;
+            case "hide_block":
+                SetHidden(FindBlock(operation).Block, hidden: true);
+                return true;
+            case "show_block":
+                SetHidden(FindBlock(operation).Block, hidden: false);
+                return true;
+            case "remove_block":
+                RemoveBlock(operation);
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -449,15 +475,9 @@ public sealed class PageDocumentEditor
             throw new EditException("Pass only one of position, after and before.");
         }
 
-        var what = sectionList ? "section" : "block";
         if (operation.Position is { } position)
         {
-            if (position < 0 || position > list.Count)
-            {
-                throw new EditException($"position {position} is outside 0..{list.Count}.");
-            }
-
-            return position;
+            return CheckPosition(position, list.Count);
         }
 
         var anchor = operation.After ?? operation.Before;
@@ -466,13 +486,30 @@ public sealed class PageDocumentEditor
             return end;
         }
 
+        var index = FindAnchorIndex(list, anchor, sectionList);
+        return string.IsNullOrWhiteSpace(operation.After) ? index : index + 1;
+    }
+
+    private static int CheckPosition(int position, int count)
+    {
+        if (position < 0 || position > count)
+        {
+            throw new EditException($"position {position} is outside 0..{count}.");
+        }
+
+        return position;
+    }
+
+    private int FindAnchorIndex(JsonArray list, string anchor, bool sectionList)
+    {
+        var what = sectionList ? "section" : "block";
         var index = list.Select((x, i) => (x, i)).FirstOrDefault(x => x.x is JsonObject item && GetId(item) == anchor && !(sectionList && IsInGroup(item)));
         if (index.x == null)
         {
             throw new EditException($"There is no {what} '{anchor}' to place it next to.");
         }
 
-        return string.IsNullOrWhiteSpace(operation.After) ? index.i : index.i + 1;
+        return index.i;
     }
 
     private void SetValues(JsonObject target, Dictionary<string, JsonNode> values, string language, bool page)
@@ -535,7 +572,7 @@ public sealed class PageDocumentEditor
             return;
         }
 
-        if (segments.Length < 3)
+        if (segments.Length <= BlockSettingStart)
         {
             throw new EditException("Blocks are added, moved and removed with their own operations; set a value of a block with " +
                 "'blocks.<block id>.<setting>' or block_id.");
@@ -543,10 +580,35 @@ public sealed class PageDocumentEditor
 
         var block = FindListItem(GetBlocks(item), segments[1]) as JsonObject
             ?? throw new EditException($"There is no block '{segments[1]}' for '{path}'.");
-        SetItemValue(block, segments[2..], value, language, path);
+        SetItemValue(block, segments[BlockSettingStart..], value, language, path);
     }
 
     private void SetValue(JsonObject target, string[] segments, JsonNode value, string language, string path)
+    {
+        var parent = FindParent(target, segments, value, path);
+        if (parent == null)
+        {
+            return;
+        }
+
+        var last = segments[^1];
+        if (parent is JsonArray list)
+        {
+            SetListItem(list, last, value, language, path);
+            return;
+        }
+
+        var parentObjectNode = (JsonObject)parent;
+        if (value == null && language == null)
+        {
+            parentObjectNode.Remove(last);
+            return;
+        }
+
+        parentObjectNode[last] = SetText(parentObjectNode[last]?.DeepClone(), value, language, path);
+    }
+
+    private static JsonNode FindParent(JsonObject target, string[] segments, JsonNode value, string path)
     {
         JsonNode parent = target;
         foreach (var segment in segments[..^1])
@@ -556,7 +618,7 @@ public sealed class PageDocumentEditor
             {
                 if (value == null)
                 {
-                    return;
+                    return null;
                 }
 
                 if (parent is not JsonObject parentObject)
@@ -576,55 +638,49 @@ public sealed class PageDocumentEditor
             parent = child;
         }
 
-        var last = segments[^1];
-        if (parent is JsonArray list)
-        {
-            var index = FindListIndex(list, last);
-            if (index < 0)
-            {
-                throw new EditException($"The list in '{path}' has no item '{last}'.");
-            }
-
-            if (value == null)
-            {
-                throw new EditException($"'{path}' is an item of a list; to remove it, set the whole list.");
-            }
-
-            list[index] = SetText(list[index]?.DeepClone(), value, language, path);
-            return;
-        }
-
-        var parentObjectNode = (JsonObject)parent;
-        if (value == null && language == null)
-        {
-            parentObjectNode.Remove(last);
-            return;
-        }
-
-        parentObjectNode[last] = SetText(parentObjectNode[last]?.DeepClone(), value, language, path);
+        return parent;
     }
 
-    private JsonNode SetText(JsonNode current, JsonNode value, string language, string path)
+    private void SetListItem(JsonArray list, string last, JsonNode value, string language, string path)
     {
-        if (language == null)
+        var index = FindListIndex(list, last);
+        if (index < 0)
         {
-            if (IsTranslations(current) && value is JsonValue)
-            {
-                throw new EditException($"'{path}' holds a text per language ({string.Join(", ", ((JsonObject)current).Select(x => x.Key))}); " +
-                    "pass language to set one of them.");
-            }
-
-            // the storefront picks the language in templates, section groups and pages stored as files only; elsewhere it shows the dictionary
-            if ((_kind is PageDocumentKind.Page or PageDocumentKind.SharedComponent) && ContainsTranslations(value))
-            {
-                throw new EditException(_kind == PageDocumentKind.SharedComponent
-                    ? $"'{path}' takes one text, not a text per language: a Shared Component shows the same text in every language version it stands on."
-                    : $"'{path}' takes one text, not a text per language: each language version of a Multilanguage Page holds its own texts, so set the text in that version.");
-            }
-
-            return value;
+            throw new EditException($"The list in '{path}' has no item '{last}'.");
         }
 
+        if (value == null)
+        {
+            throw new EditException($"'{path}' is an item of a list; to remove it, set the whole list.");
+        }
+
+        list[index] = SetText(list[index]?.DeepClone(), value, language, path);
+    }
+
+    private JsonNode SetText(JsonNode current, JsonNode value, string language, string path) =>
+        language == null ? SetUntranslatedText(current, value, path) : SetTranslatedText(current, value, language, path);
+
+    private JsonNode SetUntranslatedText(JsonNode current, JsonNode value, string path)
+    {
+        if (IsTranslations(current) && value is JsonValue)
+        {
+            throw new EditException($"'{path}' holds a text per language ({string.Join(", ", ((JsonObject)current).Select(x => x.Key))}); " +
+                "pass language to set one of them.");
+        }
+
+        // the storefront picks the language in templates, section groups and pages stored as files only; elsewhere it shows the dictionary
+        if ((_kind is PageDocumentKind.Page or PageDocumentKind.SharedComponent) && ContainsTranslations(value))
+        {
+            throw new EditException(_kind == PageDocumentKind.SharedComponent
+                ? $"'{path}' takes one text, not a text per language: a Shared Component shows the same text in every language version it stands on."
+                : $"'{path}' takes one text, not a text per language: each language version of a Multilanguage Page holds its own texts, so set the text in that version.");
+        }
+
+        return value;
+    }
+
+    private JsonNode SetTranslatedText(JsonNode current, JsonNode value, string language, string path)
+    {
         if (!IsTranslations(current))
         {
             if (string.IsNullOrEmpty(PageLanguage))
@@ -693,5 +749,5 @@ public sealed class PageDocumentEditor
         return int.TryParse(segment, out var index) && index >= 0 && index < list.Count ? index : -1;
     }
 
-    private sealed class EditException(string message) : Exception(message);
+    public sealed class EditException(string message) : Exception(message);
 }

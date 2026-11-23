@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
@@ -51,13 +52,7 @@ public static class TemplateRuleConditions
             return null;
         }
 
-        JsonNode result = name switch
-        {
-            "inCategory" => CategoryIds(value),
-            "property" or "setting" => NamedValue(value),
-            "source" => GetString(value) is PagesObjectType or ContentFileObjectType ? value.DeepClone() : null,
-            _ => string.IsNullOrWhiteSpace(GetString(value)) ? null : JsonValue.Create(GetString(value).Trim()),
-        };
+        var result = NormalizeBuiltIn(name, value);
 
         if (result == null)
         {
@@ -66,6 +61,14 @@ public static class TemplateRuleConditions
 
         return result;
     }
+
+    private static JsonNode NormalizeBuiltIn(string name, JsonNode value) => name switch
+    {
+        "inCategory" => CategoryIds(value),
+        "property" or "setting" => NamedValue(value),
+        "source" => GetString(value) is PagesObjectType or ContentFileObjectType ? value.DeepClone() : null,
+        _ => string.IsNullOrWhiteSpace(GetString(value)) ? null : JsonValue.Create(GetString(value).Trim()),
+    };
 
     // Null where only the storefront can tell: a plugin condition, or catalog data of a product or category, which is not loaded.
     public static bool? Evaluate(string name, JsonNode value, string pageType, PageRuleSubject subject, out string notEvaluated)
@@ -89,6 +92,11 @@ public static class TemplateRuleConditions
             return null;
         }
 
+        return EvaluateOnSubject(name, value, subject);
+    }
+
+    private static bool EvaluateOnSubject(string name, JsonNode value, PageRuleSubject subject)
+    {
         switch (name)
         {
             case "path":
@@ -116,6 +124,8 @@ public static class TemplateRuleConditions
         return Regex.IsMatch(permalink.Trim().Trim('/'), $"^{pattern}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
     }
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null tells Normalize the value is invalid; an empty one would be stored as a valid condition.")]
     private static JsonArray CategoryIds(JsonNode value)
     {
         var ids = value switch
@@ -128,8 +138,17 @@ public static class TemplateRuleConditions
         return ids.Count > 0 && ids.All(x => !string.IsNullOrWhiteSpace(x)) ? new JsonArray([.. ids.Select(x => (JsonNode)x.Trim())]) : null;
     }
 
-    private static JsonObject NamedValue(JsonNode value) =>
-        value is JsonObject named && !string.IsNullOrWhiteSpace(GetString(named["name"])) && GetString(named["equals"]) is { } equals && !string.IsNullOrWhiteSpace(equals)
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null tells Normalize the value is invalid; an empty one would be stored as a valid condition.")]
+    private static JsonObject NamedValue(JsonNode value)
+    {
+        if (value is not JsonObject named || string.IsNullOrWhiteSpace(GetString(named["name"])))
+        {
+            return null;
+        }
+
+        return GetString(named["equals"]) is { } equals && !string.IsNullOrWhiteSpace(equals)
             ? new JsonObject { ["name"] = GetString(named["name"]).Trim(), ["equals"] = equals }
             : null;
+    }
 }

@@ -163,10 +163,7 @@ public static class SectionScanCoverage
         var last = scan.Skip + scan.ScannedPageCount;
         var text = scan.IsComplete
             ? $"Scanned all {scan.TotalPageCount} pages ({scan.ScannedVersionCount} language versions)."
-            : $"Scanned pages {first}-{last} of {scan.TotalPageCount} ({scan.ScannedVersionCount} language versions); " +
-              (scan.NextSkip != null
-                  ? $"pages {last + 1}-{scan.TotalPageCount} were not scanned, so the section may be on them too: call again with skip={scan.NextSkip}."
-                  : $"pages 1-{scan.Skip} were scanned by earlier calls, not this one.");
+            : $"Scanned pages {first}-{last} of {scan.TotalPageCount} ({scan.ScannedVersionCount} language versions); " + DescribeUnscanned(scan, last);
 
         var unread = scan.Unread.Count(x => x.Reason != SiteBuilderSectionScanUnread.NotPublished);
         if (unread > 0)
@@ -183,4 +180,9 @@ public static class SectionScanCoverage
 
         return text;
     }
+
+    private static string DescribeUnscanned(SiteBuilderSectionScanResult scan, int last) =>
+        scan.NextSkip != null
+            ? $"pages {last + 1}-{scan.TotalPageCount} were not scanned, so the section may be on them too: call again with skip={scan.NextSkip}."
+            : $"pages 1-{scan.Skip} were scanned by earlier calls, not this one.";
 }

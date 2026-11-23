@@ -117,7 +117,7 @@ public class DesignerContentService(
 
     /// <summary><c>null</c> for no file, or one that is not a page document.</summary>
     protected virtual ThemeTemplateMainSectionState? GetMainSectionState(ThemeFileContent file, string mainSection) =>
-        ParseOrNull(file) is { } document ? ThemeTemplateMainSections.GetState(document, mainSection) : null;
+        TryParse(file, out var document) ? ThemeTemplateMainSections.GetState(document, mainSection) : null;
 
     /// <summary>
     /// A template draft may not gain a section the designer does not offer its template, such as one its template schema does not list.
@@ -147,27 +147,30 @@ public class DesignerContentService(
                 continue;
             }
 
-            var held = ThemeTemplateSections.GetSections(ParseOrNull(await themeDraftService.ReadAsync(storeId, path, cancellationToken)));
+            var held = ThemeTemplateSections.GetSections(
+                TryParse(await themeDraftService.ReadAsync(storeId, path, cancellationToken), out var heldDocument) ? heldDocument : null);
             errors.AddRange(refused.Except(held).Select(x => $"{file}: a {templateType} template cannot hold the section '{x.Id}' of type '{x.Type}'"));
         }
 
         return errors;
     }
 
-    private static JToken ParseOrNull(ThemeFileContent file)
+    private static bool TryParse(ThemeFileContent file, out JToken document)
     {
+        document = null;
         if (string.IsNullOrEmpty(file?.Content))
         {
-            return null;
+            return false;
         }
 
         try
         {
-            return ThemeJson.Parse(file.Content);
+            document = ThemeJson.Parse(file.Content);
+            return true;
         }
         catch (JsonReaderException)
         {
-            return null;
+            return false;
         }
     }
 

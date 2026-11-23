@@ -138,6 +138,18 @@ public sealed class SharedComponentWriteToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ACreateWithMoreThanAHundredSections_IsRefused()
+    {
+        var sections = Enumerable.Range(0, 101).Select(_ => new { type = "text" }).ToArray();
+
+        var result = await _context.CallAsync(Creator(), "create_shared_component", new { store_id = StoreA, name = "Banner", sections, dryRun = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("at most 100", result.Error, StringComparison.Ordinal);
+        Assert.Null(_created);
+    }
+
+    [Fact]
     public async Task ACreateWithATextPerLanguage_IsRefused_AsTheComponentShowsOneText()
     {
         var result = await _context.CallAsync(Creator(), "create_shared_component", new

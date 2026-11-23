@@ -167,8 +167,19 @@ public class PreviewTools(
             return choice;
         }
 
+        var undecided = EvaluateRules(rules.RulesOf(pageType), pageType, subject, templates, choice);
+
+        choice.Decided = undecided.Count == 0;
+        choice.NotEvaluated = choice.Rules.SelectMany(x => x.Conditions).Where(x => x.Holds == null).Select(x => x.Name).Distinct(StringComparer.Ordinal).ToList();
+        choice.Reason = DescribeChoice(choice, pageType, undecided);
+
+        return choice;
+    }
+
+    private static List<string> EvaluateRules(IEnumerable<JsonObject> rules, string pageType, PageRuleSubject subject, ISet<string> templates, TemplateChoice choice)
+    {
         var undecided = new List<string>();
-        foreach (var rule in rules.RulesOf(pageType))
+        foreach (var rule in rules)
         {
             var row = Evaluate(rule, pageType, subject, templates);
             choice.Rules.Add(row);
@@ -184,17 +195,19 @@ public class PreviewTools(
             }
         }
 
-        choice.Decided = undecided.Count == 0;
-        choice.NotEvaluated = choice.Rules.SelectMany(x => x.Conditions).Where(x => x.Holds == null).Select(x => x.Name).Distinct(StringComparer.Ordinal).ToList();
+        return undecided;
+    }
+
+    private static string DescribeChoice(TemplateChoice choice, string pageType, List<string> undecided)
+    {
         var picked = choice.RuleId == null
             ? $"no rule picks a template, so it gets the default {pageType} template '{pageType}'"
             : $"rule '{choice.RuleId}' picks '{choice.Template}'";
-        choice.Reason = undecided.Count == 0
+
+        return undecided.Count == 0
             ? $"By the rules, {picked}."
             : $"Rule(s) {string.Join(", ", undecided)} come first and may pick their template, depending on conditions the server does not " +
               $"evaluate; if none of them applies, {picked}.";
-
-        return choice;
     }
 
     private static RuleEvaluationRow Evaluate(JsonObject rule, string pageType, PageRuleSubject subject, ISet<string> templates)

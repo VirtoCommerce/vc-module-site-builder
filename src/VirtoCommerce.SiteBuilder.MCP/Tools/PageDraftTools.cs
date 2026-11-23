@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -19,6 +20,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageDraftTools(
@@ -72,7 +75,7 @@ public class PageDraftTools(
         EnsureOperations(operations);
 
         var current = await PageEditSources.LoadDraftAsync(pageContentService, group, cancellationToken);
-        if (string.IsNullOrWhiteSpace(version_token) || version_token.Trim() != current.ETag)
+        if (!IsVersion(version_token, current.ETag))
         {
             throw StaleVersion(page_id);
         }
@@ -117,22 +120,12 @@ public class PageDraftTools(
 
         // The dry run answers the sanitized content; a save sanitizes what was sent the same way.
         var saved = dryRun ? ReadPreviewContent(result.Preview, page_id, current.ETag) : editor;
-        foreach (var change in PageDocumentChanges.Compare(before, saved))
-        {
-            preview.AddChange(change.Field, change.From, change.To);
-        }
+        AddChanges(preview, before, saved);
 
         preview.VersionToken = dryRun ? current.ETag : result.Value?.ETag;
         preview.Sections = SectionRow.From(saved.Sections);
-        if (group.Status == PageStatuses.Published)
-        {
-            preview.AddWarning("The page is published: customers keep seeing the published version until this draft is published.");
-        }
-
-        foreach (var warning in templateWarnings)
-        {
-            preview.AddWarning(warning);
-        }
+        AddPublishedWarning(preview, group);
+        AddWarnings(preview, templateWarnings);
 
         return preview;
     }
@@ -145,7 +138,7 @@ public class PageDraftTools(
 
         var current = await FilePages.RequireAsync(contentQueryService, logger, context.User, page, cancellationToken);
         var version = FilePages.VersionOf(current);
-        if (string.IsNullOrWhiteSpace(versionToken) || versionToken.Trim() != version)
+        if (!IsVersion(versionToken, version))
         {
             throw StaleVersion(page.PageId, page.StoreId);
         }
@@ -189,25 +182,11 @@ public class PageDraftTools(
 
         var check = await SaveAsync(true);
         EnsureFilePageSaved(check, page);
-        var item = check.Preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.FilePage);
-        var saving = item?.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
-        if ((item?.ETag ?? FilePages.VersionOf(saving?.From)) != version)
-        {
-            throw StaleVersion(page.PageId, page.StoreId);
-        }
-
-        var saved = PageDocumentEditor.Read(saving?.To, PageDocumentKind.FilePage)
-            ?? throw new McpException($"The edit of page '{page.PageId}' could not be previewed.");
-        foreach (var change in PageDocumentChanges.Compare(before, saved))
-        {
-            preview.AddChange(change.Field, change.From, change.To);
-        }
+        var saved = ReadSavedFilePage(check.Preview, page, version);
+        AddChanges(preview, before, saved);
 
         preview.Sections = SectionRow.From(saved.Sections);
-        foreach (var warning in templateWarnings)
-        {
-            preview.AddWarning(warning);
-        }
+        AddWarnings(preview, templateWarnings);
 
         if (dryRun)
         {
@@ -220,15 +199,51 @@ public class PageDraftTools(
         return preview;
     }
 
+    private static bool IsVersion(string versionToken, string version) =>
+        !string.IsNullOrWhiteSpace(versionToken) && versionToken.Trim() == version;
+
+    private static void AddChanges(PageDraftEdit preview, PageDocumentEditor before, PageDocumentEditor after)
+    {
+        foreach (var change in PageDocumentChanges.Compare(before, after))
+        {
+            preview.AddChange(change.Field, change.From, change.To);
+        }
+    }
+
+    private static void AddWarnings(PageDraftEdit preview, IEnumerable<string> warnings)
+    {
+        foreach (var warning in warnings)
+        {
+            preview.AddWarning(warning);
+        }
+    }
+
+    private static void AddPublishedWarning(PageDraftEdit preview, GroupedSiteBuilderPage group)
+    {
+        if (group.Status == PageStatuses.Published)
+        {
+            preview.AddWarning("The page is published: customers keep seeing the published version until this draft is published.");
+        }
+    }
+
+    private static PageDocumentEditor ReadSavedFilePage(SiteBuilderChangePreview preview, FilePage page, string version)
+    {
+        var item = preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.FilePage);
+        var saving = item?.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
+        if ((item?.ETag ?? FilePages.VersionOf(saving?.From)) != version)
+        {
+            throw StaleVersion(page.PageId, page.StoreId);
+        }
+
+        return PageDocumentEditor.Read(saving?.To, PageDocumentKind.FilePage)
+            ?? throw new McpException($"The edit of page '{page.PageId}' could not be previewed.");
+    }
+
     // The storefront ignores a template key it cannot find, which would silently leave the page on the template rules.
     private async Task<IList<string>> CheckTemplatesAsync(PageEditOperation[] operations, ClaimsPrincipal user, string storeId,
         CancellationToken cancellationToken)
     {
-        var values = operations
-            .Where(x => string.Equals(x.Op?.Trim(), "set_page_settings", StringComparison.OrdinalIgnoreCase) && x.Settings?.ContainsKey(TemplateSetting) == true)
-            .Select(x => x.Settings[TemplateSetting])
-            .Where(x => x != null)
-            .ToList();
+        var values = TemplateSettingValues(operations);
         if (values.Count == 0)
         {
             return [];
@@ -265,6 +280,13 @@ public class PageDraftTools(
 
         return warnings;
     }
+
+    private static List<JsonNode> TemplateSettingValues(PageEditOperation[] operations) =>
+        operations
+            .Where(x => string.Equals(x.Op?.Trim(), "set_page_settings", StringComparison.OrdinalIgnoreCase) && x.Settings?.ContainsKey(TemplateSetting) == true)
+            .Select(x => x.Settings[TemplateSetting])
+            .Where(x => x != null)
+            .ToList();
 
     private PageEditSources CreateSources(RequestContext<CallToolRequestParams> context, string storeId) =>
         new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, context.User, storeId);

@@ -64,11 +64,7 @@ public static class SiteBuilderChanges
         change.AddChanges(check.Preview);
         if (includeWarnings)
         {
-            // Only the dry run's warnings tell what a git write of a file page does.
-            foreach (var warning in check.Preview?.Warnings ?? [])
-            {
-                change.AddWarning(warning);
-            }
+            AddPreviewWarnings(change, check);
         }
 
         if (check.Preview?.Objects.Count == 0)
@@ -84,16 +80,8 @@ public static class SiteBuilderChanges
 
         if (unpublishedOnly && check.AffectsPublished)
         {
-            if (dryRun)
-            {
-                change.AddWarning($"Customers would see this change, so with {UnpublishedOnlyArgument} the call is refused. Call it without " +
-                    $"{UnpublishedOnlyArgument} to send it for approval.");
-                return (change, check);
-            }
-
-            throw new McpException($"The change of {change.ObjectType} '{change.ObjectId}' touches a published page, so customers would see " +
-                $"it; nothing was changed. Call the tool again without {UnpublishedOnlyArgument}: the change then waits for a second " +
-                "person's approval.");
+            RefuseUnpublishedOnly(change, dryRun);
+            return (change, check);
         }
 
         if (dryRun)
@@ -112,6 +100,29 @@ public static class SiteBuilderChanges
         change.AffectsPublished = result.AffectsPublished;
 
         return (change, result);
+    }
+
+    private static void AddPreviewWarnings(SiteBuilderChange change, SiteBuilderOperationResult check)
+    {
+        // Only the dry run's warnings tell what a git write of a file page does.
+        foreach (var warning in check.Preview?.Warnings ?? [])
+        {
+            change.AddWarning(warning);
+        }
+    }
+
+    private static void RefuseUnpublishedOnly(SiteBuilderChange change, bool dryRun)
+    {
+        if (dryRun)
+        {
+            change.AddWarning($"Customers would see this change, so with {UnpublishedOnlyArgument} the call is refused. Call it without " +
+                $"{UnpublishedOnlyArgument} to send it for approval.");
+            return;
+        }
+
+        throw new McpException($"The change of {change.ObjectType} '{change.ObjectId}' touches a published page, so customers would see " +
+            $"it; nothing was changed. Call the tool again without {UnpublishedOnlyArgument}: the change then waits for a second " +
+            "person's approval.");
     }
 
     private static void EnsureStillUnpublished(SiteBuilderChange change, SiteBuilderOperationResult result)
