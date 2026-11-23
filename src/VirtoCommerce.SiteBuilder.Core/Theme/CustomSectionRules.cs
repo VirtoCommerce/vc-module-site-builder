@@ -77,6 +77,9 @@ public class CustomSectionRules
     /// <summary>Checked as links, whatever type the catalog declares.</summary>
     public IList<string> KitLinkAttributes { get; set; } = [];
 
+    /// <summary>Checked as images, whatever type the catalog declares.</summary>
+    public IList<string> KitImageAttributes { get; set; } = [];
+
     /// <summary>The root counts as 1.</summary>
     public int MaxTemplateDepth { get; set; }
 

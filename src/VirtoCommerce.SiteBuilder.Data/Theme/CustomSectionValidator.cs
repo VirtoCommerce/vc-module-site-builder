@@ -112,6 +112,7 @@ public class CustomSectionValidator(
         result.KitFieldTypes = [.. CustomSectionKit.FieldTypes];
         result.KitDeniedAttributes = [.. CustomSectionKit.DeniedAttributePrefixes.Select(x => x + "*"), .. CustomSectionKit.DeniedAttributes];
         result.KitLinkAttributes = [.. CustomSectionKit.LinkAttributes];
+        result.KitImageAttributes = [.. CustomSectionKit.ImageAttributes];
         result.MaxTemplateDepth = CustomSectionTemplateValidator.MaxDepth;
         result.MaxTemplateTags = CustomSectionTemplateValidator.MaxTags;
         result.MaxTemplateAttributes = CustomSectionTemplateValidator.MaxAttributes;

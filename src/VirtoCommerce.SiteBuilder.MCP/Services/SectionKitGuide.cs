@@ -234,8 +234,8 @@ public static class SectionKitGuide
                 {
                     "A kit tag renders a storefront component, such as <vc-button label=\"{{ settings.cta }}\" to=\"{{ settings.link }}\"></vc-button>. " +
                         "It has no content and an end tag of its own, and takes its attributes, data-if and data-each.",
-                    $"Whatever the catalog declares, a kit tag takes no {JoinOr(rules.KitDeniedAttributes)}, and {JoinOr(rules.KitLinkAttributes)} follow the " +
-                        "link rule of href.",
+                    $"Whatever the catalog declares, a kit tag takes no {JoinOr(rules.KitDeniedAttributes)}; {JoinOr(rules.KitLinkAttributes)} follow the " +
+                        $"link rule of href, and {JoinOr(rules.KitImageAttributes)} the image rule of img's src.",
                     "A behavior is switched on with data-<name> and set with data-<name>-<option> on the element or inside it. Its own value is checked by " +
                         "the type the kit declares under value, such as a number for count-up or a date for countdown; one that declares none takes any text. " +
                         "It writes what its writes names, such as data-visible, --scroll-progress or the text: style that in the CSS.",

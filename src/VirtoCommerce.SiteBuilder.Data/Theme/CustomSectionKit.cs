@@ -90,7 +90,10 @@ public static class CustomSectionKit
     public static IReadOnlyList<string> ReservedBehaviorPrefixes { get; } = ["sb-", "pb-"];
 
     /// <summary>Checked as links, whatever type the catalog declares.</summary>
-    public static IReadOnlySet<string> LinkAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "to", "href", "src" };
+    public static IReadOnlySet<string> LinkAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "to", "href" };
+
+    /// <summary>Checked as images, whatever type the catalog declares.</summary>
+    public static IReadOnlySet<string> ImageAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "src" };
 
     private static readonly HashSet<string> BindingNames = new(StringComparer.Ordinal) { "each", "if", "html" };
 

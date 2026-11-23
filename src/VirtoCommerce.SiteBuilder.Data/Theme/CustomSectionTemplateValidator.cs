@@ -426,6 +426,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     protected virtual void ValidateKitValue(CustomSectionCheck check, string owner, KitField field, string name, string value, string where,
         TemplateScope scope)
     {
+        if (CustomSectionKit.ImageAttributes.Contains(name.ToLowerInvariant()))
+        {
+            ValidateImage(check, name, value, where, scope);
+            return;
+        }
+
         if (field.Type == CustomSectionKit.LinkType || CustomSectionKit.LinkAttributes.Contains(name.ToLowerInvariant()))
         {
             ValidateLink(check, name, value, where, scope);

@@ -137,11 +137,11 @@ setting that is not set, it is left out, so it is off. The native boolean attrib
 `muted`, `loop`, `playsinline` and `controls`, and `details`'s `open`, follow the same rule: one that says `false`, such
 as `open="false"`, which HTML alone would read as on, or is bound to a setting that is not set, is off. Whatever the
 catalog declares, a kit tag takes no `on*`, `style`, `id`, `is`, `class`, `srcdoc`, `form*`, `popover*`, `ping`,
-`srcset`, `poster`, `action`, `command`, `commandfor` or `interestfor` attribute, and `to`, `href` and `src` follow the
-link rule. A kit tag has no content. A kit tag may declare its `cost`, the most elements one of it renders, which the
-render budget counts, and `hasSideEffects`, for one whose copy would repeat its work, such as a request or an analytics
-view: such a tag is refused inside an element whose behavior has `repeatsChildren`, and the storefront leaves it out
-there.
+`srcset`, `poster`, `action`, `command`, `commandfor` or `interestfor` attribute; `to` and `href` follow the link rule,
+and `src` the image rule of `img`'s `src`. A kit tag has no content. A kit tag may declare its `cost`, the most elements
+one of it renders, which the render budget counts, and `hasSideEffects`, for one whose copy would repeat its work, such
+as a request or an analytics view: such a tag is refused inside an element whose behavior has `repeatsChildren`, and the
+storefront leaves it out there.
 
 ### Behaviors
 

@@ -423,7 +423,6 @@ public class CustomSectionValidatorTests
     [Theory]
     [InlineData("to")]
     [InlineData("href")]
-    [InlineData("src")]
     public void Validate_LinkAttributeTheCatalogDeclaresAsText_FollowsTheLinkRule(string name)
     {
         var catalog = (JObject)Catalog.DeepClone();
@@ -434,6 +433,31 @@ public class CustomSectionValidatorTests
         Assert.Equal(
             [$"<vc-button> at line 1 has {name}=\"javascript:alert(1)\", which is not a path starting with a single '/', an anchor such as #reviews, or an https:, mailto: or tel: URL"],
             result.Errors);
+    }
+
+    [Theory]
+    [InlineData("string", "{{ settings.image }}")]
+    [InlineData("link", "{{ settings.image }}")]
+    [InlineData("string", "https://cdn.example/assets/stores/s1/hero.png")]
+    [InlineData("link", "https://cdn.example/assets/stores/s1/hero.png")]
+    public void Validate_SrcOfAKitTagFromTheAssetLibrary_IsTakenWhateverTheCatalogDeclares(string type, string src)
+    {
+        var result = _validator.Validate(Type, Section($"""<section><vc-image src="{src}"></vc-image></section>"""), CatalogWithImage(type));
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("string", "{{ settings.link }}", "<vc-image> at line 1 has src bound to 'settings.link', a string and not an images setting")]
+    [InlineData("link", "{{ settings.link }}", "<vc-image> at line 1 has src bound to 'settings.link', a string and not an images setting")]
+    [InlineData("string", "https://evil.example/x.png", "<vc-image> at line 1 has src with 'https://evil.example/x.png', which is not a URL of the store's asset library")]
+    [InlineData("link", "https://evil.example/x.png", "<vc-image> at line 1 has src with 'https://evil.example/x.png', which is not a URL of the store's asset library")]
+    [InlineData("link", "/catalog", "<vc-image> at line 1 has src with '/catalog', which is not a URL of the store's asset library")]
+    public void Validate_SrcOfAKitTag_FollowsTheImageRuleOfImg(string type, string src, string error)
+    {
+        var result = _validator.Validate(Type, Section($"""<section><vc-image src="{src}"></vc-image></section>"""), CatalogWithImage(type));
+
+        Assert.Equal([error], result.Errors);
     }
 
     [Fact]
@@ -1175,6 +1199,14 @@ public class CustomSectionValidatorTests
         file["css"] = css;
 
         return file;
+    }
+
+    private static JObject CatalogWithImage(string srcType)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-image"] = JObject.Parse($$"""{ "attributes": { "src": { "type": "{{srcType}}" }, "alt": { "type": "string" } } }""");
+
+        return catalog;
     }
 
     private sealed class FailingCss() : CustomSectionCssValidator(TestServices.CustomSectionUrlPolicy(Assets))
