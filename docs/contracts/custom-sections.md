@@ -129,6 +129,14 @@ module cannot register a kit tag of the same name.
 | `vc-icon` | `name`, `size`, `color` | `VcIcon`; `name` is one of the catalog's `kit.icons` |
 | `vc-badge` | `label`, `color`, `variant`, `size` | `VcBadge` |
 | `vc-products` | `query`, `filter`, `take` (1–24), `view` (`grid` or `carousel`), `columns` (1–6) | the product list or carousel of the built-in sections |
+| `vc-image` | `src`, `alt`, `width`, `height`, `lazy` | `VcImage`; `src` follows the image rule, and `alt` is `""` unless written |
+| `vc-link` | `label`, `to` | `VcLink`; without `to`, its text alone |
+| `vc-chip` | `label`, `to`, `icon`, `color`, `variant`, `size`, `rounded` | `VcChip`; a link with `to` |
+| `vc-alert` | `text`, `title`, `color`, `variant`, `size`, `icon`, `with-icon`, `shadow` | `VcAlert`, with no close button |
+| `vc-typography` | `text`, `tag` (`p`, `span`, `div`, `h2`–`h6`), `variant`, `color`, `truncate` | `VcTypography` |
+| `vc-rating` | `value` (0–5), `mode`, `size`, `with-text`, `review-count`, `label` | `VcRating`, read only |
+| `vc-shape` | `icon`, `icon-color`, `bg-color`, `size` (pixels), `mask` | `VcShape`; `icon` and `mask` are of `kit.icons` |
+| `vc-property` | `label`, `value` | `VcProperty` |
 
 A kit tag's name starts with `vc-`, and an element named `vc-…` that the catalog does not name is refused. Its
 attributes are those the catalog declares, and `data-if` and `data-each`; they take literals or bindings, and a literal
