@@ -247,7 +247,7 @@ export function useDesigner() {
   }
 
   function addSection(type: string, group?: SectionGroup) {
-    const section: Item = { ...newItem(type, "section", schemas.value), ...(group ? { __group: group } : {}) };
+    const section = settled({ ...newItem(type, "section", schemas.value), ...(group ? { __group: group } : {}) });
     const content = [...doc.value.content];
     content.splice(group ? groupEnd(group) : pageEnd(), 0, section);
     setContent(content);

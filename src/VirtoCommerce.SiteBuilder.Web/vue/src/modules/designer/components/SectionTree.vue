@@ -180,6 +180,7 @@
       v-if="addingTo"
       :designer="designer"
       :group="addingTo === 'page' ? undefined : addingTo"
+      :notice="customSectionsNotice"
       @preview="(type) => emit('preview-section', type)"
       @close="addingTo = null"
     />
@@ -196,7 +197,7 @@ import { humanize, iconOf } from "../schema";
 import AddSection from "./AddSection.vue";
 import SectionRows from "./SectionRows.vue";
 
-const props = defineProps<{ designer: Designer }>();
+const props = defineProps<{ designer: Designer; customSectionsNotice?: string }>();
 const emit = defineEmits<{
   hover: [sectionId: string | null];
   "preview-section": [type: string | null];

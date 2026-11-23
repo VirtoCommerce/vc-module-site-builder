@@ -17,6 +17,13 @@
       autofocus
       :placeholder="$t('SITE_BUILDER.DESIGNER.SEARCH_SECTIONS')"
     />
+    <p
+      v-if="notice && !group"
+      class="pd-add__notice"
+      role="status"
+    >
+      {{ notice }}
+    </p>
     <template v-if="sharedShown">
       <div class="pd-add__group">{{ $t("SITE_BUILDER.DESIGNER.SHARED_COMPONENTS") }}</div>
       <ul class="pd-add__list">
@@ -92,7 +99,7 @@ import { iconOf } from "../schema";
 import type { SharedComponent } from "../api";
 import { useSharedComponentSearch } from "../useSharedComponentSearch";
 
-const props = defineProps<{ designer: Designer; group?: SectionGroup }>();
+const props = defineProps<{ designer: Designer; group?: SectionGroup; notice?: string }>();
 const emit = defineEmits<{ preview: [type: string | null]; close: [] }>();
 
 const search = ref<string>();
@@ -179,6 +186,16 @@ function close() {
 
   &__icon {
     color: var(--neutrals-600);
+  }
+
+  &__notice {
+    margin: 0;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--warning-50);
+    color: var(--neutrals-700);
+    font-size: 12px;
+    line-height: 1.4;
   }
 
   &__group {

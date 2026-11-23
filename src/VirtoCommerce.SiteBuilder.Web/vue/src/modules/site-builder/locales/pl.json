@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Sekcje",
       "CUSTOM_SECTIONS": "Sekcje niestandardowe",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Sekcje niestandardowe są wyświetlane w wersji opublikowanej: wyświetlenie sekcji niestandardowych motywu wymaga uprawnienia do odczytu zawartości witryny.",
       "GROUPS": {
         "HEADER": "Nagłówek",
         "TEMPLATE": "Szablon",

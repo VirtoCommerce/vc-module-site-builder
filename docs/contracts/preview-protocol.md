@@ -129,7 +129,9 @@ as it will once the theme is published. Each `draft` replaces the previous one e
 templates. Each is the template as last saved, its draft, else its live file; the open template is as the designer
 has it, saved or not, and is in `render` too. The designer leaves `templates` out while no template has a saved draft
 (the snapshot then holds them as they are live, and `render` carries the open one) and for a storefront without the
-`templates` capability. It leaves `customSections` out the same way while no custom section type has a saved draft.
+`templates` capability. It sends `customSections` whenever the theme has a custom section type, with a saved draft or
+not, since the snapshot holds the types in one language and the designer takes a type's name and defaults from the
+catalog. It leaves `customSections` out only for a theme with none.
 
 ```ts
 interface Draft {

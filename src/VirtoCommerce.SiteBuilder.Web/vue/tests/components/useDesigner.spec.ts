@@ -574,6 +574,31 @@ describe("useDesigner: translatable settings and the main section", () => {
     expect(designer.selectedItem.value).toMatchObject({ title: HELLO });
   });
 
+  it("adds a section to a page with its default in the language edited, and to a template or the header with the dictionary", async () => {
+    const withDefaults = () => {
+      designer.schemas.value = {
+        ...SCHEMAS,
+        sections: {
+          ...SCHEMAS.sections,
+          "custom-banner": { name: "Banner", custom: true, settings: [{ ...title, default: HELLO }] },
+          "site-header": { ...SCHEMAS.sections["site-header"], settings: [{ id: "announcement", type: "string", translatable: true, default: HELLO }] },
+        },
+      };
+    };
+    await openDatabasePage();
+    withDefaults();
+
+    designer.addSection("custom-banner");
+    expect(designer.selectedItem.value).toMatchObject({ type: "custom-banner", title: "Hallo" });
+    designer.addSection("site-header", "header");
+    expect(designer.selectedItem.value).toMatchObject({ __group: "header", announcement: HELLO });
+
+    await openTemplate();
+    withDefaults();
+    designer.addSection("custom-banner");
+    expect(designer.selectedItem.value).toMatchObject({ type: "custom-banner", title: HELLO });
+  });
+
   it("never pastes a section for the header or footer only among the page's own", async () => {
     await openDatabasePage();
     designer.selection.value = { kind: "section", id: "hero-1" };

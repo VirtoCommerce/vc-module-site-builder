@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Osiot",
       "CUSTOM_SECTIONS": "Mukautetut osiot",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Mukautetut osiot näytetään julkaistussa muodossaan: teeman mukautettujen osioiden listaaminen vaatii oikeuden lukea sivuston sisältöä.",
       "GROUPS": {
         "HEADER": "Ylätunniste",
         "TEMPLATE": "Malli",

@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Sections",
       "CUSTOM_SECTIONS": "Sections personnalisées",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Les sections personnalisées sont affichées telles que publiées : lister les sections personnalisées du thème nécessite l'autorisation de lire le contenu du site.",
       "GROUPS": {
         "HEADER": "En-tête",
         "TEMPLATE": "Modèle",

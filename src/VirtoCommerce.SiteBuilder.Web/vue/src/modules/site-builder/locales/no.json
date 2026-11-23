@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Seksjoner",
       "CUSTOM_SECTIONS": "Egendefinerte seksjoner",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Egendefinerte seksjoner vises slik de er publisert: for å liste temaets egendefinerte seksjoner trengs tillatelse til å lese nettstedets innhold.",
       "GROUPS": {
         "HEADER": "Topptekst",
         "TEMPLATE": "Mal",

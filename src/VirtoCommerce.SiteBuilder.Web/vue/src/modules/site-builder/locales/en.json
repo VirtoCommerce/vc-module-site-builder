@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Sections",
       "CUSTOM_SECTIONS": "Custom sections",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Custom sections are shown as published: listing the theme's custom sections needs permission to read the site content.",
       "GROUPS": {
         "HEADER": "Header",
         "TEMPLATE": "Template",

@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "セクション",
       "CUSTOM_SECTIONS": "カスタムセクション",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "カスタムセクションは公開済みの内容で表示しています。テーマのカスタムセクションを一覧表示するには、サイトのコンテンツを読み取る権限が必要です。",
       "GROUPS": {
         "HEADER": "ヘッダー",
         "TEMPLATE": "テンプレート",

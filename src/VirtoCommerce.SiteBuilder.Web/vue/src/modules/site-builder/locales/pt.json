@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Seções",
       "CUSTOM_SECTIONS": "Seções personalizadas",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "As seções personalizadas são mostradas como publicadas: listar as seções personalizadas do tema requer permissão para ler o conteúdo do site.",
       "GROUPS": {
         "HEADER": "Cabeçalho",
         "TEMPLATE": "Modelo",

@@ -5141,6 +5141,7 @@ export interface DesignerSaveResult {
 export interface DesignerStorefront {
     url?: string | undefined;
     previewPath?: string | undefined;
+    assetsBaseUrl?: string | undefined;
 }
 
 export interface DynamicObjectProperty {

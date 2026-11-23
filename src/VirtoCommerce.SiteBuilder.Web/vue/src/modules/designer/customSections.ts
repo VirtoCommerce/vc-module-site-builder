@@ -28,8 +28,12 @@ export function customSectionTypeOf(path: string): string | undefined {
 export const draftedCustomSectionTypes = (status: ThemeStatus | undefined): string[] =>
   [...new Set((status?.drafts ?? []).map(customSectionTypeOf).filter((x): x is string => !!x))].sort(byCodeUnit);
 
-/** Like the templates: the storefront takes the draft's types in place of all the published ones. */
-export const savedCustomSectionsReader = () => savedThemeFilesReader<CustomSectionType>(draftedCustomSectionTypes, (type) => type);
+/**
+ * The storefront takes the draft's types in place of all the published ones. They go while the theme has any, drafted or
+ * not: the snapshot holds them in one language, and the designer takes a type's defaults from what the preview holds.
+ */
+export const savedCustomSectionsReader = () =>
+  savedThemeFilesReader<CustomSectionType>(draftedCustomSectionTypes, (type) => type, { withoutDraft: true });
 
 /** A custom type's name may be a dictionary by language; the designer shows the one for its own language. */
 export function namedSections(sections: Record<string, ItemSchema>, language: string, defaultLanguage: string): Record<string, ItemSchema> {

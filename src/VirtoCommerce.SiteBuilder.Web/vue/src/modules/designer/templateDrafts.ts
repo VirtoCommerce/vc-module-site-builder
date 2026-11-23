@@ -14,16 +14,17 @@ export interface ThemeFileSource<T> {
 }
 
 /** Live files change only with a publication, so those without a draft are read once per publication. */
-export function savedThemeFilesReader<T>(draftedKeys: (status: ThemeStatus) => string[], kept: (file: T) => T) {
+export function savedThemeFilesReader<T>(draftedKeys: (status: ThemeStatus) => string[], kept: (file: T) => T, { withoutDraft = false } = {}) {
   let live: { scope: string; keys?: string[]; docs: Map<string, T | undefined> } | undefined;
   return async function read(scope: string, status: ThemeStatus, source: ThemeFileSource<T>): Promise<Record<string, T> | undefined> {
     const drafted = draftedKeys(status);
-    if (!drafted.length) return undefined;
+    if (!drafted.length && !withoutDraft) return undefined;
     const at = `${scope}#${status.publication ?? ""}`;
     if (live?.scope !== at) live = { scope: at, docs: new Map() };
     const cache = live;
     cache.keys ??= await source.keys();
     const keys = [...new Set([...cache.keys, ...drafted])];
+    if (!keys.length) return undefined;
     const docs = await Promise.all(
       keys.map(async (key) => {
         if (drafted.includes(key)) return source.read(key);

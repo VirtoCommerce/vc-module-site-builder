@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "区块",
       "CUSTOM_SECTIONS": "自定义区块",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "自定义区块按已发布的版本显示：列出主题的自定义区块需要读取站点内容的权限。",
       "GROUPS": {
         "HEADER": "页眉",
         "TEMPLATE": "模板",

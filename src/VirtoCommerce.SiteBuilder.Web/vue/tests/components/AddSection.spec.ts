@@ -75,6 +75,14 @@ describe("AddSection: the theme's custom section types", () => {
     expect(listed(wrapper)).toEqual(["# Shared components", "Promo strip2 page(s)", "# Sections", "Banner", "Text"]);
   });
 
+  it("shows the designer's notice about them in the page's picker, not in the header's, which offers none", async () => {
+    designer.schemas.value = { sections: { text: { name: "Text" }, "site-header": { name: "Header", groups: ["header"] } }, blocks: {}, shared: {}, objects: {} };
+    const notice = "Custom sections are shown as published.";
+
+    expect(mount(AddSection, { props: { designer, notice } }).find(".pd-add__notice").text()).toBe(notice);
+    expect(mount(AddSection, { props: { designer, group: "header", notice } }).find(".pd-add__notice").exists()).toBe(false);
+  });
+
   it("lists the storefront's sections with no heading while the theme has no custom types", async () => {
     const wrapper = await pickerFor({ text: { name: "Text" }, banner: { name: "Banner" } });
 

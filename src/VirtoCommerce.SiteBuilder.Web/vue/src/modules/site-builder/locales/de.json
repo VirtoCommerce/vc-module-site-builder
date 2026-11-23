@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Abschnitte",
       "CUSTOM_SECTIONS": "Benutzerdefinierte Abschnitte",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Benutzerdefinierte Abschnitte werden so angezeigt, wie sie veröffentlicht sind: Um die benutzerdefinierten Abschnitte des Themes aufzulisten, ist die Berechtigung zum Lesen der Website-Inhalte erforderlich.",
       "GROUPS": {
         "HEADER": "Kopfzeile",
         "TEMPLATE": "Vorlage",

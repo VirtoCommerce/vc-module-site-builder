@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Sektioner",
       "CUSTOM_SECTIONS": "Anpassade sektioner",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Anpassade sektioner visas som de är publicerade: för att lista temats anpassade sektioner krävs behörighet att läsa webbplatsens innehåll.",
       "GROUPS": {
         "HEADER": "Sidhuvud",
         "TEMPLATE": "Mall",

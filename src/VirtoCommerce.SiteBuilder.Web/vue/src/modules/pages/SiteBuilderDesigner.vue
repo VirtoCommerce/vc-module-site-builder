@@ -71,6 +71,7 @@
         <SectionTree
           v-show="mode === 'sections'"
           :designer="designer"
+          :custom-sections-notice="customSectionsNotice"
           @hover="(id) => bridge.send({ type: 'hover', sectionId: id })"
           @preview-section="previewSection"
           @paste="pasteFromClipboard"
@@ -1797,6 +1798,7 @@ const templateKeyList = ref<string[]>([]);
 const templateKeysNotice = ref<string>();
 const readSavedTemplates = savedTemplatesReader();
 const readSavedCustomSections = savedCustomSectionsReader();
+const customSectionsNotice = ref<string>();
 let themeFilesRead = 0;
 // The preview reads the published theme from the snapshot it started with, so a publication reloads it.
 watch(
@@ -1811,6 +1813,7 @@ watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => 
   if (!status || !theme || !storeId) {
     savedTemplates.value = undefined;
     savedCustomSections.value = undefined;
+    customSectionsNotice.value = undefined;
     return;
   }
   const scope = `${storeId}/${theme}`;
@@ -1829,9 +1832,13 @@ watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => 
       read: (type) => findCustomSection(storeId, theme, type),
     })
       .then((types) => {
-        if (request === themeFilesRead) savedCustomSections.value = types;
+        if (request !== themeFilesRead) return;
+        savedCustomSections.value = types;
+        customSectionsNotice.value = undefined;
       })
-      .catch(() => undefined),
+      .catch((e) => {
+        if (request === themeFilesRead && e instanceof ApiError && e.status === 403) customSectionsNotice.value = t("SITE_BUILDER.DESIGNER.CUSTOM_SECTIONS_LIST_FORBIDDEN");
+      }),
   ]);
 });
 const catalog = ref<CatalogContext>();

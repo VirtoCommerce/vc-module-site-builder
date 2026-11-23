@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "الأقسام",
       "CUSTOM_SECTIONS": "أقسام مخصصة",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "تُعرض الأقسام المخصصة كما نُشرت: يتطلب سرد الأقسام المخصصة للسمة إذنًا بقراءة محتوى الموقع.",
       "GROUPS": {
         "HEADER": "الرأس",
         "TEMPLATE": "القالب",

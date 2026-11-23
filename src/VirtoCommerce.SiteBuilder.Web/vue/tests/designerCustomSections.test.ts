@@ -47,10 +47,17 @@ test("draftedCustomSectionTypes: the custom types among the theme files with a d
   assert.deepEqual(draftedCustomSectionTypes(undefined), []);
 });
 
-test("no custom type with a draft: none, and nothing read (the published snapshot has them all)", async () => {
-  const { src, requests } = source({ "custom-hero": type("Hero") });
-  assert.equal(await savedCustomSectionsReader()("s/default", status(["templates/product.json"], 3), src), undefined);
+test("no custom type with a draft: every type still goes, each as its file holds it, listed and read once per publication", async () => {
+  const { src, requests } = source({ "custom-hero": type("Hero"), "custom-promo": type("Promo") });
+  const read = savedCustomSectionsReader();
+  assert.deepEqual(await read("s/default", status(["templates/product.json"], 3), src), { "custom-hero": type("Hero"), "custom-promo": type("Promo") });
+  requests.length = 0;
+  await read("s/default", status([], 3), src);
   assert.deepEqual(requests, []);
+});
+
+test("a theme with no custom type: none, so the published snapshot's stay", async () => {
+  assert.equal(await savedCustomSectionsReader()("s/default", status([], 3), source({}).src), undefined);
 });
 
 test("a custom type with a draft: every type goes, each as its file holds it, a new one not listed yet among them", async () => {
@@ -87,5 +94,5 @@ test("a type never published is gone from the draft once its draft is discarded,
   delete files["custom-new"];
 
   assert.deepEqual(Object.keys((await read("s/default", status(["custom-sections/custom-hero.json"], 3), src)) ?? {}), ["custom-hero"]);
-  assert.equal(await read("s/default", status([], 3), src), undefined);
+  assert.deepEqual(Object.keys((await read("s/default", status([], 3), src)) ?? {}), ["custom-hero"]);
 });

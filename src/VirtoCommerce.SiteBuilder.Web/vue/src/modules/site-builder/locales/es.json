@@ -251,6 +251,7 @@
     "DESIGNER": {
       "SECTIONS": "Secciones",
       "CUSTOM_SECTIONS": "Secciones personalizadas",
+      "CUSTOM_SECTIONS_LIST_FORBIDDEN": "Las secciones personalizadas se muestran tal como están publicadas: para listar las secciones personalizadas del tema se necesita permiso para leer el contenido del sitio.",
       "GROUPS": {
         "HEADER": "Encabezado",
         "TEMPLATE": "Plantilla",

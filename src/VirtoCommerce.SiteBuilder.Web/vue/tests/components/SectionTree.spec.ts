@@ -72,3 +72,14 @@ describe("SectionTree: names", () => {
     expect(sectionNames(wrapper)).toEqual(["Sale", "More"]);
   });
 });
+
+describe("SectionTree: adding a section", () => {
+  it("shows the designer's notice about the custom section types in the picker", async () => {
+    designer.doc.value = { settings: { id: "settings", type: "settings" }, content: [] };
+    const wrapper = mount(SectionTree, { props: { designer, customSectionsNotice: "Custom sections are shown as published." } });
+
+    await button(wrapper, "Add section")!.trigger("click");
+
+    expect(wrapper.find(".pd-add__notice").text()).toBe("Custom sections are shown as published.");
+  });
+});
