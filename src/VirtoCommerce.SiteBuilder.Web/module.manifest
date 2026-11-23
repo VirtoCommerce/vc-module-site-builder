@@ -45,7 +45,4 @@
   <assemblyFile>VirtoCommerce.SiteBuilder.Web.dll</assemblyFile>
   <moduleType>VirtoCommerce.SiteBuilder.Web.Module, VirtoCommerce.SiteBuilder.Web</moduleType>
   <useFullTypeNameInSwagger>false</useFullTypeNameInSwagger>
-  <groups>
-    <group>commerce</group>
-  </groups>
 </module>
