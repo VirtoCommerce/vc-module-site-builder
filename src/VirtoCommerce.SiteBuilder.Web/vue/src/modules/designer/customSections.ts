@@ -31,9 +31,10 @@ export const draftedCustomSectionTypes = (status: ThemeStatus | undefined): stri
 /**
  * The storefront takes the draft's types in place of all the published ones. They go while the theme has any, drafted or
  * not: the snapshot holds them in one language, and the designer takes a type's defaults from what the preview holds.
+ * A type that cannot be read costs only itself, as the first publication leaves out a type that is not JSON.
  */
 export const savedCustomSectionsReader = () =>
-  savedThemeFilesReader<CustomSectionType>(draftedCustomSectionTypes, (type) => type, { withoutDraft: true });
+  savedThemeFilesReader<CustomSectionType>(draftedCustomSectionTypes, (type) => type, { withoutDraft: true, skipUnreadable: true });
 
 /** A custom type's name may be a dictionary by language; the designer shows the one for its own language. */
 export function namedSections(sections: Record<string, ItemSchema>, language: string, defaultLanguage: string): Record<string, ItemSchema> {

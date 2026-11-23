@@ -419,6 +419,7 @@ function channel(options: { prepare?: () => Promise<void>; colorScheme?: () => C
   const posted: DesignerMessage[] = [];
   const log: string[] = [];
   const events: unknown[] = [];
+  const newDocuments: boolean[] = [];
   const draft = draftMessage({ capabilities: [] });
   const render = renderMessage({ preview: { template: doc([]), sharedComponentBoundaries: [] }, cultureName: "en-US" });
   const created = createPreviewChannel({
@@ -431,13 +432,16 @@ function channel(options: { prepare?: () => Promise<void>; colorScheme?: () => C
       log.push("catalog");
       await options.prepare?.();
     },
-    handshake: () => handshakeMessages({ inspector: false, colorScheme: options.colorScheme?.() ?? "light", draft, render }),
+    handshake: (newDocument) => {
+      newDocuments.push(newDocument);
+      return handshakeMessages({ inspector: false, colorScheme: options.colorScheme?.() ?? "light", draft, render });
+    },
     onSelect: (event) => events.push(["select", event]),
     onHover: (id) => events.push(["hover", id]),
     onEdit: (edit) => events.push(["edit", edit]),
     onResolved: (resolved) => events.push(["resolved", resolved]),
   });
-  return { ...created, posted, log, events };
+  return { ...created, posted, log, events, newDocuments };
 }
 
 test("a frame load connects with protocol 2", () => {
@@ -467,6 +471,25 @@ test("a loaded again, once the draft changed the storefront's custom types, brin
 
   assert.deepEqual(preview.log, ["loaded 5eedc0de", "catalog", "post auth", "post inspector", "post colorScheme", "post draft", "post render"]);
   assert.equal(preview.connected.value, true);
+});
+
+test("a loaded with no frame load since the last handshake is the same document's; a frame load brings a new one", async () => {
+  const preview = channel();
+  await preview.receive(fromPreview(loadedData()));
+  await preview.receive(fromPreview(loadedData({ hash: "5eedc0de" })));
+  preview.frameLoaded();
+  await preview.receive(fromPreview(loadedData()));
+  assert.deepEqual(preview.newDocuments, [true, false, true]);
+});
+
+test("a new document whose handshake a newer loaded dropped is still new to the handshake that goes", async () => {
+  const releases: (() => void)[] = [];
+  const preview = channel({ prepare: () => new Promise<void>((resolve) => releases.push(resolve)) });
+  const dropped = preview.receive(fromPreview(loadedData()));
+  const answered = preview.receive(fromPreview(loadedData()));
+  releases.forEach((release) => release());
+  await Promise.all([dropped, answered]);
+  assert.deepEqual(preview.newDocuments, [true]);
 });
 
 test("nothing but the handshake goes out before it: it carries the state as it is when it goes", async () => {

@@ -639,7 +639,7 @@ describe("the theme's custom section types", () => {
   const SEARCH = `/api/content/themes/${STORE}/search`;
   const HERO = { format: 1, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [{ id: "title", type: "string" }] }, template: "<section></section>", css: "" };
   const PROMO = { ...HERO, name: "Promo" };
-  const FILES = { "default/custom-sections/custom-hero.json": HERO, "default/custom-sections/custom-promo.json": PROMO };
+  const FILES: Record<string, unknown> = { "default/custom-sections/custom-hero.json": HERO, "default/custom-sections/custom-promo.json": PROMO };
   const LISTED = [{ name: "custom-hero.json-draft" }, { name: "custom-promo.json" }];
   let platform: FakePlatform;
   // A change of the draft goes to the preview once changes pause for 120 ms.
@@ -652,36 +652,62 @@ describe("the theme's custom section types", () => {
   beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
   afterEach(() => vi.useRealTimers());
 
-  async function openPage(drafts: string[], { agent, listed = () => LISTED }: { agent?: ReturnType<typeof fakeAgent>; listed?: () => unknown } = {}) {
+  async function openPage(
+    drafts: string[],
+    {
+      agent,
+      listed = () => LISTED,
+      publication = 3,
+      shared = false,
+    }: { agent?: ReturnType<typeof fakeAgent>; listed?: () => unknown; publication?: number | null; shared?: boolean } = {},
+  ) {
     platform = fakePlatform()
       .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
       .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
       .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-shared-components/c1", { id: "c1", storeId: STORE, name: "Promo", usageCount: 1 })
+      .on("GET", "/api/site-builder-shared-components/c1/content", "[]")
       .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
       .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer(FILES))
-      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts })
+      .on("GET", "/api/site-builder/template", (request: { query: Record<string, string> }) => (request.query.path in FILES ? FILES[request.query.path] : status(404)))
+      .on("GET", "/api/site-builder/theme/status", { publication, drafts })
       .on("GET", "/api/site-builder/designer/storefront", { url: "https://shop.test", previewPath: "/designer-preview", assetsBaseUrl: "https://cdn.test/assets/" })
       .on("GET", "/api/site-builder/catalog", {})
       .on("GET", SEARCH, (request: { query: Record<string, string> }) => (request.query.folderUrl === "default/custom-sections" ? listed() : []))
       .install();
-    blade.param.value = "g1";
+    if (!shared) blade.param.value = "g1";
+    const router = await routerAt(shared ? `/site-builder-draft/site-builder-designer?storeId=${STORE}&sharedComponentId=c1` : "/");
     const provide = agent ? { [AiAgentServiceKey]: agent } : {};
-    const wrapper = shallowMount(SiteBuilderDesigner, { attachTo: document.body, global: { plugins: [await routerAt("/")], provide, stubs: { VcBlade: false } } });
+    const wrapper = shallowMount(SiteBuilderDesigner, { attachTo: document.body, global: { plugins: [router], provide, stubs: { VcBlade: false } } });
     await flushPromises();
     const frame = wrapper.find("iframe").element as HTMLIFrameElement;
     const posted = vi.spyOn(frame.contentWindow!, "postMessage");
-    const load = async (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
-      const data = { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [], ...extra };
-      window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data: { source: "preview", type: "loaded", data } }));
+    const fromPreview = async (type: string, data: unknown) => {
+      window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data: { source: "preview", type, data } }));
       await flushPromises();
     };
+    const load = (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+      fromPreview("loaded", { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [], ...extra });
     const lastDraft = () =>
       posted.mock.calls
         .map(([message]) => message as { type: string; theme?: Record<string, unknown> })
         .filter((x) => x.type === "draft")
         .at(-1);
+    const lastRender = () =>
+      posted.mock.calls
+        .map(([message]) => message as { type: string; selection?: unknown })
+        .filter((x) => x.type === "render")
+        .at(-1);
     const notice = () => wrapper.findComponent(SectionTree).props("customSectionsNotice");
-    return { load, lastDraft, notice, designer: (wrapper.vm as unknown as { designer: Designer }).designer };
+    return {
+      load,
+      resolved: (data: unknown) => fromPreview("resolved", data),
+      frameLoaded: () => frame.dispatchEvent(new Event("load")),
+      lastDraft,
+      lastRender,
+      notice,
+      designer: (wrapper.vm as unknown as { designer: Designer }).designer,
+    };
   }
 
   it("go to the preview in the draft, each as last saved, once one of them has a draft", async () => {
@@ -706,6 +732,27 @@ describe("the theme's custom section types", () => {
       ["text", "Text"],
     ]);
     expect(platform.to("/api/site-builder/catalog").map((x) => x.query.hash)).toEqual(["c0ffee01", "c0ffee02"]);
+  });
+
+  it("leave the preview where the user scrolled it, and the template it reported, when a type change sends loaded again", async () => {
+    const page = await openPage([]);
+    page.designer.selection.value = { kind: "section", id: "hero-1" };
+    await page.load("c0ffee04");
+    await page.resolved({ url: "/about", pageType: "page", template: "page", ruleId: null, rules: { template: "page", ruleId: null }, overriddenByWhiteLabeling: [] });
+    const templateNote = () => page.designer.extraPageFields.value.find((x) => x.id === "template")?.info;
+    const reported = templateNote();
+    expect(page.lastRender()?.selection).toEqual({ sectionId: "hero-1", scroll: true });
+
+    await page.load("c0ffee05", { "custom-hero": { name: "Hero", custom: true, settings: [] } });
+
+    expect(page.lastRender()?.selection).toEqual({ sectionId: "hero-1", scroll: false });
+    expect(templateNote()).toBe(reported);
+
+    page.frameLoaded();
+    await page.load("c0ffee05", { "custom-hero": { name: "Hero", custom: true, settings: [] } });
+
+    expect(page.lastRender()?.selection).toEqual({ sectionId: "hero-1", scroll: true });
+    expect(templateNote()).not.toBe(reported);
   });
 
   it("leave the catalog the designer uploads as the storefront sent it, names by language and kit included", async () => {
@@ -763,17 +810,18 @@ describe("the theme's custom section types", () => {
     expect((page.lastDraft()?.theme?.customSections as Record<string, { name: string }>)["custom-hero"].name).toBe("Later");
   });
 
-  it("keep the types read before when a read fails", async () => {
+  it.each([
+    ["can't be read", () => status(500)],
+    ["is not JSON", (request: { query: Record<string, string> }) => ({ path: request.query.path, content: '{ "format": 1,', eTag: '"v2"' })],
+  ])("go without a type whose file %s, and with the others", async (_, answer) => {
     const page = await openPage(["custom-sections/custom-hero.json"]);
     await page.load("0badc0de");
-    platform.on("GET", "/api/site-builder/designer/theme-file", status(500));
-    const reads = platform.to("/api/site-builder/designer/theme-file").length;
+    platform.on("GET", "/api/site-builder/designer/theme-file", answer);
 
     await page.designer.refreshThemeStatus();
     await draftSent();
 
-    expect(platform.to("/api/site-builder/designer/theme-file").length).toBeGreaterThan(reads);
-    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-promo": PROMO });
     expect(page.notice()).toBeUndefined();
   });
 
@@ -807,6 +855,29 @@ describe("the theme's custom section types", () => {
     reloads.mockRestore();
   });
 
+  it("reload the preview after the theme's first publication too", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"], { publication: null });
+    await page.load("0badc0de");
+    const reloads = vi.spyOn(HTMLIFrameElement.prototype, "src", "set");
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 1, drafts: [] });
+
+    await page.designer.refreshThemeStatus();
+    await flushPromises();
+
+    expect(reloads).toHaveBeenCalledTimes(1);
+    reloads.mockRestore();
+  });
+
+  it("go to the preview of a shared component too, which may place them, with no template", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json", "templates/product.json"], { shared: true });
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+    expect(page.lastDraft()?.theme).not.toHaveProperty("templates");
+    expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/templates")).toEqual([]);
+  });
+
   it("go with the asset library's base, which a store never published has in no snapshot", async () => {
     const page = await openPage([]);
 
@@ -824,7 +895,7 @@ describe("the theme's custom section types", () => {
 
     expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
     expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/custom-sections")).toHaveLength(1);
-    expect(platform.to("/api/site-builder/designer/theme-file").filter((x) => x.query.path.startsWith("default/custom-sections/"))).toHaveLength(2);
+    expect(platform.to("/api/site-builder/template").filter((x) => x.query.path.startsWith("default/custom-sections/"))).toHaveLength(2);
   });
 
   it("are left to the published snapshot while the theme has none", async () => {

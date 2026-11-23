@@ -111,7 +111,7 @@ export function useDesigner() {
 
   const languages = ref<{ all: string[]; default?: string }>({ all: [] });
   const language = ref<string>();
-  const translates = (section?: Item) => !shared.value && (!!templateKey.value || !!section?.__group);
+  const translates = (section?: Partial<Item>) => !shared.value && (!!templateKey.value || !!section?.__group);
   function translating(section?: Item, edited = language.value): Translating | undefined {
     const defaultLanguage = languages.value.default;
     return translates(section) && edited && defaultLanguage ? { language: edited, defaultLanguage, languages: languages.value.all } : undefined;
@@ -123,7 +123,7 @@ export function useDesigner() {
   }
 
   /** A page's sections and shared components keep one text, so a dictionary becomes the edited language's text. */
-  function settled(item: Item, section: Item = item): Item {
+  function settled<T extends Partial<Item>>(item: T, section: Partial<Item> = item): T {
     return translates(section) ? item : inEditedLanguage(item);
   }
 
@@ -598,13 +598,14 @@ export function useDesigner() {
   }));
 
   async function refreshThemeStatus() {
-    if (!storeId.value || shared.value) return;
+    if (!storeId.value) return;
     themeStatus.value = await api.themeStatus(storeId.value).catch(() => themeStatus.value);
   }
 
   async function refreshStatus() {
     const page = file.value;
-    if (!groupId.value && !page) return;
+    // A shared component has no state of its own, but its preview takes the drafted custom section types from the theme's.
+    if (!groupId.value && !page) return refreshThemeStatus();
     // A state that cannot be read stays as last read, and the publish actions wait for one.
     const known = () => status.value;
     const ownStatus = () => {
@@ -782,6 +783,7 @@ export function useDesigner() {
     languages,
     language,
     translating,
+    settled,
     mainSection,
     mainItem,
     isMainKept,

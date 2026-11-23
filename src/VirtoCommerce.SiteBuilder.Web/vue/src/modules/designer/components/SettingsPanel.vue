@@ -95,7 +95,8 @@
         :values="values"
         :context="context"
         :group-item="groupItem"
-        :translation="designer.translating(sel.kind === 'page' ? undefined : designer.selectedSection.value)"
+        :translation="designer.translating(textSection)"
+        :settle="(defaults) => designer.settled(defaults, textSection)"
         @update="designer.setField"
       />
       <p
@@ -164,6 +165,7 @@ const icon = computed(() => {
   return placed.value ? "lucide-link" : iconOf(schema.value);
 });
 const values = computed(() => (sel.value.kind === "page" ? props.designer.doc.value.settings : item.value));
+const textSection = computed(() => (sel.value.kind === "page" ? undefined : props.designer.selectedSection.value));
 const itemKey = computed(() => (sel.value.kind === "page" ? `page:${sel.value.key}` : sel.value.id));
 
 const tabs = computed(() => [...new Set(props.designer.selectedFields.value.map((x) => x.tab ?? t("SITE_BUILDER.DESIGNER.CONTENT")))]);

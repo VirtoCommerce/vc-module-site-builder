@@ -9,15 +9,17 @@ const status = (drafts: string[], publication?: number): ThemeStatus => ({ publi
 
 function source(files: Record<string, PageDocument | undefined>) {
   const requests: string[] = [];
+  const answer = async (key: string) => {
+    requests.push(key);
+    return files[key];
+  };
   const src: ThemeFileSource<PageDocument> = {
     keys: async () => {
       requests.push("keys");
       return Object.keys(files);
     },
-    read: async (key) => {
-      requests.push(key);
-      return files[key];
-    },
+    read: answer,
+    live: answer,
   };
   return { src, requests, files };
 }
@@ -82,11 +84,23 @@ test("live templates are read once per publication, drafts on every read", async
 
 test("a failed read fails the whole read: an incomplete set would hide the templates it lacks", async () => {
   const { src } = source({ product: doc("product-info"), category: doc("category-listing") });
-  src.read = async (key) => {
+  src.read = src.live = async (key) => {
     if (key === "category") throw new Error("503");
     return doc("product-info");
   };
   await assert.rejects(savedTemplatesReader()("s/default", status(["templates/product.json"], 3), src));
+});
+
+test("a template without a draft is read as its live file: a draft saved after the status was read does not stay once discarded", async () => {
+  const { src, files } = source({ product: doc("product-info"), category: doc("category-listing") });
+  const drafts: Record<string, PageDocument> = { category: doc("category-listing", "banner") };
+  src.read = async (key) => drafts[key] ?? files[key];
+  const read = savedTemplatesReader();
+  const drafted = status(["templates/product.json"], 3);
+
+  assert.deepEqual((await read("s/default", drafted, src))?.category, doc("category-listing"));
+  delete drafts.category;
+  assert.deepEqual((await read("s/default", drafted, src))?.category, doc("category-listing"));
 });
 
 test("draftTemplates: the open template as edited wins over its saved one; none while nothing has a draft", () => {

@@ -10,11 +10,21 @@ export const draftedTemplateKeys = (status: ThemeStatus | undefined): string[] =
 
 export interface ThemeFileSource<T> {
   keys: () => Promise<string[]>;
+  /** The draft, else the live file. */
   read: (key: string) => Promise<T | undefined>;
+  live: (key: string) => Promise<T | undefined>;
 }
 
-/** Live files change only with a publication, so those without a draft are read once per publication. */
-export function savedThemeFilesReader<T>(draftedKeys: (status: ThemeStatus) => string[], kept: (file: T) => T, { withoutDraft = false } = {}) {
+/**
+ * Live files change only with a publication, so those without a draft are read once per publication, and as live files:
+ * the status does not show a draft saved after it was read. A file that cannot be read fails the whole read, unless
+ * `skipUnreadable` leaves it out until a later read.
+ */
+export function savedThemeFilesReader<T>(
+  draftedKeys: (status: ThemeStatus) => string[],
+  kept: (file: T) => T,
+  { withoutDraft = false, skipUnreadable = false } = {},
+) {
   let live: { scope: string; keys?: string[]; docs: Map<string, T | undefined> } | undefined;
   return async function read(scope: string, status: ThemeStatus, source: ThemeFileSource<T>): Promise<Record<string, T> | undefined> {
     const drafted = draftedKeys(status);
@@ -25,13 +35,12 @@ export function savedThemeFilesReader<T>(draftedKeys: (status: ThemeStatus) => s
     cache.keys ??= await source.keys();
     const keys = [...new Set([...cache.keys, ...drafted])];
     if (!keys.length) return undefined;
-    const docs = await Promise.all(
-      keys.map(async (key) => {
-        if (drafted.includes(key)) return source.read(key);
-        if (!cache.docs.has(key)) cache.docs.set(key, await source.read(key));
-        return cache.docs.get(key);
-      }),
-    );
+    const readKey = async (key: string) => {
+      if (drafted.includes(key)) return source.read(key);
+      if (!cache.docs.has(key)) cache.docs.set(key, await source.live(key));
+      return cache.docs.get(key);
+    };
+    const docs = await Promise.all(keys.map((key) => (skipUnreadable ? readKey(key).catch(() => undefined) : readKey(key))));
     const files: Record<string, T> = {};
     keys.forEach((key, i) => {
       const doc = docs[i];

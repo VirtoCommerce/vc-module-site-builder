@@ -255,6 +255,11 @@ export async function loadThemeFile(storeId: string, path: string): Promise<Them
   return { content: body.content?.trim() ? JSON.parse(body.content) : undefined, eTag: body.eTag ?? "" };
 }
 
+async function findLiveThemeFile(storeId: string, path: string): Promise<unknown> {
+  const res = await find(`/api/site-builder/template?${new URLSearchParams({ storeId, type: "themes", path })}`);
+  return res && jsonOf(res);
+}
+
 export async function themeStatus(storeId: string): Promise<ThemeStatus> {
   return parseThemeStatus(await (await call(`/api/site-builder/theme/status?${new URLSearchParams({ storeId })}`)).json());
 }
@@ -323,9 +328,14 @@ export const templateKeys = (storeId: string, theme: string) => themeFolderKeys(
 
 export const customSectionTypes = (storeId: string, theme: string) => themeFolderKeys(storeId, theme, "custom-sections", customSectionTypeOf);
 
+const customSectionOf = (content: unknown) => (isRecord(content) ? (content as unknown as CustomSectionType) : undefined);
+
 export async function findCustomSection(storeId: string, theme: string, type: string): Promise<CustomSectionType | undefined> {
-  const { content } = await loadThemeFile(storeId, customSectionPath(theme, type));
-  return isRecord(content) ? (content as unknown as CustomSectionType) : undefined;
+  return customSectionOf((await loadThemeFile(storeId, customSectionPath(theme, type))).content);
+}
+
+export async function findLiveCustomSection(storeId: string, theme: string, type: string): Promise<CustomSectionType | undefined> {
+  return customSectionOf(await findLiveThemeFile(storeId, customSectionPath(theme, type)));
 }
 
 export async function gitFlowOf(storeId: string, theme: string): Promise<{ on: boolean }> {
@@ -347,6 +357,11 @@ export async function findFilePage(page: FilePage): Promise<PageDocument | undef
 export async function findTemplate(page: FilePage): Promise<{ doc?: PageDocument; eTag: string }> {
   const file = await loadThemeFile(page.storeId, page.path);
   return { doc: file.content === undefined ? undefined : toDocument(file.content), eTag: file.eTag };
+}
+
+export async function findLiveTemplate(storeId: string, path: string): Promise<PageDocument | undefined> {
+  const content = await findLiveThemeFile(storeId, path);
+  return content === undefined ? undefined : toDocument(content);
 }
 
 /** git validates the envelope, whose settings item must have a type. */

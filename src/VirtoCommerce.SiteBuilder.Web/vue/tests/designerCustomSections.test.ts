@@ -17,15 +17,17 @@ const status = (drafts: string[], publication?: number): ThemeStatus => ({ publi
 
 function source(files: Record<string, CustomSectionType | undefined>) {
   const requests: string[] = [];
+  const answer = async (key: string) => {
+    requests.push(key);
+    return files[key];
+  };
   const src: ThemeFileSource<CustomSectionType> = {
     keys: async () => {
       requests.push("keys");
       return Object.keys(files);
     },
-    read: async (key) => {
-      requests.push(key);
-      return files[key];
-    },
+    read: answer,
+    live: answer,
   };
   return { src, requests, files };
 }
@@ -74,6 +76,26 @@ test("live custom types are read once per publication, drafts on every read", as
   requests.length = 0;
   await read("s/default", status(["custom-sections/custom-hero.json"], 3), src);
   assert.deepEqual(requests, ["custom-hero"]);
+});
+
+test("a type whose file is not JSON or does not answer costs only itself, and is read again the next time", async () => {
+  const { src } = source({ "custom-hero": type("Hero"), "custom-promo": type("Promo"), "custom-new": type("New") });
+  const { read: draft, live } = src;
+  src.read = async () => {
+    throw new Error("500");
+  };
+  src.live = async (key) => {
+    if (key === "custom-promo") throw new SyntaxError("Unexpected token");
+    return live(key);
+  };
+  const read = savedCustomSectionsReader();
+  const drafted = status(["custom-sections/custom-new.json"], 3);
+
+  assert.deepEqual(await read("s/default", drafted, src), { "custom-hero": type("Hero") });
+
+  src.read = draft;
+  src.live = live;
+  assert.deepEqual(await read("s/default", drafted, src), { "custom-hero": type("Hero"), "custom-promo": type("Promo"), "custom-new": type("New") });
 });
 
 test("a custom type's name by language is shown in the designer's language, else the store's default, else its first", () => {

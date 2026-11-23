@@ -647,8 +647,10 @@ import {
   templateKeys,
   findFilePage,
   findTemplate,
+  findLiveTemplate,
   customSectionTypes,
   findCustomSection,
+  findLiveCustomSection,
   loadThemeFile,
   ApiError,
   type CatalogContext,
@@ -876,9 +878,9 @@ const previewAs = usePreviewUser({
 const bridge = usePreviewBridge({
   frame,
   url,
-  onLoaded: (loaded) => {
+  onLoaded: (loaded, newDocument) => {
     // A new document reports what its rules picked again.
-    reported.value = undefined;
+    if (newDocument) reported.value = undefined;
     designer.handshake.value = {
       hash: loaded.hash,
       capabilities: loaded.capabilities,
@@ -899,14 +901,14 @@ const bridge = usePreviewBridge({
       previewAs.refresh(),
     ]);
   },
-  // A reloaded frame has lost everything.
-  handshake: () =>
+  // A reloaded frame has lost everything; one whose catalog changed is still where the user scrolled it.
+  handshake: (newDocument) =>
     handshakeMessages({
       auth: previewAs.message(),
       inspector: !versionView && inspector.value,
       colorScheme: colorScheme.value,
       draft: versionView?.draft ?? draft(),
-      render: versionView?.render ?? render({ scroll: true }),
+      render: versionView?.render ?? render({ scroll: newDocument }),
     }),
   onSelect: (event) => {
     if (designer.isLocked(event.sectionId)) return refuseLocked();
@@ -1802,9 +1804,9 @@ const customSectionsNotice = ref<string>();
 let themeFilesRead = 0;
 // The preview reads the published theme from the snapshot it started with, so a publication reloads it.
 watch(
-  () => [designer.storeId.value, designer.themeStatus.value?.publication] as const,
-  ([storeId, publication], [storeBefore, publicationBefore]) => {
-    if (storeId === storeBefore && publicationBefore !== undefined && publication !== publicationBefore) reloadPreview();
+  () => [designer.storeId.value, designer.themeStatus.value] as const,
+  ([storeId, status], [storeBefore, statusBefore]) => {
+    if (storeId === storeBefore && statusBefore && status?.publication !== statusBefore.publication) reloadPreview();
   },
 );
 watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => {
@@ -1819,17 +1821,21 @@ watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => 
   const scope = `${storeId}/${theme}`;
   // A failed read keeps the files read before.
   await Promise.all([
-    readSavedTemplates(scope, status, {
-      keys: () => templateKeys(storeId, theme),
-      read: async (key) => (await findTemplate({ storeId, theme, type: "themes", path: templatePath(theme, key) })).doc,
-    })
-      .then((templates) => {
-        if (request === themeFilesRead) savedTemplates.value = templates;
-      })
-      .catch(() => undefined),
+    designer.shared.value
+      ? undefined
+      : readSavedTemplates(scope, status, {
+          keys: () => templateKeys(storeId, theme),
+          read: async (key) => (await findTemplate({ storeId, theme, type: "themes", path: templatePath(theme, key) })).doc,
+          live: (key) => findLiveTemplate(storeId, templatePath(theme, key)),
+        })
+          .then((templates) => {
+            if (request === themeFilesRead) savedTemplates.value = templates;
+          })
+          .catch(() => undefined),
     readSavedCustomSections(scope, status, {
       keys: () => customSectionTypes(storeId, theme),
       read: (type) => findCustomSection(storeId, theme, type),
+      live: (type) => findLiveCustomSection(storeId, theme, type),
     })
       .then((types) => {
         if (request !== themeFilesRead) return;
