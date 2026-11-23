@@ -667,7 +667,8 @@
         "AGAIN": "Konfigurera igen"
       },
       "CONNECT_FIRST": "Den här plattformen är inte ansluten till GitHub än. Anslut den en gång från panelen Webbplatser och aktivera sedan historik här.",
-      "OPEN_GITHUB": "GitHub-anslutning"
+      "OPEN_GITHUB": "GitHub-anslutning",
+      "GITHUB_MISSING": "Den här butiken publicerar sidor via Git, men GitHub är inte anslutet. Anslut GitHub eller stäng av publicering via Git för den här butiken."
     },
     "GITHUB": {
       "INTRO": "Anslut plattformen till en GitHub-organisation en gång. Varje webbplats sparar sedan versionerna av sina sidor i ett eget privat repositorium där.",

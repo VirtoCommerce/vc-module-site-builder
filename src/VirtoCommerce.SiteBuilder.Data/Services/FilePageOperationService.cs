@@ -37,7 +37,8 @@ public class FilePageOperationService(
     IFilePageDraftService filePageDraftService,
     IThemeDraftService themeDraftService,
     IContentHistory contentHistory,
-    ISiteBuilderContentGuard contentGuard) : IFilePageOperationService
+    ISiteBuilderContentGuard contentGuard,
+    ISchemaCatalogService schemaCatalogService) : IFilePageOperationService
 {
     private const string Themes = "themes";
     // The content types the git flow covers are pages and blogs — the same .page files, blogs living
@@ -645,8 +646,9 @@ public class FilePageOperationService(
         var errors = PageEnvelopeValidator.Validate(page);
         if (errors.Count == 0)
         {
-            // an old version may predate the checks: it is saved again sanitized, or not at all
-            errors = contentGuard.GuardPage(page, path, catalog: null).Errors;
+            // an old version may predate the checks: it is saved again sanitized, or not at all, as the store's current catalog has it
+            var catalog = await schemaCatalogService.GetCatalogObjectAsync(storeId, hash: null, cancellationToken);
+            errors = contentGuard.GuardPage(page, path, catalog).Errors;
         }
 
         if (errors.Count > 0)

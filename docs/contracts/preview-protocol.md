@@ -284,6 +284,9 @@ Schemas are data, never code.
   field gets no options and the console has a warning. A URL on any other origin is requested without the
   `Authorization` header, and a 401 from it does not end the designer's session. The designer ignores the expression
   keys `selector`, `optionsSelector` and `previewRule`.
+- A template entry's `default` is the `PageDocument` the storefront renders while the theme has no file for it
+  (`previewMessage.templateKey` names the template). The designer opens such a template from it, and a template
+  created as a copy of the default one starts from it.
 - A field may be `"translatable": true` ([theme snapshot](theme-snapshot.md#translatable-fields)).
 - A `string` field holding a link is `"format": "url"`.
 - A section may have a `limit`: the designer adds, duplicates or pastes no more sections of its type than that on a

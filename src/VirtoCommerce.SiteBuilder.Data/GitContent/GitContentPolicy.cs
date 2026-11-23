@@ -15,7 +15,8 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
 {
     /// <summary>
     /// Three independent switches must all be on: the global kill switch, a usable connection, and the
-    /// store's own opt-in.
+    /// store's own opt-in. A store that opted in is refused while the connection is not usable, unless
+    /// the configuration switches git content off for every store.
     /// </summary>
     public class GitContentPolicy : IGitContentPolicy
     {
@@ -147,13 +148,32 @@ namespace VirtoCommerce.SiteBuilder.Data.GitContent
                 return await ReadStoreSettingsAsync(storeId);
             }
 
-            // the blob flow would publish an opted-in store's pages straight to production
-            if (connection.IsEnabled && !string.IsNullOrEmpty(connection.Error) && (await ReadStoreSettingsAsync(storeId)).IsEnabled)
+            // the global kill switch sends every store to the blob flow without asking the settings store
+            if (connection.IsSwitchedOff)
             {
-                throw new GitContentException(connection.Error, connection.ErrorKind);
+                return null;
+            }
+
+            // the blob flow would publish an opted-in store's pages straight to production, and show none of what git holds
+            if ((await ReadStoreSettingsAsync(storeId)).IsEnabled)
+            {
+                throw new GitContentException(GetUnavailableError(connection, storeId),
+                    string.IsNullOrEmpty(connection.Error) ? GitContentFailureKind.NotConfigured : connection.ErrorKind);
             }
 
             return null;
+        }
+
+        protected virtual string GetUnavailableError(GitHubConnection connection, string storeId)
+        {
+            if (!string.IsNullOrEmpty(connection.Error))
+            {
+                return connection.Error;
+            }
+
+            var state = connection.IsEnabled ? "not configured" : "not connected";
+            return $"The store \"{storeId}\" keeps its pages in git, but GitHub is {state} for this platform. " +
+                   $"Connect GitHub, or turn off the store's \"{StoreLevelSettings.GitContentEnabled.Name}\" setting.";
         }
 
         private async Task<StoreGitSettings> ReadStoreSettingsAsync(string storeId)

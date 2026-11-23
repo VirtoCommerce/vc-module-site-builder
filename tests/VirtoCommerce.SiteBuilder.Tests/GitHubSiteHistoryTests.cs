@@ -195,13 +195,35 @@ public class GitHubSiteHistoryTests
     }
 
     [Fact]
-    public async Task GetStatusAsync_GitHubNotConnected_ReturnsSetupRequired()
+    public async Task GetStatusAsync_SwitchedOffGlobally_ReturnsSetupRequiredForAStoreThatOptedIn()
     {
         var options = SiteHistories.Options();
-        options.Value.Organization = null;
-        options.Value.Token = null;
+        options.Value.Enabled = false;
+        var connection = GitHubConnections.CreateService(options.Value, configuration: GitHubConnections.SwitchedOff());
 
-        Assert.Equal(ContentHistoryStatus.SetupRequired, await History(new GitHubScript(), options: options).GetStatusAsync("s1", Ct));
+        var history = History(new GitHubScript(), new FakeSettingsManager(true), options, connection: connection);
+
+        Assert.Equal(ContentHistoryStatus.SetupRequired, await history.GetStatusAsync("s1", Ct));
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task GetStatusAsync_GitHubNotConnected_ReturnsSetupRequired(bool switchedOn, bool gitContent)
+    {
+        var options = SiteHistories.Options();
+        options.Value.Enabled = switchedOn;
+        if (switchedOn)
+        {
+            options.Value.Organization = null;
+            options.Value.Token = null;
+        }
+
+        var history = History(new GitHubScript(), new FakeSettingsManager(gitContent), options);
+
+        Assert.Equal(ContentHistoryStatus.SetupRequired, await history.GetStatusAsync("s1", Ct));
     }
 
     [Theory]

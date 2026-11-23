@@ -57,8 +57,9 @@ public class GitHubSiteHistory(
 
     public virtual async Task<ContentHistoryStatus> GetStatusAsync(string storeId, CancellationToken cancellationToken = default)
     {
-        // before the settings read: an unreadable App fails it, and that would answer unavailable
-        if (!string.IsNullOrEmpty((await gitHubConnectionService.GetConnectionAsync(cancellationToken)).Error))
+        // before the settings read: an opted-in store fails it while GitHub is not usable, and that would answer unavailable
+        var connection = await gitHubConnectionService.GetConnectionAsync(cancellationToken);
+        if (!connection.IsEnabled || !connection.IsConfigured || !string.IsNullOrEmpty(connection.Error))
         {
             return ContentHistoryStatus.SetupRequired;
         }

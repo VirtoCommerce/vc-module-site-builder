@@ -204,6 +204,44 @@ public class SiteBuilderContentGuardTests
         Assert.Equal("<a>c</a>", hero["blocks"]![0]!.Value<string>("caption"));
     }
 
+    [Theory]
+    [InlineData("text")]
+    [InlineData("summary")]
+    public void GuardPage_PlainTextOfAMarkdownField_IsSanitizedAsHtml(string id)
+    {
+        var page = Page(new JObject { ["id"] = "a", ["type"] = "hero", [id] = "<p>Hi</p><script>alert(1)</script>" });
+
+        var result = _guard.GuardPage(page, "page", Catalog);
+
+        Assert.True(result.Changed);
+        Assert.Equal("<p>Hi</p>", page["content"]![0]!.Value<string>(id));
+    }
+
+    [Theory]
+    [InlineData("text")]
+    [InlineData("summary")]
+    public void GuardPage_TranslatedPlainTextOfAMarkdownField_IsSanitizedAsHtml(string id)
+    {
+        var page = Page(new JObject { ["id"] = "a", ["type"] = "hero", [id] = new JObject { ["en-US"] = "<script>alert(1)</script>ok" } });
+
+        var result = _guard.GuardPage(page, "page", Catalog);
+
+        Assert.True(result.Changed);
+        Assert.Equal("ok", page["content"]![0]![id]!.Value<string>("en-US"));
+    }
+
+    [Fact]
+    public void GuardPage_PlainTextOfAMarkdownResultTypeField_IsLeftAsItIs()
+    {
+        const string source = "> quote\n\n<https://x.test> <script>alert(1)</script>";
+        var page = Page(new JObject { ["id"] = "a", ["type"] = "hero", ["source"] = source });
+
+        var result = _guard.GuardPage(page, "page", Catalog);
+
+        Assert.False(result.Changed);
+        Assert.Equal(source, page["content"]![0]!.Value<string>("source"));
+    }
+
     [Fact]
     public void GuardPage_WithoutCatalog_SanitizesOnlyTheHtmlOfMarkdownValues()
     {

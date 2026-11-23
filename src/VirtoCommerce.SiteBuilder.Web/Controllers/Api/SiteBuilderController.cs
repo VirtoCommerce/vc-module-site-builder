@@ -59,7 +59,8 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
             ISiteBuilderContentQueryService contentQueryService,
             ISiteBuilderPreviewQueryService previewQueryService,
             ISiteBuilderPublishStatusQueryService publishStatusQueryService,
-            IFilePageOperationService filePageOperationService
+            IFilePageOperationService filePageOperationService,
+            ISchemaCatalogService schemaCatalogService
             )
         : Controller
     {
@@ -228,7 +229,7 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
                 return invalid;
             }
 
-            if (GuardPages(files) is { } unsafePages)
+            if (await GuardPagesAsync(storeId, catalogHash, files) is { } unsafePages)
             {
                 return unsafePages;
             }
@@ -265,12 +266,21 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api
         private async Task<bool> HasPermissionsAsync(IEnumerable<string> permissions) =>
             await contentPermissionService.HasPermissionsAsync(User, permissions);
 
-        /// <summary>Sanitizes the HTML of the pages in place, so that what is written is sanitized.</summary>
-        private BadRequestObjectResult GuardPages(List<SaveFileModel> files)
+        /// <summary>
+        /// Checks the pages against the catalog of the hash, else the store's current one, and sanitizes their HTML in place,
+        /// so that what is written is sanitized.
+        /// </summary>
+        private async Task<BadRequestObjectResult> GuardPagesAsync(string storeId, string catalogHash, List<SaveFileModel> files)
         {
-            var errors = files
-                .Where(x => GitPageLocation.IsPageContent(x.Type) && x.Content is JToken)
-                .SelectMany(x => contentGuard.GuardPage((JToken)x.Content, x.Path, catalog: null).Errors)
+            var pages = files.Where(x => GitPageLocation.IsPageContent(x.Type) && x.Content is JToken).ToList();
+            if (pages.Count == 0)
+            {
+                return null;
+            }
+
+            var catalog = await schemaCatalogService.GetCatalogOrCurrentAsync(storeId, catalogHash, HttpContext.RequestAborted);
+            var errors = pages
+                .SelectMany(x => contentGuard.GuardPage((JToken)x.Content, x.Path, catalog).Errors)
                 .ToList();
 
             return errors.Count > 0 ? BadRequest(new { error = SiteBuilderContentGuardExtensions.GetMessage(errors), errors }) : null;

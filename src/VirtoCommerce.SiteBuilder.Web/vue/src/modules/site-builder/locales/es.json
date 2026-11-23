@@ -667,7 +667,8 @@
         "AGAIN": "Configurar de nuevo"
       },
       "CONNECT_FIRST": "Esta plataforma aún no está conectada a GitHub. Conéctela una vez desde el panel Sitios y luego active aquí el historial.",
-      "OPEN_GITHUB": "Conexión con GitHub"
+      "OPEN_GITHUB": "Conexión con GitHub",
+      "GITHUB_MISSING": "Esta tienda publica sus páginas a través de Git, pero GitHub no está conectado. Conecte GitHub o desactive la publicación con Git para esta tienda."
     },
     "GITHUB": {
       "INTRO": "Conecte la plataforma a una organización de GitHub una sola vez. Cada sitio guarda entonces las versiones de sus páginas en su propio repositorio privado allí.",

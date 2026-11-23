@@ -45,6 +45,7 @@ public class GitHubConnectionService(
     public virtual async Task<GitHubConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = CreateConfiguredConnection();
+        connection.IsSwitchedOff = _isSwitchedOff;
         if (connection.Source == GitHubConnectionSource.Configuration)
         {
             return connection;
