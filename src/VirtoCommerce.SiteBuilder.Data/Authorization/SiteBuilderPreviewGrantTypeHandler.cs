@@ -64,7 +64,7 @@ public class SiteBuilderPreviewGrantTypeHandler : GrantTypeHandlerBase
             return GrantValidationResult.Fail(BuildErrorResponse(context, missingParameters));
         }
 
-        _ticket = _previewAuthCodeService.Redeem(code);
+        _ticket = await _previewAuthCodeService.RedeemAsync(code);
         if (_ticket == null)
         {
             context.FailureReason = SignInFailureReason.Forbidden;

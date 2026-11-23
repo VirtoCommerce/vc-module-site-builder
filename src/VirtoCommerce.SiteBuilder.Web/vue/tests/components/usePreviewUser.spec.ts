@@ -134,6 +134,20 @@ describe("previewing as a store's preview user", () => {
     expect(sent.at(-1)).toEqual({ type: "auth", code: "c2", userId: "u2" });
   });
 
+  it("answers authRenew for a user picked while a renewal for the last one waits", async () => {
+    const { previewAs, sent } = await previewUser();
+    await previewAs.pick("u1");
+    previewAs.renew("u1");
+
+    await previewAs.pick("u2");
+    previewAs.renew("u2");
+    await vi.advanceTimersByTimeAsync(FAILED_RENEWAL_DELAYS_MS[0]);
+    await flushPromises();
+
+    expect(platform.to(CODE).map((x) => (x.body as { userId: string }).userId)).toEqual(["u1", "u2", "u2"]);
+    expect(sent.at(-1)).toEqual({ type: "auth", code: "c3", userId: "u2" });
+  });
+
   it("shows the anonymous visitor and tells the editor when the platform refuses the code", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { previewAs, sent, onFailed } = await previewUser();

@@ -15,7 +15,7 @@ public interface IPreviewAuthCodeService
         CancellationToken cancellationToken = default);
 
     /// <summary>What the code carries, once: <c>null</c> for an expired, altered or already used code.</summary>
-    PreviewAuthCodeTicket Redeem(string code);
+    Task<PreviewAuthCodeTicket> RedeemAsync(string code, CancellationToken cancellationToken = default);
 
     /// <summary>The user is listed in the store's <see cref="ModuleConstants.Settings.StoreLevelSettings.PreviewUserIds"/>.</summary>
     Task<bool> IsPreviewUserAsync(string storeId, string userId);

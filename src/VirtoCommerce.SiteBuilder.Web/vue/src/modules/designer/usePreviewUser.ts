@@ -99,6 +99,8 @@ export function usePreviewUser(options: { send: (message: AuthMessage) => void; 
 
   async function pick(id: string | null) {
     if (id === userId.value) return;
+    clearTimeout(renewal);
+    renewal = undefined;
     failedRenewals = 0;
     choose(id);
     if (await refresh()) options.send(message);

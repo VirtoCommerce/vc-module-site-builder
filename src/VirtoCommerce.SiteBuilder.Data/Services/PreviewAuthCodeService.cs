@@ -74,18 +74,23 @@ public class PreviewAuthCodeService(
         return SiteBuilderOperationResult.Success(code);
     }
 
-    public virtual PreviewAuthCodeTicket Redeem(string code)
+    public virtual Task<PreviewAuthCodeTicket> RedeemAsync(string code, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(RedeemInternal(code));
+    }
+
+    private PreviewAuthCodeTicket RedeemInternal(string code)
     {
         if (string.IsNullOrEmpty(code))
         {
             return null;
         }
 
-        PreviewAuthCodeTicket ticket;
+        var ticket = AbstractTypeFactory<PreviewAuthCodeTicket>.TryCreateInstance();
         DateTimeOffset expiration;
         try
         {
-            ticket = JsonConvert.DeserializeObject<PreviewAuthCodeTicket>(Protector.Unprotect(code, out expiration));
+            JsonConvert.PopulateObject(Protector.Unprotect(code, out expiration), ticket);
         }
         catch (CryptographicException)
         {
@@ -96,7 +101,7 @@ public class PreviewAuthCodeService(
             return null;
         }
 
-        if (string.IsNullOrEmpty(ticket?.Nonce) || string.IsNullOrEmpty(ticket.UserId) || string.IsNullOrEmpty(ticket.StoreId))
+        if (string.IsNullOrEmpty(ticket.Nonce) || string.IsNullOrEmpty(ticket.UserId) || string.IsNullOrEmpty(ticket.StoreId))
         {
             return null;
         }

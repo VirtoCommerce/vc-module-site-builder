@@ -37,7 +37,7 @@ public class PreviewAuthCodeServiceTests
         Assert.Equal(ModuleConstants.Settings.StoreSettingsObjectType, settings.AskedObjectType);
         Assert.Equal(StoreId, settings.AskedObjectId);
 
-        var ticket = service.Redeem(result.Value.Code);
+        var ticket = await service.RedeemAsync(result.Value.Code, TestContext.Current.CancellationToken);
         Assert.NotNull(ticket);
         Assert.Equal("u1", ticket.UserId);
         Assert.Equal(StoreId, ticket.StoreId);
@@ -45,7 +45,7 @@ public class PreviewAuthCodeServiceTests
         Assert.Equal("editor", ticket.OperatorUserName);
         Assert.False(string.IsNullOrEmpty(ticket.Nonce));
 
-        Assert.Null(service.Redeem(result.Value.Code));
+        Assert.Null(await service.RedeemAsync(result.Value.Code, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -54,8 +54,8 @@ public class PreviewAuthCodeServiceTests
         var cache = new MemoryCache(new MemoryCacheOptions());
         var code = (await CreateService(cache: cache).CreateCodeAsync(Request("u0"), Editor(), TestContext.Current.CancellationToken)).Value.Code;
 
-        Assert.NotNull(CreateService(cache: cache).Redeem(code));
-        Assert.Null(CreateService(cache: cache).Redeem(code));
+        Assert.NotNull(await CreateService(cache: cache).RedeemAsync(code, TestContext.Current.CancellationToken));
+        Assert.Null(await CreateService(cache: cache).RedeemAsync(code, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -96,26 +96,26 @@ public class PreviewAuthCodeServiceTests
     }
 
     [Fact]
-    public void Redeem_ExpiredCode_IsRefused()
+    public async Task Redeem_ExpiredCode_IsRefused()
     {
         var expired = _dataProtection.CreateProtector(ModuleConstants.Security.PreviewAuth.CodePurpose).ToTimeLimitedDataProtector()
             .Protect(JsonConvert.SerializeObject(Ticket()), DateTimeOffset.UtcNow.AddSeconds(-1));
 
-        Assert.Null(CreateService().Redeem(expired));
+        Assert.Null(await CreateService().RedeemAsync(expired, TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public void Redeem_CodeOfAnotherPurposeOrAlteredOrNone_IsRefused()
+    public async Task Redeem_CodeOfAnotherPurposeOrAlteredOrNone_IsRefused()
     {
         var otherPurpose = _dataProtection.CreateProtector("another").ToTimeLimitedDataProtector()
             .Protect(JsonConvert.SerializeObject(Ticket()), TimeSpan.FromMinutes(1));
         var service = CreateService();
 
-        Assert.Null(service.Redeem(otherPurpose));
-        Assert.Null(service.Redeem(otherPurpose[..^2] + "AA"));
-        Assert.Null(service.Redeem("not a code"));
-        Assert.Null(service.Redeem(""));
-        Assert.Null(service.Redeem(null));
+        Assert.Null(await service.RedeemAsync(otherPurpose, TestContext.Current.CancellationToken));
+        Assert.Null(await service.RedeemAsync(otherPurpose[..^2] + "AA", TestContext.Current.CancellationToken));
+        Assert.Null(await service.RedeemAsync("not a code", TestContext.Current.CancellationToken));
+        Assert.Null(await service.RedeemAsync("", TestContext.Current.CancellationToken));
+        Assert.Null(await service.RedeemAsync(null, TestContext.Current.CancellationToken));
     }
 
     [Theory]
