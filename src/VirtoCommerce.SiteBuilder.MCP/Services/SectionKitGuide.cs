@@ -215,9 +215,10 @@ public static class SectionKitGuide
             Palette = new
             {
                 Tokens = GetPaletteTokens(catalog, palette),
-                Note = "A color-token setting holds the token; the CSS reads a token's color as its variable. light and dark are the theme's " +
-                    "palette, as its draft holds it, else as it is live; a token without one keeps the color of the storefront's preset, " +
-                    "which the server does not know.",
+                Note = "A color-token setting holds the token; the CSS reads its color as the token's variable, the token with '_' written as " +
+                    "'-': color_primary_500 is var(--color-primary-500). Each token's value is its light color, then ' / ' and its dark color where " +
+                    "they differ, from the theme's palette as its draft holds it, else as it is live; 'preset' is a color the theme does not set, " +
+                    "which keeps the color of the storefront's preset, which the server does not know.",
                 Schemes = "Dark palettes invert shades: a token light in one scheme may be dark in the other; pick pairs that hold in both.",
             },
             Kit = new
@@ -345,8 +346,10 @@ public static class SectionKitGuide
 
     private static List<string> Functions(IEnumerable<string> names) => names.Select(x => $"{x}()").ToList();
 
-    // A token's variable is the token with '_' written as '-': color_primary_500 is --color-primary-500.
-    private static List<PaletteTokenRow> GetPaletteTokens(JsonObject catalog, ThemePalette palette)
+    public const string PresetColor = "preset";
+
+    // One line per token, as the kit is read whole before every type: a store's palette holds some hundreds of tokens.
+    private static Dictionary<string, string> GetPaletteTokens(JsonObject catalog, ThemePalette palette)
     {
         var tokens = ThemeFiles.GetPaletteTokens(catalog);
         IReadOnlyDictionary<string, string> light = new Dictionary<string, string>(palette?.Light ?? new Dictionary<string, string>(), StringComparer.Ordinal);
@@ -355,9 +358,9 @@ public static class SectionKitGuide
         return tokens.Light.Concat(tokens.Dark)
             .Concat(light.Keys.Concat(dark.Keys).Order(StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal)
-            .Select(x => new PaletteTokenRow(x, $"--{x.Replace('_', '-')}", light.GetValueOrDefault(x), dark.GetValueOrDefault(x)))
-            .ToList();
+            .ToDictionary(x => x, x => DescribeColors(light.GetValueOrDefault(x), dark.GetValueOrDefault(x)), StringComparer.Ordinal);
     }
-}
 
-public sealed record PaletteTokenRow(string Token, string Variable, string Light, string Dark);
+    private static string DescribeColors(string light, string dark) =>
+        string.Equals(light, dark, StringComparison.OrdinalIgnoreCase) ? light ?? PresetColor : $"{light ?? PresetColor} / {dark ?? PresetColor}";
+}

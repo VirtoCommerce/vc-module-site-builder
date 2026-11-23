@@ -186,8 +186,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.True(kit.GetProperty("available").GetBoolean());
         Assert.Equal(["count-up", "inview"], kit.GetProperty("kit").GetProperty("behaviors").EnumerateObject().Select(x => x.Name).Order(StringComparer.Ordinal));
         Assert.Equal("link", kit.GetProperty("kit").GetProperty("tags").GetProperty("vc-button").GetProperty("attributes").GetProperty("to").GetProperty("type").GetString());
-        Assert.Contains(kit.GetProperty("palette").GetProperty("tokens").EnumerateArray(),
-            x => x.GetProperty("token").GetString() == "color_primary_500" && x.GetProperty("variable").GetString() == "--color-primary-500");
+        Assert.True(kit.GetProperty("palette").GetProperty("tokens").TryGetProperty("color_primary_500", out _));
+        Assert.Contains("var(--color-primary-500)", kit.GetProperty("palette").GetProperty("note").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -195,14 +195,16 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     {
         await _context.SeedThemeAsync(StoreA, McpTestContext.StorefrontKit);
         _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#0047ab" }""");
-        _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#ff7a00", "color_neutral_950": "#111111" }""", draft: true);
-        _context.SeedThemeFile(StoreA, "config/palette.dark.json", """{ "color_primary_500": "#ffb366", "color_neutral_950": "#f5f5f5" }""");
+        _context.SeedThemeFile(StoreA, "config/palette.dark.json", """{ "color_primary_500": "#ffb366", "color_neutral_950": "#f5f5f5", "color_accent_500": "#b87333", "color_info_500": "#5aa9e6" }""");
+        _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#ff7a00", "color_neutral_950": "#111111", "color_accent_500": "#B87333" }""", draft: true);
 
         var palette = (await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit")).GetProperty("palette");
 
-        var tokens = palette.GetProperty("tokens").EnumerateArray().ToDictionary(x => x.GetProperty("token").GetString()!);
-        Assert.Equal(("#ff7a00", "#ffb366"), (tokens["color_primary_500"].GetProperty("light").GetString(), tokens["color_primary_500"].GetProperty("dark").GetString()));
-        Assert.Equal(("#111111", "#f5f5f5"), (tokens["color_neutral_950"].GetProperty("light").GetString(), tokens["color_neutral_950"].GetProperty("dark").GetString()));
+        var tokens = palette.GetProperty("tokens");
+        Assert.Equal("#ff7a00 / #ffb366", tokens.GetProperty("color_primary_500").GetString());
+        Assert.Equal("#111111 / #f5f5f5", tokens.GetProperty("color_neutral_950").GetString());
+        Assert.Equal("#B87333", tokens.GetProperty("color_accent_500").GetString());
+        Assert.Equal("preset / #5aa9e6", tokens.GetProperty("color_info_500").GetString());
         Assert.Contains("invert shades", palette.GetProperty("schemes").GetString(), StringComparison.Ordinal);
         Assert.Contains("preset", palette.GetProperty("note").GetString(), StringComparison.Ordinal);
     }
