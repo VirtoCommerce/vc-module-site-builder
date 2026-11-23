@@ -99,7 +99,10 @@ is parsed.
   `video`'s `poster` are a URL of the store's asset library or a binding of an `images` field. A URL of the library is
   read as written: its origin is the library's (case aside), no user info, and its path, once its `..` is resolved,
   starts with the library's path (case counts); one with an escaped dot, slash or backslash (`%2e`, `%2f`, `%5c`) or a
-  backslash is refused. A bound value that breaks the rule renders without the attribute.
+  backslash is refused. A bound value that breaks the rule renders without the attribute, and so does a link or an image
+  in a `text` setting's HTML: a placed section's values are not checked on save, so an `http:` link, such as a rich-text
+  editor writes for a typed `www.example.com`, or an image from outside the library saves and renders without its `href`
+  or `src`.
 
 ### Bindings
 
@@ -157,8 +160,10 @@ A behavior is a storefront directive an attribute switches on. It reads the elem
 or the element's text; the visuals are the section's CSS. With `prefers-reduced-motion: reduce` a behavior shows its end
 state at once, and a behavior starts again when its value, one of its options or the motion preference changes. The
 catalog's [`kit`](#catalog) names the behaviors, as it names the kit tags: `data-{name}` is a behavior when the catalog
-has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior or inside it, its value
-checked by the option's type. No behavior is named `each`, `if` or `html`, which are bindings, or is `sb` or `pb`, or
+has `{name}`, and `data-{name}-{option}` is one of its options, on the element with the behavior, where the storefront
+reads it, its value checked by the option's type. An option the behavior names in `textAttributes`, such as
+`data-countdown-part`, marks an element whose text the behavior writes, and goes on the element with the behavior or
+inside it. No behavior is named `each`, `if` or `html`, which are bindings, or is `sb` or `pb`, or
 starts with `sb-` or `pb-`: the storefront writes `data-sb-…` and `data-pb-…` attributes itself, and a template that
 writes one is refused, whatever a catalog names. The storefront registers these, and their names are reserved: a module
 cannot register a behavior of the same name.
@@ -188,10 +193,13 @@ The storefront renders a section within a budget of 5,000 and a text cap of 262,
 element counts 1, plus 1 per behavior on it, counted as written, whatever `data-if` hides; an element with `data-each`
 counts, with what it holds, once per row of its list. What an element with a `repeatsChildren` behavior holds counts
 twice. A kit tag counts its `cost`, 1 when the catalog declares none, and rich text the elements it holds once
-sanitized; text counts 0, a repeated run's `<span>` included. The text cap counts, the same way, every bound value in
-text and in attributes and the sanitized rich text's HTML; text written in the template counts for neither. A section
-over either renders nothing. A save checks neither, since the rows are the page's content: the storefront holds a
-section to them when it renders. The section kit's `limits` gives both, as `render_budget` and `render_text`.
+sanitized. Text counts 0, except text that is not blank right inside an element with a `repeatsChildren` behavior: it
+renders in a `<span>`, which counts 1 in the run and 1 in the copy. The text cap counts, the same way, every bound value
+in text and in attributes and the sanitized rich text's HTML; text written in the template counts for neither. A section
+over either renders nothing. A save refuses a template whose own part is over the budget: everything counted above but
+what `data-each` repeats, as a list may have no rows, rich text, and a repeated text that only bindings fill. The rows
+and the values are the page's content: the storefront holds a section to the rest when it renders. The section kit's
+`limits` gives both, as `render_budget` and `render_text`.
 
 ## Setting variables
 
@@ -324,7 +332,8 @@ interface Kit {
   /**
    * `value` is the type of the behavior attribute's own value, any text when left out; `writes` names what the behavior
    * sets for the section's CSS, such as `data-visible` or `--scroll-progress`; `repeatsChildren` is true for one that
-   * repeats what its element holds
+   * repeats what its element holds; `textAttributes` names the attributes, its own `data-{name}` or its options', of the
+   * elements whose text it writes, whose template text the storefront leaves out
    */
   behaviors: Record<string, {
     value?: KitField;
@@ -332,6 +341,7 @@ interface Kit {
     description?: string;
     writes?: string[];
     repeatsChildren?: boolean;
+    textAttributes?: string[];
   }>;
   /** every icon name the storefront draws, at most 10,000 of 1 to 100 characters: the values of `optionsFrom: "icons"` */
   icons?: string[];
@@ -374,8 +384,9 @@ characters; an attribute no kit tag takes, or one the template's bindings or the
 characters; a `cost` that is not a whole number from 1 to 5,000; a `hasSideEffects` that is not a boolean; an
 `optionsFrom` other than `"icons"` of a select; a select with neither `options` nor `optionsFrom`, which no literal
 could fit; `writes` other than a list of at most 32 texts of at most 128 characters; a `repeatsChildren` that is not a
-boolean; `icons` other than the list above; a `design` with other keys, or values that are not texts, or more than 1,024
-entries in a map, or a name or a text of more than 1,024 characters; or a `guide` that is not a text or is longer than
+boolean; `textAttributes` other than a list of the behavior's own `data-{name}` and its options' attributes; `icons`
+other than the list above; a `design` with other keys, or values that are not texts, or more than 1,024 entries in a
+map, or a name or a text of more than 1,024 characters; or a `guide` that is not a text or is longer than
 its limit. It also caps the kit's size: at most 256 tags and 256 behaviors, 64 fields of a tag or a behavior (its
 attributes, or its options and its value together), 256 options of a select, and an option's value or `label` of 256
 characters; the section kit's `limits.kit` names each cap. Anyone who may save a page uploads a catalog, so an agent

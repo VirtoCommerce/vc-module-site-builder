@@ -113,6 +113,9 @@ public static class SectionKitGuide
                     "A default is one the setting takes, or empty: one of a select's options, a link by the link rule, an image of the asset library, " +
                         "a number within min and max, true or false for a checkbox, a palette token below for a color-token, and rows of such values " +
                         "for a list or an object.",
+                    "A placed value follows the template's link and image rules too, and a save does not check it: a link setting's value or a link " +
+                        "in a text setting's HTML that breaks the link rule, such as an http:// URL, renders without its href, and an images value or an " +
+                        "image in a text's HTML outside the asset library renders without its src.",
                 },
             },
             Template = new
@@ -145,9 +148,10 @@ public static class SectionKitGuide
                 RenderBudget = $"The storefront renders a section within a budget of {CustomSectionKit.RenderBudget} and {CustomSectionKit.MaxRenderedText} " +
                     "characters of text: each element counts 1, plus 1 per behavior on it, as written whatever data-if hides, and once per row of its " +
                     "data-each list with what it holds; what an element with a repeatsChildren behavior holds counts twice, a kit tag its cost, and rich " +
-                    "text the elements it holds once sanitized. The text counts every bound value, in text and in attributes, and the sanitized rich " +
-                    "text, the same way; the template's own text counts for neither. Over either the section renders nothing, so size the lists and " +
-                    "the template within them.",
+                    "text the elements it holds once sanitized; text right inside a repeatsChildren element renders in a span, which counts 1 in the run " +
+                    "and in the copy. The text counts every bound value, in text and in attributes, and the sanitized rich text, the same way; the " +
+                    "template's own text counts for neither. Over either the section renders nothing, so size the lists and the template within them. " +
+                    "A save refuses a template over the budget without its data-each rows, such as one whose kit tags together cost more than the budget.",
             },
             Bindings = new
             {
@@ -241,7 +245,9 @@ public static class SectionKitGuide
                         "It has no content and an end tag of its own, and takes its attributes, data-if and data-each.",
                     $"Whatever the catalog declares, a kit tag takes no {JoinOr(rules.KitDeniedAttributes)}; {JoinOr(rules.KitLinkAttributes)} follow the " +
                         $"link rule of href, and {JoinOr(rules.KitImageAttributes)} the image rule of img's src.",
-                    "A behavior is switched on with data-<name> and set with data-<name>-<option> on the element or inside it. Its own value is checked by " +
+                    "A behavior is switched on with data-<name> and set with data-<name>-<option> on the same element, where the storefront reads it; an " +
+                        "option its textAttributes name, such as data-countdown-part, marks an element whose text the behavior writes, and goes on that " +
+                        "element or inside it. Its own value is checked by " +
                         "the type the kit declares under value, such as a number for count-up or a date for countdown; one that declares none takes any text. " +
                         "It writes what its writes names, such as data-visible, --scroll-progress or the text: style that in the CSS.",
                     $"An attribute's, an option's or a value's type is {JoinOr(rules.KitFieldTypes)}: a select takes one of its options, a number one " +

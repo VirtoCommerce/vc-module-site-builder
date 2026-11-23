@@ -170,6 +170,22 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         ["-webkit-text-stroke"] = "-webkit-text-stroke-width -webkit-text-stroke-color",
     }.ToDictionary(x => x.Key, IReadOnlySet<string> (x) => x.Value.Split(' ').ToHashSet(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
 
+    // legacy names a browser parses as the property they alias, so the rule is written back as that property's
+    private static readonly Dictionary<string, string> PropertyAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["grid-gap"] = "gap",
+        ["grid-row-gap"] = "row-gap",
+        ["grid-column-gap"] = "column-gap",
+        ["-webkit-animation"] = "animation",
+        ["-webkit-border-radius"] = "border-radius",
+        ["-webkit-column-rule"] = "column-rule",
+        ["-webkit-columns"] = "columns",
+        ["-webkit-flex"] = "flex",
+        ["-webkit-flex-flow"] = "flex-flow",
+        ["-webkit-text-emphasis"] = "text-emphasis",
+        ["-webkit-transition"] = "transition",
+    };
+
     private static readonly HashSet<string> ColorFunctions = new(StringComparer.OrdinalIgnoreCase)
     {
         "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color",
@@ -595,7 +611,8 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         var name = tokens[index].Value.ToLowerInvariant();
-        var parts = GetShorthandParts(name);
+        var property = PropertyAliases.GetValueOrDefault(name, name);
+        var parts = GetShorthandParts(property);
         var important = IsImportant(value);
         var reached = earlier.FindAll(x => (important || !x.Important) && x.Parts.Overlaps(parts));
         foreach (var shorthand in reached.Where(x => !parts.IsSupersetOf(x.Parts)))
@@ -606,7 +623,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
 
         earlier.RemoveAll(reached.Contains);
 
-        if (Shorthands.ContainsKey(name) && value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && IsLateValueFunction(x.Value)) is { Value: { } function })
+        if (Shorthands.ContainsKey(property) && value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && IsLateValueFunction(x.Value)) is { Value: { } function })
         {
             earlier.Add(new LateShorthand(name, function.ToLowerInvariant(), parts, important));
         }

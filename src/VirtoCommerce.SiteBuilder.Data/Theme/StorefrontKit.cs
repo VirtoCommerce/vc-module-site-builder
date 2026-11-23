@@ -22,6 +22,9 @@ public sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, 
     /// <summary>The kit tags whose copy would repeat their work, such as a request; none inside an element whose behavior repeats what it holds.</summary>
     public IReadOnlySet<string> SideEffectTags { get; init; }
 
+    /// <summary>By kit tag: its cost, the most elements one of it renders, which the render budget counts; a tag that declares none costs 1.</summary>
+    public IReadOnlyDictionary<string, int> TagCosts { get; init; }
+
     /// <summary>The longest behavior name, beyond which no prefix of an attribute can name a behavior.</summary>
     public int MaxBehaviorLength { get; } = Behaviors?.Keys.Select(x => x.Length).DefaultIfEmpty().Max() ?? 0;
 }
@@ -44,6 +47,12 @@ public sealed record KitField(string Type, IReadOnlyList<string> Options, decima
 /// <param name="RepeatsChildren">The behavior copies what its element holds, as a marquee does, so it may not stand inside another that does.</param>
 public sealed record KitBehavior(KitField Value, IReadOnlyDictionary<string, KitField> Options, bool RepeatsChildren = false)
 {
+    /// <summary>
+    /// The attributes of the elements whose text the behavior writes, its own data-{name} or an option's: such an option goes on the element with
+    /// the behavior or inside it, and any other option on the element with the behavior; <c>null</c> for none.
+    /// </summary>
+    public IReadOnlySet<string> TextAttributes { get; init; }
+
     /// <summary>Its first option or value the server cannot check, named with why; a stored catalog may hold one its upload would refuse now.</summary>
     public string Fault { get; } = KitField.GetFirstFault(Value == null ? Options : Options.Append(KeyValuePair.Create("value", Value)));
 }

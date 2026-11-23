@@ -121,9 +121,14 @@ public class CustomSectionValidatorTests
               "pointer": { "options": {} },
               "count-up": {
                 "value": { "type": "number" },
-                "options": { "duration": { "type": "number", "min": 0, "max": 5000 }, "decimals": { "type": "number", "min": 0, "max": 4 } }
+                "options": { "duration": { "type": "number", "min": 0, "max": 5000 }, "decimals": { "type": "number", "min": 0, "max": 4 } },
+                "textAttributes": [ "data-count-up" ]
               },
-              "countdown": { "value": { "type": "date" }, "options": { "part": { "type": "select", "options": [ "days", "hours", "minutes", "seconds" ] } } },
+              "countdown": {
+                "value": { "type": "date" },
+                "options": { "part": { "type": "select", "options": [ "days", "hours", "minutes", "seconds" ] } },
+                "textAttributes": [ "data-countdown-part" ]
+              },
               "copy": { "options": {} },
               "marquee": { "options": {} }
             }
@@ -225,7 +230,7 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><vc-products columns="{{ settings.count }} cols"></vc-products></section>""", "<vc-products> at line 1 has columns=\"{{ settings.count }} cols\", which is a value or one binding")]
     [InlineData("""<section><vc-products take="{{ settings.price }}"></vc-products></section>""", "<vc-products> at line 1 binds 'settings.price', a setting the schema does not declare")]
     [InlineData("""<section><vc-products data-html="settings.body"></vc-products></section>""", "<vc-products> at line 1 has data-html, and a kit tag holds nothing")]
-    [InlineData("""<section><p data-inview-threshold="0.5"></p></section>""", "<p> at line 1 has data-inview-threshold, an option of data-inview, outside an element with data-inview")]
+    [InlineData("""<section><p data-inview-threshold="0.5"></p></section>""", "<p> at line 1 has data-inview-threshold, an option of data-inview, without data-inview on the same element, where the storefront reads it")]
     [InlineData("""<section><p data-inview data-inview-threshold="2"></p></section>""", "<p> at line 1 has data-inview-threshold=\"2\", which data-inview does not take: it takes a number from 0 to 1")]
     [InlineData("""<section><p data-inview data-inview-once="maybe"></p></section>""", "<p> at line 1 has data-inview-once=\"maybe\", which data-inview does not take: it takes true, false or no value")]
     [InlineData("""<section><p data-inview data-inview-delay="1"></p></section>""", "<p> at line 1 has data-inview-delay, which is not an option data-inview takes")]
@@ -238,6 +243,8 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><span data-countdown="31.12.2026"></span></section>""", "<span> at line 1 has data-countdown=\"31.12.2026\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
     [InlineData("""<section><span data-countdown="2026-12-31T23:59:59"></span></section>""", "<span> at line 1 has data-countdown=\"2026-12-31T23:59:59\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
     [InlineData("""<section><span data-countdown-part="days"></span></section>""", "<span> at line 1 has data-countdown-part, an option of data-countdown, outside an element with data-countdown")]
+    [InlineData("""<section><ul data-inview><li data-inview-once>{{ settings.title }}</li></ul></section>""", "<li> at line 1 has data-inview-once, an option of data-inview, without data-inview on the same element, where the storefront reads it")]
+    [InlineData("""<section data-count-up="5"><span data-count-up-duration="900">0</span></section>""", "<span> at line 1 has data-count-up-duration, an option of data-count-up, without data-count-up on the same element, where the storefront reads it")]
     [InlineData("""<section data-countdown="2026-12-31"><span data-countdown-part="weeks"></span></section>""", "<span> at line 1 has data-countdown-part=\"weeks\", which data-countdown does not take: it takes days, hours, minutes, seconds")]
     public void Validate_TemplateThatBreaksARule_IsRefusedWithTheRule(string template, string error)
     {
@@ -349,6 +356,69 @@ public class CustomSectionValidatorTests
         Assert.Equal(["<vc-products> at line 1 has side effects, such as a request, inside an element with data-marquee, which repeats what it holds: " +
             "each copy would repeat them"], inside.Errors);
         Assert.Empty(outside.Errors);
+    }
+
+    [Fact]
+    public void Validate_TextAttributeOptionOnTheElementWithTheBehavior_IsSaved()
+    {
+        var result = _validator.Validate(Type, Section("""<section><span data-countdown="2026-12-31" data-countdown-part="days"></span></section>"""), Catalog);
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public void Validate_OptionOfABehaviorThatDeclaresNoTextAttributes_GoesOnItsOwnElementOnly()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        ((JObject)catalog["kit"]!["behaviors"]!["countdown"]!).Remove("textAttributes");
+
+        var result = _validator.Validate(Type, Section("""<section data-countdown="2026-12-31"><span data-countdown-part="days"></span></section>"""), catalog);
+
+        Assert.Equal(["<span> at line 1 has data-countdown-part, an option of data-countdown, without data-countdown on the same element, where the storefront reads it"],
+            result.Errors);
+    }
+
+    [Fact]
+    public void Validate_KitTagsWhoseCostsPassTheRenderBudget_AreRefused()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-products"]!["cost"] = 2401;
+        const string products = """<vc-products query="shoes" take="4"></vc-products>""";
+
+        var result = _validator.Validate(Type, Section($"""<section>{products}{products}<div data-if="settings.show">{products}</div></section>"""), catalog);
+
+        Assert.Equal(
+            [
+                "the template renders 7205 elements and behaviors before any list row, over the storefront's render budget of 5000, so the section would " +
+                "render nothing: each element and behavior counts 1, whatever data-if hides, what a repeating behavior holds counts twice, and a kit tag " +
+                "counts its cost, where vc-products counts 2401",
+            ],
+            result.Errors);
+    }
+
+    [Theory]
+    [InlineData("""<section><vc-products></vc-products><vc-products></vc-products></section>""")]
+    [InlineData("""<section><ul><li data-each="settings.items"><vc-products></vc-products><vc-products></vc-products><vc-products></vc-products></li></ul></section>""")]
+    public void Validate_KitTagCostsWithinTheBudgetOrInsideARow_AreSaved(string template)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-products"]!["cost"] = 2401;
+
+        Assert.Empty(_validator.Validate(Type, Section(template), catalog).Errors);
+    }
+
+    [Theory]
+    [InlineData("Sale {{ settings.title }}", 5205)]
+    [InlineData("{{ settings.title }}", 5203)]
+    public void Validate_WhatARepeatingBehaviorHolds_CountsTwiceWithItsTextAsAnElement(string text, int size)
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["behaviors"]!["marquee"]!["repeatsChildren"] = true;
+        catalog["kit"]!["tags"]!["vc-badge"]!["cost"] = 1300;
+
+        var result = _validator.Validate(Type, Section($"""<section><div data-marquee>{text}<vc-badge></vc-badge><vc-badge></vc-badge></div></section>"""), catalog);
+
+        Assert.StartsWith(string.Create(CultureInfo.InvariantCulture, $"the template renders {size} elements and behaviors before any list row"), Assert.Single(result.Errors));
     }
 
     [Fact]
@@ -815,6 +885,12 @@ public class CustomSectionValidatorTests
         "the CSS sets top after inset with env() in the same rule, and the storefront then loses inset: set each of its parts on its own, such as right")]
     [InlineData(""".a { transition: opacity var(--d); transition-delay: 1s !important; }""",
         "the CSS sets transition-delay after transition with var() in the same rule, and the storefront then loses transition: set each of its parts on its own, such as transition-property")]
+    [InlineData(""".a { grid-gap: var(--g, 1rem); row-gap: 2rem; }""",
+        "the CSS sets row-gap after grid-gap with var() in the same rule, and the storefront then loses grid-gap: set each of its parts on its own, such as column-gap")]
+    [InlineData(""".a { gap: var(--g); grid-row-gap: 2rem; }""",
+        "the CSS sets grid-row-gap after gap with var() in the same rule, and the storefront then loses gap: set each of its parts on its own, such as column-gap")]
+    [InlineData(""".a { -webkit-transition: opacity var(--d); transition-delay: .2s; }""",
+        "the CSS sets transition-delay after -webkit-transition with var() in the same rule, and the storefront then loses -webkit-transition: set each of its parts on its own, such as transition-property")]
     public void Validate_CssThatBreaksARule_IsRefusedWithTheRule(string css, string error)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
@@ -852,6 +928,7 @@ public class CustomSectionValidatorTests
     [InlineData(""".a:focus-visible { outline: 2px solid var(--color-primary-500); } .b:focus-visible { outline: thin dashed rgb(from var(--color-primary-500) r g 0); }""")]
     [InlineData(""".a:focus-visible { outline: 2px solid color-mix(in srgb, var(--color-primary-500) 60%, transparent); } .b:focus-visible { outline: 2px solid var(--setting-tone); }""")]
     [InlineData(""".a:focus-visible { outline-width: initial; } .b:focus-visible { outline: revert; } .c:focus-visible { outline: revert-layer; }""")]
+    [InlineData("""@media (prefers-reduced-motion: no-preference) { .a { transition: opacity var(--d); -webkit-transition: opacity 1s; } }""")]
     public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);

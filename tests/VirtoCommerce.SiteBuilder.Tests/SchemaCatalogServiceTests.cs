@@ -117,6 +117,10 @@ public class SchemaCatalogServiceTests
         "has the behavior 'tilt', which has the option 'axis', which is a select with neither options nor optionsFrom")]
     [InlineData("""{ "behaviors": { "marquee": { "options": {}, "repeatsChildren": "yes" } } }""",
         "has the behavior 'marquee', which has a repeatsChildren that is not true or false")]
+    [InlineData("""{ "behaviors": { "countdown": { "options": { "part": { "type": "string" } }, "textAttributes": [ "data-countdown-label" ] } } }""",
+        "has the behavior 'countdown', which has textAttributes that are not a list of its own data-{name} attribute and its options'")]
+    [InlineData("""{ "behaviors": { "countdown": { "options": {}, "textAttributes": "data-countdown" } } }""",
+        "has the behavior 'countdown', which has textAttributes that are not a list of its own data-{name} attribute and its options'")]
     [InlineData("""{ "behaviors": { "sb": { "options": { "type": { "type": "string" } } } } }""",
         "has the behavior 'sb', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "data-sb-type": { "type": "string" } } } } }""",
@@ -257,7 +261,8 @@ public class SchemaCatalogServiceTests
             {
               "tags": { "vc-button": { "description": "A button", "cost": 2401, "hasSideEffects": true, "attributes": { "to": { "type": "link" }, "size": { "type": "select", "options": [ "sm", { "value": "lg", "label": "Large" } ] } } } },
               "behaviors": {
-                "count-up": { "value": { "type": "number" }, "options": { "duration": { "type": "number", "min": 0, "max": 5000 } }, "writes": [ "--count" ] },
+                "count-up": { "value": { "type": "number" }, "options": { "duration": { "type": "number", "min": 0, "max": 5000 } }, "writes": [ "--count" ], "textAttributes": [ "data-count-up" ] },
+                "countdown": { "options": { "part": { "type": "string" } }, "textAttributes": [ "data-countdown-part" ] },
                 "marquee": { "options": {}, "repeatsChildren": true },
                 "if-visible": { "options": {} }
               },

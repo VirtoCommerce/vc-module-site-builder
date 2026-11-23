@@ -140,6 +140,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
 
         ValidateElement(check, roots[0], new TemplateScope(Each: null, IsRoot: true, context, Repeating: null, Behaviors: ImmutableHashSet<string>.Empty));
         ValidateHeadings(check, roots[0]);
+        ValidateRenderBudget(check, roots[0]);
         AddTextWarning(check, context);
     }
 
@@ -222,6 +223,78 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
                 $"the template's headings go from h{skip.First} to h{skip.Second}, skipping a level, which a screen reader lists as a part missing"));
         }
     }
+
+    /// <summary>
+    /// The part of the storefront's render budget no content changes, counted as the storefront counts it: a list may have no rows, so what
+    /// data-each repeats is left out, and rich text may be empty. Over the budget, the section renders nothing on every page.
+    /// </summary>
+    protected virtual void ValidateRenderBudget(CustomSectionCheck check, IElement root)
+    {
+        var costlyTags = new SortedSet<string>(StringComparer.Ordinal);
+        var size = GetFixedRenderSize(check, root, times: 1, isInRepeat: false, costlyTags);
+        if (size <= CustomSectionKit.RenderBudget)
+        {
+            return;
+        }
+
+        var costs = costlyTags.Count == 0 ? string.Empty
+            : $", where {JoinAnd(costlyTags.Select(x => string.Create(CultureInfo.InvariantCulture, $"{x} counts {GetTagCost(check, x)}")))}";
+        check.AddError(string.Create(CultureInfo.InvariantCulture,
+            $"the template renders {size} elements and behaviors before any list row, over the storefront's render budget of {CustomSectionKit.RenderBudget}, " +
+            $"so the section would render nothing: each element and behavior counts 1, whatever data-if hides, what a repeating behavior holds counts twice, " +
+            $"and a kit tag counts its cost{costs}"));
+    }
+
+    /// <param name="times">How often the element renders: what a repeating behavior holds renders twice.</param>
+    /// <param name="costlyTags">Collects the kit tags that cost more than 1.</param>
+    private int GetFixedRenderSize(CustomSectionCheck check, IElement element, int times, bool isInRepeat, ISet<string> costlyTags)
+    {
+        if (element.HasAttribute(EachAttribute))
+        {
+            return 0;
+        }
+
+        if (check.Kit.Tags?.ContainsKey(element.LocalName) == true)
+        {
+            var cost = GetTagCost(check, element.LocalName);
+            if (cost > 1)
+            {
+                costlyTags.Add(element.LocalName);
+            }
+
+            return cost * times;
+        }
+
+        // the storefront leaves out a repeating behavior inside another, as the save refuses it
+        var behaviors = element.Attributes.Select(x => FindBehavior(check, x.Name)).Where(x => x is { Option: null })
+            .Select(x => check.Kit.Behaviors[x.Value.Name])
+            .Where(x => !(x.RepeatsChildren && isInRepeat))
+            .ToList();
+        var size = (1 + behaviors.Count) * times;
+        if (element.HasAttribute(HtmlAttribute))
+        {
+            return size;
+        }
+
+        var repeats = behaviors.Exists(x => x.RepeatsChildren);
+        var childTimes = repeats ? times * 2 : times;
+        foreach (var node in element.ChildNodes)
+        {
+            if (node is IElement child)
+            {
+                size += GetFixedRenderSize(check, child, childTimes, isInRepeat || repeats, costlyTags);
+            }
+            // repeated, a text renders in a span; a text with only bindings may be blank
+            else if (repeats && node is IText text && !string.IsNullOrWhiteSpace(BindingPattern.Replace(text.Data, string.Empty)))
+            {
+                size += childTimes;
+            }
+        }
+
+        return size;
+    }
+
+    private static int GetTagCost(CustomSectionCheck check, string tag) => check.Kit.TagCosts?.TryGetValue(tag, out var cost) == true ? cost : 1;
 
     /// <summary>Elements a screen reader cannot name.</summary>
     protected virtual void ValidateAccessibility(CustomSectionCheck check, IElement element, string where)
@@ -483,8 +556,8 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     }
 
     /// <summary>
-    /// An option is data-{behavior}-{option}, on the element with the behavior or inside it, as the countdown's parts are; a value with no declared
-    /// type is the storefront's to read.
+    /// An option is data-{behavior}-{option}, on the element with the behavior, as the storefront reads it there; one of the behavior's text
+    /// attributes, such as the countdown's parts, goes on that element or inside it. A value with no declared type is the storefront's to read.
     /// </summary>
     protected virtual void ValidateBehavior(CustomSectionCheck check, IElement element, string behavior, string option, string name, string value,
         string where, TemplateScope scope)
@@ -523,9 +596,16 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             return;
         }
 
-        if (!scope.Behaviors.Contains(behavior))
+        if (kitBehavior.TextAttributes?.Contains(name) == true)
         {
-            check.AddError($"{where} has {name}, an option of {attribute}, outside an element with {attribute}");
+            if (!scope.Behaviors.Contains(behavior))
+            {
+                check.AddError($"{where} has {name}, an option of {attribute}, outside an element with {attribute}");
+            }
+        }
+        else if (!element.HasAttribute(attribute))
+        {
+            check.AddError($"{where} has {name}, an option of {attribute}, without {attribute} on the same element, where the storefront reads it");
         }
 
         ValidateKitValue(check, attribute, field, name, value, where, scope);

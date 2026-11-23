@@ -100,6 +100,7 @@ public static class CustomSectionKit
     private const string DescriptionKey = "description";
     private const string CostKey = "cost";
     private const string HasSideEffectsKey = "hasSideEffects";
+    private const string TextAttributesKey = "textAttributes";
 
     /// <summary>The keys a kit field takes; the section kit passes the agent these only.</summary>
     public static IReadOnlySet<string> FieldKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "type", "options", "optionsFrom", "min", "max", DescriptionKey };
@@ -108,7 +109,10 @@ public static class CustomSectionKit
     public static IReadOnlySet<string> TagKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "attributes", DescriptionKey, CostKey, HasSideEffectsKey };
 
     /// <summary>The keys a behavior takes.</summary>
-    public static IReadOnlySet<string> BehaviorKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "value", "options", "writes", "repeatsChildren", DescriptionKey };
+    public static IReadOnlySet<string> BehaviorKeys { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "value", "options", "writes", "repeatsChildren", TextAttributesKey, DescriptionKey,
+    };
 
     /// <summary>The keys an option written as an object takes.</summary>
     public static IReadOnlySet<string> OptionKeys { get; } = new HashSet<string>(StringComparer.Ordinal) { "value", "label" };
@@ -150,7 +154,11 @@ public static class CustomSectionKit
         // a stored catalog may name a behavior its upload would refuse now
         var behaviors = ReadEntries(kit["behaviors"], string.Empty,
                 x => new KitBehavior(x["value"] is JObject value ? ReadField(value) : null, ReadFields(x["options"]),
-                    x["repeatsChildren"] is JValue { Type: JTokenType.Boolean } repeats && (bool)repeats))
+                    x["repeatsChildren"] is JValue { Type: JTokenType.Boolean } repeats && (bool)repeats)
+                {
+                    TextAttributes = (x[TextAttributesKey] as JArray)?.OfType<JValue>().Where(v => v.Type == JTokenType.String).Select(v => (string)v)
+                        .ToFrozenSet(StringComparer.Ordinal),
+                })
             .Where(x => !IsReservedBehavior(x.Key))
             .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
         var icons = (kit[IconsKey] as JArray)?
@@ -164,7 +172,15 @@ public static class CustomSectionKit
             .Select(x => x.Name)
             .ToFrozenSet(StringComparer.Ordinal);
 
-        return new StorefrontKit(true, tags, behaviors, icons) { PaletteTokens = paletteTokens, TemplateKeys = templateKeys, SideEffectTags = sideEffectTags };
+        // a stored catalog may hold a cost its upload would refuse now: it counts as none
+        var tagCosts = (kit["tags"] as JObject)?.Properties()
+            .Where(x => x.Value is JObject tag && tag[CostKey] is JValue { Type: JTokenType.Integer, Value: >= 1L and <= (long)RenderBudget })
+            .ToFrozenDictionary(x => x.Name, x => (int)(long)((JValue)x.Value[CostKey]).Value, StringComparer.Ordinal);
+
+        return new StorefrontKit(true, tags, behaviors, icons)
+        {
+            PaletteTokens = paletteTokens, TemplateKeys = templateKeys, SideEffectTags = sideEffectTags, TagCosts = tagCosts,
+        };
     }
 
     /// <returns>What is wrong with the kit's shape, naming where; <c>null</c> for a kit that is right or for none.</returns>
@@ -180,7 +196,7 @@ public static class CustomSectionKit
             return "is not an object";
         }
 
-        return GetEntriesError(entries["tags"], "tags", MaxTags, x => TagNamePattern.IsMatch(x) ? null : "does not start with vc- and lowercase words joined by '-'", GetTagError)
+        return GetEntriesError(entries["tags"], "tags", MaxTags, x => TagNamePattern.IsMatch(x) ? null : "does not start with vc- and lowercase words joined by '-'", (_, tag) => GetTagError(tag))
             ?? GetEntriesError(entries["behaviors"], "behaviors", MaxBehaviors, GetBehaviorNameError, GetBehaviorError)
             ?? GetGuideError(entries[GuideKey])
             ?? GetDesignError(entries[DesignKey])
@@ -248,7 +264,8 @@ public static class CustomSectionKit
     private static string GetNameLengthError(string name) =>
         name.Length > MaxNameLength ? string.Create(CultureInfo.InvariantCulture, $"is longer than {MaxNameLength} characters") : null;
 
-    private static string GetEntriesError(JToken entries, string name, int max, Func<string, string> getNameError, Func<JObject, string> getEntryError)
+    /// <param name="getEntryError">With the entry's name.</param>
+    private static string GetEntriesError(JToken entries, string name, int max, Func<string, string> getNameError, Func<string, JObject, string> getEntryError)
     {
         if (entries is null || entries.Type == JTokenType.Null)
         {
@@ -267,7 +284,7 @@ public static class CustomSectionKit
 
         foreach (var entry in map.Properties())
         {
-            var error = GetNameLengthError(entry.Name) ?? getNameError(entry.Name) ?? (entry.Value is JObject definition ? getEntryError(definition) : "is not an object");
+            var error = GetNameLengthError(entry.Name) ?? getNameError(entry.Name) ?? (entry.Value is JObject definition ? getEntryError(entry.Name, definition) : "is not an object");
             if (error != null)
             {
                 return $"has the {name[..^1]} '{entry.Name}', which {error}";
@@ -308,7 +325,7 @@ public static class CustomSectionKit
         _ => string.Create(CultureInfo.InvariantCulture, $"has a description that is not a text of at most {MaxDescriptionLength} characters"),
     };
 
-    private static string GetBehaviorError(JObject behavior)
+    private static string GetBehaviorError(string name, JObject behavior)
     {
         if (GetKeysError(behavior, BehaviorKeys) is { } keysError)
         {
@@ -334,6 +351,14 @@ public static class CustomSectionKit
         if (behavior["repeatsChildren"] is { Type: not (JTokenType.Null or JTokenType.Boolean) })
         {
             return "has a repeatsChildren that is not true or false";
+        }
+
+        // the storefront leaves out the template's text in an element with one, so it is the behavior's own attribute or an option's
+        var ownAttributes = ((behavior["options"] as JObject)?.Properties().Select(x => $"{DataPrefix}{name}-{x.Name}") ?? []).Prepend(DataPrefix + name).ToList();
+        if (behavior[TextAttributesKey] is { Type: not JTokenType.Null } textAttributes &&
+            !(textAttributes is JArray attributes && attributes.All(x => x is JValue { Type: JTokenType.String } attribute && ownAttributes.Contains((string)attribute, StringComparer.Ordinal))))
+        {
+            return "has textAttributes that are not a list of its own data-{name} attribute and its options'";
         }
 
         return GetFieldsError(behavior["options"], "option", _ => null);
