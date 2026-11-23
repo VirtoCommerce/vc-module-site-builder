@@ -291,6 +291,20 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task SaveAsync_HeaderGroupPlacingACustomTypeAsABlock_IsInvalidAndWritesNothing()
+    {
+        await SaveCatalogAsync(""", "site-header": {}""");
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        const string header = """{ "content": [ { "id": "h", "type": "site-header", "blocks": [ { "id": "promo", "type": "custom-hero" } ] } ] }""";
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", header))), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], result.Errors);
+        Assert.False(_live.Files.ContainsKey(Theme("default/sections/header-group.json-draft")));
+    }
+
+    [Fact]
     public async Task SaveAsync_TemplatePlacingACustomTypeOnlyThePreviewSaw_IsInvalid()
     {
         await SaveCatalogAsync(""", "custom-old": { "settings": [], "custom": true }""");
@@ -366,6 +380,25 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task SaveAsync_OfAPage_ReadsOnlyTheTypesItPlaces()
+    {
+        await SaveCatalogAsync();
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        _live.Files[Theme("default/custom-sections/custom-other.json")] = HeroFile;
+        var page = new DesignerSavePage
+        {
+            GroupId = "g1",
+            ETag = SiteBuilderContentVersion.Create(await _pages.GetByIdAsync("g1"), Published),
+            Content = """{"settings":{},"content":[{"id":"a","type":"custom-hero"}]}""",
+        };
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(page)), _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal([Theme($"{Hero}-draft")], _live.Read.Where(x => x.Contains("/custom-sections/", System.StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task SaveAsync_TypesTogetherOverTheLimit_IsInvalid()
     {
         await SaveCatalogAsync();
@@ -397,6 +430,32 @@ public class CustomSectionSaveTests
         var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: grows ? padding + padding : null)))), _user, Ct);
 
         Assert.Equal(status, result.Status);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RestoreAsync_TypesAlreadyOverTheLimit_IsRefusedOnlyWhenItGrowsThem(bool grows)
+    {
+        await SaveCatalogAsync();
+        var padding = $"/* {new string('x', 60 * 1024)} */";
+        foreach (var type in new[] { "custom-a", "custom-b", "custom-c", "custom-d", "custom-e", "custom-hero" })
+        {
+            _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroWith(css: padding);
+        }
+
+        var exception = await Record.ExceptionAsync(() => Designer().RestoreAsync(new ContentRestoreCommand
+        {
+            StoreId = "s1",
+            SaveId = "restore-0001",
+            VersionId = "1234567",
+            Contents = new Dictionary<HistoryItem, string>
+            {
+                [new HistoryItem(HistoryItemType.Theme, Hero)] = HeroWith(css: grows ? $"/* {new string('x', 62 * 1024)} */" : null),
+            },
+        }, _user, Ct));
+
+        Assert.Equal(grows, exception is ThemeValidationException);
     }
 
     private static string HeroWith(string template = null, string css = null)
@@ -488,10 +547,10 @@ public class CustomSectionSaveTests
             inner.ListTypesAsync(storeId, themeName, cancellationToken);
 
         public Task<IDictionary<string, JToken>> GetTypesAsync(string storeId, string themeName, IDictionary<string, JToken> files = null,
-            CancellationToken cancellationToken = default)
+            ICollection<string> types = null, CancellationToken cancellationToken = default)
         {
             Reads++;
-            return inner.GetTypesAsync(storeId, themeName, files, cancellationToken);
+            return inner.GetTypesAsync(storeId, themeName, files, types, cancellationToken);
         }
     }
 }

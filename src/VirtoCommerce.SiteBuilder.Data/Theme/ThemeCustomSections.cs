@@ -44,16 +44,21 @@ public static class ThemeCustomSections
             .ToList();
     }
 
-    /// <summary>Whether the document places a custom type anywhere, as the type of an item.</summary>
-    public static bool PlacesCustomType(JToken document) =>
-        document is JContainer container && container.Descendants().OfType<JProperty>()
-            .Any(x => x.Name == "type" && x.Value is JValue { Type: JTokenType.String } type && ThemeStorage.IsCustomSectionType((string)type));
+    /// <summary>The custom types the document places anywhere, as the type of an item.</summary>
+    public static IEnumerable<string> GetPlacedTypes(JToken document) =>
+        (document as JContainer)?.Descendants().OfType<JProperty>()
+            .Select(x => x.Name == "type" && x.Value is JValue { Type: JTokenType.String } type ? (string)type : null)
+            .Where(x => x != null && ThemeStorage.IsCustomSectionType(x))
+        ?? [];
 
     /// <summary>The storefront renders only the group's own sections in the header and the footer, so neither places a custom type.</summary>
     public static IEnumerable<string> GetSectionGroupErrors(string file, JToken sectionGroup) =>
-        ((sectionGroup as JObject)?["content"] as JArray)?.OfType<JObject>().Where(IsPlacement)
-            .Select(x => $"{file}: '{ThemeJson.GetString(x, "id")}' places a custom section, which only a page or a template can hold")
-        ?? [];
+        GetPlacements((sectionGroup as JObject)?["content"] as JArray ?? [])
+            .Select(x => $"{file}: '{ThemeJson.GetString(x, "id")}' places a custom section, which only a page or a template can hold");
+
+    /// <summary>The items that place a custom type, as a section or as a block at any depth: a block's schema may be a section's.</summary>
+    public static IEnumerable<JObject> GetPlacements(JArray items) =>
+        items.OfType<JObject>().SelectMany(x => IsPlacement(x) ? [x] : x["blocks"] is JArray blocks ? GetPlacements(blocks) : []);
 
     public static bool IsSectionGroupFile(string pathInTheme) =>
         pathInTheme.Equals(ThemeStorage.HeaderGroupFile, StringComparison.OrdinalIgnoreCase) ||

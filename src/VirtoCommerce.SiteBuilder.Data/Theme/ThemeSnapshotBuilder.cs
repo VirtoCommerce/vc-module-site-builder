@@ -244,7 +244,7 @@ public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy)
     // The storefront renders only a group's own sections in it; a first publication leaves a custom type out of the live files' groups.
     protected virtual void RemoveCustomSections(JObject sectionGroup)
     {
-        foreach (var placement in ((JArray)sectionGroup["content"]).OfType<JObject>().Where(ThemeCustomSections.IsPlacement).ToList())
+        foreach (var placement in ThemeCustomSections.GetPlacements((JArray)sectionGroup["content"]).ToList())
         {
             placement.Remove();
         }

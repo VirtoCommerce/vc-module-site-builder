@@ -64,7 +64,6 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
             return;
         }
 
-        var customSections = content.OfType<JObject>().Where(ThemeCustomSections.IsPlacement).ToList();
         // A first publication checks the shape only and leaves custom sections out, as it does shared components.
         if (catalog != null)
         {
@@ -74,7 +73,12 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
             }
         }
 
-        var sections = customSections.Count == 0 ? content : new JArray(content.Except(customSections));
+        var sections = (JArray)content.DeepClone();
+        foreach (var placement in ThemeCustomSections.GetPlacements(sections).ToList())
+        {
+            placement.Remove();
+        }
+
         ValidateItems(sections, ModuleConstants.SchemaKinds.Sections, file, catalog, errors, allowPageContent: false);
     }
 

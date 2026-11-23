@@ -264,7 +264,12 @@ A section is used with a keyboard and a screen reader as well as with a mouse. A
 - an `img` without `alt`: bind it to a `string` setting, or write `alt=""` for an image that only decorates; a literal
   text in it is saved with the warning on text of the template's own;
 - a link with nothing to read: no text or binding inside, no `aria-label`, no rich text and no image with an `alt`;
-- CSS that hides the focus ring: `outline: none` or `0`, `outline-style: none`, `outline-width: 0`, in any rule.
+- CSS that hides the focus ring, in any rule: `outline: none` or `0`, `outline-style: none`, `outline-width: 0`;
+  `initial`, `unset` or `inherit` as all of `outline` or `outline-style`, and `inherit` as all of `outline-width`; and,
+  as a value a save cannot read may hide it, a function in `outline-style` or `outline-width`, or in `outline` other
+  than a color function (`rgb()`, `rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`,
+  `color()`), `color-mix()`, or `var()` of a palette variable (`--color-…`) or a `color-token` setting's, with no
+  fallback.
 
 It saves with a warning a heading level skipped on the way down (`h2`, then `h4`), CSS with an `animation`,
 `animation-name` or `transition` and no `@media (prefers-reduced-motion: reduce)` or `(prefers-reduced-motion:

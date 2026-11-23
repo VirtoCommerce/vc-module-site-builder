@@ -50,7 +50,8 @@ public static class SectionKitGuide
         "No h1, since the page has it: headings start at h2 and go down one level at a time.",
         "An image's alt is bound to a translatable setting, or is \"\" for an image that only decorates.",
         "A link has text a person reads, bound to a translatable setting.",
-        "Never remove the focus outline, with outline: none or outline: 0.",
+        "Never hide the focus outline: its width and style are written out, never none, 0, initial, unset, inherit or a function, and its " +
+            "color comes from the palette: var(--color-...), a color-token setting's --setting-<id>, or a color function or color-mix() of them.",
         "Anything that moves stops in @media (prefers-reduced-motion: reduce), or moves only in @media (prefers-reduced-motion: no-preference).",
         "German and French run about 30% longer than English: no fixed width or height on an element that holds text.",
         "Right-to-left languages: logical properties only, such as margin-inline-start, padding-block and inset-inline-end, never left or " +
@@ -349,15 +350,16 @@ public static class SectionKitGuide
 
     public const string PresetColor = "preset";
 
-    // One line per token, as the kit is read whole before every type: a store's palette holds some hundreds of tokens.
+    // One line per token, as the kit is read whole before every type: a store's palette holds some hundreds of tokens. A color-token
+    // setting's default is one of the catalog's tokens when the catalog lists them, so the palette's own are offered only when it lists none.
     private static Dictionary<string, string> GetPaletteTokens(JsonObject catalog, ThemePalette palette)
     {
         var tokens = ThemeFiles.GetPaletteTokens(catalog);
         IReadOnlyDictionary<string, string> light = new Dictionary<string, string>(palette?.Light ?? new Dictionary<string, string>(), StringComparer.Ordinal);
         IReadOnlyDictionary<string, string> dark = new Dictionary<string, string>(palette?.Dark ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+        var announced = tokens.Light.Concat(tokens.Dark).ToList();
 
-        return tokens.Light.Concat(tokens.Dark)
-            .Concat(light.Keys.Concat(dark.Keys).Order(StringComparer.Ordinal))
+        return (announced.Count > 0 ? announced : [.. light.Keys.Concat(dark.Keys).Order(StringComparer.Ordinal)])
             .Distinct(StringComparer.Ordinal)
             .ToDictionary(x => x, x => DescribeColors(light.GetValueOrDefault(x), dark.GetValueOrDefault(x)), StringComparer.Ordinal);
     }

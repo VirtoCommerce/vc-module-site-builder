@@ -214,6 +214,39 @@ public sealed class CustomSectionPublishTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstPublication_WithoutACatalog_LeavesACustomTypeOutOfTheBlocksOfTheHeader()
+    {
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/sections/header-group.json")] =
+            """{ "type": "header", "content": [ { "id": "h", "type": "site-header", "blocks": [ { "id": "b", "type": "banner" }, { "id": "promo", "type": "custom-hero" } ] } ] }""";
+
+        var snapshot = await SnapshotAsync("en-US");
+
+        Assert.Equal(["banner"], snapshot["header"]!["content"]![0]!["blocks"]!.Select(x => x.Value<string>("type")));
+    }
+
+    [Fact]
+    public async Task FirstPublication_LeavesOutATypeTheContentGuardRefuses()
+    {
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/custom-sections/custom-promo.json")] = """
+            {
+              "format": 1,
+              "name": "Promo",
+              "schema": {
+                "settings": [ { "id": "cta", "type": "object", "element": [ { "id": "link", "type": "string" } ], "default": { "link": "javascript:void(0)" } } ]
+              },
+              "template": "<section><p>{{ settings.cta.link }}</p></section>",
+              "css": ""
+            }
+            """;
+
+        var snapshot = await SnapshotAsync("en-US");
+
+        Assert.Equal(["custom-hero"], ((JObject)snapshot["customSections"]!).Properties().Select(x => x.Name));
+    }
+
+    [Fact]
     public async Task PublishAsync_TypesTogetherOverTheLimit_IsRefusedAndPublishesNothing()
     {
         await SaveCatalogAsync();
@@ -248,6 +281,25 @@ public sealed class CustomSectionPublishTests : IDisposable
         await publisher.PublishFirstAsync(StoreId, Ct);
 
         Assert.Equal(["custom-hero"], ((JObject)(await SnapshotAsync("en-US"))["customSections"]!).Properties().Select(x => x.Name));
+    }
+
+    [Fact]
+    public async Task FirstPublication_LeavesOutTheTypesLargestInBytes_AsTheLimitCountsThem()
+    {
+        var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
+            _lock, _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
+            new ThemePaletteService(), TestServices.CustomSectionValidator(options: new ThemeSnapshotOptions { CustomSectionsMaxSize = 2048 }));
+        // more characters, but fewer bytes in UTF-8
+        var latin = JObject.Parse(HeroFile);
+        latin["css"] = $":scope {{ color: var(--color-neutral-900); }} /* {new string('x', 1000)} */";
+        var euro = JObject.Parse(HeroFile);
+        euro["css"] = $":scope {{ color: var(--color-neutral-900); }} /* {new string('€', 600)} */";
+        _storage.Files[Theme("default/custom-sections/custom-latin.json")] = latin.ToString();
+        _storage.Files[Theme("default/custom-sections/custom-euro.json")] = euro.ToString();
+
+        await publisher.PublishFirstAsync(StoreId, Ct);
+
+        Assert.Equal(["custom-latin"], ((JObject)(await SnapshotAsync("en-US"))["customSections"]!).Properties().Select(x => x.Name));
     }
 
     [Fact]

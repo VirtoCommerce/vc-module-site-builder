@@ -188,6 +188,10 @@ public class SchemaCatalogServiceTests
                 $$"""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ "{{Text(257)}}" ] } } } } }""",
                 "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label }, each text of at most 256 characters"
             },
+            {
+                $$"""{ "tags": { "vc-x": { "attributes": { "size": { "type": "select", "options": [ { "value": {{new string('9', 257)}} } ] } } } } }""",
+                "has the tag 'vc-x', which has the attribute 'size', which has options that are not a list of values, or of { value, label }, each text of at most 256 characters"
+            },
             { """{ "tags": { "vc-x": { "attributes": {}, "cost": 0 } } }""", "has the tag 'vc-x', which has a cost that is not a whole number from 1 to 5000" },
             { """{ "tags": { "vc-x": { "attributes": {}, "cost": 5001 } } }""", "has the tag 'vc-x', which has a cost that is not a whole number from 1 to 5000" },
             { """{ "tags": { "vc-x": { "attributes": {}, "cost": 1.5 } } }""", "has the tag 'vc-x', which has a cost that is not a whole number from 1 to 5000" },

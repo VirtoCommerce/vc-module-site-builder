@@ -418,7 +418,7 @@ public static class CustomSectionKit
     }
 
     private static bool IsOption(JToken option) =>
-        GetOptionValue(option) is { } value && (value.Type != JTokenType.String || ((string)value).Length <= MaxOptionLength) &&
+        GetOptionValue(option) is { } value && Convert.ToString(value.Value, CultureInfo.InvariantCulture).Length <= MaxOptionLength &&
         (option is not JObject item || item["label"] is null or { Type: JTokenType.Null } || item["label"] is JValue { Type: JTokenType.String } label && ((string)label).Length <= MaxOptionLength);
 
     // a value, or an object with its value and its label

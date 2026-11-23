@@ -718,6 +718,7 @@ public class CustomSectionValidatorTests
     [InlineData(""":is(html) .a { margin: 0; }""", "the CSS selector ':is(html) .a' reaches :root, html or body, outside the section")]
     [InlineData(""".a { :ROOT & { margin: 0; } }""", "the CSS selector ':ROOT &' reaches :root, html or body, outside the section")]
     [InlineData(""".a, html { margin: 0; }""", "the CSS selector '.a, html' reaches :root, html or body, outside the section")]
+    [InlineData(""":is(body.checkout-open .x, ;@media) .y { margin: 0; }""", "the CSS selector ':is(body.checkout-open .x, ;@media) .y' reaches :root, html or body, outside the section")]
     [InlineData(""".a { position: fixed; }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { & .b { POSITION:FIXED } }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { background: url(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
@@ -727,6 +728,23 @@ public class CustomSectionValidatorTests
     [InlineData(""".a:focus-visible { OUTLINE: 0 }""", "the CSS sets outline to none or 0, which hides where the keyboard is on the page")]
     [InlineData(""".a { outline-style: none; }""", "the CSS sets outline-style to none or 0, which hides where the keyboard is on the page")]
     [InlineData(""".a { & .b { outline-width: 0px; } }""", "the CSS sets outline-width to none or 0, which hides where the keyboard is on the page")]
+    [InlineData(""":scope { --o: none; } .a:focus-visible { outline: var(--o); }""", "the CSS sets outline with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: 2px solid var(--o); }""", "the CSS sets outline with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: 2px solid var(--setting-count); }""", "the CSS sets outline with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: 2px solid color-mix(in srgb, var(--o) 50%, transparent); }""", "the CSS sets outline with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: initial; }""", "the CSS sets outline to initial, which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: unset; }""", "the CSS sets outline to unset, which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: inherit; }""", "the CSS sets outline to inherit, which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline-style: initial; }""", "the CSS sets outline-style to initial, which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline-style: unset; }""", "the CSS sets outline-style to unset, which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline-style: INHERIT !important; }""", "the CSS sets outline-style to inherit, which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline-width: inherit; }""", "the CSS sets outline-width to inherit, which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: 2px solid var(--color-primary-500, 0); }""", "the CSS sets outline with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: 2px solid rgb(var(--o)); }""", "the CSS sets outline with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: calc(1px - 1px) solid; }""", "the CSS sets outline with calc(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a { outline-width: calc(1px - 1px); }""", "the CSS sets outline-width with calc(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a { outline-width: max(0px, var(--w)); }""", "the CSS sets outline-width with max(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a { outline-style: env(x); }""", "the CSS sets outline-style with env(), which could hide where the keyboard is on the page")]
     [InlineData(""".a { width: expression(alert(1)); }""", "the CSS has expression(), which runs script")]
     [InlineData(""".a { --bg: element(#secret); }""", "the CSS has element(), which paints a live copy of an element of the page")]
     [InlineData(""".a { background: -MOZ-element(#secret); }""", "the CSS has -moz-element(), which paints a live copy of an element of the page")]
@@ -741,6 +759,8 @@ public class CustomSectionValidatorTests
     [InlineData(""".custom-hero__title { animation: custom-hero__fade 1s; @keyframes custom-hero__fade { from { opacity: 0 } } }""",
         "the CSS has @keyframes inside a style rule, where the storefront drops it: a @keyframes stands at the top level or inside @media, @supports or @container")]
     [InlineData(""".a { @media (width > 1px) { @keyframes custom-hero__x { from { opacity: 0 } } } }""",
+        "the CSS has @keyframes inside a style rule, where the storefront drops it: a @keyframes stands at the top level or inside @media, @supports or @container")]
+    [InlineData(""":is(.a, ;@media) { @keyframes custom-hero__x { from { opacity: 0 } } }""",
         "the CSS has @keyframes inside a style rule, where the storefront drops it: a @keyframes stands at the top level or inside @media, @supports or @container")]
     [InlineData("""@starting-style { @keyframes custom-hero__x { from { opacity: 0 } } }""",
         "the CSS has @keyframes inside @starting-style, where the storefront drops it: a @keyframes stands at the top level or inside @media, @supports or @container")]
@@ -783,6 +803,8 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { posit\69 on: fi\78 ed; }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { background-image: image-set(var(--u) 1x); }""", "the CSS has var() inside image-set(), whose URL is then not known on save")]
     [InlineData("""@media a { @media b { @media c { @media d { @media e { .a { margin: 0; } } } } } }""", "the CSS nests at-rules deeper than 4")]
+    [InlineData("""@media a { @media b { @media c { @media d { @media (;) { .a { margin: 0; } } } } } }""", "the CSS nests at-rules deeper than 4")]
+    [InlineData("""@media a { @media b { @media c { @media d { @media ({}) { .a { margin: 0; } } } } } }""", "the CSS nests at-rules deeper than 4")]
     [InlineData(""".a { background: linear-gradient(var(--color-accent-200), var(--color-accent-400)); background-size: 200% 100%; }""",
         "the CSS sets background-size after background with var() in the same rule, and the storefront then loses background: set each of its parts on its own, such as background-image")]
     [InlineData(""".a { background: var(--x); -webkit-background-clip: text; }""",
@@ -826,6 +848,10 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { background: var(--setting-background); } .b { background-size: 200% 100%; }""")]
     [InlineData(""".a { background: color-mix(in srgb, currentColor 40%, transparent); background-size: 200% 100%; }""")]
     [InlineData(""".a { margin: var(--m); padding-top: 0; --margin-top: 0; }""")]
+    [InlineData(""".a { inset: var(--a); inset: 0; top: 1px; }""")]
+    [InlineData(""".a:focus-visible { outline: 2px solid var(--color-primary-500); } .b:focus-visible { outline: thin dashed rgb(from var(--color-primary-500) r g 0); }""")]
+    [InlineData(""".a:focus-visible { outline: 2px solid color-mix(in srgb, var(--color-primary-500) 60%, transparent); } .b:focus-visible { outline: 2px solid var(--setting-tone); }""")]
+    [InlineData(""".a:focus-visible { outline-width: initial; } .b:focus-visible { outline: revert; } .c:focus-visible { outline: revert-layer; }""")]
     public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
@@ -849,6 +875,7 @@ public class CustomSectionValidatorTests
     [InlineData(""":scope:nth-last-child(2n of .x)""", ":nth-last-child(… of …) on :scope or & counts the section's siblings")]
     [InlineData(""":scope:is(:nth-child(1 of .x))""", ":nth-child(… of …) on :scope or & counts the section's siblings")]
     [InlineData(""".a:is(:has([data-search-query^="a"]) *)""", ":is() takes only compound selectors, with no combinator")]
+    [InlineData(""":is(.checkout-open .x, ;@media) .y""", ":is() takes only compound selectors, with no combinator")]
     [InlineData(""".a:not(.b .c)""", ":not() takes only compound selectors, with no combinator")]
     [InlineData(""".a:where(.b > .c)""", ":where() takes only compound selectors, with no combinator")]
     [InlineData(""".a:nth-child(2 of .b .c)""", ":nth-child(… of …) takes only compound selectors, with no combinator")]
@@ -908,6 +935,18 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
+    public void Validate_OutlineOfASettingVariable_IsTakenOnlyFromAColorTokenSetting()
+    {
+        const string css = ".a:focus-visible { outline: 2px solid var(--setting-ring-tone); }";
+
+        var colorToken = _validator.Validate(Type, Section("<section></section>", css, """[ { "id": "ring_tone", "type": "color-token" } ]"""), Catalog);
+        var number = _validator.Validate(Type, Section("<section></section>", css, """[ { "id": "ring_tone", "type": "number" } ]"""), Catalog);
+
+        Assert.Empty(colorToken.Errors);
+        Assert.Equal(["the CSS sets outline with var(), which could hide where the keyboard is on the page"], number.Errors);
+    }
+
+    [Fact]
     public void Validate_FaultOfTheCheck_RefusesTheTypeInsteadOfFailing()
     {
         var result = TestServices.CustomSectionValidator(Assets, cssValidator: new FailingCss()).Validate(Type, Section("<section></section>", ".a { color: var(--color-primary-500); }"), Catalog);
@@ -935,6 +974,17 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
         Assert.Equal([$"the CSS nests blocks deeper than 32"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_CssOfManyLateShorthandsAndManyOfTheirParts_IsRefusedOnceForTheShorthandStillSet()
+    {
+        var css = "a{" + string.Concat(Enumerable.Range(0, 2000).Select(x => $"inset:--f{x}();")) + string.Concat(Enumerable.Repeat("top:0;", 5000)) + "}";
+
+        var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
+
+        Assert.Equal(["the CSS sets top after inset with --f1999() in the same rule, and the storefront then loses inset: set each of its parts on its own, such as right"],
+            result.Errors);
     }
 
     [Fact]
@@ -1176,6 +1226,50 @@ public class CustomSectionValidatorTests
         Assert.Equal(["'schema.targetTemplates' names 'product.b2c', which is no template key of the storefront's catalog, so no template offers the type: " +
             "the schemas resource lists the catalog's templates"], result.Warnings);
         Assert.Empty(withoutTemplates.Warnings);
+    }
+
+    [Fact]
+    public void Validate_ListDefaultOfManyRowsAndManyFields_ChecksEachRowsOwnValuesInTheOrderOfTheFields()
+    {
+        var fields = string.Concat(Enumerable.Range(0, 20_000).Select(x => $$"""{ "id": "f{{x}}", "type": "string" }, """));
+        var rows = string.Concat(Enumerable.Repeat("{}, ", 100_000));
+        var list = $$"""
+            { "id": "items", "type": "list", "element": [ {{fields}}{ "id": "img", "type": "images" }, { "id": "to", "type": "string", "format": "url" } ],
+              "default": [ {{rows}}{ "to": "javascript:alert(1)", "img": "https://evil.example/x.png" } ] }
+            """;
+
+        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {list} ]"), Catalog);
+
+        Assert.Equal(["setting 'items' has a default whose row 100001 holds 'img' that is not a URL of the store's asset library"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_ListDefaultOfManyRowsWithASelectOfManyOptions_ReadsTheOptionsOnce()
+    {
+        var options = string.Join(", ", Enumerable.Range(0, 20_000).Select(x => $$"""{ "value": "o{{x}}" }"""));
+        var rows = string.Concat(Enumerable.Repeat("""{ "pick": "o19999" }, """, 100_000));
+        var list = $$"""
+            { "id": "items", "type": "list", "element": [ { "id": "pick", "type": "select", "options": [ {{options}} ] } ],
+              "default": [ {{rows}}{ "pick": "o20000" } ] }
+            """;
+
+        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {list} ]"), Catalog);
+
+        Assert.Equal(["setting 'items' has a default whose row 100001 holds 'pick' that is not one of its options"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_ListDefaultOfManyRowsWithAListInside_IsRefusedForTheNestingAlone()
+    {
+        var fields = string.Join(", ", Enumerable.Range(0, 20_000).Select(x => $$"""{ "id": "f{{x}}", "type": "string" }"""));
+        var rows = string.Concat(Enumerable.Repeat("""{ "sub": [] }, """, 100_000));
+        var list = $$"""
+            { "id": "items", "type": "list", "element": [ { "id": "sub", "type": "list", "element": [ {{fields}} ] } ], "default": [ {{rows}}{} ] }
+            """;
+
+        var result = _validator.Validate(Type, Section("<section></section>", settings: $"[ {list} ]"), Catalog);
+
+        Assert.Equal(["setting 'items.sub' is a list inside 'items', one level deeper than a custom section's settings go"], result.Errors);
     }
 
     [Fact]

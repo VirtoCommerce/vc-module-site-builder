@@ -248,8 +248,8 @@ public class ThemePublisher(
 
     /// <summary>
     /// A first publication puts the live files out as they are, and a failure keeps the store's storefront from any theme: a custom section
-    /// type that is not JSON, fails against the current catalog, or uses the kit when there is none, is left out, as a shared component is,
-    /// and so are the largest types until the rest fit the size the snapshot carries.
+    /// type that is not JSON, fails against the current catalog or the content guard, or uses the kit when there is none, is left out, as a
+    /// shared component is, and so are the largest types until the rest fit the size the snapshot carries.
     /// </summary>
     protected virtual void LeaveOutFailingCustomSections(string storeId, ThemeSource source, JObject catalog)
     {
@@ -261,14 +261,21 @@ public class ThemePublisher(
 
         var types = source.CustomSections.Keys.ToList();
         // one result per type, in their order, before the folder's size
-        foreach (var (type, result) in types.Zip(customSectionValidator.ValidateTypes(source.CustomSections, types, catalog)).Where(x => x.Second.Errors.Count > 0))
+        foreach (var (type, result) in types.Zip(customSectionValidator.ValidateTypes(source.CustomSections, types, catalog)))
         {
-            LeaveOut(type, string.Join("; ", result.Errors));
+            var errors = result.Errors
+                .Concat(contentGuard.GuardThemeFile(ThemeStorage.GetCustomSectionFile(type), source.CustomSections[type], catalog).Errors)
+                .ToList();
+            if (errors.Count > 0)
+            {
+                LeaveOut(type, string.Join("; ", errors));
+            }
         }
 
         while (source.CustomSections.Count > 0 && customSectionValidator.ValidateTypes(source.CustomSections, [], catalog).Count > 0)
         {
-            LeaveOut(source.CustomSections.MaxBy(x => x.Value.ToString(Formatting.None).Length).Key, "the types together are too large");
+            LeaveOut(source.CustomSections.MaxBy(x => customSectionValidator.GetSize(new Dictionary<string, JToken> { [x.Key] = x.Value })).Key,
+                "the types together are too large");
         }
 
         void LeaveOut(string type, string reason)

@@ -199,6 +199,27 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AChange_OfASettingWhoseTypeIsNotAText_IsSaved_AndListsWhatChanged()
+    {
+        await SeedAsync();
+        var current = new JsonObject
+        {
+            ["format"] = 1,
+            ["name"] = new JsonObject { ["en-US"] = "Stats" },
+            ["schema"] = new JsonObject { ["settings"] = new JsonArray(new JsonObject { ["id"] = "title", ["type"] = 5 }) },
+            ["template"] = Template,
+            ["css"] = Css,
+        }.ToJsonString();
+        _context.SeedThemeFile(StoreA, File, current, draft: true);
+        var token = SiteBuilderContentVersion.CreateForThemeFile(StoreA, Path, current);
+
+        var change = (await CallAsync(Change, versionToken: token)).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Equal(["value"], change.PlacedSections!.NewSettings.Select(x => x.Id));
+        Assert.Equal("string", JsonNode.Parse(_context.ReadThemeFile(StoreA, File, draft: true)!)!["schema"]!["settings"]![0]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task ADryRunThatChangesNothing_StillAnswersTheErrorsOfTheType()
     {
         await SeedAsync();

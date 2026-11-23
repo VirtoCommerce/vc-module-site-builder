@@ -210,6 +210,18 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheSectionKit_OffersOnlyTheCatalogsPaletteTokens_WhenItListsThem()
+    {
+        await _context.SeedThemeAsync(StoreA, McpTestContext.StorefrontKit);
+        _context.SeedThemeFile(StoreA, "config/palette.json", """{ "color_primary_500": "#0047ab", "color_brand_glow": "#ff00ff" }""");
+
+        var tokens = (await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit")).GetProperty("palette").GetProperty("tokens");
+
+        Assert.Equal("#0047ab / preset", tokens.GetProperty("color_primary_500").GetString());
+        Assert.False(tokens.TryGetProperty("color_brand_glow", out _));
+    }
+
+    [Fact]
     public async Task TheSectionKit_ListsWhatTheValidatorChecks()
     {
         await _context.SeedThemeAsync(StoreA);

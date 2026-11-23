@@ -1,3 +1,4 @@
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
@@ -13,6 +14,9 @@ public class CustomSectionCheck(string type, CustomSectionValidationResult resul
 
     /// <summary>The settings a binding can name, by id; <c>null</c> when the schema cannot be read.</summary>
     public IDictionary<string, CustomSectionSetting> Settings { get; set; }
+
+    /// <summary>The values of a select's options, by its field, read once: a list's default checks the select of its rows in each row.</summary>
+    internal Dictionary<JObject, HashSet<JToken>> SelectOptions { get; } = new();
 
     public void AddError(string error) => result.Errors.Add(error);
 

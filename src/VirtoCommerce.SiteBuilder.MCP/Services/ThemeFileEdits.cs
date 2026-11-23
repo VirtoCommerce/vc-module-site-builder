@@ -91,7 +91,7 @@ public static class ThemeFileEdits
             change.VersionTokens[edit.Path] = edit.Current.ETag;
         }
 
-        var changed = edits.Where(x => !IsSameContent(x.Current.Content, x.Content)).ToList();
+        var changed = edits.Where(x => !IsSameContent(x.Path, x.Current.Content, x.Content)).ToList();
         if (changed.Count == 0)
         {
             change.AddWarning("The call changes nothing, so nothing was saved.");
@@ -146,9 +146,12 @@ public static class ThemeFileEdits
         }
     }
 
-    // A readable diff leaves out what it cannot show, so whether the content changed is decided on the JSON itself.
-    private static bool IsSameContent(string before, string after) =>
-        Parse(before) is { } from && Parse(after) is { } to ? JsonNode.DeepEquals(from, to) : string.Equals(before, after, StringComparison.Ordinal);
+    // A readable diff leaves out what it cannot show, so whether the content changed is decided on the JSON itself. A file that is not
+    // there is read as the diff reads it, empty: an edit that leaves it empty, such as the palette of the other scheme, does not create it.
+    private static bool IsSameContent(string path, string before, string after) =>
+        before == null
+            ? Compare(path, before, after).Count == 0
+            : Parse(before) is { } from && Parse(after) is { } to ? JsonNode.DeepEquals(from, to) : string.Equals(before, after, StringComparison.Ordinal);
 
     public static IList<PageDocumentChange> Compare(string path, string before, string after)
     {

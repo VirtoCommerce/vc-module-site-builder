@@ -415,12 +415,13 @@ public class CustomSectionValidator(
         switch (type)
         {
             case ListType:
+                var elements = GetElements(field);
                 return value is JArray rows && rows.All(x => x is JObject)
-                    ? rows.Select((row, i) => GetRowError(check, field, (JObject)row) is { } error ? string.Create(CultureInfo.InvariantCulture, $"whose row {i + 1} holds {error}") : null)
+                    ? rows.Select((row, i) => GetRowError(check, elements, (JObject)row) is { } error ? string.Create(CultureInfo.InvariantCulture, $"whose row {i + 1} holds {error}") : null)
                         .FirstOrDefault(x => x != null)
                     : "that is not a list of rows";
             case ObjectType:
-                return value is JObject row ? (GetRowError(check, field, row) is { } rowError ? $"that holds {rowError}" : null) : "that is not an object of its fields";
+                return value is JObject row ? (GetRowError(check, GetElements(field), row) is { } rowError ? $"that holds {rowError}" : null) : "that is not an object of its fields";
             case NumberType or SliderType:
                 return GetNumberError(field, value);
             case CheckboxType:
@@ -435,8 +436,13 @@ public class CustomSectionValidator(
 
         if (type == SelectType)
         {
-            var options = (field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).Where(x => x != null).ToList() ?? [];
-            return options.Exists(x => JToken.DeepEquals(x, value)) ? null : "that is not one of its options";
+            if (!check.SelectOptions.TryGetValue(field, out var options))
+            {
+                options = new HashSet<JToken>((field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).Where(x => x != null) ?? [], JToken.EqualityComparer);
+                check.SelectOptions[field] = options;
+            }
+
+            return options.Contains(value) ? null : "that is not one of its options";
         }
 
         // a translatable value is a text per language
@@ -453,13 +459,23 @@ public class CustomSectionValidator(
             : null;
     }
 
-    // each field of a list's row or of an object by its own rule
-    private string GetRowError(CustomSectionCheck check, JObject field, JObject row) =>
-        (field["element"] as JArray)?.OfType<JObject>()
-            .Select(x => (Id: ThemeJson.GetString(x, "id"), Field: x))
-            .Where(x => x.Id != null && row[x.Id] is { Type: not JTokenType.Null })
-            .Select(x => GetDefaultError(check, ThemeJson.GetString(x.Field, "type"), x.Field, row[x.Id]) is { } error ? $"'{x.Id}' {error}" : null)
+    // each field of a list's row or of an object by its own rule, in the order of the fields; a row reads only its own values, as a list may have
+    // many fields and many rows
+    private string GetRowError(CustomSectionCheck check, Dictionary<string, (int Index, JObject Field)> elements, JObject row) =>
+        row.Properties()
+            .Select(x => (x.Name, x.Value, Element: elements.GetValueOrDefault(x.Name)))
+            .Where(x => x.Element.Field != null && x.Value.Type != JTokenType.Null)
+            .OrderBy(x => x.Element.Index)
+            .Select(x => GetDefaultError(check, ThemeJson.GetString(x.Element.Field, "type"), x.Element.Field, x.Value) is { } error ? $"'{x.Name}' {error}" : null)
             .FirstOrDefault(x => x != null);
+
+    // by id, read once for all the rows of a list; a list or an object among them is refused where it is declared, so a row does not read its fields
+    private static Dictionary<string, (int Index, JObject Field)> GetElements(JObject field) =>
+        ((field["element"] as JArray)?.OfType<JObject>() ?? [])
+            .Select((x, i) => (Id: ThemeJson.GetString(x, "id"), Index: i, Field: x))
+            .Where(x => x.Id != null && ThemeJson.GetString(x.Field, "type") is not (ListType or ObjectType))
+            .DistinctBy(x => x.Id, StringComparer.Ordinal)
+            .ToDictionary(x => x.Id, x => (x.Index, x.Field), StringComparer.Ordinal);
 
     private static string GetNumberError(JObject field, JToken value)
     {

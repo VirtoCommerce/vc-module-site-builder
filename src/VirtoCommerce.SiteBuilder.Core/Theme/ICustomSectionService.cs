@@ -12,6 +12,7 @@ public interface ICustomSectionService
     /// <summary>By type; a file that is not JSON is left out.</summary>
     /// <param name="themeName">The theme folder; <c>null</c> for the store's theme.</param>
     /// <param name="files">Contents by the path with the theme folder, over the stored ones, such as those a save writes; those of another theme are left out.</param>
-    Task<IDictionary<string, JToken>> GetTypesAsync(string storeId, string themeName, IDictionary<string, JToken> files = null,
+    /// <param name="types">The stored types to read, such as those a save places; <c>null</c> for every type in the folder, as their size together needs.</param>
+    Task<IDictionary<string, JToken>> GetTypesAsync(string storeId, string themeName, IDictionary<string, JToken> files = null, ICollection<string> types = null,
         CancellationToken cancellationToken = default);
 }

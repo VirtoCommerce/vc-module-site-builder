@@ -16,6 +16,7 @@ using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
+using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
@@ -239,7 +240,7 @@ public class SectionTypeTools(
     private static Dictionary<string, JsonNode> GetSettings(JsonObject schema) =>
         (schema?["settings"] as JsonArray ?? [])
             .OfType<JsonObject>()
-            .Where(x => x["id"] is JsonValue && !LabelFieldTypes.Contains(x["type"]?.GetValue<string>(), StringComparer.Ordinal))
+            .Where(x => x["id"] is JsonValue && !LabelFieldTypes.Contains(GetString(x["type"]), StringComparer.Ordinal))
             .GroupBy(x => x["id"]!.ToString(), StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.First()["default"], StringComparer.Ordinal);
 

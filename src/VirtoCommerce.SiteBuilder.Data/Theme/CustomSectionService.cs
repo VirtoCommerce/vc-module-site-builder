@@ -11,11 +11,12 @@ public class CustomSectionService(IThemeStorageFactory themeStorageFactory, IThe
         await ThemeCustomSections.ListTypesAsync(themeStorageFactory.Open(storeId, themeName ?? await themeStorageFactory.GetThemeNameAsync(storeId)));
 
     public virtual async Task<IDictionary<string, JToken>> GetTypesAsync(string storeId, string themeName, IDictionary<string, JToken> files = null,
-        CancellationToken cancellationToken = default)
+        ICollection<string> types = null, CancellationToken cancellationToken = default)
     {
         themeName ??= await themeStorageFactory.GetThemeNameAsync(storeId);
         var result = new Dictionary<string, JToken>(StringComparer.Ordinal);
-        foreach (var type in await ListTypesAsync(storeId, themeName, cancellationToken))
+        // a type is part of the path it is read from, so a text that is not one is not read
+        foreach (var type in types?.Where(ThemeStorage.IsCustomSectionType) ?? await ListTypesAsync(storeId, themeName, cancellationToken))
         {
             var file = await themeDraftService.ReadAsync(storeId, $"{themeName}/{ThemeStorage.GetCustomSectionFile(type)}", cancellationToken);
             if (Parse(file.Content) is { } content)

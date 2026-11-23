@@ -128,6 +128,22 @@ public sealed class ThemeDraftToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AnEditOfOnePalette_DoesNotWriteTheOther_WhenTheThemeHasNone()
+    {
+        await _context.SeedThemeAsync(StoreA);
+
+        (await _context.CallAsync(Designer(), Tool, new
+        {
+            store_id = StoreA,
+            part = "palette",
+            dark_colors = new Dictionary<string, string> { ["color_primary_500"] = "#0a5f38" },
+        })).EnsureSucceeded();
+
+        Assert.NotNull(_context.ReadThemeFile(StoreA, "config/palette.dark.json", draft: true));
+        Assert.Null(_context.ReadThemeFile(StoreA, "config/palette.json", draft: true));
+    }
+
+    [Fact]
     public async Task AUserOfStoreA_CannotEditTheThemeOfStoreB()
     {
         await _context.SeedThemeAsync(StoreB);

@@ -20,6 +20,8 @@ internal sealed class FakeBlobStorage : IBlobContentStorageProviderFactory, ICon
 
     public List<string> Written { get; } = [];
 
+    public List<string> Read { get; } = [];
+
     public List<string> Removed { get; } = [];
 
     public List<IEvent> Events { get; } = [];
@@ -77,7 +79,13 @@ internal sealed class FakeBlobStorage : IBlobContentStorageProviderFactory, ICon
         public Task<BlobInfo> GetBlobInfoAsync(string blobUrl) =>
             Task.FromResult(storage.Files.ContainsKey(Key(blobUrl)) ? new BlobInfo { Name = blobUrl, RelativeUrl = blobUrl } : null);
 
-        public Task<Stream> OpenReadAsync(string blobUrl) => Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(storage.Files[Key(blobUrl)])));
+        public Task<Stream> OpenReadAsync(string blobUrl)
+        {
+            var path = Key(blobUrl);
+            storage.Read.Add(path);
+
+            return Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(storage.Files[path])));
+        }
 
         public Task<BlobEntrySearchResult> SearchAsync(string folderUrl, string keyword)
         {
