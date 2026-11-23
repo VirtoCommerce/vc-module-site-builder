@@ -143,7 +143,7 @@ public class TemplateRuleTools(
                 break;
             case "enable":
             case "disable":
-                SetDisabled(rules, operation, operation.Op.Trim().ToLowerInvariant() == "disable");
+                SetDisabled(rules, operation, string.Equals(operation.Op.Trim(), "disable", StringComparison.OrdinalIgnoreCase));
                 break;
             case "remove":
                 var (type, list, rule) = Find(rules, operation);

@@ -366,7 +366,7 @@ public class TemplateTools(
             return null;
         }
 
-        return TemplateRulesDocument.PageTypes.FirstOrDefault(x => x == pageType.Trim().ToLowerInvariant())
+        return TemplateRulesDocument.PageTypes.FirstOrDefault(x => string.Equals(x, pageType.Trim(), StringComparison.OrdinalIgnoreCase))
             ?? throw new McpException("page_type must be product, category or page.");
     }
 }
