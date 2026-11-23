@@ -2,11 +2,14 @@ using System.ComponentModel;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
+using VirtoCommerce.Platform.Core.Security;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
@@ -22,8 +25,14 @@ public class SectionTypeTools(
     IAuthorizationService authorizationService,
     IDesignerOperationService designerOperationService,
     IThemeStorageFactory themeStorageFactory,
-    ISchemaCatalogService schemaCatalogService)
+    ISchemaCatalogService schemaCatalogService,
+    ISiteBuilderSectionScanner sectionScanner,
+    Func<UserManager<ApplicationUser>> userManagerFactory)
 {
+    private const int MaxPlacingPages = 50;
+    private const int MaxDefaultLength = 80;
+    private static readonly string[] LabelFieldTypes = ["header", "paragraph"];
+
     private const string CreateAction = "create_section_type";
     private const string ChangeAction = "change_section_type";
 
@@ -128,7 +137,8 @@ public class SectionTypeTools(
         if (!request.Create && string.IsNullOrWhiteSpace(request.VersionToken))
         {
             throw new McpException($"Pass version_token: the call replaces the whole type, so it has to be of the version you read. Read the type at {resource}, " +
-                "make the change on it, and pass its version_token.");
+                $"make the change on it, and pass its version_token; the version_tokens['{path}'] of your last create_section_type or change_section_type " +
+                "answer for it is that token too.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.VersionToken) && request.VersionToken.Trim() != current.ETag)
@@ -158,14 +168,102 @@ public class SectionTypeTools(
         await ThemeFileEdits.SaveAsync(change, designerOperationService, user, storeId, catalogHash, [new ThemeFileEdit(path, current, content)],
             dryRun, Theme, $"Read it again at {resource} and repeat the change on that version.", cancellationToken);
 
-        if (request.Create && change.Errors == null)
+        if (change.Errors != null)
         {
-            change.NextStep = string.Join(' ', new[] { $"Place it with edit_page_draft (add_section, type '{key}', with its settings).", change.NextStep }
-                .Where(x => x != null));
+            return change;
         }
+
+        var steps = new List<string>();
+        if (request.Create)
+        {
+            steps.Add($"Place it with edit_page_draft (add_section, type '{key}', with its settings).");
+        }
+        else
+        {
+            change.PlacedSections = await DescribePlacementsAsync(user, storeId, key, current.Content, request.Schema, cancellationToken);
+            if (change.PlacedSections?.NewSettings.Count > 0 && change.PlacedSections.Pages.Count > 0)
+            {
+                steps.Add("The sections placed before show the new settings' defaults (placed_sections): set them per page with edit_page_draft " +
+                    "(set_section_settings), or on every placement with update_sections_bulk.");
+            }
+        }
+
+        steps.Add(change.NextStep);
+        if (!dryRun)
+        {
+            steps.Add($"To change the type again, pass version_tokens['{path}'] of this answer as version_token.");
+        }
+
+        change.NextStep = string.Join(' ', steps.Where(x => x != null));
 
         return change;
     }
+
+    // A placed section keeps the settings it holds: a new setting shows its default there, and a removed one is held but read by nothing.
+    private async Task<SectionTypePlacements> DescribePlacementsAsync(ClaimsPrincipal user, string storeId, string type, string currentContent, JsonObject schema,
+        CancellationToken cancellationToken)
+    {
+        var before = GetSettings(ParseSchema(currentContent));
+        var after = GetSettings(schema);
+        var added = after.Where(x => !before.ContainsKey(x.Key)).ToList();
+        var removed = before.Keys.Where(x => !after.ContainsKey(x)).ToList();
+        if (added.Count == 0 && removed.Count == 0)
+        {
+            return null;
+        }
+
+        var scan = await sectionScanner.ScanPagesAsync(new SiteBuilderSectionScanCriteria
+        {
+            Pages = new SiteBuilderPageSearchCriteria { StoreId = storeId, Take = MaxPlacingPages },
+            MaxPages = MaxPlacingPages,
+            SectionType = type,
+            SharedComponentStoreIds = await authorizationService.GetStoreIdsAsync(user, userManagerFactory, storeId, SharedComponentsRead),
+        }, cancellationToken);
+
+        return new SectionTypePlacements
+        {
+            NewSettings = added.Select(x => new NewSettingRow(x.Key, DescribeDefault(x.Value))).ToList(),
+            RemovedSettings = removed,
+            Pages = scan.Pages
+                .Where(x => x.Sections.Count > 0)
+                .GroupBy(x => x.ListItem.Id, StringComparer.Ordinal)
+                .Select(x => new PlacingPageRow(x.Key, x.First().ListItem.Name, x.First().ListItem.Permalink, x.Sum(y => y.Sections.Count)))
+                .ToList(),
+            Coverage = SectionScanCoverage.Describe(scan) + " Templates are not scanned: search_templates lists them.",
+            Note = removed.Count > 0
+                ? "A removed setting stays in the placed sections, but the type no longer reads it: what pages hold in it is no longer shown."
+                : null,
+        };
+    }
+
+    private static Dictionary<string, JsonNode> GetSettings(JsonObject schema) =>
+        (schema?["settings"] as JsonArray ?? [])
+            .OfType<JsonObject>()
+            .Where(x => x["id"] is JsonValue && !LabelFieldTypes.Contains(x["type"]?.GetValue<string>(), StringComparer.Ordinal))
+            .GroupBy(x => x["id"]!.ToString(), StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.First()["default"], StringComparer.Ordinal);
+
+    private static JsonObject ParseSchema(string content)
+    {
+        try
+        {
+            return (JsonNode.Parse(content ?? "") as JsonObject)?[ThemeCustomSections.SchemaKey] as JsonObject;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string DescribeDefault(JsonNode value) => value switch
+    {
+        null => "nothing: the setting has no default",
+        JsonArray rows => $"its default, {rows.Count} rows",
+        JsonValue text when text.TryGetValue<string>(out var str) => string.IsNullOrEmpty(str)
+            ? "nothing: its default is empty"
+            : $"its default '{(str.Length > MaxDefaultLength ? str[..MaxDefaultLength] + "…" : str)}'",
+        _ => $"its default {value.ToJsonString()}",
+    };
 
     private sealed record SectionTypeRequest(string StoreId, string Type, JsonNode Name, JsonObject Schema, string Template, string Css, string VersionToken,
         bool Create);

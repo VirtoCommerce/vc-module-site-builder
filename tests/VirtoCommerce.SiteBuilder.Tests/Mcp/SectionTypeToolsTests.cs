@@ -25,10 +25,12 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
     private static readonly object[] Settings = [new { id = "title", type = "string", translatable = true }, new { id = "value", type = "number" }];
 
     private readonly McpTestContext _context = new();
+    private readonly List<GroupedSiteBuilderPage> _pages = [];
 
     public SectionTypeToolsTests()
     {
         _context.UsePageStore();
+        _context.ListPages(() => _pages.Select(LandingRow));
     }
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
@@ -123,6 +125,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.Empty(change.Warnings);
         Assert.Contains("edit_page_draft", change.NextStep, StringComparison.Ordinal);
         Assert.Contains("publish_theme", change.NextStep, StringComparison.Ordinal);
+        Assert.Contains($"version_tokens['{Path}']", change.NextStep, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -236,6 +239,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
         Assert.Contains("Pass version_token", result.Error, StringComparison.Ordinal);
         Assert.Contains($"site-builder://stores/{StoreA}/custom-sections/{Type}", result.Error, StringComparison.Ordinal);
+        Assert.Contains($"version_tokens['{Path}']", result.Error, StringComparison.Ordinal);
         Assert.Contains("padding: 2rem", _context.ReadThemeFile(StoreA, File, draft: true), StringComparison.Ordinal);
     }
 
@@ -320,5 +324,50 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         edit.EnsureSucceeded();
         var section = JsonNode.Parse(await _context.DraftContentAsync("landing"))!["content"]![0]!;
         Assert.Equal((Type, "Our year"), (section["type"]!.GetValue<string>(), section["title"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task AChange_ThatAddsAndRemovesSettings_ListsThePagesThatPlaceTheType_AndWhatTheirSectionsShow()
+    {
+        await SeedAsync();
+        var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
+        _pages.Add(_context.SeedDraft("landing", StoreA, """{ "settings": { "name": "Landing" }, "content": [ { "id": "s1", "type": "custom-stats", "title": "A" }, { "id": "s2", "type": "custom-stats", "title": "B" } ] }"""));
+        _pages.Add(_context.SeedDraft("about", StoreA, """{ "settings": { "name": "About" }, "content": [ { "id": "t1", "type": "text" } ] }"""));
+
+        var change = (await CallAsync(Change, versionToken: created.VersionTokens[Path], template: "<section class=\"custom-stats\">\n  <h2>{{ settings.title }}</h2>\n</section>", settings:
+            [
+                new { id = "title", type = "string", translatable = true },
+                new { id = "note", type = "string", @default = "Order by 6 pm" },
+                new { id = "items", type = "list", element = new[] { new { id = "text", type = "string" } }, @default = new[] { new { text = "a" }, new { text = "b" } } },
+                new { id = "heading", type = "header" },
+                new { id = "badge", type = "string" },
+            ]))
+            .EnsureSucceeded().Read<ThemeFileChange>();
+
+        var placed = change.PlacedSections!;
+        Assert.Equal(
+            [("note", "its default 'Order by 6 pm'"), ("items", "its default, 2 rows"), ("badge", "nothing: the setting has no default")],
+            placed.NewSettings.Select(x => (x.Id, x.PlacedSectionsShow)));
+        Assert.Equal(["value"], placed.RemovedSettings);
+        var page = Assert.Single(placed.Pages);
+        Assert.Equal(("landing", 2), (page.PageId, page.Sections));
+        Assert.Contains("Templates are not scanned", placed.Coverage, StringComparison.Ordinal);
+        Assert.Contains("no longer shown", placed.Note, StringComparison.Ordinal);
+        Assert.Contains("update_sections_bulk", change.NextStep, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AChange_ThatKeepsTheSettings_ListsNoPlacements()
+    {
+        await SeedAsync();
+        var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
+        _pages.Add(_context.SeedDraft("landing", StoreA, """{ "settings": { "name": "Landing" }, "content": [ { "id": "s1", "type": "custom-stats", "title": "A" } ] }"""));
+
+        var change = (await CallAsync(Change, css: ":scope { padding: 4rem; }", versionToken: created.VersionTokens[Path], dryRun: true))
+            .EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Null(change.PlacedSections);
+        Assert.DoesNotContain("update_sections_bulk", change.NextStep, StringComparison.Ordinal);
+        Assert.DoesNotContain("version_tokens", change.NextStep, StringComparison.Ordinal);
     }
 }

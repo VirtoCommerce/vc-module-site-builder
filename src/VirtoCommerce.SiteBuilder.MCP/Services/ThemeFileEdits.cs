@@ -41,7 +41,34 @@ public sealed class ThemeFileChange : McpChangePreview
     // What to do once the change is saved, such as publishing the theme.
     [JsonPropertyName("next_step")]
     public string NextStep { get; set; }
+
+    // A section type's settings added or removed, and the pages whose sections of the type they reach.
+    [JsonPropertyName("placed_sections")]
+    public SectionTypePlacements PlacedSections { get; set; }
 }
+
+public sealed class SectionTypePlacements
+{
+    [JsonPropertyName("new_settings")]
+    public IList<NewSettingRow> NewSettings { get; init; } = [];
+
+    [JsonPropertyName("removed_settings")]
+    public IList<string> RemovedSettings { get; init; } = [];
+
+    [JsonPropertyName("pages")]
+    public IList<PlacingPageRow> Pages { get; init; } = [];
+
+    [JsonPropertyName("coverage")]
+    public string Coverage { get; init; }
+
+    [JsonPropertyName("note")]
+    public string Note { get; init; }
+}
+
+public sealed record NewSettingRow([property: JsonPropertyName("id")] string Id, [property: JsonPropertyName("placed_sections_show")] string PlacedSectionsShow);
+
+public sealed record PlacingPageRow([property: JsonPropertyName("page_id")] string PageId, [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("permalink")] string Permalink, [property: JsonPropertyName("sections")] int Sections);
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
 
