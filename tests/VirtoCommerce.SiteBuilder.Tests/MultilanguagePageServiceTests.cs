@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.ExportImport;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Models;
@@ -529,8 +530,9 @@ public class MultilanguagePageServiceTests
         var root = await fixture.CreateRootAsync();
         await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("hero-en"));
 
-        var nl = await fixture.Roots.CreateLanguageAsync(root.Id, "nl-NL", copyContent: true, TestContext.Current.CancellationToken);
+        var created = await fixture.Roots.CreateLanguageAsync(root.Id, "nl-NL", copyContent: true, TestContext.Current.CancellationToken);
 
+        var nl = await fixture.Groups.GetByIdAsync(created.Id);
         var content = (await fixture.Groups.LoadGroupContentAsync(nl, draft: true, TestContext.Current.CancellationToken)).Content;
         Assert.Contains("hero-en", content);
         Assert.Contains("\"cultureName\":\"nl-NL\"", content);
@@ -564,6 +566,60 @@ public class MultilanguagePageServiceTests
         Assert.Equal(["en-US"], result.ProcessedCultureNames);
         Assert.Equal([("nl-NL", MultilanguagePageBatchResult.NoDraftReason)], result.Skipped.Select(x => (x.CultureName, x.Reason)));
         Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+    }
+
+    [Fact]
+    public async Task SaveGroupAtVersionAsync_ContentChangedSinceItWasRead_WritesNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var group = await fixture.Groups.GetByIdAsync(en.Id);
+        var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
+        await fixture.Groups.SaveGroupContentAsync(group, Content("changed"), read.ETag, TestContext.Current.CancellationToken);
+        Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
+
+        await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() =>
+            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken));
+
+        Assert.Equal("Draft", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+    }
+
+    [Fact]
+    public async Task SaveGroupAtVersionAsync_ContentAtTheVersion_IsSaved()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var group = await fixture.Groups.GetByIdAsync(en.Id);
+        var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
+        Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
+
+        await fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+    }
+
+    [Fact]
+    public async Task PublishAllAsync_VersionThatWouldReplaceAnotherPublishedPage_IsSkipped()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var nl = await fixture.CreateLanguageAsync(root, "nl-NL", draftContent: Content("nl"));
+        var landing = await fixture.CreateLanguageAsync(null, "en-US", permalink: root.Permalink, draftContent: Content("landing"));
+        landing = await fixture.Groups.GetByIdAsync(landing.Id);
+        landing.Visibility = root.Visibility;
+        await fixture.Groups.SaveChangesAsync([landing]);
+        await fixture.PublishNewDraftAsync(landing.Id, null);
+
+        var result = await fixture.Roots.PublishAllAsync(root.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["nl-NL"], result.ProcessedCultureNames);
+        Assert.Equal([("en-US", MultilanguagePageBatchResult.PermalinkConflictReason)], result.Skipped.Select(x => (x.CultureName, x.Reason)));
+        Assert.Equal("Draft", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+        Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(nl.Id)).Status);
+        Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(landing.Id)).Status);
     }
 
     [Fact]
@@ -1060,12 +1116,24 @@ public class MultilanguagePageServiceTests
                 storeService,
                 new SiteBuilderPageService(repositoryFactory, _cache, events),
                 Lock,
+                new SiteBuilderPublishConflictService(Groups, groupSearch, storeService, new InProcessDistributedLock()),
                 NullLogger<MultilanguagePageService>.Instance);
             RootSearch = new MultilanguagePageSearchService(repositoryFactory, _cache, Roots, Options.Create(new CrudOptions()));
             List = new SiteBuilderPageListService(repositoryFactory, groupSearch, Groups, Roots, storeService);
         }
 
         public FakeStoreService StoreService { get; }
+
+        /// <summary>Another root service over the same data, whose writes of language versions go through <paramref name="groupedPageContentService"/>.</summary>
+        public MultilanguagePageService CreateRoots(IGroupedPageContentService groupedPageContentService)
+        {
+            Func<ISiteBuilderRepository> repositoryFactory = () => new SiteBuilderRepository(CreateContext());
+            var events = new NoopEventPublisher();
+
+            return new MultilanguagePageService(repositoryFactory, _cache, events, Groups, groupedPageContentService, GroupSearch, StoreService,
+                new SiteBuilderPageService(repositoryFactory, _cache, events), Lock,
+                new SiteBuilderPublishConflictService(Groups, GroupSearch, StoreService, new InProcessDistributedLock()), NullLogger<MultilanguagePageService>.Instance);
+        }
 
         public InProcessDistributedLock Lock { get; } = new();
 

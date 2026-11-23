@@ -1,0 +1,108 @@
+<template>
+  <VcPopup
+    :model-value="true"
+    :title="$t('SITE_BUILDER.DESIGNER.HISTORY.DISCARD_TITLE')"
+    @close="emit('close')"
+  >
+    <template #content>
+      <div class="pd-discard">
+        <p>{{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD_PICK") }}</p>
+        <ul class="pd-discard__list">
+          <li
+            v-for="option in options"
+            :key="option.part"
+          >
+            <label
+              class="pd-discard__option"
+              :class="{ 'pd-discard__option--off': !option.allowed }"
+              :title="option.allowed ? undefined : $t('SITE_BUILDER.DESIGNER.HISTORY.DISCARD_NOT_ALLOWED')"
+            >
+              <input
+                type="checkbox"
+                :checked="ticked.includes(option.part)"
+                :disabled="!option.allowed"
+                @change="toggle(option.part)"
+              />
+              <span>{{ $t(partLabel(option.part, template)) }}</span>
+            </label>
+          </li>
+        </ul>
+        <p v-if="options.some((x) => x.part !== 'page')">{{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD_THEME") }}</p>
+        <p v-if="unsaved">{{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD_UNSAVED") }}</p>
+      </div>
+    </template>
+
+    <template #footer>
+      <div class="tw-flex tw-flex-wrap tw-justify-end tw-gap-3">
+        <VcButton
+          variant="secondary"
+          @click="emit('close')"
+        >
+          {{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD_CANCEL") }}
+        </VcButton>
+        <VcButton
+          :disabled="!unsaved && !choice.page && !choice.theme.length"
+          @click="emit('discard', choice)"
+        >
+          {{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD_CONFIRM") }}
+        </VcButton>
+      </div>
+    </template>
+  </VcPopup>
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from "vue";
+import { VcButton, VcPopup } from "@vc-shell/framework/ui";
+import { discardChoice, type DiscardOption } from "../discard";
+import { partLabel, type HistoryFile, type ThemePart } from "../history";
+
+const props = defineProps<{
+  options: DiscardOption[];
+  template: boolean;
+  unsaved: boolean;
+}>();
+const emit = defineEmits<{ discard: [choice: { page: boolean; theme: ThemePart[] }]; close: [] }>();
+
+const ticked = ref<HistoryFile[]>(props.options.filter((x) => x.checked).map((x) => x.part));
+const toggle = (part: HistoryFile) => (ticked.value = ticked.value.includes(part) ? ticked.value.filter((x) => x !== part) : [...ticked.value, part]);
+const choice = computed(() => discardChoice(props.options, ticked.value));
+</script>
+
+<style lang="scss" scoped>
+.pd-discard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  p {
+    margin: 0;
+    color: var(--neutrals-600);
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+
+    input {
+      accent-color: var(--primary-500);
+    }
+
+    &--off {
+      color: var(--neutrals-400);
+      cursor: not-allowed;
+    }
+  }
+}
+</style>

@@ -22,7 +22,7 @@ Site Builder reads metadata from the theme. Developers can extend or customize S
 |   |      |   └── _sections.json // Global settings for sections.
 |   |      └── objects            // Object definitions.
 |   |          └──...
-|   └── settings_schema.json      // Theme settings schema file. Site Builder uses it for Theme and Preset editor.
+|   └── settings_schema.json      // Theme settings schema file.
 |   └── settings_data.json        // Theme config file.
 ```
 
@@ -237,5 +237,5 @@ Section property can be object. In this case, it is necessary to describe the st
 
 <div style="display: flex; justify-content: space-between;">
     <a href="../settings">← Settings </a>
-    <a href="../component-context">Component context →</a>
+    <a href="../calendar">Controls →</a>
 </div>

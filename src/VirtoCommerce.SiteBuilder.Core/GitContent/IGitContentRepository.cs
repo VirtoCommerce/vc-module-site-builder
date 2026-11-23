@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -19,17 +20,17 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// <c>null</c> when either the file or the ref does not exist — a page that was never created
         /// and a page on a branch that was never cut are the same answer to the caller.
         /// </summary>
-        Task<string> ReadFileAsync(string path, string gitRef, CancellationToken cancellationToken = default);
+        Task<string> ReadFileAsync(string repository, string path, string gitRef, CancellationToken cancellationToken = default);
 
         /// <summary>Commit sha the branch points at, or <c>null</c> when the branch does not exist.</summary>
-        Task<string> GetBranchHeadShaAsync(string branch, CancellationToken cancellationToken = default);
+        Task<string> GetBranchHeadShaAsync(string repository, string branch, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Creates <paramref name="branch"/> at <paramref name="fromRef"/>. Succeeds quietly when the
         /// branch already exists: two saves of the same page race only with each other, and both want
         /// the same branch to be there.
         /// </summary>
-        Task CreateBranchAsync(string branch, string fromRef, CancellationToken cancellationToken = default);
+        Task CreateBranchAsync(string repository, string branch, string fromRef, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Points the branch at <paramref name="sha"/> whatever it pointed at before, creating it when
@@ -46,7 +47,7 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// reading it answers, so its cached read goes with it.
         /// </para>
         /// </summary>
-        Task SetBranchAsync(string branch, string sha, string pagePath, CancellationToken cancellationToken = default);
+        Task SetBranchAsync(string repository, string branch, string sha, string pagePath, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Deletes the branch. Succeeds quietly when it is already gone.
@@ -57,7 +58,7 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// A work branch holds exactly one page, so that single path is the whole of the branch's cache.
         /// </para>
         /// </summary>
-        Task DeleteBranchAsync(string branch, string pagePath, CancellationToken cancellationToken = default);
+        Task DeleteBranchAsync(string repository, string branch, string pagePath, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Forgets what <paramref name="gitRef"/> last said about the page, so the next read goes back to
@@ -65,7 +66,7 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// publisher moves the production branch, and until it is forgotten the page reads as it was
         /// before it was published.
         /// </summary>
-        void InvalidateRead(string path, string gitRef);
+        void InvalidateRead(string repository, string path, string gitRef);
 
         /// <summary>
         /// Creates or updates the file on an existing branch. The branch is not created implicitly:
@@ -73,13 +74,26 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// what gets published is the page as it stands today plus this edit, and nothing else.
         /// </summary>
         /// <returns>The sha of the resulting commit.</returns>
-        Task<string> CommitFileAsync(string path, string content, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default);
+        Task<string> CommitFileAsync(string repository, string path, string content, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Creates or updates the file on an existing branch only over the file as the caller knows it: <paramref name="isExpected"/> is asked
+        /// about what the branch holds (<c>null</c> for no such file), and the commit names that file, so a write made in between fails it
+        /// instead of being written over. Unlike <see cref="CommitFileAsync"/> a stale file is never read again and retried.
+        /// </summary>
+        /// <returns>The sha of the resulting commit, or of the branch head when it already holds exactly <paramref name="content"/>.</returns>
+        /// <exception cref="Models.SiteBuilderContentConflictException">The file is not the one expected, or changed before the commit.</exception>
+        [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+            Justification = "The parameters of CommitFileAsync and the comparison: a parameter object would set this commit apart from every other one here.")]
+        Task<string> CommitFileIfUnchangedAsync(string repository, string path, string content, string branch, string message, GitCommitAuthor author,
+            Func<string, Task<bool>> isExpected, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException($"{GetType().Name} does not commit a file conditionally.");
 
         /// <summary>
         /// Removes the file on the branch. Unpublishing a page is deleting it from the production
         /// branch, so this is the same operation as any other edit.
         /// </summary>
         /// <returns>The sha of the resulting commit.</returns>
-        Task<string> DeleteFileAsync(string path, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default);
+        Task<string> DeleteFileAsync(string repository, string path, string branch, string message, GitCommitAuthor author, CancellationToken cancellationToken = default);
     }
 }

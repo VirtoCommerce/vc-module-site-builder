@@ -13,8 +13,8 @@ using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Authorization;
+using VirtoCommerce.SiteBuilder.Web.Extensions;
 using VirtoCommerce.Platform.Core.Common;
-using VirtoCommerce.StoreModule.Core.Services;
 
 namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 
@@ -23,15 +23,13 @@ namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 public class MultilanguagePageController(
     IMultilanguagePageService multilanguagePageService,
     IMultilanguagePageSearchService multilanguagePageSearchService,
-    IGroupedPageService groupedPageService,
     IAuthorizationService authorizationService,
-    IStoreService storeService)
+    IMultilanguagePageOperationService multilanguagePageOperationService)
     : Controller
 {
     private const string ConcurrentChangeMessage = "The multilanguage page was changed by another request. Reload it and try again.";
 
     [HttpPost("search")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<MultilanguagePageSearchResult>> Search([FromBody] MultilanguagePageSearchCriteria criteria)
     {
         if (criteria == null)
@@ -48,7 +46,6 @@ public class MultilanguagePageController(
     }
 
     [HttpGet("{id}")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public async Task<ActionResult<MultilanguagePage>> Get([FromRoute] string id)
     {
         var page = await multilanguagePageService.GetNoCloneAsync(id);
@@ -64,38 +61,9 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Create)]
     public async Task<ActionResult<MultilanguagePage>> Create([FromBody] MultilanguagePage model)
     {
-        if (model == null ||
-            string.IsNullOrWhiteSpace(model.StoreId) ||
-            string.IsNullOrWhiteSpace(model.Name) ||
-            string.IsNullOrWhiteSpace(model.Permalink))
-        {
-            return BadRequest("StoreId, Name and Permalink are required.");
-        }
+        var request = new MultilanguagePageSaveOperationRequest { Page = model };
 
-        var validationError = Validate(model, existing: null);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        if (!await IsAuthorizedAsync(model))
-        {
-            return Forbidden;
-        }
-
-        if (await storeService.GetNoCloneAsync(model.StoreId) == null)
-        {
-            return BadRequest($"Store '{model.StoreId}' does not exist.");
-        }
-
-        try
-        {
-            return Ok(await multilanguagePageService.CreateAsync(model));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
-        }
+        return (await multilanguagePageOperationService.CreateAsync(request, User, HttpContext.RequestAborted)).ToPageActionResult();
     }
 
     /// <summary>
@@ -105,39 +73,9 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<MultilanguagePage>> Update([FromBody] MultilanguagePage model)
     {
-        if (model == null ||
-            string.IsNullOrWhiteSpace(model.Id) ||
-            string.IsNullOrWhiteSpace(model.Name) ||
-            string.IsNullOrWhiteSpace(model.Permalink))
-        {
-            return BadRequest("Id, Name and Permalink are required.");
-        }
+        var request = new MultilanguagePageSaveOperationRequest { Page = model };
 
-        var existing = await multilanguagePageService.GetByIdAsync(model.Id);
-        if (existing == null)
-        {
-            return NotFound();
-        }
-
-        if (!await IsAuthorizedAsync(existing))
-        {
-            return Forbidden;
-        }
-
-        var validationError = Validate(model, existing);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        try
-        {
-            return Ok(await multilanguagePageService.UpdateAsync(model));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
-        }
+        return (await multilanguagePageOperationService.UpdateAsync(request, User, HttpContext.RequestAborted)).ToPageActionResult();
     }
 
     /// <summary>
@@ -179,7 +117,6 @@ public class MultilanguagePageController(
     }
 
     [HttpGet("{id}/languages")]
-    [Authorize(ModuleConstants.Security.Permissions.Read)]
     public Task<ActionResult<IList<MultilanguagePageLanguage>>> GetLanguages([FromRoute] string id, CancellationToken cancellationToken = default)
     {
         return ExecuteForRootAsync(id, () => multilanguagePageService.GetLanguagesAsync(id, cancellationToken));
@@ -194,13 +131,15 @@ public class MultilanguagePageController(
     /// <param name="cancellationToken">Cancellation token</param>
     [HttpPost("{id}/languages/{cultureName}")]
     [Authorize(ModuleConstants.Security.Permissions.Create)]
-    public Task<ActionResult<GroupedSiteBuilderPage>> CreateLanguage(
+    public async Task<ActionResult<GroupedSiteBuilderPage>> CreateLanguage(
         [FromRoute] string id,
         [FromRoute] string cultureName,
         [FromQuery] bool copyContent = true,
         CancellationToken cancellationToken = default)
     {
-        return ExecuteForRootAsync(id, () => multilanguagePageService.CreateLanguageAsync(id, cultureName, copyContent, cancellationToken));
+        var request = new MultilanguagePageLanguageOperationRequest { MultilanguagePageId = id, CultureName = cultureName, CopyContent = copyContent };
+
+        return (await multilanguagePageOperationService.CreateLanguageAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     /// <summary>
@@ -210,18 +149,9 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> Link([FromRoute] string id, [FromRoute] string groupId, CancellationToken cancellationToken = default)
     {
-        var group = await groupedPageService.GetNoCloneAsync(groupId);
-        if (group == null)
-        {
-            return NotFound();
-        }
+        var request = new MultilanguagePageLinkOperationRequest { MultilanguagePageId = id, GroupId = groupId };
 
-        if (!await IsAuthorizedAsync(group))
-        {
-            return Forbidden;
-        }
-
-        return await ExecuteForRootAsync(id, () => multilanguagePageService.LinkAsync(id, groupId, cancellationToken));
+        return (await multilanguagePageOperationService.LinkAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     /// <summary>
@@ -233,30 +163,9 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<MultilanguagePage>> Convert([FromRoute] string groupId, CancellationToken cancellationToken = default)
     {
-        var group = await groupedPageService.GetNoCloneAsync(groupId);
-        if (group == null)
-        {
-            return NotFound();
-        }
+        var request = new MultilanguagePageVersionOperationRequest { GroupId = groupId };
 
-        if (!await IsAuthorizedAsync(group))
-        {
-            return Forbidden;
-        }
-
-        try
-        {
-            return Ok(await multilanguagePageService.ConvertAsync(groupId, cancellationToken));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (DbUpdateException)
-        {
-            // The page was linked or converted by a concurrent request (unique index).
-            return Conflict(ConcurrentChangeMessage);
-        }
+        return (await multilanguagePageOperationService.ConvertAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     /// <summary>
@@ -266,30 +175,9 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> MarkUpToDate([FromRoute] string groupId, CancellationToken cancellationToken = default)
     {
-        var group = await groupedPageService.GetNoCloneAsync(groupId);
-        if (group == null)
-        {
-            return NotFound();
-        }
+        var request = new MultilanguagePageMarkUpToDateOperationRequest { GroupId = groupId };
 
-        if (!await IsAuthorizedAsync(group))
-        {
-            return Forbidden;
-        }
-
-        if (string.IsNullOrEmpty(group.MultilanguagePageId))
-        {
-            return BadRequest($"Page '{groupId}' is not a language version.");
-        }
-
-        try
-        {
-            return Ok(await multilanguagePageService.MarkUpToDateAsync(groupId, cancellationToken));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
-        }
+        return (await multilanguagePageOperationService.MarkUpToDateAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     /// <summary>
@@ -299,18 +187,9 @@ public class MultilanguagePageController(
     [Authorize(ModuleConstants.Security.Permissions.Update)]
     public async Task<ActionResult<GroupedSiteBuilderPage>> Unlink([FromRoute] string groupId, CancellationToken cancellationToken = default)
     {
-        var group = await groupedPageService.GetNoCloneAsync(groupId);
-        if (group == null)
-        {
-            return NotFound();
-        }
+        var request = new MultilanguagePageVersionOperationRequest { GroupId = groupId };
 
-        if (!await IsAuthorizedAsync(group))
-        {
-            return Forbidden;
-        }
-
-        return Ok(await multilanguagePageService.UnlinkAsync(groupId, cancellationToken));
+        return (await multilanguagePageOperationService.UnlinkAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     /// <summary>
@@ -319,9 +198,12 @@ public class MultilanguagePageController(
     /// </summary>
     [HttpPost("{id}/reset-overrides")]
     [Authorize(ModuleConstants.Security.Permissions.Update)]
-    public Task<ActionResult<IList<string>>> ResetOverrides([FromRoute] string id, [FromBody] IList<string> fields, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<IList<string>>> ResetOverrides([FromRoute] string id, [FromBody] IList<string> fields,
+        CancellationToken cancellationToken = default)
     {
-        return ExecuteForRootAsync(id, () => multilanguagePageService.ResetOverridesAsync(id, fields, cancellationToken));
+        var request = new MultilanguagePageResetOverridesOperationRequest { MultilanguagePageId = id, Fields = fields };
+
+        return (await multilanguagePageOperationService.ResetOverridesAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     /// <summary>
@@ -329,16 +211,20 @@ public class MultilanguagePageController(
     /// </summary>
     [HttpPost("{id}/clone")]
     [Authorize(ModuleConstants.Security.Permissions.Create)]
-    public Task<ActionResult<MultilanguagePage>> Clone([FromRoute] string id, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<MultilanguagePage>> Clone([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        return ExecuteForRootAsync(id, () => multilanguagePageService.CloneAsync(id, cancellationToken));
+        var request = new MultilanguagePageOperationRequest { MultilanguagePageId = id };
+
+        return (await multilanguagePageOperationService.CloneAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpPost("{id}/publish-all")]
     [Authorize(ModuleConstants.Security.Permissions.Publish)]
-    public Task<ActionResult<MultilanguagePageBatchResult>> PublishAll([FromRoute] string id, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<MultilanguagePageBatchResult>> PublishAll([FromRoute] string id, CancellationToken cancellationToken = default)
     {
-        return ExecuteForRootAsync(id, () => multilanguagePageService.PublishAllAsync(id, cancellationToken));
+        var request = new MultilanguagePagePublishAllOperationRequest { MultilanguagePageId = id };
+
+        return (await multilanguagePageOperationService.PublishAllAsync(request, User, cancellationToken)).ToPageActionResult();
     }
 
     [HttpPost("{id}/archive-all")]
@@ -378,29 +264,6 @@ public class MultilanguagePageController(
             // A concurrent request took the language (unique index) or removed the page (foreign key); the data is intact.
             return Conflict(ConcurrentChangeMessage);
         }
-    }
-
-    private BadRequestObjectResult Validate(MultilanguagePage model, MultilanguagePage existing)
-    {
-        if (!SiteBuilderPageName.IsValid(model.Name))
-        {
-            return BadRequest(SiteBuilderPageName.InvalidMessage);
-        }
-
-        // An unchanged permalink stored before validation existed must not block editing the root's other fields.
-        if (existing?.Permalink != model.Permalink && !SiteBuilderPermalink.IsValid(model.Permalink))
-        {
-            return BadRequest(SiteBuilderPermalink.InvalidMessage);
-        }
-
-        // A multilanguage page never moves to another store; a client asking for it is told so instead of being ignored.
-        if (existing != null && !string.IsNullOrEmpty(model.StoreId) &&
-            !string.Equals(model.StoreId, existing.StoreId, StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest("The store of a multilanguage page cannot be changed.");
-        }
-
-        return null;
     }
 
     private async Task<bool> IsAuthorizedAsync(object resource)

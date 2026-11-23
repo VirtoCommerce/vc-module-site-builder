@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.BackgroundJobs;
 using VirtoCommerce.SiteBuilder.Data.Handlers;
 using VirtoCommerce.Platform.Core.Events;
 using VirtoCommerce.Platform.Core.Jobs;
@@ -15,6 +16,7 @@ using Xunit;
 
 namespace VirtoCommerce.SiteBuilder.Tests;
 
+[Collection(StaticBackgroundJobCollection.Name)]
 public class SiteBuilderSharedComponentContentChangedEventHandlerTests
 {
     [Fact]

@@ -29,4 +29,18 @@ public class SiteBuilderContentVersionTests
         Assert.Equal(SiteBuilderContentVersion.Create(group, ""), SiteBuilderContentVersion.CreateFromUtf8(group, []));
         Assert.NotEqual(SiteBuilderContentVersion.Create(group, null), SiteBuilderContentVersion.CreateFromUtf8(group, []));
     }
+
+    [Fact]
+    public void ThemeFileVersionIsOfTheStoreFileAndContent_AFileThatDoesNotExistHasItsOwn()
+    {
+        var version = SiteBuilderContentVersion.CreateForThemeFile("store", "default/config/brand.json", "{}");
+
+        Assert.True(SiteBuilderContentVersion.IsWellFormed(version));
+        Assert.Equal(version, SiteBuilderContentVersion.CreateForThemeFile("store", "default/config/brand.json", "{}"));
+        Assert.NotEqual(version, SiteBuilderContentVersion.CreateForThemeFile("store", "default/config/brand.json", "{ }"));
+        Assert.NotEqual(version, SiteBuilderContentVersion.CreateForThemeFile("other", "default/config/brand.json", "{}"));
+        Assert.NotEqual(version, SiteBuilderContentVersion.CreateForThemeFile("store", "default/config/palette.json", "{}"));
+        Assert.NotEqual(SiteBuilderContentVersion.CreateForThemeFile("store", "default/config/brand.json", null),
+            SiteBuilderContentVersion.CreateForThemeFile("store", "default/config/brand.json", ""));
+    }
 }

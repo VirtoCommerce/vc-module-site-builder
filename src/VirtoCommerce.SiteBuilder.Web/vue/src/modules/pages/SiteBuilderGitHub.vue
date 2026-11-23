@@ -1,0 +1,375 @@
+<template>
+  <VcBlade
+    :title="$t('SITE_BUILDER.GIT.TITLE')"
+    :subtitle="$t('SITE_BUILDER.GITHUB.ALL_SITES')"
+    :toolbar-items="toolbar"
+    :loading="busy"
+  >
+    <div
+      v-if="connection"
+      class="pb-gh"
+    >
+      <VcBanner
+        v-if="connection.error"
+        variant="danger"
+        icon="lucide-triangle-alert"
+      >
+        {{ connection.error }}
+      </VcBanner>
+
+      <template v-if="connection.configured && !settingUp">
+        <GitCard
+          icon="lucide-github"
+          :title="connection.organization ?? connection.repository ?? ''"
+          :href="connection.organizationUrl"
+          :subtitle="connection.organizationUrl?.replace(/^https?:\/\//, '')"
+          :status="$t(connection.error ? 'SITE_BUILDER.GITHUB.FAILING' : 'SITE_BUILDER.GITHUB.CONNECTED')"
+          :status-variant="connection.error ? 'danger' : 'success'"
+        >
+          <div>
+            <dt>{{ $t("SITE_BUILDER.GITHUB.APP") }}</dt>
+            <dd>
+              <a
+                v-if="connection.appUrl"
+                :href="connection.appUrl"
+                target="_blank"
+                rel="noopener"
+                >{{ connection.appSlug }}</a
+              >
+              <span v-else>{{ $t("SITE_BUILDER.GITHUB.FROM_CONFIGURATION") }}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>{{ $t("SITE_BUILDER.GITHUB.NEW_SITES") }}</dt>
+            <dd>{{ $t(connection.autoCreateRepositories ? "SITE_BUILDER.GITHUB.NEW_SITES_ON" : "SITE_BUILDER.GITHUB.NEW_SITES_OFF") }}</dd>
+          </div>
+          <template
+            v-if="connection.source === 'app'"
+            #actions
+          >
+            <VcButton
+              v-if="connection.installUrl"
+              :variant="connection.error ? 'primary' : 'secondary'"
+              size="sm"
+              icon="lucide-external-link"
+              @click="openTab(connection.installUrl)"
+            >
+              {{ $t(connection.error ? "SITE_BUILDER.GIT.SETUP.INSTALL" : "SITE_BUILDER.GITHUB.MANAGE_ACCESS", { organization: connection.organization }) }}
+            </VcButton>
+            <VcButton
+              v-if="maySetUp"
+              variant="secondary"
+              size="sm"
+              icon="lucide-github"
+              @click="settingUp = true"
+            >
+              {{ $t("SITE_BUILDER.GIT.SETUP.AGAIN") }}
+            </VcButton>
+          </template>
+        </GitCard>
+
+        <section
+          v-if="connection.sites?.length"
+          class="pb-gh__section"
+        >
+          <h4 class="pb-gh__heading">{{ $t("SITE_BUILDER.GITHUB.SITES") }}</h4>
+          <ul class="pb-gh__sites">
+            <li
+              v-for="site in connection.sites"
+              :key="site.storeId"
+              class="pb-gh__site"
+            >
+              <div class="pb-gh__site-main">
+                <span class="pb-gh__site-name">{{ site.name }}</span>
+                <a
+                  v-if="site.url"
+                  class="pb-gh__site-repo"
+                  :href="site.url"
+                  target="_blank"
+                  rel="noopener"
+                  >{{ site.repository }}</a
+                >
+              </div>
+              <VcStatus :variant="site.enabled ? 'success' : 'info'">
+                {{ $t(site.enabled ? "SITE_BUILDER.GITHUB.HISTORY_ON" : "SITE_BUILDER.GITHUB.HISTORY_OFF") }}
+              </VcStatus>
+            </li>
+          </ul>
+        </section>
+
+        <p class="pb-gh__note">{{ $t("SITE_BUILDER.GITHUB.CONNECTED_HINT", { organization: connection.organization ?? connection.repository }) }}</p>
+      </template>
+
+      <p
+        v-else-if="connection.source === 'configuration'"
+        class="pb-gh__text"
+      >
+        {{ $t("SITE_BUILDER.GIT.SETUP.CONFIGURATION") }}
+      </p>
+
+      <template v-else-if="maySetUp">
+        <p class="pb-gh__text">{{ $t("SITE_BUILDER.GITHUB.INTRO") }}</p>
+        <VcInput
+          v-model="organization"
+          :label="$t('SITE_BUILDER.GIT.SETUP.ORGANIZATION')"
+          :hint="$t('SITE_BUILDER.GIT.SETUP.ORGANIZATION_HINT')"
+          placeholder="acme-sites"
+          required
+          @keyup.enter="createApp"
+        />
+        <a
+          class="pb-gh__link"
+          href="https://github.com/account/organizations/new"
+          target="_blank"
+          rel="noopener"
+          >{{ $t("SITE_BUILDER.GIT.SETUP.NEW_ORGANIZATION") }}</a
+        >
+        <ol class="pb-gh__steps">
+          <li>{{ $t("SITE_BUILDER.GIT.SETUP.STEP_CREATE") }}</li>
+          <li>{{ $t("SITE_BUILDER.GIT.SETUP.STEP_INSTALL") }}</li>
+          <li>{{ $t("SITE_BUILDER.GIT.SETUP.STEP_RETURN") }}</li>
+        </ol>
+        <div class="pb-gh__actions">
+          <VcButton
+            icon="lucide-github"
+            :disabled="busy || !organization.trim()"
+            @click="createApp"
+          >
+            {{ $t("SITE_BUILDER.GIT.SETUP.CREATE_APP") }}
+          </VcButton>
+          <VcButton
+            v-if="connection.configured"
+            variant="secondary"
+            @click="settingUp = false"
+          >
+            {{ $t("SITE_BUILDER.GITHUB.CANCEL") }}
+          </VcButton>
+        </div>
+      </template>
+
+      <p
+        v-else
+        class="pb-gh__text"
+      >
+        {{ $t("SITE_BUILDER.GITHUB.ASK_ADMIN") }}
+      </p>
+
+      <VcBanner
+        v-if="actionError"
+        variant="danger"
+        icon="lucide-triangle-alert"
+      >
+        {{ actionError }}
+      </VcBanner>
+    </div>
+    <div
+      v-else-if="actionError"
+      class="pb-gh"
+    >
+      <VcBanner
+        variant="danger"
+        icon="lucide-triangle-alert"
+      >
+        {{ actionError }}
+      </VcBanner>
+    </div>
+  </VcBlade>
+</template>
+
+<script lang="ts" setup>
+import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+import { useEventListener } from "@vueuse/core";
+import { useApiClient, usePermissions, type IBladeToolbar } from "@vc-shell/framework";
+import { VcBanner, VcBlade, VcButton, VcInput, VcStatus } from "@vc-shell/framework/ui";
+import { GitContentSetupClient, type GitContentConnectionStatus } from "../../api_client/virtocommerce.sitebuilder";
+import GitCard from "../site-builder/components/GitCard.vue";
+import { gitErrorMessage } from "../widgets/siteGit";
+
+defineBlade({
+  name: "SiteBuilderGitHub",
+  url: "/site-builder-github",
+  permissions: "builder:read",
+});
+
+const { t } = useI18n({ useScope: "global" });
+const { getApiClient } = useApiClient(GitContentSetupClient);
+const { hasAccess } = usePermissions();
+
+const connection = ref<GitContentConnectionStatus>();
+const busy = ref(false);
+const actionError = ref<string>();
+const settingUp = ref(false);
+const organization = ref("");
+const maySetUp = computed(() => hasAccess("platform:setting:update"));
+let appCreationOpen = false;
+
+const errorMessage = (error: unknown) => gitErrorMessage(error, t("PERMISSION_MESSAGES.ACCESS_RESTRICTED"));
+
+// Reading the connection asks GitHub live, so it is also the connection test.
+const refresh = () => {
+  actionError.value = undefined;
+  return loadConnection();
+};
+
+async function loadConnection() {
+  busy.value = true;
+  try {
+    connection.value = await (await getApiClient()).getConnection();
+  } catch (error) {
+    actionError.value = errorMessage(error);
+  } finally {
+    busy.value = false;
+  }
+}
+
+/** The admin's own pages may not post forms to other sites, and a tab opened after the platform answers would be blocked as a pop-up. */
+async function createApp() {
+  if (!organization.value.trim() || busy.value) return;
+  // noopener would return no handle, and the handle sends the tab on once the platform answers, so opener is cleared by hand.
+  const tab = window.open("about:blank", "_blank");
+  if (tab) tab.opener = null;
+  busy.value = true;
+  actionError.value = undefined;
+  try {
+    const { pathname, search, hash } = window.location;
+    const { url } = await (await getApiClient()).startAppSetup(organization.value.trim(), pathname + search + hash);
+    if (tab) tab.location.href = url!;
+    else window.open(url, "_blank", "noopener");
+    appCreationOpen = true;
+  } catch (error) {
+    tab?.close();
+    actionError.value = errorMessage(error);
+  } finally {
+    busy.value = false;
+  }
+}
+
+const openTab = (url?: string) => url && window.open(url, "_blank", "noopener");
+
+useEventListener(window, "focus", () => {
+  if (!busy.value && (!connection.value?.configured || connection.value.error || settingUp.value)) {
+    if (appCreationOpen) settingUp.value = false;
+    appCreationOpen = false;
+    loadConnection();
+  }
+});
+
+const toolbar = computed<IBladeToolbar[]>(() => [
+  {
+    id: "test",
+    title: t("SITE_BUILDER.GIT.TEST"),
+    icon: "lucide-refresh-cw",
+    disabled: busy.value,
+    clickHandler: refresh,
+  },
+]);
+
+onMounted(refresh);
+</script>
+
+<style lang="scss" scoped>
+.pb-gh {
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  // The blade's content is 16px, while the shell's text, buttons and fields are 14px.
+  font-size: 14px;
+  line-height: 20px;
+
+  a {
+    color: var(--link-text-color);
+
+    &:hover {
+      color: var(--link-text-color-hover);
+    }
+  }
+
+  &__text {
+    margin: 0;
+    color: var(--neutrals-700);
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__link {
+    align-self: flex-start;
+  }
+
+  &__steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding-left: 20px;
+    // The shell's reset removes list markers, and this list's order matters.
+    list-style: decimal;
+    color: var(--neutrals-700);
+  }
+
+  &__note {
+    margin: 0;
+    font-size: 13px;
+    color: var(--neutrals-500);
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__heading {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--neutrals-500);
+  }
+
+  &__sites {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--neutrals-200);
+    border-radius: 12px;
+  }
+
+  &__site {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+
+    & + & {
+      border-top: 1px solid var(--neutrals-100);
+    }
+  }
+
+  &__site-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__site-name {
+    font-weight: 500;
+    color: var(--neutrals-900);
+  }
+
+  &__site-repo {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+  }
+}
+</style>

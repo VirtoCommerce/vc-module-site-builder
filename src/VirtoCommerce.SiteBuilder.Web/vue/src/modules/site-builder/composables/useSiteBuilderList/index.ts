@@ -1,0 +1,176 @@
+import { computed, ref, ComputedRef, onMounted } from "vue";
+import {
+  useAsync,
+  useLoading,
+  useApiClient,
+  useDataTablePagination,
+  type UseDataTablePaginationReturn,
+} from "@vc-shell/framework";
+import { useI18n } from "vue-i18n";
+
+import { createLatestRequestTracker } from "../../../../utilities/latestRequest";
+import useUrlParams from "../useStoreParams";
+import { hasLanguageVersions } from "../useMultilanguagePageDetails/helpers";
+
+import {
+  MultilanguagePageClient,
+  SiteBuilderPageClient,
+  SiteBuilderPageSearchCriteria,
+  SiteBuilderPageListItem,
+  SiteBuilderPageListSearchResult,
+} from "../../../../api_client/virtocommerce.sitebuilder";
+
+const { getApiClient } = useApiClient(SiteBuilderPageClient);
+const { getApiClient: getMultilanguageApiClient } = useApiClient(MultilanguagePageClient);
+
+export enum PageTypes {
+  Landing = "Landing",
+  Multilanguage = "Multilanguage",
+}
+
+export enum TranslationStatuses {
+  Missing = "Missing",
+  Outdated = "Outdated",
+}
+
+export const pagesChanged = ref(0);
+export function notifyPagesChanged() {
+  pagesChanged.value++;
+}
+
+export enum PageStatuses {
+  Draft = "Draft",
+  Published = "Published",
+  Archived = "Archived",
+}
+
+export enum PageLifecycleFilters {
+  Draft = "drafts",
+  Active = "active",
+  Archived = "archived",
+  Pending = "pending",
+}
+
+export interface IUseSiteBuilderList {
+  items: ComputedRef<SiteBuilderPageListItem[]>;
+  pagination: UseDataTablePaginationReturn;
+  searchQuery: ComputedRef<SiteBuilderPageSearchCriteria>;
+  loadPages: (query?: SiteBuilderPageSearchCriteria) => Promise<void>;
+  removePages: (query?: { items: SiteBuilderPageListItem[] }) => Promise<void>;
+  loading: ComputedRef<boolean>;
+  pageStatuses: ComputedRef<{ value: string; label: string }[]>;
+  storeId: ComputedRef<string | null>;
+  storeContextStatus: ReturnType<typeof useUrlParams>["storeContextStatus"];
+}
+
+export interface UseSiteBuilderListOptions {
+  pageSize?: number;
+  sort?: string;
+  statuses?: PageStatuses[];
+  lifecycle?: PageLifecycleFilters[];
+}
+
+export function useSiteBuilderList(options?: UseSiteBuilderListOptions): IUseSiteBuilderList {
+  const { storeId, storeContextStatus, initUrlParams, validateStoreContext } = useUrlParams();
+
+  const pageSize = options?.pageSize || 20;
+  const searchQuery = ref<SiteBuilderPageSearchCriteria>({
+    take: pageSize,
+    sort: options?.sort,
+    statuses: options?.statuses?.join(",") || undefined,
+    lifecycle: options?.lifecycle?.join(",") || undefined,
+  });
+  const searchResult = ref<SiteBuilderPageListSearchResult>();
+  const { t } = useI18n({ useScope: "global" });
+
+  const listRequests = createLatestRequestTracker(() => undefined);
+
+  const { action: loadPages, loading: loadingPages } = useAsync<SiteBuilderPageSearchCriteria>(async (_query) => {
+    const request = listRequests.begin();
+    searchQuery.value = { ...searchQuery.value, ...(_query || {}) };
+
+    try {
+      if (!storeId?.value || !(await validateStoreContext())) {
+        if (request.isCurrent()) {
+          searchResult.value = {
+            totalCount: 0,
+            results: [],
+          } as SiteBuilderPageListSearchResult;
+        }
+        return;
+      }
+
+      const criteria: SiteBuilderPageSearchCriteria = {
+        ...searchQuery.value,
+        storeId: storeId.value,
+      };
+
+      const apiClient = await getApiClient();
+      const result = await apiClient.searchList(criteria);
+      if (request.isCurrent()) {
+        searchResult.value = result;
+      }
+    } catch (error) {
+      if (request.isCurrent()) {
+        throw error;
+      }
+    } finally {
+      request.complete();
+    }
+  });
+
+  const { action: removePages, loading: loadingRemovePages } = useAsync<{ items: SiteBuilderPageListItem[] }>(
+    async (_query) => {
+      const items = _query?.items ?? [];
+      const landingIds = items.filter((x) => x.type !== PageTypes.Multilanguage && x.id).map((x) => x.id!);
+      const multilanguageItems = items.filter((x) => x.type === PageTypes.Multilanguage && x.id);
+      // A Multilanguage Page is archived through its versions; one without versions has nothing to archive.
+      const multilanguageIds = multilanguageItems.filter((x) => hasLanguageVersions(x.languages)).map((x) => x.id!);
+      const emptyMultilanguageIds = multilanguageItems
+        .filter((x) => !hasLanguageVersions(x.languages))
+        .map((x) => x.id!);
+
+      if (landingIds.length) {
+        const apiClient = await getApiClient();
+        await apiClient.archiveGroups(landingIds);
+      }
+
+      if (multilanguageIds.length) {
+        const apiClient = await getMultilanguageApiClient();
+        await Promise.all(multilanguageIds.map((id) => apiClient.archiveAll(id)));
+      }
+
+      if (emptyMultilanguageIds.length) {
+        const apiClient = await getMultilanguageApiClient();
+        await Promise.all(emptyMultilanguageIds.map((id) => apiClient.delete(id)));
+      }
+    },
+  );
+
+  const pagination = useDataTablePagination({
+    pageSize,
+    totalCount: computed(() => searchResult.value?.totalCount ?? 0),
+    onPageChange: ({ skip }) => loadPages({ ...searchQuery.value, skip }),
+  });
+
+  onMounted(() => {
+    initUrlParams();
+  });
+
+  return {
+    items: computed(() => searchResult.value?.results || []),
+    pagination,
+    searchQuery: computed(() => searchQuery.value),
+    loadPages,
+    removePages,
+    loading: useLoading(loadingPages, loadingRemovePages),
+    pageStatuses: computed(() =>
+      Object.values(PageStatuses).map((value) => ({
+        value,
+        label: t(`SITE_BUILDER.STATUS.${value.toUpperCase()}`),
+      })),
+    ),
+    storeId: computed(() => storeId?.value ?? null),
+    storeContextStatus,
+  };
+}

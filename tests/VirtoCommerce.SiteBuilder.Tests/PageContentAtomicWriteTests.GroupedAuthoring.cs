@@ -16,11 +16,11 @@ using Microsoft.Extensions.Configuration;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Models;
 using VirtoCommerce.SiteBuilder.Data.Repositories;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Web.Controllers.Api;
-using VirtoCommerce.SiteBuilder.Web.Services;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Caching;
 using VirtoCommerce.Platform.Core.Modularity;
@@ -128,6 +128,7 @@ public partial class PageContentAtomicWriteTests
         services.AddSingleton<IPlatformMemoryCache>(cache);
         services.AddSingleton<IEventPublisher>(new NoopEventPublisher());
         services.AddSingleton<IGroupedPageService>(decorated);
+        services.AddSingleton<ISchemaCatalogService>(new TestServices.NoSchemaCatalogs());
         using var provider = services.BuildServiceProvider();
         var content = provider.GetRequiredService<SiteBuilderPageContentService>();
         var group = await decorated.GetByIdAsync(GroupId);
@@ -279,6 +280,19 @@ public partial class PageContentAtomicWriteTests
         Assert.Equal([AssetAUrl], await LoadAssetUrlsAsync(database.ConnectionString));
     }
 
+    [Fact]
+    public void GroupSettings_OldPage_KeepsItsHeaderAndHideBreadcrumbs()
+    {
+        var group = new GroupedSiteBuilderPage { Name = "Renamed", Permalink = "about", CultureName = "en-US" };
+        const string content = """{"settings":{"type":"settings","name":"About","permalink":"about","cultureName":"en-US","header":"About us","hideBreadcrumbs":true},"content":[]}""";
+
+        var updated = JsonNode.Parse(SiteBuilderContentSettings.Synchronize(content, group));
+
+        Assert.Equal("Renamed", updated["settings"]["name"].GetValue<string>());
+        Assert.Equal("About us", updated["settings"]["header"].GetValue<string>());
+        Assert.True(updated["settings"]["hideBreadcrumbs"].GetValue<bool>());
+    }
+
     [Theory]
     [InlineData("42")]
     [InlineData("true")]
@@ -343,7 +357,7 @@ public partial class PageContentAtomicWriteTests
         var written = await service.SaveGroupContentAsync(cached, UpdatedPageContent, snapshot.ETag, TestContext.Current.CancellationToken);
         Assert.Equal(snapshot.PageId, written.PageId);
         var controller = CreateContentController(database.ConnectionString, cache, service);
-        Assert.IsType<OkResult>(await controller.PublishGroup(GroupId, true, TestContext.Current.CancellationToken));
+        Assert.IsType<OkResult>(await controller.PublishGroup(GroupId, true, cancellationToken: TestContext.Current.CancellationToken));
         var published = await service.LoadGroupContentAsync(cached, false, TestContext.Current.CancellationToken);
         Assert.Equal(written.PageId, published.PageId);
         Assert.Equal(UpdatedPageContent, published.Content);
@@ -511,10 +525,12 @@ public partial class PageContentAtomicWriteTests
     {
         events ??= new NoopEventPublisher();
         var pages = new SiteBuilderPageService(() => new SiteBuilderRepository(CreateContext(connectionString)), cache, events);
-        var content = new SiteBuilderPageContentService(pages, service, new NoopSharedComponentReferenceIndexService(), events,
+        var content = new SiteBuilderPageContentService(pages, service, events,
             NullLogger<SiteBuilderPageContentService>.Instance);
-        return new SiteBuilderPageController(pages, service, null, new PublishedRenameContentPreservationTests.AllowAllAuthorizationService(),
-            null, content, NullLogger<SiteBuilderPageController>.Instance)
+        var authorization = new PublishedRenameContentPreservationTests.AllowAllAuthorizationService();
+        return new SiteBuilderPageController(service, null, authorization, null, content, NullLogger<SiteBuilderPageController>.Instance,
+            TestServices.GroupedPageOperations(authorization, service, content, pages),
+            TestServices.PublishStatuses(authorization, service))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } } },
         };

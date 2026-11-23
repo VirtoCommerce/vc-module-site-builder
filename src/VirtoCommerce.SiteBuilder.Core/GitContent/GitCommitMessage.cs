@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace VirtoCommerce.SiteBuilder.Core.GitContent
 {
@@ -17,6 +18,8 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
     {
         public const string VcUserTrailer = "VC-User";
 
+        public const string VcSaveTrailer = "VC-Save";
+
         /// <summary>
         /// The commit message with the platform login recorded under it. Returns the message untouched
         /// when there is no login to record — an unauthenticated write has nothing to attribute, and a
@@ -24,6 +27,19 @@ namespace VirtoCommerce.SiteBuilder.Core.GitContent
         /// </summary>
         public static string WithVcUser(string message, string vcUser) =>
             string.IsNullOrWhiteSpace(vcUser) ? message : $"{message}\n\n{VcUserTrailer}: {vcUser.Trim()}";
+
+        public static string WithTrailer(string message, string name, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return message;
+            }
+
+            var lastParagraph = message[(message.LastIndexOf("\n\n", StringComparison.Ordinal) + 1)..];
+            var endsWithTrailers = message.Contains("\n\n", StringComparison.Ordinal) &&
+                lastParagraph.Split('\n', StringSplitOptions.RemoveEmptyEntries).All(line => line.Contains(": ", StringComparison.Ordinal));
+            return $"{message}{(endsWithTrailers ? "\n" : "\n\n")}{name}: {value.Trim()}";
+        }
 
         /// <summary>
         /// Reads a trailer out of a commit message body, or <c>null</c> when it carries none. Commits
