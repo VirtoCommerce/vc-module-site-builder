@@ -126,7 +126,7 @@ public class GroupedPageOperationService(
     }
 
     /// <summary>The fields the page is created with.</summary>
-    private SiteBuilderOperationResult CheckCreateRequest(CreateGroupedPageRequest model)
+    private static SiteBuilderOperationResult CheckCreateRequest(CreateGroupedPageRequest model)
     {
         if (!HasCreateFields(model))
         {
