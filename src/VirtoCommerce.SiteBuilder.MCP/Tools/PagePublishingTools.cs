@@ -24,7 +24,8 @@ public class PagePublishingTools(
     IMultilanguagePageService multilanguagePageService,
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
-    FilePageShipping filePageShipping)
+    FilePageShipping filePageShipping,
+    PublicationDryRuns dryRuns)
 {
     private const string SettingsKeyPrefix = "settings:";
 
@@ -180,7 +181,25 @@ public class PagePublishingTools(
             dryRun,
             checkAsync: x => PinAsync(change, x.Preview?.Objects, publish ? [group.Id] : [], expectedVersions, dryRun));
 
+        if (publish && dryRun)
+        {
+            await WarnOfSectionTypesAsync(user, change, [group], cancellationToken);
+        }
+
         return change;
+    }
+
+    // The dry run says what get_publish_readiness would: a custom section type the page places that the published theme lacks or holds older.
+    private async Task WarnOfSectionTypesAsync(ClaimsPrincipal user, SiteBuilderChange change, IEnumerable<GroupedSiteBuilderPage> groups,
+        CancellationToken cancellationToken)
+    {
+        foreach (var group in groups)
+        {
+            foreach (var finding in await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken))
+            {
+                change.AddWarning($"{finding.Title} {finding.Fix}");
+            }
+        }
     }
 
     private async Task<SiteBuilderChange> PublishAllLanguagesAsync(ClaimsPrincipal user, MultilanguagePage root, IDictionary<string, string> expectedVersions,
@@ -206,6 +225,16 @@ public class PagePublishingTools(
                 if (dryRun)
                 {
                     await WarnOfSkippedVersionsAsync(user, change, x.Preview?.Objects ?? [], cancellationToken);
+                    var groups = new List<GroupedSiteBuilderPage>();
+                    foreach (var id in x.Preview?.Objects.Select(y => y.ObjectId).Where(y => y != null).Distinct() ?? [])
+                    {
+                        if (await groupedPageService.GetByIdAsync(id) is { } group)
+                        {
+                            groups.Add(group);
+                        }
+                    }
+
+                    await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
                 }
             });
 
@@ -279,6 +308,7 @@ public class PagePublishingTools(
         await PinAsync(change, drafts, groups.Select(x => x.Id), expectedVersions, dryRun);
         if (dryRun)
         {
+            await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
             return change;
         }
 

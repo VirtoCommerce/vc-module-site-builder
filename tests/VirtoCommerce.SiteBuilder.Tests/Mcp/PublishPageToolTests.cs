@@ -73,6 +73,30 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ADryRun_WarnsOfACustomSectionTypeTheThemeHoldsOnlyAsADraft()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", new { page_id = "stats", dryRun = true })).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(review.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("only as a draft", warning, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ADryRunOfAPageWithoutCustomSectionTypes_HasNoSectionTypeWarning()
+    {
+        await _context.SeedThemeAsync(StoreA);
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", new { page_id = "new", dryRun = true })).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        Assert.DoesNotContain(review.Warnings, x => x.Contains("custom section type", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task APublishOfTheReviewedDraft_WaitsForApproval_AndPublishesNothing()
     {
         var call = await _context.ReviewAsync(Publisher(), "publish_page", Page("new"));

@@ -50,7 +50,7 @@ public class PublishReadinessTools(
         "who changed it), findings (critical ones block the publication: no draft, a page document that is refused, published " +
         "pages it would replace, a palette below WCAG 2.2 AA, no schema catalog; warnings: hidden page, ended dates, an address " +
         "another page serves, a language version that publishing every language skips, a custom section type the theme holds only " +
-        "as a draft), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
+        "as a draft or with unpublished changes), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
         "instead. Changes nothing. To publish, use publish_page or publish_theme.")]
     public async Task<PublishReadiness> GetPublishReadiness(
         RequestContext<CallToolRequestParams> context,
@@ -310,6 +310,7 @@ public class PublicationDryRuns(
     ISiteBuilderContentQueryService contentQueryService,
     ISchemaCatalogService schemaCatalogService,
     ICustomSectionService customSectionService,
+    IGroupedPageContentService pageContentService,
     ILogger<PublicationDryRuns> logger)
 {
     private const string ContrastMarker = "contrast";
@@ -467,20 +468,46 @@ public class PublicationDryRuns(
     public async Task CheckSectionTypesAsync(ClaimsPrincipal user, string storeId, string pageName, string content, PublishReadiness readiness,
         GroupedSiteBuilderPage group, CancellationToken cancellationToken)
     {
+        foreach (var finding in await GetSectionTypeFindingsAsync(user, storeId, pageName, content, group, cancellationToken))
+        {
+            readiness.Findings.Add(finding);
+        }
+    }
+
+    /// <summary>The section type findings of a page's draft, as <see cref="CheckSectionTypesAsync"/> adds them.</summary>
+    public async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    {
+        string content;
+        try
+        {
+            content = (await pageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken)).Content;
+        }
+        catch (KeyNotFoundException)
+        {
+            return [];
+        }
+
+        return await GetSectionTypeFindingsAsync(user, group.StoreId, group.Name, content, group, cancellationToken);
+    }
+
+    private async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, string content,
+        GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    {
+        var findings = new List<McpFinding>();
         var placed = (PageDocumentEditor.Read(content)?.Sections ?? [])
             .Select(SiteBuilderPageItems.GetItemType)
             .Where(x => x != null && ThemeStorage.IsCustomSectionType(x))
             .ToHashSet(StringComparer.Ordinal);
         if (placed.Count == 0)
         {
-            return;
+            return findings;
         }
 
         var types = (await customSectionService.ListTypesAsync(storeId, themeName: null, cancellationToken)).ToHashSet(StringComparer.Ordinal);
         var missing = placed.Where(x => !types.Contains(x)).Order(StringComparer.Ordinal).ToList();
         if (missing.Count > 0)
         {
-            readiness.Findings.Add(Warning("section-type-missing", $"Page '{pageName}' places custom section types the theme does not hold " +
+            findings.Add(Warning("section-type-missing", $"Page '{pageName}' places custom section types the theme does not hold " +
                 $"({string.Join(", ", missing)}): the storefront shows nothing for them.",
                 $"Store '{storeId}': {string.Join(", ", missing.Select(ThemeStorage.GetCustomSectionFile))} do not exist.",
                 "Create them with create_section_type and publish the theme, or remove those sections from the page.", "theme", group));
@@ -494,11 +521,27 @@ public class PublicationDryRuns(
             .ToList();
         if (drafts.Count > 0)
         {
-            readiness.Findings.Add(Warning("section-type-unpublished", $"Page '{pageName}' places custom section types the theme holds only as a draft " +
+            findings.Add(Warning("section-type-unpublished", $"Page '{pageName}' places custom section types the theme holds only as a draft " +
                 $"({string.Join(", ", drafts)}): the storefront shows nothing for them until the theme is published.",
                 $"Store '{storeId}': {string.Join(", ", drafts.Select(ThemeStorage.GetCustomSectionFile))} have no published version.",
                 "Publish the theme first (publish_theme, which a second person approves), then the page.", "theme", group));
         }
+
+        // a published type with a draft: the page shows its published version, which may not read settings the page now sets
+        var changed = placed
+            .Where(x => types.Contains(x) && !drafts.Contains(x) && status.Value.Drafts.Contains(ThemeStorage.GetCustomSectionFile(x), StringComparer.OrdinalIgnoreCase))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        if (changed.Count > 0)
+        {
+            findings.Add(Warning("section-type-changed", $"Page '{pageName}' places custom section types with unpublished changes in the theme " +
+                $"({string.Join(", ", changed)}): the storefront shows their published version, without what the draft changes or adds, until the theme " +
+                "is published.",
+                $"Store '{storeId}': {string.Join(", ", changed.Select(ThemeStorage.GetCustomSectionFile))} have a draft.",
+                "Publish the theme first (publish_theme, which a second person approves), then the page, when the page relies on those changes.", "theme", group));
+        }
+
+        return findings;
     }
 
     private static void EnsureAllowed(SiteBuilderOperationResult result, string forbidden)

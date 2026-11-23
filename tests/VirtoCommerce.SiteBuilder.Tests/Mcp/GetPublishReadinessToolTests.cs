@@ -263,6 +263,25 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APageThatPlacesAPublishedCustomSectionTypeWithAChangedDraft_IsWarned_ThatItShowsThePublishedVersion()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType.Replace("\"Stats\"", "\"Stats v2\"", StringComparison.Ordinal), draft: true);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.True(readiness.Ready);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-changed");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("published version", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", finding.Fix, StringComparison.Ordinal);
+        Assert.DoesNotContain(readiness.Findings, x => x.Id == "section-type-unpublished");
+    }
+
+    [Fact]
     public async Task APageThatPlacesACustomSectionTypeTheThemeDoesNotHold_IsWarned()
     {
         await _context.SeedThemeAsync(StoreA);
