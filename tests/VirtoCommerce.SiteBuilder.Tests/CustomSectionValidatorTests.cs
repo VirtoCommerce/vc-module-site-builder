@@ -233,9 +233,10 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><span data-count-up="{{ settings.price }}"></span></section>""", "<span> at line 1 binds 'settings.price', a setting the schema does not declare")]
     [InlineData("""<section><span data-count-up="many"></span></section>""", "<span> at line 1 has data-count-up=\"many\", which data-count-up does not take: it takes a number")]
     [InlineData("""<section><span data-count-up="{{ settings.count }}+"></span></section>""", "<span> at line 1 has data-count-up=\"{{ settings.count }}+\", which is a value or one binding")]
-    [InlineData("""<section><span data-countdown="tomorrow"></span></section>""", "<span> at line 1 has data-countdown=\"tomorrow\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
-    [InlineData("""<section><span data-countdown="2026-02-30"></span></section>""", "<span> at line 1 has data-countdown=\"2026-02-30\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
-    [InlineData("""<section><span data-countdown="31.12.2026"></span></section>""", "<span> at line 1 has data-countdown=\"31.12.2026\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="tomorrow"></span></section>""", "<span> at line 1 has data-countdown=\"tomorrow\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="2026-02-30"></span></section>""", "<span> at line 1 has data-countdown=\"2026-02-30\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="31.12.2026"></span></section>""", "<span> at line 1 has data-countdown=\"31.12.2026\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""<section><span data-countdown="2026-12-31T23:59:59"></span></section>""", "<span> at line 1 has data-countdown=\"2026-12-31T23:59:59\", which data-countdown does not take: it takes an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
     [InlineData("""<section><span data-countdown-part="days"></span></section>""", "<span> at line 1 has data-countdown-part, an option of data-countdown, outside an element with data-countdown")]
     [InlineData("""<section data-countdown="2026-12-31"><span data-countdown-part="weeks"></span></section>""", "<span> at line 1 has data-countdown-part=\"weeks\", which data-countdown does not take: it takes days, hours, minutes, seconds")]
     public void Validate_TemplateThatBreaksARule_IsRefusedWithTheRule(string template, string error)
@@ -287,7 +288,7 @@ public class CustomSectionValidatorTests
             [
                 $"<section> at line 1 has data-tilt-max=\"60\", which data-tilt does not take: it takes a number up to 45",
                 $"<vc-rating> at line 1 has value=\"6\", which vc-rating does not take: it takes a number from 0 to 5",
-                $"<vc-rating> at line 1 has since=\"soon\", which vc-rating does not take: it takes an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z",
+                $"<vc-rating> at line 1 has since=\"soon\", which vc-rating does not take: it takes an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z",
             ],
             invalid.Errors);
     }

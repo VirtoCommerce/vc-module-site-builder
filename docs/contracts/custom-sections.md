@@ -169,7 +169,7 @@ cannot register a behavior of the same name.
 | `data-scroll-progress` | | `--scroll-progress` from 0 (the element enters the viewport) to 1 (it leaves) |
 | `data-pointer` | | `--pointer-x`, `--pointer-y` (0–1 inside the element), `--pointer-inline` (0 at the inline start, so it flips in right-to-left text) and `--pointer-active` (0 or 1); off on touch screens |
 | `data-count-up="{number}"` | `data-count-up-duration` (ms, up to 5000), `data-count-up-decimals` (0–4) | the text counts up to the number, formatted in the page's language, when the element first shows |
-| `data-countdown="{date}"` | | children with `data-countdown-part="days"`, `hours`, `minutes` or `seconds` show the time left until the ISO 8601 date; a date alone is 00:00 UTC of that day, the same moment for every visitor, so write a date and a time with an offset for another; `data-ended` is set when it passes |
+| `data-countdown="{date}"` | | children with `data-countdown-part="days"`, `hours`, `minutes` or `seconds` show the time left until the ISO 8601 date; a date alone is 00:00 UTC of that day, the same moment for every visitor, so write a date and a time with its offset for another (one without an offset is refused); `data-ended` is set when it passes |
 | `data-copy="{text}"` | | a click copies the text and sets `data-copied` for 2 seconds |
 | `data-marquee` | | the children are repeated once for a seamless loop; `--marquee-width` is the width of one run, and `--marquee-shift` the distance to animate `translate` by, toward the inline start; `data-paused` is set while the pointer is over it or the focus inside; a run that holds nothing focusable makes the element focusable, so the keyboard can pause it |
 
@@ -345,8 +345,8 @@ interface Kit {
 interface KitField {
   /**
    * a select takes one of its options, a number one from min to max, a boolean true, false or no value, a date an ISO
-   * 8601 date or date and time, and a link follows the link rule; a date alone is 00:00 UTC of that day, the same
-   * moment for every visitor
+   * 8601 date or a date and time with its offset, and a link follows the link rule; a date alone is 00:00 UTC of that
+   * day, the same moment for every visitor
    */
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
   /** the storefront sends texts only; the server also takes numbers and `{ value, label }` */

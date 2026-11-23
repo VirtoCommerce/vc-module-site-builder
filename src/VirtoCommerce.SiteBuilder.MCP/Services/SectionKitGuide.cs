@@ -244,10 +244,11 @@ public static class SectionKitGuide
                         "the type the kit declares under value, such as a number for count-up or a date for countdown; one that declares none takes any text. " +
                         "It writes what its writes names, such as data-visible, --scroll-progress or the text: style that in the CSS.",
                     $"An attribute's, an option's or a value's type is {JoinOr(rules.KitFieldTypes)}: a select takes one of its options, a number one " +
-                        "from min to max, a boolean true, false or no value, a date an ISO 8601 date or date and time, such as 2026-12-31, and a link " +
+                        "from min to max, a boolean true, false or no value, a date an ISO 8601 date, such as 2026-12-31, or date and time with its offset, and a link " +
                         "follows the link rule. Each is a literal of its type, or one binding.",
-                    "A date alone, such as 2026-12-31, is 00:00 UTC of that day, the same moment for every visitor; write a date and a time with an " +
-                        "offset, such as 2026-12-31T23:59:59+01:00, for another moment.",
+                    "A date alone, such as 2026-12-31, is 00:00 UTC of that day, the same moment for every visitor; write a date and a time with its " +
+                        "offset, such as 2026-12-31T23:59:59+01:00 or 2026-12-31T22:59:59Z, for another moment. A date and a time without an offset is " +
+                        "refused: it would name a different moment in each visitor's time zone.",
                     "A boolean is on unless it says false, and off when bound to a setting that is not set. The native hidden, autoplay, muted, loop, " +
                         "playsinline, controls and open follow the same rule, so open=\"false\", which HTML alone would read as on, is off.",
                     "A behavior with repeatsChildren, such as marquee, repeats what its element holds: an element with one inside an element with " +

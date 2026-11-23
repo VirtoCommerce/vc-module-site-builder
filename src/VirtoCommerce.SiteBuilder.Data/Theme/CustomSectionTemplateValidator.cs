@@ -88,7 +88,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     private static readonly Regex BindingPattern = new(@"\{\{([^{}]*)\}\}", RegexOptions.None, RegexTimeout);
     private static readonly Regex SingleBindingPattern = new(@"^\s*\{\{([^{}]*)\}\}\s*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex PathPattern = new(@"^(settings|item)\.([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$", RegexOptions.None, RegexTimeout);
-    private static readonly Regex IsoDatePattern = new(@"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$", RegexOptions.None, RegexTimeout);
+    private static readonly Regex IsoDatePattern = new(@"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$", RegexOptions.None, RegexTimeout);
 
     public virtual void Validate(CustomSectionCheck check, string template)
     {
@@ -475,7 +475,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             case CustomSectionKit.SelectType:
                 return field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
             case CustomSectionKit.DateType:
-                return IsIsoDate(value) ? null : "an ISO 8601 date, or a date and a time, such as 2026-12-31 or 2026-12-31T23:59:59Z";
+                return IsIsoDate(value) ? null : "an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z";
             default:
                 var isNumber = decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number);
                 return isNumber && !(number < field.Min) && !(number > field.Max) ? null : DescribeNumber(field);
