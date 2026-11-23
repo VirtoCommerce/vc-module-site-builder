@@ -208,6 +208,11 @@ public class TemplateTools(
             throw new McpException($"Pass at most {MaxOperations} operations in one call.");
         }
 
+        ValidateLayout(type, layout);
+    }
+
+    private static void ValidateLayout(string type, string layout)
+    {
         if (layout != null && (type != "page" || !Layouts.Contains(layout)))
         {
             throw new McpException(type == "page"

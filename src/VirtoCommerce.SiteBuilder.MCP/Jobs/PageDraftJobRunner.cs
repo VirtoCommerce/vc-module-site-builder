@@ -115,9 +115,12 @@ public class PageDraftJobRunner(
             SiteBuilderOperationStatus.Forbidden => new(PageJobOutcome.Refused, $"no access to the page in store '{group.StoreId}'"),
             SiteBuilderOperationStatus.Conflict or SiteBuilderOperationStatus.VersionRequired => new(PageJobOutcome.Skipped, ChangedSince),
             SiteBuilderOperationStatus.NotFound => new(PageJobOutcome.Failed, "the page was deleted"),
-            _ => new(PageJobOutcome.Failed, $"not saved: {string.Join(" ", new[] { result.Error }.Concat(result.Errors?.Skip(1) ?? []).Where(x => !string.IsNullOrEmpty(x)))}"),
+            _ => new(PageJobOutcome.Failed, $"not saved: {DescribeErrors(result)}"),
         };
     }
+
+    private static string DescribeErrors(SiteBuilderOperationResult<DesignerSaveResult> result) =>
+        string.Join(" ", new[] { result.Error }.Concat(result.Errors?.Skip(1) ?? []).Where(x => !string.IsNullOrEmpty(x)));
 
     private sealed class NoSources : IPageEditSources
     {

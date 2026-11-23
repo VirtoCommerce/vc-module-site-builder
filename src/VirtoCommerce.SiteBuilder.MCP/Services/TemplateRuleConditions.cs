@@ -102,15 +102,20 @@ public static class TemplateRuleConditions
             case "path":
                 return GetString(value) is { } glob && MatchesPath(subject.Permalink, glob);
             case "language":
-                return GetString(value) is { } language && !string.IsNullOrEmpty(subject.Language) &&
-                    (subject.Language == language || subject.Language.Split('-')[0] == language);
+                return GetString(value) is { } language && MatchesLanguage(subject.Language, language);
             case "source":
                 return GetString(value) is { } source && subject.ObjectType == source;
             default:
-                return value is JsonObject named && GetString(named["name"]) is { } settingName &&
-                    JsonNode.DeepEquals(subject.Settings?[settingName], named["equals"]);
+                return MatchesSetting(value, subject);
         }
     }
+
+    private static bool MatchesLanguage(string subjectLanguage, string language) =>
+        !string.IsNullOrEmpty(subjectLanguage) && (subjectLanguage == language || subjectLanguage.Split('-')[0] == language);
+
+    private static bool MatchesSetting(JsonNode value, PageRuleSubject subject) =>
+        value is JsonObject named && GetString(named["name"]) is { } settingName &&
+        JsonNode.DeepEquals(subject.Settings?[settingName], named["equals"]);
 
     public static bool MatchesPath(string permalink, string glob)
     {

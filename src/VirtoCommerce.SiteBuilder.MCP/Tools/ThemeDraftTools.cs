@@ -352,6 +352,15 @@ public class ThemeDraftTools(
             throw new McpException("part must be header, footer, brand or palette.");
         }
 
+        var misplaced = FindMisplaced(part, arguments);
+        if (misplaced.Count > 0)
+        {
+            throw new McpException($"{string.Join("; ", misplaced)} do not apply to part '{part}', so nothing was saved.");
+        }
+    }
+
+    private static List<string> FindMisplaced(string part, PartArguments arguments)
+    {
         var misplaced = new List<string>();
         if (part is not (HeaderPart or FooterPart) && arguments.HasOperations)
         {
@@ -368,10 +377,7 @@ public class ThemeDraftTools(
             misplaced.Add("primary_color, secondary_color, light_colors, dark_colors");
         }
 
-        if (misplaced.Count > 0)
-        {
-            throw new McpException($"{string.Join("; ", misplaced)} do not apply to part '{part}', so nothing was saved.");
-        }
+        return misplaced;
     }
 
     private static Dictionary<string, string> ReadColors(string content) =>

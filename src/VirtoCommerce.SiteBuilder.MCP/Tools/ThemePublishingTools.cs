@@ -106,7 +106,7 @@ public class ThemePublishingTools(
         {
             change.AddChange(draft.ObjectId, "draft", "published");
             change.ExpectedVersions[draft.ObjectId] = draft.ETag;
-            change.Drafts.Add(new ThemeDraftRow { Path = draft.ObjectId, ChangedBy = draft.ChangedBy?.Name ?? draft.ChangedBy?.Login, ChangedDate = draft.ChangedDate });
+            change.Drafts.Add(ToDraftRow(draft));
         }
 
         foreach (var warning in check.Preview?.Warnings ?? [])
@@ -121,6 +121,9 @@ public class ThemePublishingTools(
 
         return change;
     }
+
+    private static ThemeDraftRow ToDraftRow(SiteBuilderObjectChange draft) =>
+        new() { Path = draft.ObjectId, ChangedBy = draft.ChangedBy?.Name ?? draft.ChangedBy?.Login, ChangedDate = draft.ChangedDate };
 
     // A call without the versions is a dry run or is refused by the tool, so it publishes nothing and needs no approval.
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) =>
