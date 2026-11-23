@@ -357,7 +357,7 @@ public class CustomSectionValidatorTests
         var result = _validator.Validate(Type, Section("""<section><vc-icon name="star"></vc-icon></section>"""), catalog);
 
         Assert.Equal(
-            ["<vc-icon> at line 1 is a kit tag the catalog declares with the attribute 'name', a select with no options and an optionsFrom other than \"icons\", 'files'"],
+            ["<vc-icon> at line 1 is a kit tag the catalog declares with the attribute 'name', a select with no options and an optionsFrom other than \"icons\" or \"masks\", 'files'"],
             result.Errors);
     }
 
@@ -1240,6 +1240,26 @@ public class CustomSectionValidatorTests
         var result = TestServices.CustomSectionValidator(assetsUrl: null).Validate(Type, Section("""<section><img src="https://cdn.example/assets/a.png" alt=""><img src="{{ settings.image }}" alt=""></section>"""), Catalog);
 
         Assert.Equal([$"<img> at line 1 has src with 'https://cdn.example/assets/a.png', which is not a URL of the store's asset library"], result.Errors);
+    }
+
+    [Fact]
+    public void Validate_MaskNameOfAKitTag_IsOneOfTheKitsMasks()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-icon"]!["attributes"]!["name"] = JObject.Parse("""{ "type": "select", "optionsFrom": "masks" }""");
+        catalog["kit"]!["icons"] = new JArray("arrow-right");
+        catalog["kit"]!["masks"] = new JArray("circle", "star");
+        var known = _validator.Validate(Type, Section("""<section><vc-icon name="star"></vc-icon></section>"""), catalog);
+        var unknown = _validator.Validate(Type, Section("""<section><vc-icon name="arrow-right"></vc-icon></section>"""), catalog);
+
+        ((JObject)catalog["kit"]!).Remove("masks");
+        var unlisted = _validator.Validate(Type, Section("""<section><vc-icon name="arrow-right"></vc-icon></section>"""), catalog);
+
+        Assert.Empty(known.Errors);
+        Assert.Equal(
+            ["<vc-icon> at line 1 has name=\"arrow-right\", which vc-icon does not take: it takes a mask name of the storefront, as the kit's masks list them"],
+            unknown.Errors);
+        Assert.Empty(unlisted.Errors);
     }
 
     [Fact]

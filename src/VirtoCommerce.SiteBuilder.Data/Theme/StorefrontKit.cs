@@ -13,6 +13,9 @@ public sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, 
         .Where(x => x.Value != null)
         .ToDictionary(StringComparer.Ordinal);
 
+    /// <summary>The solid icon names vc-shape masks with; <c>null</c> when the kit lists none, and a mask name is not checked.</summary>
+    public IReadOnlySet<string> Masks { get; init; }
+
     /// <summary>The keys of the catalog's templates, which a type's targetTemplates name; <c>null</c> when it lists none, and they are not checked.</summary>
     public IReadOnlySet<string> TemplateKeys { get; init; }
 
@@ -30,7 +33,7 @@ public sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, 
 }
 
 /// <param name="Type">string, number, boolean, select, date or link; any other refuses the kit tag or the behavior that declares it.</param>
-/// <param name="OptionsFrom">Where a select's values are listed instead of its options: "icons" for the kit's icon names.</param>
+/// <param name="OptionsFrom">Where a select's values are listed instead of its options: "icons" for the kit's icon names, "masks" for its mask names.</param>
 public sealed record KitField(string Type, IReadOnlyList<string> Options, decimal? Min, decimal? Max, string OptionsFrom = null)
 {
     /// <summary>Why the server cannot check a value of the field, to follow its name; <c>null</c> when it can.</summary>
@@ -38,7 +41,8 @@ public sealed record KitField(string Type, IReadOnlyList<string> Options, decima
     {
         _ when !CustomSectionKit.FieldTypes.Contains(Type ?? string.Empty) => $" of a type the server does not know, '{Type}'",
         (CustomSectionKit.SelectType, null, null) => ", a select with neither options nor optionsFrom",
-        (CustomSectionKit.SelectType, null, not CustomSectionKit.IconsKey) => $", a select with no options and an optionsFrom other than \"{CustomSectionKit.IconsKey}\", '{OptionsFrom}'",
+        (CustomSectionKit.SelectType, null, not (CustomSectionKit.IconsKey or CustomSectionKit.MasksKey)) =>
+            $", a select with no options and an optionsFrom other than \"{CustomSectionKit.IconsKey}\" or \"{CustomSectionKit.MasksKey}\", '{OptionsFrom}'",
         _ => null,
     };
 

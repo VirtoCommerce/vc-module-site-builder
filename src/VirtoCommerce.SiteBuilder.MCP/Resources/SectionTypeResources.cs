@@ -47,7 +47,8 @@ public class SectionTypeResources(
     [McpServerResource(UriTemplate = SiteBuilderResources.SectionKitIconsUri, Name = "section_kit_icons", MimeType = SiteBuilderResources.JsonMimeType)]
     [McpPermission(Read)]
     [Description("Every icon name the storefront draws, as its catalog lists them: the values of a kit attribute whose field has " +
-        "\"optionsFrom\": \"icons\", such as vc-icon's name or vc-button's prepend-icon. A name the list does not hold is refused.")]
+        "\"optionsFrom\": \"icons\", such as vc-icon's name or vc-button's prepend-icon; and, under masks, the names of a field with " +
+        "\"optionsFrom\": \"masks\", such as vc-shape's mask. A name the list does not hold is refused.")]
     public async Task<string> SectionKitIcons(RequestContext<ReadResourceRequestParams> context, string store_id, CancellationToken cancellationToken)
     {
         var catalog = await ReadCatalogAsync(context.User, store_id, cancellationToken);
@@ -56,7 +57,9 @@ public class SectionTypeResources(
             return SiteBuilderResources.Serialize(SiteBuilderResources.NoCatalog(store_id));
         }
 
-        var icons = (catalog[CustomSectionKit.KitKey] as JsonObject)?[CustomSectionKit.IconsKey] as JsonArray;
+        var kit = catalog[CustomSectionKit.KitKey] as JsonObject;
+        var icons = kit?[CustomSectionKit.IconsKey] as JsonArray;
+        var masks = kit?[CustomSectionKit.MasksKey] as JsonArray;
 
         return SiteBuilderResources.Serialize(new
         {
@@ -64,6 +67,7 @@ public class SectionTypeResources(
             Available = icons != null,
             Reason = icons == null ? "The storefront's catalog lists no icon names, so an icon name is not checked." : null,
             Icons = icons?.DeepClone(),
+            Masks = masks?.DeepClone(),
         });
     }
 

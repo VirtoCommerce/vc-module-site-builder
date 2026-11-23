@@ -244,6 +244,11 @@ public static class SectionKitGuide
                     Count = (kit?[CustomSectionKit.IconsKey] as JsonArray)?.Count ?? 0,
                     Names = $"{GetIconsUri(storeId)} lists them: an attribute whose kit field has \"optionsFrom\": \"icons\" takes one of them.",
                 },
+                Masks = new
+                {
+                    Count = (kit?[CustomSectionKit.MasksKey] as JsonArray)?.Count ?? 0,
+                    Names = $"{GetIconsUri(storeId)} lists them under masks: an attribute whose kit field has \"optionsFrom\": \"masks\" takes one of them.",
+                },
                 Usage = new[]
                 {
                     "A kit tag renders a storefront component, such as <vc-button label=\"{{ settings.cta }}\" to=\"{{ settings.link }}\"></vc-button>. " +

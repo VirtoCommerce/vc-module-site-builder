@@ -26,6 +26,9 @@ public static class CustomSectionKit
     /// <summary>The key of the storefront's icon names in the kit, and the <c>optionsFrom</c> of a select that takes one of them.</summary>
     public const string IconsKey = "icons";
 
+    /// <summary>The key of the solid icon names vc-shape masks with in the kit, and the <c>optionsFrom</c> of a select that takes one of them.</summary>
+    public const string MasksKey = "masks";
+
     public const string GuideKey = "guide";
 
     /// <summary>The catalog's palette tokens, beside its kit.</summary>
@@ -177,12 +180,6 @@ public static class CustomSectionKit
                 })
             .Where(x => !IsReservedBehavior(x.Key))
             .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
-        var icons = (kit[IconsKey] as JArray)?
-            .OfType<JValue>()
-            .Where(x => x.Type == JTokenType.String)
-            .Select(x => (string)x)
-            .ToFrozenSet(StringComparer.Ordinal);
-
         var sideEffectTags = (kit["tags"] as JObject)?.Properties()
             .Where(x => x.Value is JObject tag && tag[HasSideEffectsKey] is JValue { Type: JTokenType.Boolean } sideEffects && (bool)sideEffects)
             .Select(x => x.Name)
@@ -193,11 +190,15 @@ public static class CustomSectionKit
             .Where(x => x.Value is JObject tag && tag[CostKey] is JValue { Type: JTokenType.Integer, Value: >= 1L and <= (long)RenderBudget })
             .ToFrozenDictionary(x => x.Name, x => (int)(long)((JValue)x.Value[CostKey]).Value, StringComparer.Ordinal);
 
-        return new StorefrontKit(true, tags, behaviors, icons)
+        return new StorefrontKit(true, tags, behaviors, ReadNames(kit[IconsKey]))
         {
             PaletteTokens = paletteTokens, TemplateKeys = templateKeys, SideEffectTags = sideEffectTags, TagCosts = tagCosts,
+            Masks = ReadNames(kit[MasksKey]),
         };
     }
+
+    private static FrozenSet<string> ReadNames(JToken names) =>
+        (names as JArray)?.OfType<JValue>().Where(x => x.Type == JTokenType.String).Select(x => (string)x).ToFrozenSet(StringComparer.Ordinal);
 
     /// <returns>What is wrong with the kit's shape, naming where; <c>null</c> for a kit that is right or for none.</returns>
     public static string GetShapeError(JToken kit)
@@ -216,7 +217,8 @@ public static class CustomSectionKit
             ?? GetEntriesError(entries["behaviors"], "behaviors", MaxBehaviors, GetBehaviorNameError, GetBehaviorError)
             ?? GetGuideError(entries[GuideKey])
             ?? GetDesignError(entries[DesignKey])
-            ?? GetIconsError(entries[IconsKey]);
+            ?? GetNamesError(entries[IconsKey], IconsKey)
+            ?? GetNamesError(entries[MasksKey], MasksKey);
     }
 
     private static string GetGuideError(JToken guide) => guide switch
@@ -252,18 +254,18 @@ public static class CustomSectionKit
             $"not texts as the storefront sends them, at most {MaxDesignEntries} entries each of at most {MaxDesignTextLength} characters");
     }
 
-    private static string GetIconsError(JToken icons)
+    private static string GetNamesError(JToken names, string key)
     {
-        if (icons is null || icons.Type == JTokenType.Null)
+        if (names is null || names.Type == JTokenType.Null)
         {
             return null;
         }
 
-        if (icons is not JArray names || names.Count > MaxIcons ||
-            !names.All(x => x is JValue { Type: JTokenType.String } name && ((string)name).Length is > 0 and <= MaxIconLength))
+        if (names is not JArray list || list.Count > MaxIcons ||
+            !list.All(x => x is JValue { Type: JTokenType.String } name && ((string)name).Length is > 0 and <= MaxIconLength))
         {
             return string.Create(CultureInfo.InvariantCulture,
-                $"has icons that are not a list of at most {MaxIcons} names, each of 1 to {MaxIconLength} characters");
+                $"has {key} that are not a list of at most {MaxIcons} names, each of 1 to {MaxIconLength} characters");
         }
 
         return null;
@@ -438,9 +440,9 @@ public static class CustomSectionKit
         }
 
         if (field["optionsFrom"] is { Type: not JTokenType.Null } optionsFrom &&
-            !((string)type == SelectType && optionsFrom is JValue { Type: JTokenType.String } source && (string)source == IconsKey))
+            !((string)type == SelectType && optionsFrom is JValue { Type: JTokenType.String } source && (string)source is IconsKey or MasksKey))
         {
-            return $"has an optionsFrom other than \"{IconsKey}\" of a select";
+            return $"has an optionsFrom other than \"{IconsKey}\" or \"{MasksKey}\" of a select";
         }
 
         // no literal could be one of its values

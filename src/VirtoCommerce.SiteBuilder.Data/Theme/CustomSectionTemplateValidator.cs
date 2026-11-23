@@ -545,6 +545,8 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
                 return value is "" or "true" or "false" ? null : "true, false or no value";
             case CustomSectionKit.SelectType when field.OptionsFrom == CustomSectionKit.IconsKey:
                 return check.Kit.Icons == null || check.Kit.Icons.Contains(value) ? null : "an icon name of the storefront, as the kit's icons list them";
+            case CustomSectionKit.SelectType when field.OptionsFrom == CustomSectionKit.MasksKey:
+                return check.Kit.Masks == null || check.Kit.Masks.Contains(value) ? null : "a mask name of the storefront, as the kit's masks list them";
             case CustomSectionKit.SelectType:
                 return field.Options.Contains(value, StringComparer.Ordinal) ? null : string.Join(", ", field.Options);
             case CustomSectionKit.DateType:

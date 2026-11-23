@@ -112,10 +112,12 @@ public class SchemaCatalogServiceTests
         "has a design whose breakpoints, containerMaxWidth, tokens or containerName are not texts as the storefront sends them, at most 1024 entries each of at most 1024 characters")]
     [InlineData("""{ "icons": "star" }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters")]
     [InlineData("""{ "icons": [ "star", "" ] }""", "has icons that are not a list of at most 10000 names, each of 1 to 100 characters")]
+    [InlineData("""{ "masks": "circle" }""", "has masks that are not a list of at most 10000 names, each of 1 to 100 characters")]
+    [InlineData("""{ "masks": [ "circle", 5 ] }""", "has masks that are not a list of at most 10000 names, each of 1 to 100 characters")]
     [InlineData("""{ "tags": { "vc-icon": { "attributes": { "name": { "type": "select", "optionsFrom": "files" } } } } }""",
-        "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" of a select")]
+        "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" or \"masks\" of a select")]
     [InlineData("""{ "tags": { "vc-icon": { "attributes": { "name": { "type": "string", "optionsFrom": "icons" } } } } }""",
-        "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" of a select")]
+        "has the tag 'vc-icon', which has the attribute 'name', which has an optionsFrom other than \"icons\" or \"masks\" of a select")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "tone": { "type": "select" } } } } }""",
         "has the tag 'vc-x', which has the attribute 'tone', which is a select with neither options nor optionsFrom")]
     [InlineData("""{ "behaviors": { "tilt": { "options": { "axis": { "type": "select", "options": null } } } } }""",

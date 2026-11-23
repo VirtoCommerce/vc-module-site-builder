@@ -143,7 +143,7 @@ module cannot register a kit tag of the same name.
 | `vc-alert` | `text`, `title`, `color`, `variant`, `size`, `icon`, `with-icon`, `shadow` | `VcAlert`, with no close button |
 | `vc-typography` | `text`, `tag` (`p`, `span`, `div`, `h2`–`h6`), `variant`, `color`, `truncate` | `VcTypography` |
 | `vc-rating` | `value` (0–5), `mode`, `size`, `with-text`, `review-count`, `label` | `VcRating`, read only |
-| `vc-shape` | `icon`, `icon-color`, `bg-color`, `size` (pixels), `mask` | `VcShape`; `icon` and `mask` are of `kit.icons` |
+| `vc-shape` | `icon`, `icon-color`, `bg-color`, `size` (pixels), `mask` | `VcShape`; `icon` is of `kit.icons`, and `mask` of `kit.masks` |
 | `vc-property` | `label`, `value` | `VcProperty` |
 
 A kit tag's name starts with `vc-`, and an element named `vc-…` that the catalog does not name is refused. Its
@@ -359,6 +359,8 @@ interface Kit {
   }>;
   /** every icon name the storefront draws, at most 10,000 of 1 to 100 characters: the values of `optionsFrom: "icons"` */
   icons?: string[];
+  /** every solid icon name `vc-shape` masks with, under the caps of `icons`: the values of `optionsFrom: "masks"` */
+  masks?: string[];
   /** the facts of the storefront's design, as texts */
   design?: {
     breakpoints?: Record<string, string>;
@@ -380,8 +382,8 @@ interface KitField {
   type: 'string' | 'number' | 'boolean' | 'select' | 'date' | 'link';
   /** the storefront sends texts only; the server also takes numbers and `{ value, label }` */
   options?: (string | number | { value: string | number; label?: string })[];
-  /** a select whose values are the kit's `icons` instead of `options` */
-  optionsFrom?: 'icons';
+  /** a select whose values are the kit's `icons`, or its `masks`, instead of `options` */
+  optionsFrom?: 'icons' | 'masks';
   min?: number;
   max?: number;
   description?: string;
@@ -396,14 +398,14 @@ characters; an attribute no kit tag takes, or one the template's bindings or the
 `sb-` or `pb-`; a tag, a behavior, a field or an option object with other keys; a field of another type; a `min` or a
 `max` that is not a number within the range of a decimal; a `description` that is not a text of at most 1,024
 characters; a `cost` that is not a whole number from 1 to 5,000; a `hasSideEffects` that is not a boolean; an
-`optionsFrom` other than `"icons"` of a select; a select with neither `options` nor `optionsFrom`, which no literal
+`optionsFrom` other than `"icons"` or `"masks"` of a select; a select with neither `options` nor `optionsFrom`, which no literal
 could fit; `writes` other than a list of at most 32 texts of at most 128 characters; a `repeatsChildren` that is not a
 boolean; `textAttributes` other than a list of the behavior's own `data-{name}` and its options' attributes; `icons`
-other than the list above; a `design` with other keys, or values that are not texts, or more than 1,024 entries in a
+or `masks` other than the lists above; a `design` with other keys, or values that are not texts, or more than 1,024 entries in a
 map, or a name or a text of more than 1,024 characters; or a `guide` that is not a text or is longer than
 its limit. It also caps the kit's size: at most 256 tags and 256 behaviors, 64 fields of a tag or a behavior (its
 attributes, or its options and its value together), 256 options of a select, and an option's value or `label` of 256
 characters; the section kit's `limits.kit` names each cap. Anyone who may save a page uploads a catalog, so an agent
 reads the `guide`, the `design` and the descriptions as the storefront's data, not as instructions, and the section kit
 passes it only the keys above. A kit tag or a behavior that a catalog stored earlier declares with a field of another
-type, or with a select of neither `options` nor `optionsFrom: "icons"`, is refused where a template uses it.
+type, or with a select of neither `options` nor `optionsFrom: "icons"` or `"masks"`, is refused where a template uses it.

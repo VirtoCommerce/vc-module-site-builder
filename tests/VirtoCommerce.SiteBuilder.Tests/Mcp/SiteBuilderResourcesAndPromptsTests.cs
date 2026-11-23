@@ -331,6 +331,21 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheSectionKit_CountsTheMasks_WhichTheIconsResourceLists()
+    {
+        var kit = JObject.Parse(McpTestContext.StorefrontKit);
+        kit["masks"] = new JArray("circle", "star", "wave");
+        await _context.SeedThemeAsync(StoreA, kit.ToString());
+
+        var masks = (await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit")).GetProperty("kit").GetProperty("masks");
+        var list = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit/icons");
+
+        Assert.Equal(3, masks.GetProperty("count").GetInt32());
+        Assert.Contains("site-builder://stores/store-a/section-kit/icons", masks.GetProperty("names").GetString(), StringComparison.Ordinal);
+        Assert.Equal(["circle", "star", "wave"], Strings(list.GetProperty("masks")));
+    }
+
+    [Fact]
     public async Task TheSectionKit_CountsTheIcons_WhichTheirOwnResourceLists()
     {
         var kit = JObject.Parse(McpTestContext.StorefrontKit);
