@@ -176,6 +176,7 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><a href="/catalog"></a></section>""", "<a> at line 1 is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt")]
     [InlineData("""<section><a href="/catalog"><img src="{{ settings.image }}" alt=""></a></section>""", "<a> at line 1 is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt")]
     [InlineData("""<section><a href="/catalog" aria-label=" "><vc-icon name="arrow-right"></vc-icon></a></section>""", "<a> at line 1 is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt")]
+    [InlineData("""<section><a href="/catalog"><vc-badge label=" " color="primary"></vc-badge></a></section>""", "<a> at line 1 is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt")]
     [InlineData("""<section class="fixed top-0 z-50 size-full"></section>""", "<section> at line 1 has the class 'fixed', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
     [InlineData("""<section class="custom-hero custom-heroic"></section>""", "<section> at line 1 has the class 'custom-heroic', which is not the type's own: 'custom-hero', or a name starting with 'custom-hero-' or 'custom-hero__'")]
     [InlineData("""<section class="custom-hero {{ settings.view }}"></section>""", "<section> at line 1 binds class to 'settings.view', which is not a select whose options are the type's own classes")]
@@ -316,6 +317,10 @@ public class CustomSectionValidatorTests
     [InlineData("command", "show-modal")]
     [InlineData("commandfor", "dialog")]
     [InlineData("interestfor", "card")]
+    [InlineData("o-nclick", "x()")]
+    [InlineData("s-tyle", "position: fixed")]
+    [InlineData("h-ref", "javascript:alert(1)")]
+    [InlineData("s-rc", "https://evil.example/x.png")]
     public void Validate_KitAttributeTheCatalogDeclaresButNoKitTagTakes_IsRefused(string name, string value)
     {
         var catalog = (JObject)Catalog.DeepClone();
@@ -341,6 +346,19 @@ public class CustomSectionValidatorTests
                 "<p> at line 1 has data-inview, and the catalog declares data-inview with 'axis', a select with neither options nor optionsFrom",
             ],
             bound.Errors.Where(x => !x.Contains("text of its own", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Validate_KitSelectOfAnotherOptionsFromWithoutOptionsInAStoredCatalog_RefusesItsTag()
+    {
+        var catalog = (JObject)Catalog.DeepClone();
+        catalog["kit"]!["tags"]!["vc-icon"]!["attributes"]!["name"] = JObject.Parse("""{ "type": "select", "optionsFrom": "files" }""");
+
+        var result = _validator.Validate(Type, Section("""<section><vc-icon name="star"></vc-icon></section>"""), catalog);
+
+        Assert.Equal(
+            ["<vc-icon> at line 1 is a kit tag the catalog declares with the attribute 'name', a select with no options and an optionsFrom other than \"icons\", 'files'"],
+            result.Errors);
     }
 
     [Fact]
@@ -564,6 +582,14 @@ public class CustomSectionValidatorTests
     }
 
     [Theory]
+    [InlineData("""<section><a href="/catalog"><vc-image src="{{ settings.image }}" alt="{{ settings.title }}"></vc-image></a></section>""")]
+    [InlineData("""<section><a href="/catalog"><vc-badge label="{{ settings.title }}"></vc-badge></a></section>""")]
+    public void Validate_LinkThatAKitTagsTextAttributeNames_IsTaken(string template)
+    {
+        Assert.Empty(_validator.Validate(Type, Section(template), CatalogWithImage("string")).Errors);
+    }
+
+    [Theory]
     [InlineData("""<section><h2>{{ settings.title }}</h2><h4>{{ settings.title }}</h4></section>""", "",
         "the template's headings go from h2 to h4, skipping a level, which a screen reader lists as a part missing")]
     [InlineData("<section></section>", """.a { transition: opacity .2s; }""",
@@ -627,6 +653,8 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><vc-button label="Go" /><p>x</p></section>""", "the template does not read as HTML at line 1, column 10: The given tag cannot be self-closed.")]
     [InlineData("""<section><p>a < b</p></section>""", "the template does not read as HTML at line 1, column 16: Ambiguous open tag.")]
     [InlineData("<section>\n  <div>\n</section>", "the template does not read as HTML at line 3, column 1: ")]
+    [InlineData("""<section><a href="/sale>Sale</a></section>""", "the template does not read as HTML at line 1, column 43: Unexpected end of the given file.")]
+    [InlineData("<section><img alt=\"\" src=\"{{ settings.image }}\"", "the template does not read as HTML at line 1, column 48: Unexpected end of the given file.")]
     public void Validate_TemplateTheParserMends_IsRefusedAtWhereItBreaks(string template, string error)
     {
         var result = _validator.Validate(Type, Section(template), Catalog);
@@ -718,6 +746,20 @@ public class CustomSectionValidatorTests
     }
 
     [Fact]
+    public void Validate_ManyClassBindingsOfASelectOfManyOptions_ChecksItsOptionsOnce()
+    {
+        var options = string.Join(", ", Enumerable.Range(0, 2000).Select(x => $$"""{ "value": "custom-hero--o{{x}}" }"""));
+        var template = "<section class=\"" + string.Concat(Enumerable.Repeat("{{ settings.look }} ", 2000)) + "\"></section>";
+        var section = Section(template, settings: $$"""[ { "id": "look", "type": "select", "options": [ {{options}} ] } ]""");
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+
+        var result = _validator.Validate(Type, section, Catalog);
+
+        Assert.Empty(result.Errors);
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - allocated < 64 * 1024 * 1024, $"allocated {GC.GetAllocatedBytesForCurrentThread() - allocated} bytes");
+    }
+
+    [Fact]
     public void Validate_FormattingTheParserWouldRebuildOnEachParagraph_IsRefusedAtTheFirstError()
     {
         var formatting = string.Concat(Enumerable.Range(0, 749).Select(x => $"<b class=\"custom-hero__b{x}\">"));
@@ -747,6 +789,7 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><details open><summary>{{ settings.title }}</summary><p>{{ settings.title }}</p></details></section>""")]
     [InlineData("""<section><blockquote cite="https://example.com/review">{{ settings.title }}</blockquote><q cite="/reviews">{{ settings.title }}</q></section>""")]
     [InlineData("""<section><img alt="" src="https://cdn.example/assets/stores/s1/../s1/x.png"></section>""")]
+    [InlineData("""<section><img alt="" srcset="https://cdn.example/assets/a.png 1x, https://cdn.example/assets/b.png 2x,"></section>""")]
     public void Validate_TemplateTheStorefrontRendersAsWritten_IsTaken(string template)
     {
         Assert.Empty(_validator.Validate(Type, Section(template), Catalog).Errors);
@@ -789,6 +832,10 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { :ROOT & { margin: 0; } }""", "the CSS selector ':ROOT &' reaches :root, html or body, outside the section")]
     [InlineData(""".a, html { margin: 0; }""", "the CSS selector '.a, html' reaches :root, html or body, outside the section")]
     [InlineData(""":is(body.checkout-open .x, ;@media) .y { margin: 0; }""", "the CSS selector ':is(body.checkout-open .x, ;@media) .y' reaches :root, html or body, outside the section")]
+    [InlineData("""*|body .a { margin: 0; }""", "the CSS selector '*|body .a' reaches :root, html or body, outside the section")]
+    [InlineData(""".a:is(|html) { margin: 0; }""", "the CSS selector '.a:is(|html)' reaches :root, html or body, outside the section")]
+    [InlineData(""".a calc(1px) { margin: 0; }""", "the CSS selector '.a calc(1px)' has 'calc(' outside a pseudo-class")]
+    [InlineData(""".a (b) { margin: 0; }""", "the CSS selector '.a (b)' has a '(' outside a pseudo-class")]
     [InlineData(""".a { position: fixed; }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { & .b { POSITION:FIXED } }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { background: url(https://evil.example/x.png); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
@@ -815,6 +862,22 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { outline-width: calc(1px - 1px); }""", "the CSS sets outline-width with calc(), which could hide where the keyboard is on the page")]
     [InlineData(""".a { outline-width: max(0px, var(--w)); }""", "the CSS sets outline-width with max(), which could hide where the keyboard is on the page")]
     [InlineData(""".a { outline-style: env(x); }""", "the CSS sets outline-style with env(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: 2px var(--color-primary-500); }""",
+        "the CSS sets outline without a style, which the shorthand then sets to none, hiding where the keyboard is on the page: write one, such as solid")]
+    [InlineData(""".a:focus-visible { outline: 2px hidden var(--color-primary-500); }""",
+        "the CSS sets outline without a style, which the shorthand then sets to none, hiding where the keyboard is on the page: write one, such as solid")]
+    [InlineData(""".a:focus-visible { outline: 1e-400px solid var(--color-primary-500); }""", "the CSS sets outline to none or 0, which hides where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline: transparent solid 2px; }""", "the CSS sets outline to transparent, which hides where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline-color: TRANSPARENT; }""", "the CSS sets outline-color to transparent, which hides where the keyboard is on the page")]
+    [InlineData(""".a:focus-visible { outline-color: var(--o); }""", "the CSS sets outline-color with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""".a { all: unset; cursor: pointer; }""", "the CSS sets all to unset, which could hide where the keyboard is on the page")]
+    [InlineData(""".a { ALL: initial; }""", "the CSS sets all to initial, which could hide where the keyboard is on the page")]
+    [InlineData(""".a { all: var(--reset); }""", "the CSS sets all with var(), which could hide where the keyboard is on the page")]
+    [InlineData(""":scope { --vc-focus-ring-width: 0; }""", "the CSS sets --vc-focus-ring-width, a variable the focus ring may read, which could hide where the keyboard is on the page")]
+    [InlineData(""":scope { --color-ring: none; } .a:focus-visible { outline: var(--color-ring); }""",
+        "the CSS sets --color-ring, a variable the focus ring may read, which could hide where the keyboard is on the page")]
+    [InlineData(""".a { --setting-tone: transparent; outline: 2px solid var(--setting-tone); }""",
+        "the CSS sets --setting-tone, a variable the focus ring may read, which could hide where the keyboard is on the page")]
     [InlineData(""".a { width: expression(alert(1)); }""", "the CSS has expression(), which runs script")]
     [InlineData(""".a { --bg: element(#secret); }""", "the CSS has element(), which paints a live copy of an element of the page")]
     [InlineData(""".a { background: -MOZ-element(#secret); }""", "the CSS has -moz-element(), which paints a live copy of an element of the page")]
@@ -854,6 +917,8 @@ public class CustomSectionValidatorTests
     [InlineData(""".custom-x { background-image: image-s\65t(if(else: "https://evil.example/p.png")); }""", "the CSS loads 'https://evil.example/p.png', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
     [InlineData(""":scope { --u: "https://evil.example/p.png"; background-image: image-set(if(else: var(--u))); }""", "the CSS has var() inside image-set(), whose URL is then not known on save")]
     [InlineData(""".a { background-image: image-set(--pick() 1x); }""", "the CSS has --pick() inside image-set(), whose URL is then not known on save")]
+    [InlineData(""":scope { --u: "https://evil.example/p.png"; } .a { background-image: image-set(inherit(--u) 1x); }""",
+        "the CSS has inherit() inside image-set(), whose URL is then not known on save")]
     [InlineData(""".a { background-image: cross-fade(image-set(url(https://evil.example/a.png) 1x), 50%); }""", "the CSS loads 'https://evil.example/a.png', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
     [InlineData(""".a { position: if(style(--x: 1): fixed; else: static); }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { position: if(style(--x: 1): var(--p)); }""", "the CSS sets position with if(), which could make it fixed")]
@@ -891,6 +956,9 @@ public class CustomSectionValidatorTests
         "the CSS sets grid-row-gap after gap with var() in the same rule, and the storefront then loses gap: set each of its parts on its own, such as column-gap")]
     [InlineData(""".a { -webkit-transition: opacity var(--d); transition-delay: .2s; }""",
         "the CSS sets transition-delay after -webkit-transition with var() in the same rule, and the storefront then loses -webkit-transition: set each of its parts on its own, such as transition-property")]
+    [InlineData(""".a { background: inherit(--bg); background-size: cover; }""",
+        "the CSS sets background-size after background with inherit() in the same rule, and the storefront then loses background: set each of its parts on its own, such as background-image")]
+    [InlineData(""".a[data-x { margin: 0; }""", "the CSS has a '[' without its pair")]
     public void Validate_CssThatBreaksARule_IsRefusedWithTheRule(string css, string error)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
@@ -929,6 +997,10 @@ public class CustomSectionValidatorTests
     [InlineData(""".a:focus-visible { outline: 2px solid color-mix(in srgb, var(--color-primary-500) 60%, transparent); } .b:focus-visible { outline: 2px solid var(--setting-tone); }""")]
     [InlineData(""".a:focus-visible { outline-width: initial; } .b:focus-visible { outline: revert; } .c:focus-visible { outline: revert-layer; }""")]
     [InlineData("""@media (prefers-reduced-motion: no-preference) { .a { transition: opacity var(--d); -webkit-transition: opacity 1s; } }""")]
+    [InlineData(""".a:focus-visible { outline: auto; } .b:focus-visible { outline: 1e1px double; outline-color: var(--color-primary-500); } .c { all: revert; } .d { all: revert-layer; }""")]
+    [InlineData(""":scope { --brand: var(--color-primary-500); --vc-focus: 1; } .a:focus-visible { outline-color: color-mix(in srgb, var(--color-primary-500) 60%, transparent); }""")]
+    [InlineData(""".a { background-image: image-set(url(https://cdn.example/assets/a.avif) type("image/avif"), "https://cdn.example/assets/a.jpg" type("image/jpeg")); }""")]
+    [InlineData(""".z { --x: @media } .b { @media a { @media b { @media c { @media d { .c { margin: 0 } } } } } }""")]
     public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
@@ -951,6 +1023,7 @@ public class CustomSectionValidatorTests
     [InlineData(""":scope:nth-child(1 of .promo)""", ":nth-child(… of …) on :scope or & counts the section's siblings")]
     [InlineData(""":scope:nth-last-child(2n of .x)""", ":nth-last-child(… of …) on :scope or & counts the section's siblings")]
     [InlineData(""":scope:is(:nth-child(1 of .x))""", ":nth-child(… of …) on :scope or & counts the section's siblings")]
+    [InlineData("""&:nth-child(1 of .x)""", ":nth-child(… of …) on :scope or & counts the section's siblings")]
     [InlineData(""".a:is(:has([data-search-query^="a"]) *)""", ":is() takes only compound selectors, with no combinator")]
     [InlineData(""":is(.checkout-open .x, ;@media) .y""", ":is() takes only compound selectors, with no combinator")]
     [InlineData(""".a:not(.b .c)""", ":not() takes only compound selectors, with no combinator")]
@@ -990,6 +1063,8 @@ public class CustomSectionValidatorTests
     [InlineData(""":lang(en, fr) .a""")]
     [InlineData("""[data-x=":scope"] .a""")]
     [InlineData("""> .a""")]
+    [InlineData(""".a::part(body)""")]
+    [InlineData(""".a:state(html)""")]
     public void Validate_CssSelectorThatStaysInTheSection_IsTaken(string selector)
     {
         var result = _validator.Validate(Type, Section("<section></section>", $"{selector} {{ margin: 0; }}"), Catalog);
@@ -1046,7 +1121,7 @@ public class CustomSectionValidatorTests
     [Fact]
     public void Validate_CssNestedDeeperThanTheLimit_IsRefusedBeforeItIsWalked()
     {
-        var css = string.Concat(Enumerable.Repeat(".a { ", 5000)) + string.Concat(Enumerable.Repeat("} ", 5000));
+        var css = string.Concat(Enumerable.Repeat(".a { ", 5000)) + "position: fixed; " + string.Concat(Enumerable.Repeat("} ", 5000));
 
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
 
@@ -1096,6 +1171,9 @@ public class CustomSectionValidatorTests
         "setting 'x.y' is a list inside 'x', one level deeper than a custom section's settings go")]
     [InlineData("""[ { "id": "x-y", "type": "string" } ]""", "setting 'x-y' has no id of letters, digits and '_' that starts with a letter")]
     [InlineData("""[ { "type": "string" } ]""", "setting 1 has no id of letters, digits and '_' that starts with a letter")]
+    [InlineData("""[ { "id": "title\n", "type": "string" } ]""", "setting 'title\n' has no id of letters, digits and '_' that starts with a letter")]
+    [InlineData("""[ { "type": "header", "label": "Content", "multiple": true } ]""", "setting 1 is multiple, and a custom section's setting holds one value")]
+    [InlineData("""[ { "type": "paragraph", "label": "Note", "options": [ { "value": "a" } ] } ]""", "setting 1 has options, which only a select has")]
     [InlineData("""[ { "id": "x", "type": "string" }, { "id": "x", "type": "number" } ]""", "setting 'x' has the id of another setting")]
     [InlineData("""[ "x" ]""", "setting 1 is not an object")]
     public void Validate_SettingThatBreaksARule_IsRefusedWithTheRule(string settings, string error)
@@ -1146,6 +1224,7 @@ public class CustomSectionValidatorTests
     [InlineData("custom-")]
     [InlineData("custom-hero_banner")]
     [InlineData("custom-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData(null)]
     public void Validate_FileNamedAsNoType_IsRefused(string type)
     {
         var result = _validator.Validate(type, Section("<section></section>"), Catalog);
@@ -1217,6 +1296,8 @@ public class CustomSectionValidatorTests
     [InlineData("""{ "id": "title", "type": "string", "info": 5 }""", "setting 'title' has an info that is not a text")]
     [InlineData("""{ "id": "title", "type": "string", "placeholder": [ "x" ] }""", "setting 'title' has a placeholder that is not a text")]
     [InlineData("""{ "type": "header", "label": { "text": "Content" } }""", "setting 1 has a label that is not a text")]
+    [InlineData("""{ "id": "view", "type": "select", "options": [ { "value": "grid", "label": { "en-US": "Grid", "de-DE": "Raster" } } ] }""",
+        "setting 'view' has an option with a label that is not a text")]
     [InlineData("""{ "id": "items", "type": "list", "element": [ { "id": "title", "type": "string", "label": 1 } ] }""", "setting 'items.title' has a label that is not a text")]
     public void Validate_SettingTextThatIsNotAText_IsRefused(string field, string error)
     {
@@ -1259,6 +1340,23 @@ public class CustomSectionValidatorTests
     [InlineData("""{ "id": "count", "type": "slider", "min": 1, "max": 5, "default": 0 }""", "setting 'count' has a default that is less than its min")]
     [InlineData("""{ "id": "shown", "type": "checkbox", "default": "yes" }""", "setting 'shown' has a default that is not true or false")]
     [InlineData("""{ "id": "tone", "type": "color-token", "default": "brand_blue" }""", "setting 'tone' has a default that is not one of the palette's tokens")]
+    [InlineData("""{ "id": "tone", "type": "color-token", "default": "primary_500" }""", "setting 'tone' has a default that is not one of the palette's tokens")]
+    [InlineData("""{ "id": "count", "type": "number", "default": NaN }""", "setting 'count' has a default that is not a number")]
+    [InlineData("""{ "id": "count", "type": "slider", "min": 0, "default": Infinity }""", "setting 'count' has a default that is not a number")]
+    [InlineData("""{ "id": "count", "type": "number", "max": 10, "default": -Infinity }""", "setting 'count' has a default that is not a number")]
+    [InlineData("""{ "id": "count", "type": "number", "max": 10, "default": 100000000000000000000 }""", "setting 'count' has a default that is more than its max")]
+    [InlineData("""{ "id": "count", "type": "number", "min": 100000000000000000000, "default": 5 }""", "setting 'count' has a default that is less than its min")]
+    [InlineData("""{ "id": "ends", "type": "calendar", "default": "soon" }""",
+        "setting 'ends' has a default that is not an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""{ "id": "ends", "type": "calendar", "default": "2026-12-31T23:59:59" }""",
+        "setting 'ends' has a default that is not an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z")]
+    [InlineData("""{ "id": "ends", "type": "calendar", "default": 5 }""", "setting 'ends' has a default that is not a text")]
+    [InlineData("""{ "id": "title", "type": "string", "default": [ 1, 2 ] }""", "setting 'title' has a default that is not a text")]
+    [InlineData("""{ "id": "title", "type": "string", "default": { "en-US": "Hi", "de-DE": "Hallo" } }""", "setting 'title' has a default that is not a text")]
+    [InlineData("""{ "id": "body", "type": "text", "translatable": true, "default": { "title": "Hi" } }""",
+        "setting 'body' has a default that is not a text, or a text per language")]
+    [InlineData("""{ "id": "image", "type": "images", "default": { "en-US": "https://cdn.example/assets/a.png" } }""", "setting 'image' has a default that is not a text")]
+    [InlineData("""{ "type": "header", "label": "Content", "default": "Content" }""", "setting 1 has a default that a header does not take: it holds no value")]
     public void Validate_DefaultTheSettingDoesNotTake_IsRefused(string field, string error)
     {
         var catalog = (JObject)Catalog.DeepClone();
@@ -1279,7 +1377,12 @@ public class CustomSectionValidatorTests
     [InlineData("""{ "id": "card", "type": "object", "element": [ { "id": "shown", "type": "checkbox" } ], "default": { "shown": false } }""")]
     [InlineData("""{ "id": "count", "type": "slider", "min": 1, "max": 5, "default": 2.5 }""")]
     [InlineData("""{ "id": "tone", "type": "color-token", "default": "color_primary_500" }""")]
-    [InlineData("""{ "id": "tone", "type": "color-token", "default": "primary_500" }""")]
+    [InlineData("""{ "id": "count", "type": "number", "max": 100000000000000000000, "default": 5 }""")]
+    [InlineData("""{ "id": "count", "type": "number", "default": 100000000000000000000 }""")]
+    [InlineData("""{ "id": "ends", "type": "calendar", "default": "2026-12-31" }""")]
+    [InlineData("""{ "id": "ends", "type": "calendar", "default": "2026-12-31T23:59:59Z" }""")]
+    [InlineData("""{ "id": "ends", "type": "calendar", "default": "2026-12-31T23:59:59.5+02:00" }""")]
+    [InlineData("""{ "id": "body", "type": "text", "translatable": true, "default": { "en-US": "<p>Hi</p>", "de-DE": "" } }""")]
     public void Validate_DefaultTheSettingTakes_IsAccepted(string field)
     {
         var catalog = (JObject)Catalog.DeepClone();
@@ -1384,7 +1487,7 @@ public class CustomSectionValidatorTests
 
     private static JObject Section(string template, string css = "", string settings = Settings)
     {
-        var file = JObject.Parse($$"""{ "format": 1, "name": { "en-US": "Hero", "de-DE": "Held" }, "schema": { "settings": {{settings}}, "limit": 2, "icon": "star" } }""");
+        var file = ThemeJson.ParseObject($$"""{ "format": 1, "name": { "en-US": "Hero", "de-DE": "Held" }, "schema": { "settings": {{settings}}, "limit": 2, "icon": "star" } }""");
         file["template"] = template;
         file["css"] = css;
 

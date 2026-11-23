@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -37,7 +38,7 @@ public class CustomSectionValidator(
 
     public static IReadOnlyList<string> FieldTypes { get; } =
     [
-        HeaderType, ParagraphType, StringType, TextType, NumberType, SliderType, CheckboxType, SelectType, ColorTokenType, ImagesType, "calendar", ListType,
+        HeaderType, ParagraphType, StringType, TextType, NumberType, SliderType, CheckboxType, SelectType, ColorTokenType, ImagesType, CalendarType, ListType,
         ObjectType,
     ];
 
@@ -51,7 +52,7 @@ public class CustomSectionValidator(
     // the fields the designer shows as text to read, which hold no value
     private static readonly HashSet<string> LabelFieldTypes = new(StringComparer.Ordinal) { HeaderType, ParagraphType };
 
-    private static readonly Regex SettingIdPattern = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex SettingIdPattern = new("\\A[A-Za-z][A-Za-z0-9_]*\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     public virtual CustomSectionValidationResult Validate(string type, JToken content, JObject catalog) =>
         ValidateType(type, content, new Lazy<StorefrontKit>(() => CustomSectionKit.Read(catalog)));
@@ -147,7 +148,7 @@ public class CustomSectionValidator(
         var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
         var check = new CustomSectionCheck(type, result);
         result.File = check.File;
-        if (!ThemeStorage.IsCustomSectionType(type))
+        if (type == null || !ThemeStorage.IsCustomSectionType(type))
         {
             check.AddError($"'{type}' is not a custom section type, which {ThemeCustomSections.DescribeType()}");
             return result;
@@ -186,7 +187,6 @@ public class CustomSectionValidator(
         return result;
     }
 
-    /// <returns><c>null</c> when the types together fit what the snapshot carries to every page.</returns>
     public virtual long GetSize(IDictionary<string, JToken> types)
     {
         ArgumentNullException.ThrowIfNull(types);
@@ -194,6 +194,7 @@ public class CustomSectionValidator(
         return types.Values.Where(x => x != null).Sum(x => (long)Encoding.UTF8.GetByteCount(x.ToString(Formatting.None)));
     }
 
+    /// <returns><c>null</c> when the types together fit what the snapshot carries to every page.</returns>
     protected virtual string GetSizeError(IDictionary<string, JToken> types)
     {
         var size = GetSize(types);
@@ -328,6 +329,7 @@ public class CustomSectionValidator(
 
         if (LabelFieldTypes.Contains(type))
         {
+            ValidateSettingKeys(check, field, type, setting);
             return null;
         }
 
@@ -386,6 +388,10 @@ public class CustomSectionValidator(
             {
                 check.AddError($"{setting} is a select without a list of options, each with a value");
             }
+            else if (options.Any(x => x["label"] is { Type: not (JTokenType.String or JTokenType.Null) }))
+            {
+                check.AddError($"{setting} has an option with a label that is not a text");
+            }
         }
         else if (field["options"] != null)
         {
@@ -427,11 +433,11 @@ public class CustomSectionValidator(
             case CheckboxType:
                 return value.Type == JTokenType.Boolean ? null : "that is not true or false";
             case ColorTokenType:
-                // a token without color_ is written with it, as the setting variable is
-                return check.Kit?.PaletteTokens is not { Count: > 0 } tokens || value is JValue { Type: JTokenType.String } token &&
-                    (tokens.Contains((string)token) || tokens.Contains(ColorTokenPrefix + (string)token))
+                return check.Kit?.PaletteTokens is not { Count: > 0 } tokens || value is JValue { Type: JTokenType.String } token && tokens.Contains((string)token)
                     ? null
                     : "that is not one of the palette's tokens";
+            case HeaderType or ParagraphType:
+                return $"that a {type} does not take: it holds no value";
         }
 
         if (type == SelectType)
@@ -446,15 +452,29 @@ public class CustomSectionValidator(
         }
 
         // a translatable value is a text per language
-        var texts = (value is JObject translations ? translations.Properties().Select(x => x.Value) : [value])
-            .Select(x => x is JValue { Type: JTokenType.String } text ? (string)text : null)
-            .ToList();
-        if (IsLink(type, field) && texts.Exists(x => x == null || (x.Length > 0 && !urlPolicy.IsLink(x, CustomSectionTemplateValidator.LinkSchemes))))
+        var isTranslatable = IsSet(field, "translatable");
+        List<string> texts = value switch
+        {
+            JValue { Type: JTokenType.String } text => [(string)text],
+            JObject translations when isTranslatable && ThemeTranslations.IsTranslation(translations) => [.. translations.Properties().Select(x => (string)x.Value)],
+            _ => null,
+        };
+        if (texts == null)
+        {
+            return isTranslatable ? "that is not a text, or a text per language" : "that is not a text";
+        }
+
+        if (IsLink(type, field) && texts.Exists(x => x.Length > 0 && !urlPolicy.IsLink(x, CustomSectionTemplateValidator.LinkSchemes)))
         {
             return $"that is not a path starting with a single '/', an anchor such as #reviews, or an {JoinOr(CustomSectionTemplateValidator.LinkSchemes)} URL";
         }
 
-        return type == ImagesType && texts.Exists(x => x == null || (x.Length > 0 && !urlPolicy.IsAssetUrl(x)))
+        if (type == CalendarType && texts.Exists(x => x.Length > 0 && !CustomSectionTemplateValidator.IsIsoDate(x)))
+        {
+            return "that is not an ISO 8601 date, or a date and a time with its offset, such as 2026-12-31 or 2026-12-31T23:59:59Z";
+        }
+
+        return type == ImagesType && texts.Exists(x => x.Length > 0 && !urlPolicy.IsAssetUrl(x))
             ? "that is not a URL of the store's asset library"
             : null;
     }
@@ -479,16 +499,25 @@ public class CustomSectionValidator(
 
     private static string GetNumberError(JObject field, JToken value)
     {
-        if (value.Type is not (JTokenType.Integer or JTokenType.Float))
+        if (GetNumber(value) is not { } number || !double.IsFinite(number))
         {
             return "that is not a number";
         }
 
-        var number = value.Value<double>();
-        return field["min"] is JValue { Type: JTokenType.Integer or JTokenType.Float } min && number < min.Value<double>() ? "that is less than its min"
-            : field["max"] is JValue { Type: JTokenType.Integer or JTokenType.Float } max && number > max.Value<double>() ? "that is more than its max"
+        return GetNumber(field["min"]) is { } min && number < min ? "that is less than its min"
+            : GetNumber(field["max"]) is { } max && number > max ? "that is more than its max"
             : null;
     }
+
+    // a big integer as the storefront reads it: a double
+    private static double? GetNumber(JToken token) => (token as JValue)?.Value switch
+    {
+        long number => number,
+        double number => number,
+        decimal number => (double)number,
+        BigInteger number => (double)number,
+        _ => null,
+    };
 
     protected virtual Dictionary<string, CustomSectionSetting> ReadElement(CustomSectionCheck check, JObject field, string id, string type, string setting)
     {

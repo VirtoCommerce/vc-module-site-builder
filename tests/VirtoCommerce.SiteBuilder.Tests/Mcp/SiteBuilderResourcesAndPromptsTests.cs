@@ -122,6 +122,18 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         await Assert.ThrowsAnyAsync<McpException>(() => ReadAsync(StoreAReader(), "site-builder://stores/store-b/schemas"));
     }
 
+    [Theory]
+    [InlineData("section-kit")]
+    [InlineData("section-kit/icons")]
+    [InlineData("custom-sections/custom-stats")]
+    public async Task TheSectionKitAndTheCustomSectionTypesOfAnotherStore_AreRefused(string resource)
+    {
+        await _context.SeedThemeAsync(StoreB, McpTestContext.StorefrontKit);
+        _context.SeedThemeFile(StoreB, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+
+        await Assert.ThrowsAnyAsync<McpException>(() => ReadAsync(StoreAReader(), $"site-builder://stores/store-b/{resource}"));
+    }
+
     [Fact]
     public async Task TheSchemas_ListTheThemesCustomSectionTypes_MarkedCustom()
     {
@@ -229,7 +241,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
 
         var kit = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
 
-        Assert.Equal(rules.Elements, Strings(kit.GetProperty("template").GetProperty("elements")));
+        Assert.Equal(rules.Elements.Where(x => x != "h1"), Strings(kit.GetProperty("template").GetProperty("elements")));
         Assert.Equal(rules.Attributes, Strings(kit.GetProperty("template").GetProperty("attributes")));
         Assert.Equal(rules.FieldTypes, Strings(kit.GetProperty("file").GetProperty("field_types")));
         Assert.Equal(rules.AtRules, Strings(kit.GetProperty("css").GetProperty("at_rules")));
@@ -242,6 +254,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal("text-align: end", kit.GetProperty("css").GetProperty("logical_properties").GetProperty("text-align: right").GetString());
         Assert.Contains("section", Strings(kit.GetProperty("template").GetProperty("elements")));
         Assert.DoesNotContain("input", Strings(kit.GetProperty("template").GetProperty("elements")));
+        Assert.DoesNotContain("h1", Strings(kit.GetProperty("template").GetProperty("elements")));
         Assert.Equal(rules.MaxPartSize, kit.GetProperty("limits").GetProperty("template_bytes").GetInt32());
         Assert.Equal((1500, 64), (kit.GetProperty("limits").GetProperty("template_tags").GetInt32(), kit.GetProperty("limits").GetProperty("template_attributes").GetInt32()));
         Assert.Contains(kit.GetProperty("file").GetProperty("fields").EnumerateArray(),
@@ -249,6 +262,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Contains(kit.GetProperty("file").GetProperty("fields").EnumerateArray(),
             x => x.GetString()!.StartsWith("A default is one the setting takes", StringComparison.Ordinal));
         Assert.Contains(rules.TypePattern, kit.GetProperty("file").GetProperty("type").GetString(), StringComparison.Ordinal);
+        Assert.Contains("keyed by culture names, at least one with a region", kit.GetProperty("file").GetProperty("name").GetString(), StringComparison.Ordinal);
         Assert.Contains("keys of the catalog's templates", kit.GetProperty("file").GetProperty("target_templates").GetString(), StringComparison.Ordinal);
         Assert.Equal((256, 256, 64, 256), (kit.GetProperty("limits").GetProperty("kit").GetProperty("tags").GetInt32(),
             kit.GetProperty("limits").GetProperty("kit").GetProperty("behaviors").GetInt32(), kit.GetProperty("limits").GetProperty("kit").GetProperty("fields").GetInt32(),

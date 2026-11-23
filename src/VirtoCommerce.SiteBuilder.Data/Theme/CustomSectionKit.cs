@@ -128,7 +128,23 @@ public static class CustomSectionKit
     private static readonly Regex TagNamePattern = new("^vc-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex NamePattern = new("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
 
-    public static bool IsDeniedAttribute(string name) =>
+    /// <summary>
+    /// As written, or as the element gets it: the storefront passes the name camelCased, and one the component does not declare falls through
+    /// to its element, which lowercases it, so o-nclick is onclick there, and h-ref an href past the link rule.
+    /// </summary>
+    public static bool IsDeniedAttribute(string name)
+    {
+        if (IsDenied(name))
+        {
+            return true;
+        }
+
+        var written = name.Replace("-", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+
+        return written != name.ToLowerInvariant() && (IsDenied(written) || LinkAttributes.Contains(written) || ImageAttributes.Contains(written));
+    }
+
+    private static bool IsDenied(string name) =>
         DeniedAttributePrefixes.Any(x => name.StartsWith(x, StringComparison.OrdinalIgnoreCase)) || DeniedAttributes.Contains(name.ToLowerInvariant());
 
     public static bool IsReservedBehavior(string name) =>

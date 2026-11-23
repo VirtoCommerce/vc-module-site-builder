@@ -415,6 +415,65 @@ public class CustomSectionSaveTests
         Assert.EndsWith("more than 256 KB: the snapshot carries every type to every page", result.Errors[0]);
     }
 
+    [Fact]
+    public async Task SaveAsync_TypeThatGrowsTheTypesPastTheLimit_IsRefusedOnTheirSizeBeforeItIsChecked()
+    {
+        await SaveCatalogAsync();
+        var padding = $"/* {new string('x', 60 * 1024)} */";
+        foreach (var type in new[] { "custom-a", "custom-b", "custom-c", "custom-d" })
+        {
+            _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroWith(css: padding);
+        }
+
+        var validator = new CountingValidator(TestServices.CustomSectionValidator());
+
+        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section onclick=\"go()\"></section>", css: padding)))),
+            _user, Ct);
+
+        Assert.StartsWith("custom-sections: the custom section types are ", Assert.Single(result.Errors));
+        Assert.Equal(0, validator.Checked);
+        Assert.Equal(new[] { "a", "b", "c", "d" }.Select(x => Theme($"default/custom-sections/custom-{x}.json-draft")),
+            _live.Read.Where(x => x.Contains("/custom-sections/", System.StringComparison.Ordinal)).Order(System.StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task SaveAsync_OfACustomSectionType_ReadsEachTypeOfTheThemeOnce()
+    {
+        await SaveCatalogAsync();
+        _live.Files[Theme("default/custom-sections/custom-a.json-draft")] = HeroFile;
+        _live.Files[Theme("default/custom-sections/custom-b.json")] = HeroFile;
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroFile))), _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal([Theme("default/custom-sections/custom-a.json-draft"), Theme("default/custom-sections/custom-b.json")],
+            _live.Read.Where(x => x.Contains("/custom-sections/", System.StringComparison.Ordinal)).Order(System.StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task SaveAsync_CustomSectionTypeNamedFromTheRoot_AnswersItsWarnings()
+    {
+        await SaveCatalogAsync();
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ($"/{Hero}", HeroWith(template: "<section><h2>Sale</h2></section>")))), _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(["the template holds text of its own ('Sale'), which is the same in every language: bind it to a translatable setting"],
+            Assert.Single(result.Value.ThemeFiles).Warnings);
+    }
+
+    [Fact]
+    public async Task SaveAsync_FooterGroupWithABlockOfTheCatalogNamedLikeACustomType_IsSaved()
+    {
+        await new SchemaCatalogService(_themes).SaveAsync("s1",
+            $$"""{ "hash": "{{Catalog}}", "sections": { "site-footer": {} }, "blocks": { "custom-links": {} }, "shared": {} }""", Ct);
+        const string footer = """{ "content": [ { "id": "f", "type": "site-footer", "blocks": [ { "id": "b1", "type": "custom-links" } ] } ] }""";
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/footer-group.json", footer))), _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+    }
+
     [Theory]
     [InlineData(false, SiteBuilderOperationStatus.Succeeded)]
     [InlineData(true, SiteBuilderOperationStatus.Invalid)]
@@ -427,9 +486,11 @@ public class CustomSectionSaveTests
             _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroWith(css: padding);
         }
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: grows ? padding + padding : null)))), _user, Ct);
+        // each part stays under its own limit, so only the total refuses it
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: grows ? $"/* {new string('x', 62 * 1024)} */" : null)))), _user, Ct);
 
         Assert.Equal(status, result.Status);
+        Assert.Equal(grows, result.Errors?.SingleOrDefault()?.StartsWith("custom-sections: the custom section types are ", System.StringComparison.Ordinal) == true);
     }
 
     [Theory]

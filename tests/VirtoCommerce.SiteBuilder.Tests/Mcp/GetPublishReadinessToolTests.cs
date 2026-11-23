@@ -213,6 +213,28 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheTheme_WithoutDrafts_NamesTheToolsThatMakeThem()
+    {
+        await _context.SeedThemeAsync(StoreA);
+
+        var readiness = await CheckAsync(Reader(), new { theme = true, store_id = StoreA });
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "nothing-to-publish");
+        Assert.Contains("create_section_type and change_section_type", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheTool_NamesTheCustomSectionTypeFindings_AndTheThemesCustomSectionTypeDrafts()
+    {
+        var tool = _context.Harness.GetTool("get_publish_readiness").ProtocolTool;
+
+        Assert.Contains("a custom section type the theme does not hold, holds only as a draft or holds with unpublished changes", tool.Description,
+            StringComparison.Ordinal);
+        Assert.Contains("palette and custom section types",
+            tool.InputSchema.GetProperty("properties").GetProperty("theme").GetProperty("description").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task APageThatPlacesACustomSectionTypeOnlyInDraft_IsWarned_ToPublishTheThemeFirst()
     {
         await _context.SeedThemeAsync(StoreA);
@@ -254,12 +276,11 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     {
         await _context.SeedThemeAsync(StoreA);
         _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
-        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
         _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
 
         var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
 
-        Assert.DoesNotContain(readiness.Findings, x => x.Id == "section-type-unpublished");
+        Assert.DoesNotContain(readiness.Findings, x => x.Id.StartsWith("section-type-", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -148,6 +148,17 @@ public class ThemePublisher(
             AddThemeFile(source, file, content);
         }
 
+        // the validator counts the source's custom types in place of the catalog's, so a type a file places is read as the theme holds it
+        var placed = files.Values.SelectMany(ThemeCustomSections.GetPlacedTypes).Where(x => !source.CustomSections.ContainsKey(x)).ToHashSet(StringComparer.Ordinal);
+        if (placed.Count > 0)
+        {
+            var storage = await themeStorageFactory.OpenAsync(storeId);
+            foreach (var file in placed.Select(ThemeStorage.GetCustomSectionFile))
+            {
+                AddThemeFile(source, file, await ReadThemeFileAsync(storage, source, file, includeDrafts: true));
+            }
+        }
+
         var errors = themeValidator.Validate(source, catalog);
         if (errors.Count > 0)
         {
@@ -260,11 +271,12 @@ public class ThemePublisher(
         }
 
         var types = source.CustomSections.Keys.ToList();
-        // one result per type, in their order, before the folder's size
-        foreach (var (type, result) in types.Zip(customSectionValidator.ValidateTypes(source.CustomSections, types, catalog)))
+        var results = customSectionValidator.ValidateTypes(source.CustomSections, types, catalog).ToLookup(x => x.File, StringComparer.Ordinal);
+        foreach (var type in types)
         {
-            var errors = result.Errors
-                .Concat(contentGuard.GuardThemeFile(ThemeStorage.GetCustomSectionFile(type), source.CustomSections[type], catalog).Errors)
+            var file = ThemeStorage.GetCustomSectionFile(type);
+            var errors = results[file].SelectMany(x => x.Errors)
+                .Concat(contentGuard.GuardThemeFile(file, source.CustomSections[type], catalog).Errors)
                 .ToList();
             if (errors.Count > 0)
             {
@@ -272,10 +284,17 @@ public class ThemePublisher(
             }
         }
 
-        while (source.CustomSections.Count > 0 && customSectionValidator.ValidateTypes(source.CustomSections, [], catalog).Count > 0)
+        // the types together are as large as the sum of each, so each is measured once
+        var sizes = source.CustomSections
+            .Select(x => (Type: x.Key, Size: customSectionValidator.GetSize(new Dictionary<string, JToken> { [x.Key] = x.Value })))
+            .OrderByDescending(x => x.Size)
+            .ToList();
+        var size = sizes.Sum(x => x.Size);
+        var maxSize = customSectionValidator.GetRules().MaxTotalSize;
+        for (var i = 0; i < sizes.Count && size > maxSize; i++)
         {
-            LeaveOut(source.CustomSections.MaxBy(x => customSectionValidator.GetSize(new Dictionary<string, JToken> { [x.Key] = x.Value })).Key,
-                "the types together are too large");
+            LeaveOut(sizes[i].Type, "the types together are too large");
+            size -= sizes[i].Size;
         }
 
         void LeaveOut(string type, string reason)

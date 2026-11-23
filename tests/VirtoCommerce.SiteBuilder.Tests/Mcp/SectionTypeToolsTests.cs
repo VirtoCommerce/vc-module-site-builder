@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Moq;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Services;
@@ -126,6 +127,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.Contains("edit_page_draft", change.NextStep, StringComparison.Ordinal);
         Assert.Contains("publish_theme", change.NextStep, StringComparison.Ordinal);
         Assert.Contains($"version_tokens['{Path}']", change.NextStep, StringComparison.Ordinal);
+        Assert.DoesNotContain("dryRun", change.NextStep, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -143,6 +145,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         var change = (await CallAsync(tool, versionToken: versionToken, dryRun: true)).EnsureSucceeded().Read<ThemeFileChange>();
 
         Assert.Empty(change.Warnings);
+        Assert.StartsWith($"Call {tool} again without dryRun to save the type.", change.NextStep, StringComparison.Ordinal);
         Assert.Contains("publish_theme", change.NextStep, StringComparison.Ordinal);
     }
 
@@ -235,6 +238,19 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.NotEqual(created.VersionTokens[Path], token);
         Assert.Contains("The call changes nothing, so nothing was saved.", change.Warnings);
         Assert.Contains(change.Errors ?? [], x => x.Contains("'onclick': it runs script", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ADryRunThatChangesNothing_AnswersNoNextStep()
+    {
+        await SeedAsync();
+        var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
+
+        var change = (await CallAsync(Change, versionToken: created.VersionTokens[Path], dryRun: true)).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Contains("The call changes nothing, so nothing was saved.", change.Warnings);
+        Assert.Null(change.Errors);
+        Assert.Null(change.NextStep);
     }
 
     [Fact]
@@ -375,6 +391,43 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.Contains("Templates are not scanned", placed.Coverage, StringComparison.Ordinal);
         Assert.Contains("no longer shown", placed.Note, StringComparison.Ordinal);
         Assert.Contains("update_sections_bulk", change.NextStep, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AChange_ListsTheLanguageVersionsThatPlaceTheType_ByTheirOwnIds_AndTheSharedComponentsThatHoldIt_Apart()
+    {
+        await SeedAsync();
+        var created = (await CallAsync(Create)).EnsureSucceeded().Read<ThemeFileChange>();
+        var english = _context.SeedDraft("about-en", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""", multilanguagePageId: "about");
+        var french = _context.SeedDraft("about-fr", StoreA,
+            """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" }, { "id": "pl1", "type": "componentRef", "componentRef": "sc1" } ] }""",
+            "fr-FR", "about");
+        _context.ListPages(() =>
+        [
+            new SiteBuilderPageListItem
+            {
+                Type = "Multilanguage",
+                Id = "about",
+                Name = "About",
+                Permalink = "/about",
+                MultilanguagePage = Root("about", StoreA),
+                Languages = [new MultilanguagePageLanguage { CultureName = "en-US", Page = english }, new MultilanguagePageLanguage { CultureName = "fr-FR", Page = french }],
+            },
+        ]);
+        _context.SharedComponents
+            .Setup(x => x.GetAsync(It.IsAny<IList<string>>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .ReturnsAsync([new SiteBuilderSharedComponent { Id = "sc1", StoreId = StoreA }]);
+        _context.SharedComponentContents
+            .Setup(x => x.TryLoadContentAsync(It.IsAny<SiteBuilderSharedComponent>(), It.IsAny<System.Threading.CancellationToken>()))
+            .ReturnsAsync("""{ "settings": {}, "content": [ { "id": "c1", "type": "custom-stats" } ] }""");
+        var user = McpTestUser.Create("designer").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Theme, Permissions.SharedComponentsRead);
+
+        var change = (await CallAsync(Change, user, settings: [.. Settings, new { id = "note", type = "string" }], versionToken: created.VersionTokens[Path], dryRun: true))
+            .EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Equal([("about-en", "en-US", 1, ""), ("about-fr", "fr-FR", 1, "sc1")],
+            change.PlacedSections!.Pages.Select(x => (x.PageId, x.Language, x.Sections, string.Join(",", x.SharedComponentIds))));
+        Assert.Contains("change_shared_component", change.NextStep, StringComparison.Ordinal);
     }
 
     [Fact]

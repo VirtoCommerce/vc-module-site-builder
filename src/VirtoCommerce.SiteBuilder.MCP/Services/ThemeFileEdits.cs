@@ -67,8 +67,10 @@ public sealed class SectionTypePlacements
 
 public sealed record NewSettingRow([property: JsonPropertyName("id")] string Id, [property: JsonPropertyName("placed_sections_show")] string PlacedSectionsShow);
 
-public sealed record PlacingPageRow([property: JsonPropertyName("page_id")] string PageId, [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("permalink")] string Permalink, [property: JsonPropertyName("sections")] int Sections);
+// sections counts only the page's own: edit_page_draft cannot set those of a placed Shared Component.
+public sealed record PlacingPageRow([property: JsonPropertyName("page_id")] string PageId, [property: JsonPropertyName("language")] string Language,
+    [property: JsonPropertyName("name")] string Name, [property: JsonPropertyName("permalink")] string Permalink,
+    [property: JsonPropertyName("sections")] int Sections, [property: JsonPropertyName("shared_component_ids")] IList<string> SharedComponentIds);
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
 

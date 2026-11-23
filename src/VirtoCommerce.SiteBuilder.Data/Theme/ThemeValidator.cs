@@ -40,8 +40,16 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
             ValidateItems((JArray)pageDocument["content"], ModuleConstants.SchemaKinds.Sections, file, themeCatalog, errors, allowPageContent);
         }
 
-        ValidateSectionGroup(source.Header, ThemeStorage.HeaderGroupFile, themeCatalog, errors);
-        ValidateSectionGroup(source.Footer, ThemeStorage.FooterGroupFile, themeCatalog, errors);
+        foreach (var (file, sectionGroup) in new[] { (ThemeStorage.HeaderGroupFile, source.Header), (ThemeStorage.FooterGroupFile, source.Footer) })
+        {
+            // A first publication checks the shape only and leaves custom sections out, as it does shared components.
+            if (catalog != null)
+            {
+                errors.AddRange(ThemeCustomSections.GetSectionGroupErrors(file, sectionGroup, themeCatalog, source.CustomSections.Keys));
+            }
+
+            ValidateSectionGroup(ThemeCustomSections.WithoutPlacements(sectionGroup, themeCatalog, source.CustomSections.Keys), file, themeCatalog, errors);
+        }
 
         if (source.Rules != null && source.Rules is not JObject)
         {
@@ -64,22 +72,7 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
             return;
         }
 
-        // A first publication checks the shape only and leaves custom sections out, as it does shared components.
-        if (catalog != null)
-        {
-            foreach (var error in ThemeCustomSections.GetSectionGroupErrors(file, sectionGroup))
-            {
-                errors.Add(error);
-            }
-        }
-
-        var sections = (JArray)content.DeepClone();
-        foreach (var placement in ThemeCustomSections.GetPlacements(sections).ToList())
-        {
-            placement.Remove();
-        }
-
-        ValidateItems(sections, ModuleConstants.SchemaKinds.Sections, file, catalog, errors, allowPageContent: false);
+        ValidateItems(content, ModuleConstants.SchemaKinds.Sections, file, catalog, errors, allowPageContent: false);
     }
 
     protected virtual void ValidateItems(JArray items, string kind, string file, JObject catalog, IList<string> errors, bool allowPageContent)

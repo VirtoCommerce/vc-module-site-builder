@@ -86,6 +86,26 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADryRunOfLanguageVersions_WarnsOfACustomSectionTypeTheThemeHoldsOnlyAsADraft(bool allLanguages)
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        SeedMultilanguagePage();
+        SetUpPublishAll([("ml-fr", "v-fr")], []);
+        _pages.SeedContent("ml-fr-draft", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Notre année" } ] }""");
+        var arguments = new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["dryRun"] = true };
+        arguments[allLanguages ? "all_languages" : "languages"] = allLanguages ? true : new[] { "fr-FR" };
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", arguments)).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(review.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("only as a draft", warning, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ADryRunOfAPageWithoutCustomSectionTypes_HasNoSectionTypeWarning()
     {

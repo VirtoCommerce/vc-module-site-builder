@@ -34,9 +34,13 @@ public sealed record StorefrontKit(bool HasCatalog, IReadOnlyDictionary<string, 
 public sealed record KitField(string Type, IReadOnlyList<string> Options, decimal? Min, decimal? Max, string OptionsFrom = null)
 {
     /// <summary>Why the server cannot check a value of the field, to follow its name; <c>null</c> when it can.</summary>
-    public string Fault { get; } = !CustomSectionKit.FieldTypes.Contains(Type ?? string.Empty)
-        ? $" of a type the server does not know, '{Type}'"
-        : Type == CustomSectionKit.SelectType && Options == null && OptionsFrom == null ? ", a select with neither options nor optionsFrom" : null;
+    public string Fault { get; } = (Type, Options, OptionsFrom) switch
+    {
+        _ when !CustomSectionKit.FieldTypes.Contains(Type ?? string.Empty) => $" of a type the server does not know, '{Type}'",
+        (CustomSectionKit.SelectType, null, null) => ", a select with neither options nor optionsFrom",
+        (CustomSectionKit.SelectType, null, not CustomSectionKit.IconsKey) => $", a select with no options and an optionsFrom other than \"{CustomSectionKit.IconsKey}\", '{OptionsFrom}'",
+        _ => null,
+    };
 
     /// <returns>The first field the server cannot check, as 'name' and why; <c>null</c> for none.</returns>
     public static string GetFirstFault(IEnumerable<KeyValuePair<string, KitField>> fields) =>

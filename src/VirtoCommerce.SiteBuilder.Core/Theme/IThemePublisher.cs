@@ -26,7 +26,10 @@ public interface IThemePublisher
 
     Task<ThemeStatus> GetStatusAsync(string storeId, CancellationToken cancellationToken = default);
 
-    /// <summary>The files are keyed by their path in the theme.</summary>
+    /// <summary>
+    /// The files are keyed by their path in the theme. A custom section type a file places, and the files do not hold, is the store's theme's,
+    /// as its draft holds it, else as it is live.
+    /// </summary>
     /// <exception cref="ThemeValidationException">There is no such catalog, or a file does not match it.</exception>
     Task ValidateFilesAsync(string storeId, string catalogHash, IDictionary<string, JToken> files, CancellationToken cancellationToken = default);
 }

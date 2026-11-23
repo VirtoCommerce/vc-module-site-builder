@@ -151,6 +151,7 @@ public class ThemeValidatorTests
         source.CustomSections["custom-hero"] = JObject.Parse("""
             { "format": 1, "name": "Hero", "schema": { "settings": [] }, "template": "<section></section>", "css": "" }
             """);
+        source.CustomSections["custom-news"] = source.CustomSections["custom-hero"];
         string[] errors =
         [
             "sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold",
@@ -159,6 +160,21 @@ public class ThemeValidatorTests
 
         Assert.Equal(errors, _validator.Validate(source, catalog));
         Assert.Empty(_validator.Validate(source, null));
+    }
+
+    [Fact]
+    public void Validate_BlockOfTheCatalogNamedLikeACustomType_IsAccepted()
+    {
+        var catalog = JObject.Parse("""{ "sections": { "site-footer": {} }, "blocks": { "custom-links": {} } }""");
+        var source = Source(footer: JObject.Parse("""{ "content": [ { "id": "f", "type": "site-footer", "blocks": [ { "id": "b1", "type": "custom-links" } ] } ] }"""));
+
+        Assert.Empty(_validator.Validate(source, catalog));
+
+        source.CustomSections["custom-links"] = JObject.Parse("""
+            { "format": 1, "name": "Links", "schema": { "settings": [] }, "template": "<section></section>", "css": "" }
+            """);
+
+        Assert.Empty(_validator.Validate(source, catalog));
     }
 
     [Fact]

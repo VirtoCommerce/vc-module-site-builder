@@ -160,6 +160,22 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APublishDryRun_WarnsOfACustomSectionTypeTheThemeHoldsOnlyAsADraft()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedFilePage(StoreA, Path, """{ "settings": { "name": "Spring" }, "content": [ { "id": "s1", "type": "custom-stats" } ] }""", draft: true);
+        SetUpPublish(new FilePageShipment { State = GitPublishState.Merged });
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", new Dictionary<string, object>(FilePage()) { ["dryRun"] = true }))
+            .EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(review.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("only as a draft", warning, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task APublishWithoutTheReviewedVersion_IsRefused()
     {
         SetUpPublish(ConflictShipment());

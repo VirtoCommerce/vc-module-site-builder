@@ -50,8 +50,12 @@ public static class SectionKitGuide
         "No h1, since the page has it: headings start at h2 and go down one level at a time.",
         "An image's alt is bound to a translatable setting, or is \"\" for an image that only decorates.",
         "A link has text a person reads, bound to a translatable setting.",
-        "Never hide the focus outline: its width and style are written out, never none, 0, initial, unset, inherit or a function, and its " +
-            "color comes from the palette: var(--color-...), a color-token setting's --setting-<id>, or a color function or color-mix() of them.",
+        "Never hide the focus outline: outline names its style (auto, solid, dashed, dotted, double, groove, ridge, inset or outset) unless it " +
+            "is revert or revert-layer, and outline-style is never none; a width, in outline or outline-width, is never 0; a color, in outline " +
+            "or outline-color, is never transparent and comes from the palette: var(--color-...) or a color-token setting's var(--setting-<id>), " +
+            "with no fallback, or a color function or color-mix() of them; outline-style, outline-width and all take no function, and outline " +
+            "and outline-color no other; outline, outline-style and all are never initial, unset or inherit, nor outline-width inherit; and the " +
+            "CSS sets no --color-..., --vc-focus-ring-... or color-token setting's --setting-<id> variable.",
         "Anything that moves stops in @media (prefers-reduced-motion: reduce), or moves only in @media (prefers-reduced-motion: no-preference).",
         "German and French run about 30% longer than English: no fixed width or height on an element that holds text.",
         "Right-to-left languages: logical properties only, such as margin-inline-start, padding-block and inset-inline-end, never left or " +
@@ -95,7 +99,8 @@ public static class SectionKitGuide
                 Path = $"{ThemeStorage.CustomSectionsFolder}/{{type}}.json in the theme; create_section_type and change_section_type write its draft.",
                 Type = string.Create(CultureInfo.InvariantCulture,
                     $"The type matches {rules.TypePattern} and has at most {rules.MaxTypeLength} characters, such as {ExampleType}. Keep the type of one a page places."),
-                Name = "A text, or a text per language: the name in the designer's section picker.",
+                Name = "A text, or a text per language keyed by culture names, at least one with a region, such as { \"en-US\": \"Stats band\" }: " +
+                    "the name in the designer's section picker.",
                 SchemaKeys = rules.SchemaKeys,
                 TargetTemplates = "targetTemplates names the templates that offer the type, by the keys of the catalog's templates, as the schemas " +
                     "resource lists them, such as product; a save warns of a key the catalog does not name. Left out, every template offers it.",
@@ -127,8 +132,8 @@ public static class SectionKitGuide
                     $"place it breaks, and so are elements nested more than {rules.MaxTemplateDepth} deep, the root counted, and a template of more " +
                     $"than {rules.MaxTemplateTags} tags, counting each '<' followed by a letter as written, in comments and attribute values too, or " +
                     $"a tag of more than {rules.MaxTemplateAttributes} attributes.",
-                Elements = rules.Elements,
-                ElementsNote = "And the kit tags below. Anything else is refused, such as svg, script, style, iframe and form controls.",
+                Elements = rules.Elements.Where(x => x != "h1").ToList(),
+                ElementsNote = "And the kit tags below. Anything else is refused, such as h1, which the page holds, svg, script, style, iframe and form controls.",
                 Attributes = rules.Attributes,
                 AttributesNote = $"And aria-*, the binding attributes, the behaviors below and element_attributes. No id (two sections on a page would " +
                     $"share it), no style (the CSS styles it), no on* (script), and no {JoinOr(rules.ReservedDataPrefixes.Select(x => x + "*").ToList())}, " +
@@ -195,13 +200,13 @@ public static class SectionKitGuide
                         "start, a selector in :has() starting with + or ~, :nth-child(… of …) or :nth-last-child(… of …) on :scope or &, a " +
                         "combinator inside :is(), :where(), :not() and the other pseudo-classes of selectors or after the of of :nth-child(), and a " +
                         "functional pseudo-class or pseudo-element the storefront does not take; :has() may hold > and descendants",
-                    "a declaration outside any rule, which a browser drops with the rule after it: write it in :scope { }",
+                    "a declaration outside any rule, which a browser that reads no declaration directly in @scope drops: write it in :scope { }",
                     $"a shorthand whose value holds {JoinOr(Functions(rules.LateValueFunctions))}, followed in the same rule by a declaration of some of " +
                         "its parts, such as background: linear-gradient(var(--a), var(--b)) then background-size, which loses the shorthand on the " +
                         "storefront: set each part on its own, such as background-image",
                     $"a position other than {JoinOr(rules.PositionValues)}, such as fixed, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} " +
                         "in position",
-                    $"a URL other than one of the store's asset library or a data:image/ URL in {JoinOr(Functions(rules.ImageFunctions))}, custom " +
+                    $"a URL other than one of the store's asset library or a data:image/ URL without a raw # in {JoinOr(Functions(rules.ImageFunctions))}, custom " +
                         $"properties included, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} inside them",
                     $"{JoinAnd(Functions(rules.RefusedFunctions))}, which run script or paint a live copy of an element of the page, and the properties " +
                         $"{JoinOr(rules.ScriptProperties)}, which run script",

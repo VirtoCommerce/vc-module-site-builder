@@ -3,13 +3,16 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 /// <summary>
 /// The storefront's @scope keeps inside the section only the element a rule styles: every other part of its selector matches against the whole page,
 /// and a conditional image can tell what it found. So :scope or &amp; comes only first, a :has() looks at no sibling, an :nth-child(… of …) counts no
-/// sibling of the section's root, and the arguments matched against the whole page are compound selectors. The storefront drops such a rule.
+/// sibling of the section's root, the arguments matched against the whole page are compound selectors, and no selector names :root, or html or
+/// body as a type. The storefront drops such a rule.
 /// </summary>
 public static class CustomSectionCssSelector
 {
     private const string Outside = "can match outside the section: ";
+    private const string Document = "reaches :root, html or body, outside the section";
     private const string HasPseudo = "has";
     private const string ScopePseudo = "scope";
+    private const string RootPseudo = "root";
     private const string NthOfKeyword = "of";
 
     /// <summary>Their arguments match against the whole page, so they take compound selectors only, as the S of :nth-child(… of S) does.</summary>
@@ -26,6 +29,8 @@ public static class CustomSectionCssSelector
     };
 
     private static readonly HashSet<string> NthChildPseudos = new(StringComparer.OrdinalIgnoreCase) { "nth-child", "nth-last-child" };
+
+    private static readonly HashSet<string> DocumentTypes = new(StringComparer.OrdinalIgnoreCase) { "html", "body" };
 
     /// <param name="selectors">A style rule's prelude: its selector list, as tokens.</param>
     /// <returns>What makes the list match outside the section, to follow the selector in an error; <c>null</c> for nothing.</returns>
@@ -142,11 +147,16 @@ public static class CustomSectionCssSelector
             CssTokenizer.TokenKind.Whitespace => ReadCombinator(token.Value),
             CssTokenizer.TokenKind.Delim when token.Value == "&" => Anchor(),
             CssTokenizer.TokenKind.Delim when IsCombinator(token) => ReadCombinator(token.Value),
+            CssTokenizer.TokenKind.Ident when IsDocumentType(token) => Document,
             CssTokenizer.TokenKind.Function => $"has '{token.Value}(' outside a pseudo-class",
             CssTokenizer.TokenKind.OpenParen => "has a '(' outside a pseudo-class",
             CssTokenizer.TokenKind.CloseParen => _groups.TryPop(out _) ? null : "has a ')' without its pair",
             _ => null,
         };
+
+        // a name after a '.' is a class; any other the reader reaches is a type, *|body included
+        private bool IsDocumentType(CssTokenizer.Token token) =>
+            DocumentTypes.Contains(token.Value) && !(_index > 0 && tokens[_index - 1] is { Kind: CssTokenizer.TokenKind.Delim, Value: "." });
 
         private string ReadPseudo()
         {
@@ -162,6 +172,11 @@ public static class CustomSectionCssSelector
             if (token.Kind == CssTokenizer.TokenKind.Ident)
             {
                 _index = next;
+                if (string.Equals(token.Value, RootPseudo, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Document;
+                }
+
                 return string.Equals(token.Value, ScopePseudo, StringComparison.OrdinalIgnoreCase) ? Anchor() : null;
             }
 

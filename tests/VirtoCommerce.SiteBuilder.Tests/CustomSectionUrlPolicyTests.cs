@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using Xunit;
@@ -16,6 +17,18 @@ public class CustomSectionUrlPolicyTests
 
         Assert.Null(policy.GetAssetsBaseUrl());
         Assert.False(policy.IsAssetUrl("https://cdn.example/assets/a.png"));
+    }
+
+    [Fact]
+    public void IsAssetUrl_OfManyUrlsWithALibraryThatFails_AsksTheLibraryOnce()
+    {
+        var assets = new FailingAssetUrls();
+        var policy = new CustomSectionUrlPolicy(assets, NullLogger<CustomSectionUrlPolicy>.Instance);
+
+        var anyAsset = Enumerable.Range(0, 100).Any(x => policy.IsAssetUrl($"https://cdn.example/assets/{x}.png"));
+
+        Assert.False(anyAsset);
+        Assert.Equal(1, assets.Calls);
     }
 
     [Theory]
@@ -54,8 +67,24 @@ public class CustomSectionUrlPolicyTests
         Assert.Equal(isLink, TestServices.CustomSectionUrlPolicy(Assets).IsLink(url, CustomSectionTemplateValidator.LinkSchemes));
     }
 
+    [Theory]
+    [InlineData("data:image/png;base64,iVBORw0KGgo=", true)]
+    [InlineData("DATA:IMAGE/SVG+XML,<svg/>", true)]
+    [InlineData("data:image/svg+xml,<svg><use href='#x'/></svg>", false)]
+    [InlineData(" data:image/png;base64,iVBORw0KGgo=", false)]
+    public void IsImageDataUrl_TakesAnImageInAnyCase_WithoutARawFragment(string url, bool isImage)
+    {
+        Assert.Equal(isImage, TestServices.CustomSectionUrlPolicy(Assets).IsImageDataUrl(url));
+    }
+
     private sealed class FailingAssetUrls : VirtoCommerce.AssetsModule.Core.Assets.IBlobUrlResolver
     {
-        public string GetAbsoluteUrl(string blobKey) => throw new InvalidOperationException("The asset provider is not configured.");
+        public int Calls { get; private set; }
+
+        public string GetAbsoluteUrl(string blobKey)
+        {
+            Calls++;
+            throw new InvalidOperationException("The asset provider is not configured.");
+        }
     }
 }

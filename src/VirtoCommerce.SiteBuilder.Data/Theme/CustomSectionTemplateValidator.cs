@@ -307,7 +307,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
             case "img" when !element.HasAttribute(AltAttribute):
                 check.AddError($"{where} has no alt: bind it to a string setting, or write alt=\"\" for an image that only decorates");
                 break;
-            case "a" when !HasName(element):
+            case "a" when !HasName(check, element):
                 check.AddError($"{where} is a link with nothing to read: give it text or a binding, an aria-label, or an image with an alt");
                 break;
         }
@@ -645,7 +645,13 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     {
         var literal = ValidateBindings(check, value, where, scope, (setting, path) =>
         {
-            if (setting.Type != SelectType || setting.Options == null || !setting.Options.All(x => IsOwnClasses(check, x)))
+            if (!scope.Context.ClassSelects.TryGetValue(setting, out var isOwn))
+            {
+                isOwn = setting.Type == SelectType && setting.Options != null && setting.Options.All(x => IsOwnClasses(check, x));
+                scope.Context.ClassSelects[setting] = isOwn;
+            }
+
+            if (!isOwn)
             {
                 check.AddError($"{where} binds class to '{path}', which is not a select whose options are the type's own classes");
             }
@@ -727,7 +733,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         var urls = name == "srcset"
-            ? value.Split(',').Select(x => x.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty)
+            ? value.Split(',').Select(x => x.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()).Where(x => x != null)
             : [value];
         foreach (var url in urls.Where(x => !urlPolicy.IsAssetUrl(x)))
         {
@@ -875,13 +881,17 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     private static int CountMostAttributes(string template)
     {
         var most = 0;
-        for (var i = template.IndexOf('<'); i >= 0 && i < template.Length - 1; i = template.IndexOf('<', i + 1))
+        var i = template.IndexOf('<');
+        while (i >= 0 && i < template.Length - 1)
         {
-            if (char.IsAsciiLetter(template[i + 1]))
+            var end = i + 1;
+            if (char.IsAsciiLetter(template[end]))
             {
-                (var count, i) = CountAttributes(template, i + 1);
+                (var count, end) = CountAttributes(template, end);
                 most = Math.Max(most, count);
             }
+
+            i = template.IndexOf('<', end);
         }
 
         return most;
@@ -1026,15 +1036,18 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         return (line + 1, index - lineStarts[line] + 1);
     }
 
-    // text or a binding, which the storefront fills with text, an aria-label, rich text, or an image whose alt names it
-    private static bool HasName(IElement link) =>
+    // text or a binding, which the storefront fills with text, an aria-label, rich text, an image whose alt names it, or a kit tag that renders
+    // one of its text attributes, such as an image's alt
+    private static bool HasName(CustomSectionCheck check, IElement link) =>
         !string.IsNullOrWhiteSpace(link.TextContent) ||
         !string.IsNullOrWhiteSpace(link.GetAttribute("aria-label")) ||
         link.HasAttribute(HtmlAttribute) ||
         link.QuerySelectorAll("[data-html]").Length > 0 ||
-        link.QuerySelectorAll("img").Any(x => !string.IsNullOrWhiteSpace(x.GetAttribute(AltAttribute)));
+        link.QuerySelectorAll("img").Any(x => !string.IsNullOrWhiteSpace(x.GetAttribute(AltAttribute))) ||
+        link.QuerySelectorAll("*").Any(x => check.Kit.Tags?.TryGetValue(x.LocalName, out var attributes) == true &&
+            attributes.Keys.Any(name => TextAttributes.Contains(name) && !string.IsNullOrWhiteSpace(x.GetAttribute(name))));
 
-    private static bool IsIsoDate(string value) =>
+    internal static bool IsIsoDate(string value) =>
         IsoDatePattern.IsMatch(value) && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _);
 
     private static string DescribeNumber(KitField field) => (field.Min, field.Max) switch
@@ -1052,7 +1065,7 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     /// <param name="Behaviors">The behaviors the element and its ancestors switch on, whose options it may take.</param>
     protected sealed record TemplateScope(CustomSectionSetting Each, bool IsRoot, TemplateContext Context, string Repeating, IImmutableSet<string> Behaviors);
 
-    /// <summary>The template as written, for the line numbers of errors, and the text it holds of its own, for the warning.</summary>
+    /// <summary>The template as written, for the line numbers of errors; the text it holds of its own, for the warning; and the settings its classes bind.</summary>
     protected sealed class TemplateContext(string template)
     {
         public string Template { get; } = template;
@@ -1060,5 +1073,8 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         public List<int> LineStarts { get; } = [0, .. template.Select((x, i) => (x, i)).Where(x => x.x == '\n').Select(x => x.i + 1)];
 
         public IList<string> Texts { get; } = [];
+
+        /// <summary>By setting a class binds, whether it is a select whose options are the type's own classes, judged once: classes may bind it many times.</summary>
+        public Dictionary<CustomSectionSetting, bool> ClassSelects { get; } = new();
     }
 }

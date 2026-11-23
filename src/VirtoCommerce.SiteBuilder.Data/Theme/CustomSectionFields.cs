@@ -18,7 +18,5 @@ public static class CustomSectionFields
     public const string SliderType = "slider";
     public const string CheckboxType = "checkbox";
     public const string ColorTokenType = "color-token";
-
-    /// <summary>What a color-token setting's token starts with; one without it is written with it.</summary>
-    public const string ColorTokenPrefix = "color_";
+    public const string CalendarType = "calendar";
 }

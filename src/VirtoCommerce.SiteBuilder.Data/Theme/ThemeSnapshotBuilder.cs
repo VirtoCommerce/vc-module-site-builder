@@ -69,8 +69,9 @@ public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy)
         snapshot.CatalogHash = catalogHash;
         snapshot.Rules = GetTemplateRules(source.Rules);
         snapshot.Templates = GetTemplates(source.Templates);
-        snapshot.Header = GetSectionGroup(source.Header);
-        snapshot.Footer = GetSectionGroup(source.Footer);
+        // The storefront renders only a group's own sections in it; a first publication leaves a custom type out of the live files' groups.
+        snapshot.Header = GetSectionGroup(ThemeCustomSections.WithoutPlacements(source.Header, catalog, source.CustomSections.Keys));
+        snapshot.Footer = GetSectionGroup(ThemeCustomSections.WithoutPlacements(source.Footer, catalog, source.CustomSections.Keys));
         snapshot.Brand = GetBrand(source.Brand, source.SettingsData);
         snapshot.Palette = GetPalette(source.Palette, source.PaletteDark);
         snapshot.CustomSections = GetCustomSections(source.CustomSections);
@@ -236,18 +237,8 @@ public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy)
 
         var result = new JObject { ["content"] = content.DeepClone() };
         RemoveSharedComponents(result);
-        RemoveCustomSections(result);
 
         return result;
-    }
-
-    // The storefront renders only a group's own sections in it; a first publication leaves a custom type out of the live files' groups.
-    protected virtual void RemoveCustomSections(JObject sectionGroup)
-    {
-        foreach (var placement in ThemeCustomSections.GetPlacements((JArray)sectionGroup["content"]).ToList())
-        {
-            placement.Remove();
-        }
     }
 
     // The storefront does not resolve shared components outside pages.

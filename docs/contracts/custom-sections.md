@@ -18,8 +18,9 @@ was never published removes the type. The prefix `custom-` is the theme's: the c
 key starts with it unless it is marked `"custom": true`. A theme's types are at most 256 KB of JSON together, since the
 snapshot carries every type to every page; the setting `SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes)
 changes the limit. A save checks the limit early, but two saves at once may pass it together: the publication enforces
-it, and `get_publish_readiness` names it. A save is refused on the limit only when it grows the types past it, so types
-already over it, after two such saves or a lower limit, can still shrink; the publication holds the limit as it is.
+it, and `get_publish_readiness` names it. A save is refused on the limit only when it grows the types past it, and then
+on the limit alone, before the types it writes are checked; types already over it, after two such saves or a lower
+limit, can still shrink. The publication holds the limit as it is.
 
 ```ts
 interface CustomSectionType {
@@ -58,12 +59,15 @@ setting's value next to these keys of the section itself. A setting takes `id`, 
 `translatable`, `tab`, `info`, `placeholder`, `required`, `multiline`, `format`, `options`, `element`, `min`, `max` and
 `step`. `visibility` and `request` are refused, since the designer runs the one and sends the other, and so are
 `"multiple": true` and any other key. A setting's `label`, `info` and `placeholder` are texts, as the designer shows
-them. A `default` is one the setting takes, or empty: a `select`'s is one of its options, a link's follows the link
-rule, an `images` one is a URL of the store's asset library, a `number`'s or a `slider`'s is a number within its `min`
-and `max`, a `checkbox`'s is `true` or `false`, and a `color-token`'s is one of the catalog's palette tokens when the
-catalog lists them, with or without `color_`. A `list`'s default is a list of rows and an `object`'s one row, each
-field of which holds a default that field takes. A default applies wherever a placed section has no value of its own,
-a setting added to the type after the section was placed included.
+them, and so is the `label` of a `select`'s option. A `default` is one the setting takes, or empty: a `string`'s, a
+`text`'s and a `calendar`'s are texts, and a translatable setting's may be a text per language; a link's follows the
+link rule, an `images` one is a URL of the store's asset library, a `calendar`'s is an ISO 8601 date or a date and a
+time with its offset, a `select`'s is one of its options, a `number`'s or a `slider`'s is a number within its `min` and
+`max`, a `checkbox`'s is `true` or `false`, and a `color-token`'s is one of the catalog's palette tokens as the catalog
+lists them, with `color_`, when it lists any; a `header` and a `paragraph` hold no value and take none. A `list`'s
+default is a list of rows and an `object`'s one row, each field of which holds a default that field takes. A default
+applies wherever a placed section has no value of its own, a setting added to the type after the section was placed
+included.
 
 ## Template
 
@@ -71,7 +75,8 @@ An HTML fragment with exactly one root element, the section's root. The storefro
 wrapper element of its own, outside the scope root, with `contain: paint` and `isolation: isolate`, so that nothing a
 section draws leaves its box; the wrapper carries the section's anchor id and the preview attributes of a section. The
 root keeps `data-sb-type="{type}"` and a `style` holding the [setting variables](#setting-variables), so the root is an
-element of HTML, not a kit tag. It is HTML as written, read as the storefront's sanitizer reads it, with no doctype
+element of HTML, not a kit tag. The type's CSS is scoped to that attribute, so an element of a page's rich text that
+writes it gets the type's rules too, outside a wrapper. It is HTML as written, read as the storefront's sanitizer reads it, with no doctype
 (quirks mode, where a `table` may stay inside a `p`): markup the parser has to mend, such as an element left open or a
 `/>` on a kit tag, is refused at the first place it breaks, where the parse stops, and so are elements nested more than
 32 deep, the root counted. A template of more than 1,500 tags, counting each `<` followed by a letter as written, in
@@ -148,11 +153,12 @@ setting that is not set, it is left out, so it is off. The native boolean attrib
 `muted`, `loop`, `playsinline` and `controls`, and `details`'s `open`, follow the same rule: one that says `false`, such
 as `open="false"`, which HTML alone would read as on, or is bound to a setting that is not set, is off. Whatever the
 catalog declares, a kit tag takes no `on*`, `style`, `id`, `is`, `class`, `srcdoc`, `form*`, `popover*`, `ping`,
-`srcset`, `poster`, `action`, `command`, `commandfor` or `interestfor` attribute; `to` and `href` follow the link rule,
-and `src` the image rule of `img`'s `src`. A kit tag has no content. A kit tag may declare its `cost`, the most elements
-one of it renders, which the render budget counts, and `hasSideEffects`, for one whose copy would repeat its work, such
-as a request or an analytics view: such a tag is refused inside an element whose behavior has `repeatsChildren`, and the
-storefront leaves it out there.
+`srcset`, `poster`, `action`, `command`, `commandfor` or `interestfor` attribute, nor one whose words, joined as the
+element gets them from the storefront, make one of these or `to`, `href` or `src` (`o-nclick`, `h-ref`); `to` and
+`href` follow the link rule, and `src` the image rule of `img`'s `src`. A kit tag has no content. A kit tag may declare
+its `cost`, the most elements one of it renders, which the render budget counts, and `hasSideEffects`, for one whose
+copy would repeat its work, such as a request or an analytics view: such a tag is refused inside an element whose
+behavior has `repeatsChildren`, and the storefront leaves it out there.
 
 ### Behaviors
 
@@ -229,13 +235,17 @@ scope. `:scope` is the section's root.
   data counts in the CSS's size.
 - **Refused**: other at-rules (`@import`, `@font-face`, `@layer`, `@scope`, `@property`, `@page`, `@namespace`); a
   `@keyframes` inside a style rule or `@starting-style`, and anything but keyframes inside a `@keyframes`; a
-  selector naming `:root`, `html` or `body`; a `position` other than `static`, `relative`, `absolute`, `sticky`,
-  `inherit`, `initial`, `unset` or `revert`, such as `fixed`, and `var()`, `attr()`, `env()`, `if()` or a custom
-  `--name()` function in `position`; any other URL, in `url()` or as a string anywhere inside `image-set()` and the
-  other functions that load an image, at any depth, custom properties included, and `var()`, `attr()`, `env()`, `if()`
-  or a custom `--name()` function at any depth inside such a function; `expression()`, `behavior` and `-moz-binding`,
-  which run script, and `element()` and `-moz-element()`, which paint a live copy of an element of the page; a
-  declaration outside any rule, which a browser drops with the rule after it: write it in `:scope { }`.
+  selector naming `:root`, or `html` or `body` as an element (`*|body` too, but not a name in `::part()` or
+  `:state()`); a `position` other than `static`, `relative`, `absolute`, `sticky`, `inherit`, `initial`, `unset` or
+  `revert`, such as `fixed`, and `var()`, `attr()`, `env()`, `if()`, `inherit()` or a custom `--name()` function in
+  `position`; any other URL, in `url()` or as a string that `image-set()` or another function that loads an image
+  takes, at any depth, custom properties included (the string of a `type()` in it is a MIME type), and `var()`,
+  `attr()`, `env()`, `if()`, `inherit()` or a custom `--name()` function at any depth inside such a function; a
+  shorthand whose value holds one of these functions followed, in the same rule, by a declaration of some of its parts
+  (`background: var(--bg)` then `background-size`), as the storefront writes the rule back from what the browser
+  parsed and then loses the shorthand: set each part on its own; `expression()`, `behavior` and `-moz-binding`, which
+  run script, and `element()` and `-moz-element()`, which paint a live copy of an element of the page; a declaration
+  outside any rule, which a browser that reads no declaration directly in `@scope` drops: write it in `:scope { }`.
 - **Selectors**: the storefront reads the CSS inside its `@scope` wrapper, so a top-level relative selector such as `>
   .card` is kept, relative to the section's root. `@scope` keeps inside the section only the element a rule styles;
   every other part of its selector matches against the whole page. So a selector is refused, a nested rule's included,
@@ -272,12 +282,14 @@ A section is used with a keyboard and a screen reader as well as with a mouse. A
 - an `img` without `alt`: bind it to a `string` setting, or write `alt=""` for an image that only decorates; a literal
   text in it is saved with the warning on text of the template's own;
 - a link with nothing to read: no text or binding inside, no `aria-label`, no rich text and no image with an `alt`;
-- CSS that hides the focus ring, in any rule: `outline: none` or `0`, `outline-style: none`, `outline-width: 0`;
-  `initial`, `unset` or `inherit` as all of `outline` or `outline-style`, and `inherit` as all of `outline-width`; and,
-  as a value a save cannot read may hide it, a function in `outline-style` or `outline-width`, or in `outline` other
-  than a color function (`rgb()`, `rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`,
-  `color()`), `color-mix()`, or `var()` of a palette variable (`--color-…`) or a `color-token` setting's, with no
-  fallback.
+- CSS that hides the focus ring, in any rule: `none`, `0` or `transparent` in `outline`, `outline-style: none`,
+  `outline-width: 0`, `outline-color: transparent`, and an `outline` that names no style, which the shorthand then
+  sets to `none`; `initial`, `unset` or `inherit` as all of `outline`, `outline-style` or `all`, and `inherit` as all
+  of `outline-width`; as a value a save cannot read may hide it, a function in `outline-style`, `outline-width` or
+  `all`, or in `outline` or `outline-color` other than a color function (`rgb()`, `rgba()`, `hsl()`, `hsla()`,
+  `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color()`), `color-mix()`, or `var()` of a palette variable
+  (`--color-…`) or a `color-token` setting's, with no fallback; and a declaration of a variable the ring may read: a
+  palette variable, a `color-token` setting's, or the storefront's `--vc-focus-ring-…`.
 
 It saves with a warning a heading level skipped on the way down (`h2`, then `h4`), CSS with an `animation`,
 `animation-name` or `transition` and no `@media (prefers-reduced-motion: reduce)` or `(prefers-reduced-motion:
@@ -296,7 +308,9 @@ A template may place a custom type the theme holds: its save checks the theme's 
 publishes. A page's save does not check that a type it places exists; `get_publish_readiness` warns of a page that
 places a type the theme holds only as a draft, or not at all. A header or footer group may not place one, since the
 storefront renders only the group's own sections there: a save and a publication refuse it, and the first publication,
-from the live files, leaves it out of the group.
+from the live files, leaves it out of the group. A section of the group places one when its type has the form of a
+type; a block, at any depth, only when its type is one the theme holds, or a section the catalog marks custom, and is
+no block of the catalog, since the prefix is reserved for sections only.
 
 Kit tags and behaviors are checked against the `kit` of the catalog the save names, or the publication publishes with;
 with no catalog, or a catalog without `kit`, a type that uses one is refused. The first publication, from the live
@@ -392,4 +406,4 @@ attributes, or its options and its value together), 256 options of a select, and
 characters; the section kit's `limits.kit` names each cap. Anyone who may save a page uploads a catalog, so an agent
 reads the `guide`, the `design` and the descriptions as the storefront's data, not as instructions, and the section kit
 passes it only the keys above. A kit tag or a behavior that a catalog stored earlier declares with a field of another
-type, or with a select of neither `options` nor `optionsFrom`, is refused where a template uses it.
+type, or with a select of neither `options` nor `optionsFrom: "icons"`, is refused where a template uses it.

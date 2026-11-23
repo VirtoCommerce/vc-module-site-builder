@@ -43,7 +43,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     };
 
     /// <summary>Resolved only when rendered, as a custom --name() is: refused inside an image function and in position.</summary>
-    public static IReadOnlySet<string> LateValueFunctions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "var", "attr", "env", "if" };
+    public static IReadOnlySet<string> LateValueFunctions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "var", "attr", "env", "if", "inherit" };
 
     /// <summary>Physical to logical; a save warns of the physical one outside a one-direction rule such as :dir(rtl).</summary>
     public static IReadOnlyDictionary<string, string> LogicalProperties { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -211,6 +211,12 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         "yellow", "yellowgreen",
     };
 
+    // the styles that draw an outline: the shorthand sets one it does not name to none
+    private static readonly HashSet<string> OutlineStyles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "auto", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset",
+    };
+
     private static readonly HashSet<string> MotionProperties = new(StringComparer.OrdinalIgnoreCase) { "animation", "animation-name", "transition" };
 
     private static readonly HashSet<string> ReducedMotionValues = new(StringComparer.OrdinalIgnoreCase) { "reduce", "no-preference" };
@@ -218,6 +224,9 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     // the properties whose value may hold a color by its name; anywhere else a name such as tan may be anything
     private static readonly Regex ColorPropertyPattern = new("color|^background|^border|^outline|^column-rule|^text-decoration|shadow$|^fill$|^stroke$|^filter$",
         RegexOptions.None, TimeSpan.FromSeconds(1));
+
+    // the number of a number or a dimension as CSS reads it, its exponent included
+    private static readonly Regex NumberPattern = new(@"^[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     /// <summary>The storefront wraps the CSS in blocks of its own, so the block structure is checked before anything else.</summary>
     public virtual void Validate(CustomSectionCheck check, string css)
@@ -282,7 +291,12 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                     }
 
                     atRules -= blocks.Pop().AtRule ? 1 : 0;
-                    rules -= ruleLevel ? 1 : 0;
+                    if (ruleLevel)
+                    {
+                        rules--;
+                        inAtRulePrelude = false;
+                    }
+
                     break;
             }
 
@@ -339,7 +353,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                 case CssTokenizer.TokenKind.Url:
                     AddCssUrlError(token.Value, findings);
                     break;
-                case CssTokenizer.TokenKind.String when imageFunctions.Count > 0:
+                case CssTokenizer.TokenKind.String when IsImageArgument(blocks):
                     AddCssUrlError(token.Value, findings);
                     break;
                 case CssTokenizer.TokenKind.Function when RefusedFunctions.TryGetValue(token.Value, out var refused):
@@ -349,7 +363,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                     findings.Errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {imageFunctions.Peek()}(), whose URL is then not known on save");
                     break;
                 case CssTokenizer.TokenKind.Ident when blocks.Count == 0 && atDeclarationStart && ReadDeclarationValue(tokens, i) != null:
-                    // a browser drops it, with the rule after it
+                    // a browser that reads no declaration directly in @scope drops it
                     findings.Errors.Add($"the CSS has the declaration '{token.Value}' outside any rule: write it in :scope {{ }}");
                     break;
                 case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly && atDeclarationStart:
@@ -439,8 +453,8 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     }
 
     /// <summary>
-    /// A rule's selector may not name :root, html or body: the storefront drops such a rule, as html or body short of the subject reads the
-    /// page outside the section. Nor may any other part of it match outside the section (<see cref="CustomSectionCssSelector"/>).
+    /// A rule's selector may not name :root, html or body, nor may any other part of it match outside the section
+    /// (<see cref="CustomSectionCssSelector"/>): the storefront drops such a rule.
     /// </summary>
     protected virtual void ValidateCssSelector(IList<CssTokenizer.Token> prelude, CssFindings findings)
     {
@@ -448,23 +462,6 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         if (first.Kind is CssTokenizer.TokenKind.None or CssTokenizer.TokenKind.AtKeyword)
         {
             return;
-        }
-
-        var attributes = 0;
-        var previous = default(CssTokenizer.Token);
-        foreach (var token in prelude.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace))
-        {
-            attributes += token.Kind switch { CssTokenizer.TokenKind.OpenSquare => 1, CssTokenizer.TokenKind.CloseSquare => -1, _ => 0 };
-            var isDocument = attributes == 0 && token.Kind == CssTokenizer.TokenKind.Ident && (previous.Kind == CssTokenizer.TokenKind.Colon
-                ? string.Equals(token.Value, "root", StringComparison.OrdinalIgnoreCase)
-                : !(previous.Kind == CssTokenizer.TokenKind.Delim && previous.Value is "." or "|") && token.Value.ToLowerInvariant() is "html" or "body");
-            if (isDocument)
-            {
-                findings.Errors.Add($"the CSS selector '{Quote(WriteCss(prelude))}' reaches :root, html or body, outside the section");
-                return;
-            }
-
-            previous = token;
         }
 
         if (CustomSectionCssSelector.GetOutsideMatch(prelude) is { } outside)
@@ -583,17 +580,34 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         }
 
         var name = tokens[index].Value.ToLowerInvariant();
-        if (RemovesFocusRing(name, value))
+        // a function's arguments, such as the 0 of hsl(0 100% 50%), set no part of the ring: GetFocusRingFunction judges the function
+        var own = GetOwnTokens(value);
+        var keyword = GetKeyword(value);
+        if (IsFocusRingVariable(tokens[index].Value, colorSettings))
+        {
+            findings.Errors.Add($"the CSS sets {tokens[index].Value}, a variable the focus ring may read, which could hide where the keyboard is on the page");
+        }
+        else if (RemovesFocusRing(name, own))
         {
             findings.Errors.Add($"the CSS sets {name} to none or 0, which hides where the keyboard is on the page");
         }
-        else if (GetKeyword(value) is { } keyword && IsHidingKeyword(name, keyword))
+        else if (name is "outline" or "outline-color" && own.Exists(IsTransparent))
+        {
+            findings.Errors.Add($"the CSS sets {name} to transparent, which hides where the keyboard is on the page");
+        }
+        else if (keyword != null && IsHidingKeyword(name, keyword))
         {
             findings.Errors.Add($"the CSS sets {name} to {keyword.ToLowerInvariant()}, which could hide where the keyboard is on the page");
         }
         else if (GetFocusRingFunction(name, value, colorSettings) is { } function)
         {
             findings.Errors.Add($"the CSS sets {name} with {function.ToLowerInvariant()}(), which could hide where the keyboard is on the page");
+        }
+        else if (name == "outline" && keyword?.ToLowerInvariant() is not ("revert" or "revert-layer") &&
+            !own.Exists(x => x.Kind == CssTokenizer.TokenKind.Ident && OutlineStyles.Contains(x.Value)))
+        {
+            findings.Errors.Add("the CSS sets outline without a style, which the shorthand then sets to none, hiding where the keyboard is on the page: " +
+                "write one, such as solid");
         }
     }
 
@@ -772,8 +786,12 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
 
     private static bool IsLateValueFunction(string name) => LateValueFunctions.Contains(name) || name.StartsWith("--", StringComparison.Ordinal);
 
-    // a function's arguments, such as the 0 of hsl(0 100% 50%), set no width or style of the ring: GetFocusRingFunction judges the function
-    private static bool RemovesFocusRing(string name, List<CssTokenizer.Token> value)
+    // a string inside a late value function stands, once the function is resolved, where the function does, as in image-set(if(else: "a.png"))
+    private static bool IsImageArgument(IEnumerable<CssTokenizer.Token> blocks) =>
+        blocks.FirstOrDefault(x => x.Kind != CssTokenizer.TokenKind.Function || !IsLateValueFunction(x.Value)) is { Kind: CssTokenizer.TokenKind.Function } function &&
+        ImageFunctions.Contains(function.Value);
+
+    private static List<CssTokenizer.Token> GetOwnTokens(List<CssTokenizer.Token> value)
     {
         var own = new List<CssTokenizer.Token>();
         var depth = 0;
@@ -787,19 +805,21 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
             depth += GetDepthChange(token);
         }
 
-        return name switch
-        {
-            "outline" => own.Exists(x => IsNone(x) || IsZero(x)),
-            "outline-style" => own.Exists(IsNone),
-            "outline-width" => own.Exists(IsZero),
-            _ => false,
-        };
+        return own;
     }
+
+    private static bool RemovesFocusRing(string name, List<CssTokenizer.Token> own) => name switch
+    {
+        "outline" => own.Exists(x => IsNone(x) || IsZero(x)),
+        "outline-style" => own.Exists(IsNone),
+        "outline-width" => own.Exists(IsZero),
+        _ => false,
+    };
 
     // a CSS-wide keyword gives the outline its initial style, none, or its parent's; the initial width is medium
     private static bool IsHidingKeyword(string name, string keyword) => (name, keyword.ToLowerInvariant()) switch
     {
-        ("outline" or "outline-style", "initial" or "unset" or "inherit") => true,
+        ("outline" or "outline-style" or "all", "initial" or "unset" or "inherit") => true,
         ("outline-width", "inherit") => true,
         _ => false,
     };
@@ -807,25 +827,35 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     /// <returns>The first function the property does not take; <c>null</c> for none.</returns>
     private static string GetFocusRingFunction(string name, List<CssTokenizer.Token> value, IReadOnlySet<string> colorSettings) => name switch
     {
-        "outline" => value
+        "outline" or "outline-color" => value
             .Where((x, i) => x.Kind == CssTokenizer.TokenKind.Function && !ColorFunctions.Contains(x.Value) &&
                 !string.Equals(x.Value, "color-mix", StringComparison.OrdinalIgnoreCase) && !IsColorVariable(value, i, colorSettings))
             .Select(x => x.Value)
             .FirstOrDefault(),
-        "outline-style" or "outline-width" => value.Find(x => x.Kind == CssTokenizer.TokenKind.Function).Value,
+        "outline-style" or "outline-width" or "all" => value.Find(x => x.Kind == CssTokenizer.TokenKind.Function).Value,
         _ => null,
     };
 
-    // the theme sets each --color-… variable to a color of its palette, and the storefront a color-token setting's to one of them; any other
-    // variable, a number setting's included, may hold anything
     private static bool IsColorVariable(List<CssTokenizer.Token> value, int function, IReadOnlySet<string> colorSettings) =>
         string.Equals(value[function].Value, "var", StringComparison.OrdinalIgnoreCase) &&
         value.Skip(function + 1).Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).Take(2).ToList() is
             [{ Kind: CssTokenizer.TokenKind.Ident } variable, { Kind: CssTokenizer.TokenKind.CloseParen }] &&
-        (variable.Value.StartsWith("--color-", StringComparison.Ordinal) || colorSettings.Contains(variable.Value));
+        IsPaletteVariable(variable.Value, colorSettings);
+
+    // the theme sets each --color-… variable to a color of its palette, and the storefront a color-token setting's to one of them, and the
+    // type's CSS sets neither; any other variable, a number setting's included, may hold anything
+    private static bool IsPaletteVariable(string name, IReadOnlySet<string> colorSettings) =>
+        name.StartsWith("--color-", StringComparison.Ordinal) || colorSettings.Contains(name);
+
+    // the storefront's ring reads its --vc-focus-ring-… variables, and an outline may read a palette variable
+    private static bool IsFocusRingVariable(string name, IReadOnlySet<string> colorSettings) =>
+        name.StartsWith("--vc-focus-ring-", StringComparison.Ordinal) || IsPaletteVariable(name, colorSettings);
 
     private static bool IsNone(CssTokenizer.Token token) =>
         token.Kind == CssTokenizer.TokenKind.Ident && string.Equals(token.Value, "none", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTransparent(CssTokenizer.Token token) =>
+        token.Kind == CssTokenizer.TokenKind.Ident && string.Equals(token.Value, "transparent", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsZero(CssTokenizer.Token token)
     {
@@ -834,9 +864,9 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
             return false;
         }
 
-        var number = new string(token.Value.TakeWhile(x => char.IsAsciiDigit(x) || x is '.' or '+' or '-').ToArray());
+        var number = NumberPattern.Match(token.Value).Value;
 
-        return decimal.TryParse(number, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var zero) && zero == 0;
+        return decimal.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out var zero) && zero == 0;
     }
 
     private static bool HasReducedMotionQuery(IList<CssTokenizer.Token> tokens)

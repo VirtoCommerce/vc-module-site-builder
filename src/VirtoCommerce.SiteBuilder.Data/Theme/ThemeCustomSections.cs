@@ -2,6 +2,7 @@ using System.Globalization;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Validation;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
@@ -52,19 +53,42 @@ public static class ThemeCustomSections
         ?? [];
 
     /// <summary>The storefront renders only the group's own sections in the header and the footer, so neither places a custom type.</summary>
-    public static IEnumerable<string> GetSectionGroupErrors(string file, JToken sectionGroup) =>
-        GetPlacements((sectionGroup as JObject)?["content"] as JArray ?? [])
+    public static IEnumerable<string> GetSectionGroupErrors(string file, JToken sectionGroup, JObject catalog, ICollection<string> types) =>
+        GetPlacements((sectionGroup as JObject)?["content"] as JArray ?? [], catalog, types)
             .Select(x => $"{file}: '{ThemeJson.GetString(x, "id")}' places a custom section, which only a page or a template can hold");
 
-    /// <summary>The items that place a custom type, as a section or as a block at any depth: a block's schema may be a section's.</summary>
-    public static IEnumerable<JObject> GetPlacements(JArray items) =>
-        items.OfType<JObject>().SelectMany(x => IsPlacement(x) ? [x] : x["blocks"] is JArray blocks ? GetPlacements(blocks) : []);
+    /// <summary>A copy of the section group without the items that place a custom type; anything that is not a section group as it is.</summary>
+    public static JToken WithoutPlacements(JToken sectionGroup, JObject catalog, ICollection<string> types)
+    {
+        if (sectionGroup is not JObject group || group["content"] is not JArray)
+        {
+            return sectionGroup;
+        }
+
+        var result = (JObject)group.DeepClone();
+        foreach (var placement in GetPlacements((JArray)result["content"], catalog, types).ToList())
+        {
+            placement.Remove();
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The items that place a custom type: a section whose type is one, and a block at any depth whose type is one of
+    /// <paramref name="types"/> or a section the catalog marks custom, and is no block of the catalog. A block's schema may be a section's,
+    /// and the catalog reserves the prefix for its sections only.
+    /// </summary>
+    /// <param name="catalog">The catalog the items are checked against; <c>null</c> for none.</param>
+    /// <param name="types">The theme's custom section types.</param>
+    public static IEnumerable<JObject> GetPlacements(JArray items, JObject catalog, ICollection<string> types) =>
+        items.OfType<JObject>().SelectMany(x => IsPlacement(x) ? [x] : GetBlockPlacements(x, catalog, types));
 
     public static bool IsSectionGroupFile(string pathInTheme) =>
         pathInTheme.Equals(ThemeStorage.HeaderGroupFile, StringComparison.OrdinalIgnoreCase) ||
         pathInTheme.Equals(ThemeStorage.FooterGroupFile, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>An item of a page document that places a custom type.</summary>
+    /// <summary>A section of a page document that places a custom type; a block places one as <see cref="GetPlacements"/> tells.</summary>
     public static bool IsPlacement(JObject item) =>
         !string.IsNullOrWhiteSpace(ThemeJson.GetString(item, "id")) && ThemeJson.GetString(item, "type") is { } type && ThemeStorage.IsCustomSectionType(type);
 
@@ -74,6 +98,23 @@ public static class ThemeCustomSections
         var folder = ThemeStorage.CustomSectionsFolder + "/";
 
         return pathInTheme.StartsWith(folder, StringComparison.OrdinalIgnoreCase) ? ThemeStorage.GetCustomSectionType(pathInTheme[folder.Length..]) : null;
+    }
+
+    /// <summary>The theme's types, by type, with those the files write over them.</summary>
+    /// <param name="files">Contents by the path with the theme folder; those of another theme are left out.</param>
+    public static IDictionary<string, JToken> WithFiles(IDictionary<string, JToken> types, string themeName, IDictionary<string, JToken> files)
+    {
+        var result = new Dictionary<string, JToken>(types, StringComparer.Ordinal);
+        foreach (var (path, content) in files)
+        {
+            if (string.Equals(SiteBuilderContentPaths.GetThemeName(path), themeName, StringComparison.OrdinalIgnoreCase) &&
+                GetCustomSectionType(SiteBuilderContentPaths.GetPathInTheme(path)) is { } type)
+            {
+                result[type] = content;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -111,6 +152,16 @@ public static class ThemeCustomSections
     }
 
     public static bool IsCustom(JObject schema) => schema[CustomKey] is JValue { Type: JTokenType.Boolean } custom && (bool)custom;
+
+    private static IEnumerable<JObject> GetBlockPlacements(JObject item, JObject catalog, ICollection<string> types) =>
+        (item["blocks"] as JArray ?? []).OfType<JObject>()
+            .SelectMany(x => IsPlacement(x) && IsCustomBlock(ThemeJson.GetString(x, "type"), catalog, types) ? [x] : GetBlockPlacements(x, catalog, types));
+
+    private static bool IsCustomBlock(string type, JObject catalog, ICollection<string> types) =>
+        (types.Contains(type) || GetSchema(catalog, ModuleConstants.SchemaKinds.Sections, type) is { } section && IsCustom(section)) &&
+        GetSchema(catalog, ModuleConstants.SchemaKinds.Blocks, type) == null;
+
+    private static JObject GetSchema(JObject catalog, string kind, string type) => (catalog?[kind] as JObject)?[type] as JObject;
 
     private static JObject GetCatalogSchema(JToken content)
     {

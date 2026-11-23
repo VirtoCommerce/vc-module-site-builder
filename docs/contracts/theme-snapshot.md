@@ -1,7 +1,8 @@
 # Theme snapshot
 
 The storefront gets the published theme of a store in one anonymous GraphQL request: the snapshot. It holds the
-template rules, every template, the header and footer groups, the brand and the palette, with texts in one language.
+template rules, every template, the header and footer groups, the brand, the palette, the theme's custom section types
+and the address of the store's asset library, with texts in one language.
 The storefront does not read theme files from `/cms-content`.
 
 The first read of a store publishes a first snapshot from the theme's live files; when they fail the shape check, there
@@ -254,7 +255,7 @@ interface ThemeSnapshot {
   footer?: SectionGroup;
   brand: Brand;
   palette?: Palette;
-  /** the theme's custom section types, by type; see [Custom sections](custom-sections.md) */
+  /** the theme's custom section types, by type, their name and defaults in the snapshot's language; see [Custom sections](custom-sections.md) */
   customSections?: Record<string, CustomSectionType>;
   /**
    * the public address of the store's asset library, as the server reads it when it publishes; a custom section's image
@@ -426,9 +427,9 @@ else of its language part (`de` for `de-AT`), else of a culture of the same lang
 default language, else the first text of the dictionary; culture names are compared ignoring case. A snapshot never
 holds one.
 
-Only templates and the header and footer groups keep texts per language. A section or block the designer puts into a
-page's own sections or a shared component (a paste, Save as shared component, Detach) has each dictionary in it
-replaced by the text of the language being edited, picked as the publication picks it.
+Only templates, the header and footer groups and the custom section types keep texts per language. A section or block
+the designer puts into a page's own sections or a shared component (a paste, Save as shared component, Detach) has
+each dictionary in it replaced by the text of the language being edited, picked as the publication picks it.
 
 ### Brand
 
@@ -538,9 +539,11 @@ The catalog is the storefront's section, block, template and palette schemas, th
   `{ error, errors }` when one does not fit or the hash is unknown; each error names the file, the item and the field.
   A publication records the hash in the snapshot; one that names none is refused. A designer Save with theme files
   that names none is refused (400 `{ error }`); `api/site-builder/save` that names none is not checked against a
-  catalog: it checks only what can run script and the [custom section types](custom-sections.md#validation) it writes,
-  which may then use no kit tag or behavior. The first publication, from the live files, names none and checks the shape only; it finds the menus
-  through the store's current catalog, when there is one.
+  catalog: it checks only what can run script, the [custom section types](custom-sections.md#validation) it writes,
+  which may then use no kit tag or behavior, and that a header or footer group places none. The first publication, from
+  the live files, names none and checks the shape only, but for the custom section types: it checks them against the
+  store's current catalog and leaves out those that fail. It finds the menus through the store's current catalog, when
+  there is one.
 - The fields with a closed set of values, checked in sections and blocks and in the rows of their `list` and `object`
   fields: a `color-token` holds a token of the catalog's `paletteTokens` (light or dark; not checked when the catalog
   has none), a `select` one of its `options` values, each of them when it is `multiple` (one with a `request` has

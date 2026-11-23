@@ -1,7 +1,6 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Theme;
-using VirtoCommerce.SiteBuilder.Data.Validation;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
@@ -25,16 +24,7 @@ public class CustomSectionService(IThemeStorageFactory themeStorageFactory, IThe
             }
         }
 
-        foreach (var (path, content) in files ?? new Dictionary<string, JToken>())
-        {
-            if (string.Equals(SiteBuilderContentPaths.GetThemeName(path), themeName, StringComparison.OrdinalIgnoreCase) &&
-                ThemeCustomSections.GetCustomSectionType(SiteBuilderContentPaths.GetPathInTheme(path)) is { } type)
-            {
-                result[type] = content;
-            }
-        }
-
-        return result;
+        return files == null ? result : ThemeCustomSections.WithFiles(result, themeName, files);
     }
 
     private static JToken Parse(string content)

@@ -49,15 +49,16 @@ public class PublishReadinessTools(
         "The answer comes from the dry run of the publication itself: parts (each with its changes section by section and " +
         "who changed it), findings (critical ones block the publication: no draft, a page document that is refused, published " +
         "pages it would replace, a palette below WCAG 2.2 AA, no schema catalog; warnings: hidden page, ended dates, an address " +
-        "another page serves, a language version that publishing every language skips, a custom section type the theme holds only " +
-        "as a draft or with unpublished changes), affected (the audience) and the next step. Pass unpublish true to check taking a page off " +
-        "instead. Changes nothing. To publish, use publish_page or publish_theme.")]
+        "another page serves, a language version that publishing every language skips, a custom section type the theme does not " +
+        "hold, holds only as a draft or holds with unpublished changes), affected (the audience) and the next step. Pass unpublish " +
+        "true to check taking a page off instead. Changes nothing. To publish, use publish_page or publish_theme.")]
     public async Task<PublishReadiness> GetPublishReadiness(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of a Landing Page or of a language version (search_site_pages), or the path of a page stored as a file " +
             "('pages/about.page') with store_id.")] string page_id = null,
         [Description("Id of a Multilanguage Page: every language version with a draft.")] string multilanguage_page_id = null,
-        [Description("true for the store's theme: every draft of its templates, rules, header, footer, brand and palette. Needs store_id.")] bool theme = false,
+        [Description("true for the store's theme: every draft of its templates, rules, header, footer, brand, palette and custom section types. " +
+            "Needs store_id.")] bool theme = false,
         [Description("Store id: needed with theme and with a page stored as a file.")] string store_id = null,
         [Description("true to check unpublishing page_id instead of publishing it.")] bool unpublish = false,
         CancellationToken cancellationToken = default)
@@ -352,7 +353,8 @@ public class PublicationDryRuns(
         if (readiness.Parts.Count == 0)
         {
             readiness.Findings.Add(Info("nothing-to-publish", "The theme has no drafts: a publication would put out the live files again.",
-                $"Store '{storeId}' has no theme drafts.", "Nothing to do; edit_theme_draft, edit_template or edit_template_rules make drafts.", "theme"));
+                $"Store '{storeId}' has no theme drafts.", "Nothing to do; edit_theme_draft, edit_template, edit_template_rules, create_section_type and " +
+                "change_section_type make drafts.", "theme"));
         }
     }
 
@@ -488,6 +490,14 @@ public class PublicationDryRuns(
         }
 
         return await GetSectionTypeFindingsAsync(user, group.StoreId, group.Name, content, group, cancellationToken);
+    }
+
+    /// <summary>The section type findings of a page stored as a file, as <see cref="CheckFilePageAsync"/> adds them.</summary>
+    public async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, FilePage page, CancellationToken cancellationToken)
+    {
+        var draft = await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken);
+
+        return await GetSectionTypeFindingsAsync(user, page.StoreId, page.PageId, draft, group: null, cancellationToken);
     }
 
     private async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, string content,

@@ -53,7 +53,7 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
     private static readonly string[] NewWindowRelTokens = ["noopener", "noreferrer"];
 
     // as a URL parser trims: U+00A0 and the like stay part of the URL
-    private static readonly char[] AsciiWhitespace = ['\t', '\n', '\f', '\r', ' '];
+    private static readonly char[] C0ControlOrSpace = Enumerable.Range(0, ' ' + 1).Select(x => (char)x).ToArray();
     private const string ImageDataUrlPrefix = "data:image/";
 
     public virtual string Sanitize(string html)
@@ -105,7 +105,7 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
         sanitizer.FilterUrl += (_, e) =>
         {
             // an image cannot run what it shows, so it may be inline
-            if (e.SanitizedUrl == null && e.Tag.LocalName == "img" && e.OriginalUrl.TrimStart(AsciiWhitespace).StartsWith(ImageDataUrlPrefix, StringComparison.OrdinalIgnoreCase))
+            if (e.SanitizedUrl == null && e.Tag.LocalName == "img" && e.OriginalUrl.TrimStart(C0ControlOrSpace).StartsWith(ImageDataUrlPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 e.SanitizedUrl = e.OriginalUrl;
             }

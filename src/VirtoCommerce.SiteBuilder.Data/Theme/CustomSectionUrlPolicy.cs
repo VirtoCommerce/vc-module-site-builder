@@ -16,6 +16,8 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     private static readonly Regex AnchorPattern = new("^#[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.None, RegexTimeout);
     private static readonly Regex ImageDataUrlPattern = new("^data:image/[a-z0-9.+-]+[;,]", RegexOptions.IgnoreCase, RegexTimeout);
 
+    private Lazy<string> _assetsBaseUrl;
+
     /// <summary>
     /// A URL of the asset library is read as written, as the storefront reads it: its origin is the library's, and its path, once its
     /// dot segments are resolved, starts with the library's. An escaped dot, slash or backslash is refused: a reader that decodes it may
@@ -23,7 +25,9 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     /// </summary>
     public virtual bool IsAssetUrl(string url)
     {
-        if (GetAssetsBaseUrl() is not { } baseUrl || url.Any(char.IsControl) || url.Contains('\\') || EscapedPathPattern.IsMatch(url))
+        // read once for all the URLs the policy checks, so that a fault of the asset provider is logged once
+        _assetsBaseUrl ??= new Lazy<string>(GetAssetsBaseUrl);
+        if (_assetsBaseUrl.Value is not { } baseUrl || url.Any(char.IsControl) || url.Contains('\\') || EscapedPathPattern.IsMatch(url))
         {
             return false;
         }

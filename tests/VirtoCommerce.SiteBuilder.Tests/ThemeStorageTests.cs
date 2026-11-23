@@ -16,4 +16,14 @@ public class ThemeStorageTests
     {
         Assert.Equal(key, ThemeStorage.GetTemplateKey(fileName));
     }
+
+    [Theory]
+    [InlineData("custom-hero", true)]
+    [InlineData("custom-stats-band", true)]
+    [InlineData("custom-hero\n", false)]
+    [InlineData("custom-Hero", false)]
+    public void IsCustomSectionType_Name_IsOneWhenItMatchesThePattern(string type, bool isType)
+    {
+        Assert.Equal(isType, ThemeStorage.IsCustomSectionType(type));
+    }
 }

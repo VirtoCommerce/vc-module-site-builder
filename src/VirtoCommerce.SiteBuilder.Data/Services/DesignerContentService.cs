@@ -57,14 +57,13 @@ public class DesignerContentService(
             x => (IDictionary<string, JToken>)x.ToDictionary(file => SiteBuilderContentPaths.GetPathInTheme(file.Key), file => file.Value, StringComparer.OrdinalIgnoreCase),
             StringComparer.OrdinalIgnoreCase);
 
-        var customSections = await GetCustomSectionsAsync(storeId, files, cancellationToken);
+        var (storedSections, customSections) = await GetCustomSectionsAsync(storeId, files, cancellationToken);
         var catalogs = customSections.ToDictionary(x => x.Key, x => GetThemeCatalog(catalog, x.Value), StringComparer.OrdinalIgnoreCase);
-        var customSectionResults = ValidateCustomSections(files, customSections, catalog);
-        await DropSizeErrorsOfSavesThatDoNotGrowAsync(storeId, customSections, customSectionResults, cancellationToken);
+        var customSectionResults = ValidateCustomSections(files, storedSections, customSections, catalog);
         var errors = files
             .SelectMany(x => contentGuard.GuardThemeFile(SiteBuilderContentPaths.GetPathInTheme(x.Key), x.Value, catalogs[SiteBuilderContentPaths.GetThemeName(x.Key)]).Errors)
             .Concat(customSectionResults.Values.SelectMany(ThemeCustomSections.GetErrors))
-            .Concat(files.SelectMany(x => GetSectionGroupErrors(x.Key, x.Value)))
+            .Concat(files.SelectMany(x => GetSectionGroupErrors(x.Key, x.Value, catalogs, customSections)))
             .ToList();
         if (errors.Count > 0)
         {
@@ -89,6 +88,7 @@ public class DesignerContentService(
         }
 
         var result = AbstractTypeFactory<ThemeFilesValidationResult>.TryCreateInstance();
+        result.CustomSections = customSections;
         foreach (var (themeName, results) in customSectionResults)
         {
             foreach (var typeResult in results.Where(x => x.Warnings.Count > 0))
@@ -117,32 +117,40 @@ public class DesignerContentService(
     }
 
     /// <summary>
-    /// By theme folder, for each folder the files are in: the theme's custom section types with those the files write over them. All of them
-    /// are read for a folder whose files write a type, as their size together is checked; only those its files place for a folder whose files
-    /// place some; none for any other.
+    /// By theme folder, for each folder the files are in: the theme's custom section types as they are stored, and as the save leaves them,
+    /// with those the files write over them. All of them are read for a folder whose files write a type, as their size together is checked;
+    /// only those its files place for a folder whose files place some; none for any other.
     /// </summary>
     /// <param name="files">Contents by the path with the theme folder.</param>
-    protected virtual async Task<IDictionary<string, IDictionary<string, JToken>>> GetCustomSectionsAsync(string storeId, IDictionary<string, JToken> files,
-        CancellationToken cancellationToken)
+    protected virtual async Task<(IDictionary<string, IDictionary<string, JToken>> Stored, IDictionary<string, IDictionary<string, JToken>> Saved)>
+        GetCustomSectionsAsync(string storeId, IDictionary<string, JToken> files, CancellationToken cancellationToken)
     {
-        var result = new Dictionary<string, IDictionary<string, JToken>>(StringComparer.OrdinalIgnoreCase);
+        var stored = new Dictionary<string, IDictionary<string, JToken>>(StringComparer.OrdinalIgnoreCase);
+        var saved = new Dictionary<string, IDictionary<string, JToken>>(StringComparer.OrdinalIgnoreCase);
         foreach (var theme in GroupByTheme(files))
         {
             var writesType = theme.Any(x => IsCustomSectionFile(SiteBuilderContentPaths.GetPathInTheme(x.Key)));
             var placed = theme.SelectMany(x => ThemeCustomSections.GetPlacedTypes(x.Value)).ToHashSet(StringComparer.Ordinal);
-            result[theme.Key] = writesType || placed.Count > 0
-                ? await customSectionService.GetTypesAsync(storeId, theme.Key, files, writesType ? null : placed, cancellationToken)
+            stored[theme.Key] = writesType || placed.Count > 0
+                ? await customSectionService.GetTypesAsync(storeId, theme.Key, files: null, writesType ? null : placed, cancellationToken)
                 : new Dictionary<string, JToken>();
+            saved[theme.Key] = ThemeCustomSections.WithFiles(stored[theme.Key], theme.Key, files);
         }
 
-        return result;
+        return (stored, saved);
     }
 
-    /// <summary>By theme folder: the rules of the types the files write, and the size of all the theme's types once written.</summary>
+    /// <summary>
+    /// By theme folder: the rules of the types the files write, and the size of all the theme's types once written. A save that grows them
+    /// past the limit is refused on their size alone, as checking each type of a request that large costs far more than the request. One that
+    /// does not grow them is not refused on their size, so types over the limit, after two saves at once or a lower limit, can still shrink;
+    /// the publication holds the limit as it is.
+    /// </summary>
     /// <param name="files">Contents by the path with the theme folder.</param>
-    /// <param name="customSections">By theme folder, as <see cref="GetCustomSectionsAsync"/> reads them.</param>
+    /// <param name="stored">By theme folder, as <see cref="GetCustomSectionsAsync"/> reads them.</param>
+    /// <param name="customSections">By theme folder, as the save leaves them.</param>
     protected virtual IDictionary<string, IList<CustomSectionValidationResult>> ValidateCustomSections(IDictionary<string, JToken> files,
-        IDictionary<string, IDictionary<string, JToken>> customSections, JObject catalog)
+        IDictionary<string, IDictionary<string, JToken>> stored, IDictionary<string, IDictionary<string, JToken>> customSections, JObject catalog)
     {
         var result = new Dictionary<string, IList<CustomSectionValidationResult>>(StringComparer.OrdinalIgnoreCase);
         foreach (var (themeName, types) in customSections)
@@ -152,32 +160,19 @@ public class DesignerContentService(
                 .Select(x => ThemeCustomSections.GetCustomSectionType(SiteBuilderContentPaths.GetPathInTheme(x)))
                 .Where(x => x != null)
                 .ToList();
-            result[themeName] = written.Count == 0 ? [] : customSectionValidator.ValidateTypes(types, written, catalog);
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// A save that does not grow the theme's types is not refused on their size, so types over the limit, after two saves at once or a lower
-    /// limit, can still shrink; the publication holds the limit as it is. The types before the save are read only for a theme over it.
-    /// </summary>
-    protected virtual async Task DropSizeErrorsOfSavesThatDoNotGrowAsync(string storeId, IDictionary<string, IDictionary<string, JToken>> customSections,
-        IDictionary<string, IList<CustomSectionValidationResult>> results, CancellationToken cancellationToken)
-    {
-        foreach (var (themeName, themeResults) in results)
-        {
-            if (themeResults.FirstOrDefault(x => x.File == ThemeStorage.CustomSectionsFolder) is not { } sizeResult)
+            if (written.Count == 0)
             {
+                result[themeName] = [];
                 continue;
             }
 
-            var before = await customSectionService.GetTypesAsync(storeId, themeName, files: null, cancellationToken: cancellationToken);
-            if (customSectionValidator.GetSize(customSections[themeName]) <= customSectionValidator.GetSize(before))
-            {
-                themeResults.Remove(sizeResult);
-            }
+            var sizeResults = customSectionValidator.ValidateTypes(types, [], catalog);
+            result[themeName] = sizeResults.Count > 0 && customSectionValidator.GetSize(types) > customSectionValidator.GetSize(stored[themeName])
+                ? sizeResults
+                : [.. customSectionValidator.ValidateTypes(types, written, catalog).Where(x => x.File != ThemeStorage.CustomSectionsFolder)];
         }
+
+        return result;
     }
 
     /// <summary>
@@ -206,11 +201,16 @@ public class DesignerContentService(
         files.GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key), StringComparer.OrdinalIgnoreCase);
 
     /// <param name="file">The path with the theme folder.</param>
-    private static IEnumerable<string> GetSectionGroupErrors(string file, JToken content)
+    /// <param name="catalogs">By theme folder, the catalog with the theme's types in it.</param>
+    /// <param name="customSections">By theme folder, the theme's types.</param>
+    private static IEnumerable<string> GetSectionGroupErrors(string file, JToken content, IDictionary<string, JObject> catalogs,
+        IDictionary<string, IDictionary<string, JToken>> customSections)
     {
-        var pathInTheme = SiteBuilderContentPaths.GetPathInTheme(file);
+        var (themeName, pathInTheme) = (SiteBuilderContentPaths.GetThemeName(file), SiteBuilderContentPaths.GetPathInTheme(file));
 
-        return ThemeCustomSections.IsSectionGroupFile(pathInTheme) ? ThemeCustomSections.GetSectionGroupErrors(pathInTheme, content) : [];
+        return ThemeCustomSections.IsSectionGroupFile(pathInTheme)
+            ? ThemeCustomSections.GetSectionGroupErrors(pathInTheme, content, catalogs[themeName], customSections[themeName].Keys)
+            : [];
     }
 
     private static IEnumerable<string> GetPlacedTypes(string content) =>
@@ -585,7 +585,7 @@ public class DesignerContentService(
         var themeFiles = command.ThemeFiles.ToDictionary(x => x.Path, x => ParseOrNull(x.Content), StringComparer.OrdinalIgnoreCase);
         var customSections = catalog == null
             ? new Dictionary<string, IDictionary<string, JToken>>()
-            : await GetCustomSectionsAsync(command.StoreId, themeFiles, cancellationToken);
+            : command.CustomSections ?? (await GetCustomSectionsAsync(command.StoreId, themeFiles, cancellationToken)).Saved;
         var pageTypes = GetPlacedTypes(command.PageContent).Concat(ThemeCustomSections.GetPlacedTypes(command.FilePage?.Content)).ToHashSet(StringComparer.Ordinal);
         var (pageCatalog, themeCatalogs) = await GetGuardCatalogsAsync(command.StoreId, catalog, pageTypes, themeFiles, customSections,
             cancellationToken);
@@ -614,7 +614,7 @@ public class DesignerContentService(
         var themeFiles = command.Contents
             .Where(x => x.Key.Type == HistoryItemType.Theme)
             .ToDictionary(x => x.Key.Key, x => ParseOrNull(x.Value), StringComparer.OrdinalIgnoreCase);
-        var customSections = await GetCustomSectionsAsync(command.StoreId, themeFiles, cancellationToken);
+        var (storedSections, customSections) = await GetCustomSectionsAsync(command.StoreId, themeFiles, cancellationToken);
         var pageTypes = command.Contents.Where(x => x.Key.Type != HistoryItemType.Theme).SelectMany(x => GetPlacedTypes(x.Value)).ToHashSet(StringComparer.Ordinal);
         var (pageCatalog, themeCatalogs) = await GetGuardCatalogsAsync(command.StoreId, catalog, pageTypes, themeFiles, customSections,
             cancellationToken);
@@ -630,9 +630,8 @@ public class DesignerContentService(
 
         SiteBuilderContentGuardExtensions.ThrowIfAny(errors);
 
-        var customSectionResults = ValidateCustomSections(themeFiles, customSections, catalog);
-        await DropSizeErrorsOfSavesThatDoNotGrowAsync(command.StoreId, customSections, customSectionResults, cancellationToken);
-        var themeErrors = themeFiles.SelectMany(x => GetSectionGroupErrors(x.Key, x.Value))
+        var customSectionResults = ValidateCustomSections(themeFiles, storedSections, customSections, catalog);
+        var themeErrors = themeFiles.SelectMany(x => GetSectionGroupErrors(x.Key, x.Value, themeCatalogs, customSections))
             .Concat(customSectionResults.Values.SelectMany(ThemeCustomSections.GetErrors))
             .ToList();
         if (themeErrors.Count > 0)

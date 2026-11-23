@@ -226,6 +226,67 @@ public sealed class CustomSectionPublishTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstPublication_KeepsABlockNamedLikeACustomTypeTheThemeDoesNotHold()
+    {
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/sections/footer-group.json")] =
+            """{ "type": "footer", "content": [ { "id": "f", "type": "site-footer", "blocks": [ { "id": "b1", "type": "custom-links" }, { "id": "promo", "type": "custom-hero" } ] } ] }""";
+
+        var snapshot = await SnapshotAsync("en-US");
+
+        Assert.Equal(["custom-links"], snapshot["footer"]!["content"]![0]!["blocks"]!.Select(x => x.Value<string>("type")));
+    }
+
+    [Fact]
+    public async Task ValidateFilesAsync_TemplatePlacingATypeTheThemeHolds_IsValidWithoutTheTypesFile()
+    {
+        await SaveCatalogAsync(""", "custom-hero": { "settings": [], "custom": true }""");
+        _storage.Files[Theme($"{Hero}-draft")] = HeroFile;
+
+        var exception = await Record.ExceptionAsync(() => _publisher.ValidateFilesAsync(StoreId, Catalog,
+            new System.Collections.Generic.Dictionary<string, JToken> { ["templates/product.json"] = JObject.Parse(TemplateOf("product-info", "custom-hero")) }, Ct));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task FirstPublication_TypesOverTheLimit_AreEachMeasuredOnce()
+    {
+        var validator = new CountingValidator(TestServices.CustomSectionValidator(options: new ThemeSnapshotOptions { CustomSectionsMaxSize = 1024 }));
+        var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
+            _lock, _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
+            new ThemePaletteService(), validator);
+        _storage.Files[Theme(Hero)] = HeroFile;
+        var large = JObject.Parse(HeroFile);
+        large["css"] = $":scope {{ color: var(--color-neutral-900); }} /* {new string('x', 2000)} */";
+        foreach (var type in new[] { "custom-a", "custom-b", "custom-c" })
+        {
+            _storage.Files[Theme($"default/custom-sections/{type}.json")] = large.ToString();
+        }
+
+        await publisher.PublishFirstAsync(StoreId, Ct);
+
+        Assert.Equal(["custom-hero"], ((JObject)(await SnapshotAsync("en-US"))["customSections"]!).Properties().Select(x => x.Name));
+        Assert.Equal(4, validator.Sized);
+    }
+
+    [Fact]
+    public async Task FirstPublication_LeavesOutTheTypeItsOwnResultFails_InWhateverOrderTheResultsCome()
+    {
+        var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
+            _lock, _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
+            new ThemePaletteService(), new ReversingValidator(TestServices.CustomSectionValidator()));
+        var broken = JObject.Parse(HeroFile);
+        broken["template"] = "<section onclick=\"go()\"></section>";
+        _storage.Files[Theme(Hero)] = HeroFile;
+        _storage.Files[Theme("default/custom-sections/custom-broken.json")] = broken.ToString();
+
+        await publisher.PublishFirstAsync(StoreId, Ct);
+
+        Assert.Equal(["custom-hero"], ((JObject)(await SnapshotAsync("en-US"))["customSections"]!).Properties().Select(x => x.Name));
+    }
+
+    [Fact]
     public async Task FirstPublication_LeavesOutATypeTheContentGuardRefuses()
     {
         _storage.Files[Theme(Hero)] = HeroFile;
@@ -393,6 +454,8 @@ public sealed class CustomSectionPublishTests : IDisposable
 
         public int Checked { get; private set; }
 
+        public int Sized { get; private set; }
+
         public CustomSectionValidationResult Validate(string type, JToken content, JObject catalog)
         {
             Validated++;
@@ -404,8 +467,26 @@ public sealed class CustomSectionPublishTests : IDisposable
         {
             Calls += checkedTypes.Count > 0 ? 1 : 0;
             Checked += checkedTypes.Count;
+            Sized += checkedTypes.Count > 0 ? 0 : 1;
             return inner.ValidateTypes(types, checkedTypes, catalog);
         }
+
+        public long GetSize(System.Collections.Generic.IDictionary<string, JToken> types)
+        {
+            Sized++;
+            return inner.GetSize(types);
+        }
+
+        public CustomSectionRules GetRules() => inner.GetRules();
+    }
+
+    private sealed class ReversingValidator(ICustomSectionValidator inner) : ICustomSectionValidator
+    {
+        public CustomSectionValidationResult Validate(string type, JToken content, JObject catalog) => inner.Validate(type, content, catalog);
+
+        public System.Collections.Generic.IList<CustomSectionValidationResult> ValidateTypes(System.Collections.Generic.IDictionary<string, JToken> types,
+            System.Collections.Generic.ICollection<string> checkedTypes, JObject catalog) =>
+            inner.ValidateTypes(types, checkedTypes, catalog).Reverse().ToList();
 
         public long GetSize(System.Collections.Generic.IDictionary<string, JToken> types) => inner.GetSize(types);
 

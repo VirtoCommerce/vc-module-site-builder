@@ -95,6 +95,11 @@ public class SchemaCatalogServiceTests
         "has the behavior 'pb-id', which is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "popovertarget": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'popovertarget', which no kit tag takes")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "ping": { "type": "link" } } } } }""", "has the tag 'vc-x', which has the attribute 'ping', which no kit tag takes")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "o-nclick": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'o-nclick', which no kit tag takes")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "s-tyle": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 's-tyle', which no kit tag takes")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "pop-over-target": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'pop-over-target', which no kit tag takes")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "h-ref": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'h-ref', which no kit tag takes")]
+    [InlineData("""{ "tags": { "vc-x": { "attributes": { "s-rc": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 's-rc', which no kit tag takes")]
     [InlineData("""{ "behaviors": { "count-up": { "value": { "type": "number", "min": "0" } } } }""",
         "has the behavior 'count-up', which has a value that has a min or a max that is not a number within range")]
     [InlineData("""{ "behaviors": { "tilt": { "options": { "max": { "type": "number", "script": "x" } } } } }""",

@@ -94,6 +94,7 @@ public class DesignerOperationService(
         }
 
         var command = CreateDesignerSaveCommand(request, group, files, themeFiles);
+        command.CustomSections = themeCheck.Value?.CustomSections;
         var result = await SaveDesignerChangesAsync(command, request.DryRun, user, cancellationToken);
         AddThemeFileWarnings(result, themeCheck.Value);
 
@@ -305,7 +306,7 @@ public class DesignerOperationService(
 
         foreach (var file in result.Value?.ThemeFiles ?? [])
         {
-            if (validation.Warnings.TryGetValue(file.Path, out var warnings))
+            if (validation.Warnings.TryGetValue(file.Path.TrimStart('/'), out var warnings))
             {
                 file.Warnings = warnings;
             }

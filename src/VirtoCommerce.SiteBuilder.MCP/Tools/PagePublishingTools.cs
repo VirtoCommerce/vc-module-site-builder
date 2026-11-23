@@ -7,6 +7,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
+using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
@@ -86,8 +87,14 @@ public class PagePublishingTools(
             if (PageLookup.IsFilePagePath(page_id))
             {
                 EnsureNoUnpublishConflicting(unpublish_conflicting, "publishing a page stored as a file does not check the permalinks of other pages");
-                return await filePageShipping.ShipAsync(context.User,
+                var change = await filePageShipping.ShipAsync(context.User,
                     new FilePageShipCall(store_id, page_id, Publish: true, rebase, draft_owner, expected_versions, dryRun), cancellationToken);
+                if (dryRun)
+                {
+                    WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(context.User, FilePages.Parse(store_id, page_id), cancellationToken));
+                }
+
+                return change;
             }
 
             EnsureNoRebase(rebase);
@@ -195,10 +202,15 @@ public class PagePublishingTools(
     {
         foreach (var group in groups)
         {
-            foreach (var finding in await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken))
-            {
-                change.AddWarning($"{finding.Title} {finding.Fix}");
-            }
+            WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken));
+        }
+    }
+
+    private static void WarnOf(SiteBuilderChange change, IEnumerable<McpFinding> findings)
+    {
+        foreach (var finding in findings)
+        {
+            change.AddWarning($"{finding.Title} {finding.Fix}");
         }
     }
 

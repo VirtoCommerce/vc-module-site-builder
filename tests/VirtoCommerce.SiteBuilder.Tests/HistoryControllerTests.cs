@@ -319,6 +319,19 @@ public class HistoryControllerTests
     }
 
     [Fact]
+    public async Task Restore_ThemeFileNamedTwiceInAnotherCase_ReturnsBadRequestAndWritesNothing()
+    {
+        _history.Versions[(VersionId, $"theme:{Template}")] = Page;
+        _history.Versions[(VersionId, "theme:default/templates/Product.json")] = Page;
+
+        var result = await Controller().Restore(VersionId, "s1", [$"theme:{Template}", "theme:default/templates/Product.json"], Ct);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(_live.Files);
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
     public async Task RestoreOperation_NoEditPermission_IsForbiddenBeforeTheUnknownVersionIsLookedUp()
     {
         var request = RestoreRequest("HA_v-Hs8f7RVPw9gHHqUAxmPDJ9", $"theme:{Header}");

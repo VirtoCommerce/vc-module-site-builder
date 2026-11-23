@@ -228,6 +228,26 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ACustomSectionTypeDraft_IsDiscarded_AndTheChangeListsWhatGoesBackToThePublishedType()
+    {
+        const string draft = "<section><h2>{{ settings.title }}</h2><p>{{ settings.title }}</p></section>";
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", McpTestContext.StatsSectionType);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json",
+            McpTestContext.StatsSectionType.Replace("<section><h2>{{ settings.title }}</h2></section>", draft, StringComparison.Ordinal), draft: true);
+        var type = new Dictionary<string, object> { ["kind"] = "theme_file", ["store_id"] = StoreA, ["theme_file"] = "default/custom-sections/custom-stats.json" };
+
+        var result = await _context.CallAsync(ThemeEditor(), Tool, await _context.ReviewAsync(ThemeEditor(), Tool, type));
+
+        var change = result.EnsureSucceeded().Read<SiteBuilderChange>();
+        var reverted = Assert.Single(change.Changes);
+        Assert.Equal(("template line 1", draft, "<section><h2>{{ settings.title }}</h2></section>"),
+            (reverted.Field, reverted.From?.ToString(), reverted.To?.ToString()));
+        Assert.Null(_context.ReadThemeFile(StoreA, "custom-sections/custom-stats.json", draft: true));
+        Assert.Equal(McpTestContext.StatsSectionType, _context.ReadThemeFile(StoreA, "custom-sections/custom-stats.json"));
+    }
+
+    [Fact]
     public async Task AThemeFileOfAnotherStore_IsForbidden()
     {
         await _context.SeedThemeAsync(StoreB);

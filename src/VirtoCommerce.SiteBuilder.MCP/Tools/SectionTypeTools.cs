@@ -175,6 +175,11 @@ public class SectionTypeTools(
         }
 
         var steps = new List<string>();
+        if (dryRun && change.Changes.Count > 0)
+        {
+            steps.Add($"Call {change.Action} again without dryRun to save the type.");
+        }
+
         if (request.Create)
         {
             steps.Add($"Place it with edit_page_draft (add_section, type '{key}', with its settings).");
@@ -185,17 +190,24 @@ public class SectionTypeTools(
             if (change.PlacedSections?.NewSettings.Count > 0 && change.PlacedSections.Pages.Count > 0)
             {
                 steps.Add("The sections placed before show the new settings' defaults (placed_sections): set them per page with edit_page_draft " +
-                    "(set_section_settings), or on every placement with update_sections_bulk.");
+                    "(set_section_settings), or on every placement with update_sections_bulk" +
+                    (change.PlacedSections.Pages.Any(x => x.SharedComponentIds.Count > 0)
+                        ? "; those of a placed Shared Component (shared_component_ids) on the component, with change_shared_component."
+                        : "."));
             }
         }
 
-        steps.Add(change.NextStep);
+        if (change.NextStep != null)
+        {
+            steps.Add(change.NextStep);
+        }
+
         if (!dryRun)
         {
             steps.Add($"To change the type again, pass version_tokens['{path}'] of this answer as version_token.");
         }
 
-        change.NextStep = string.Join(' ', steps.Where(x => x != null));
+        change.NextStep = steps.Count > 0 ? string.Join(' ', steps) : null;
 
         return change;
     }
@@ -227,8 +239,9 @@ public class SectionTypeTools(
             RemovedSettings = removed,
             Pages = scan.Pages
                 .Where(x => x.Sections.Count > 0)
-                .GroupBy(x => x.ListItem.Id, StringComparer.Ordinal)
-                .Select(x => new PlacingPageRow(x.Key, x.First().ListItem.Name, x.First().ListItem.Permalink, x.Sum(y => y.Sections.Count)))
+                .Select(x => new PlacingPageRow(x.Page.Id, x.Page.CultureName, x.Page.Name, x.Page.Permalink,
+                    x.Sections.Count(y => y.SharedComponentId == null),
+                    x.Sections.Select(y => y.SharedComponentId).Where(y => y != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList()))
                 .ToList(),
             Coverage = SectionScanCoverage.Describe(scan) + " Templates are not scanned: search_templates lists them.",
             Note = removed.Count > 0
