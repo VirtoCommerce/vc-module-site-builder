@@ -782,6 +782,16 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { posit\69 on: fi\78 ed; }""", "the CSS has position: fixed, which puts the section over the page")]
     [InlineData(""".a { background-image: image-set(var(--u) 1x); }""", "the CSS has var() inside image-set(), whose URL is then not known on save")]
     [InlineData("""@media a { @media b { @media c { @media d { @media e { .a { margin: 0; } } } } } }""", "the CSS nests at-rules deeper than 4")]
+    [InlineData(""".a { background: linear-gradient(var(--color-accent-200), var(--color-accent-400)); background-size: 200% 100%; }""",
+        "the CSS sets background-size after background with var() in the same rule, and the storefront then loses background: set each of its parts on its own, such as background-image")]
+    [InlineData(""".a { background: var(--x); -webkit-background-clip: text; }""",
+        "the CSS sets -webkit-background-clip after background with var() in the same rule, and the storefront then loses background: set each of its parts on its own, such as background-image")]
+    [InlineData(""".a { MARGIN: var(--m) 1rem; margin-top: 0; }""",
+        "the CSS sets margin-top after margin with var() in the same rule, and the storefront then loses margin: set each of its parts on its own, such as margin-right")]
+    [InlineData(""".a { & .b { inset: env(safe-area-inset-top); top: 0 !important; } }""",
+        "the CSS sets top after inset with env() in the same rule, and the storefront then loses inset: set each of its parts on its own, such as right")]
+    [InlineData(""".a { transition: opacity var(--d); transition-delay: 1s !important; }""",
+        "the CSS sets transition-delay after transition with var() in the same rule, and the storefront then loses transition: set each of its parts on its own, such as transition-property")]
     public void Validate_CssThatBreaksARule_IsRefusedWithTheRule(string css, string error)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);
@@ -807,6 +817,14 @@ public class CustomSectionValidatorTests
     [InlineData(""".a { position: sticky; } .b { position: RELATIVE !important; } .c { position: unset; } .d { posit\69on: st\61tic; }""")]
     [InlineData(""".a { -webkit-mask-image: url("data:image/svg+xml,<svg><use href='%23x'/></svg>"); }""")]
     [InlineData("""@media (min-width: 1px) { @supports (rotate: 1turn) { @keyframes custom-hero__in { from { opacity: 0; } } } } @container sb-section (min-width: 40rem) { @keyframes custom-hero__up { 0%, 50% { opacity: 0; } to { opacity: 1; } } }""")]
+    [InlineData(""".a { background-image: linear-gradient(var(--color-accent-200), var(--color-accent-400)); background-size: 200% 100%; background-clip: text; }""")]
+    [InlineData(""".a { background: var(--setting-background); background: var(--color-primary-500); }""")]
+    [InlineData(""".a { background-size: 200% 100%; background: var(--setting-background); }""")]
+    [InlineData(""".a { background: var(--setting-background) !important; background-size: 200% 100%; }""")]
+    [InlineData(""".a { background: var(--setting-background); & .b { opacity: 0; } background-size: 200% 100%; }""")]
+    [InlineData(""".a { background: var(--setting-background); } .b { background-size: 200% 100%; }""")]
+    [InlineData(""".a { background: color-mix(in srgb, currentColor 40%, transparent); background-size: 200% 100%; }""")]
+    [InlineData(""".a { margin: var(--m); padding-top: 0; --margin-top: 0; }""")]
     public void Validate_CssOfTheStorefrontsOwnKind_IsTaken(string css)
     {
         var result = _validator.Validate(Type, Section("<section></section>", css), Catalog);

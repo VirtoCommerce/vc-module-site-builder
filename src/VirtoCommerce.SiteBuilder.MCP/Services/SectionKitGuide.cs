@@ -191,6 +191,9 @@ public static class SectionKitGuide
                         "combinator inside :is(), :where(), :not() and the other pseudo-classes of selectors or after the of of :nth-child(), and a " +
                         "functional pseudo-class or pseudo-element the storefront does not take; :has() may hold > and descendants",
                     "a declaration outside any rule, which a browser drops with the rule after it: write it in :scope { }",
+                    $"a shorthand whose value holds {JoinOr(Functions(rules.LateValueFunctions))}, followed in the same rule by a declaration of some of " +
+                        "its parts, such as background: linear-gradient(var(--a), var(--b)) then background-size, which loses the shorthand on the " +
+                        "storefront: set each part on its own, such as background-image",
                     $"a position other than {JoinOr(rules.PositionValues)}, such as fixed, and {JoinOr([.. Functions(rules.LateValueFunctions), "a custom --function()"])} " +
                         "in position",
                     $"a URL other than one of the store's asset library or a data:image/ URL in {JoinOr(Functions(rules.ImageFunctions))}, custom " +

@@ -80,6 +80,96 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         ["clear"] = ("inline-start", "inline-end"),
     };
 
+    /// <summary>The parts each shorthand sets, as a browser lists them in a rule's declarations.</summary>
+    public static IReadOnlyDictionary<string, IReadOnlySet<string>> Shorthands { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["animation"] = "animation-duration animation-timing-function animation-delay animation-iteration-count animation-direction animation-fill-mode " +
+            "animation-play-state animation-name animation-timeline animation-range-start animation-range-end",
+        ["animation-range"] = "animation-range-start animation-range-end",
+        ["background"] = "background-image background-position-x background-position-y background-size background-repeat background-attachment " +
+            "background-origin background-clip background-color",
+        ["background-position"] = "background-position-x background-position-y",
+        ["border"] = "border-top-color border-top-style border-top-width border-right-color border-right-style border-right-width border-bottom-color " +
+            "border-bottom-style border-bottom-width border-left-color border-left-style border-left-width border-image-source border-image-slice " +
+            "border-image-width border-image-outset border-image-repeat",
+        ["border-block"] = "border-block-start-color border-block-start-style border-block-start-width border-block-end-color border-block-end-style " +
+            "border-block-end-width",
+        ["border-block-color"] = "border-block-start-color border-block-end-color",
+        ["border-block-end"] = "border-block-end-width border-block-end-style border-block-end-color",
+        ["border-block-start"] = "border-block-start-width border-block-start-style border-block-start-color",
+        ["border-block-style"] = "border-block-start-style border-block-end-style",
+        ["border-block-width"] = "border-block-start-width border-block-end-width",
+        ["border-bottom"] = "border-bottom-width border-bottom-style border-bottom-color",
+        ["border-color"] = "border-top-color border-right-color border-bottom-color border-left-color",
+        ["border-image"] = "border-image-source border-image-slice border-image-width border-image-outset border-image-repeat",
+        ["border-inline"] = "border-inline-start-color border-inline-start-style border-inline-start-width border-inline-end-color border-inline-end-style " +
+            "border-inline-end-width",
+        ["border-inline-color"] = "border-inline-start-color border-inline-end-color",
+        ["border-inline-end"] = "border-inline-end-width border-inline-end-style border-inline-end-color",
+        ["border-inline-start"] = "border-inline-start-width border-inline-start-style border-inline-start-color",
+        ["border-inline-style"] = "border-inline-start-style border-inline-end-style",
+        ["border-inline-width"] = "border-inline-start-width border-inline-end-width",
+        ["border-left"] = "border-left-width border-left-style border-left-color",
+        ["border-radius"] = "border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius",
+        ["border-right"] = "border-right-width border-right-style border-right-color",
+        ["border-style"] = "border-top-style border-right-style border-bottom-style border-left-style",
+        ["border-top"] = "border-top-width border-top-style border-top-color",
+        ["border-width"] = "border-top-width border-right-width border-bottom-width border-left-width",
+        ["column-rule"] = "column-rule-width column-rule-style column-rule-color",
+        ["columns"] = "column-width column-count column-height column-wrap",
+        ["contain-intrinsic-size"] = "contain-intrinsic-width contain-intrinsic-height",
+        ["container"] = "container-name container-type",
+        ["flex"] = "flex-grow flex-shrink flex-basis",
+        ["flex-flow"] = "flex-direction flex-wrap",
+        ["font"] = "font-style font-variant-ligatures font-variant-caps font-variant-numeric font-variant-east-asian font-variant-alternates " +
+            "font-variant-position font-variant-emoji font-weight font-stretch font-size line-height font-family font-optical-sizing font-size-adjust " +
+            "font-kerning font-feature-settings font-variation-settings font-language-override",
+        ["font-synthesis"] = "font-synthesis-weight font-synthesis-style font-synthesis-small-caps",
+        ["font-variant"] = "font-variant-ligatures font-variant-caps font-variant-alternates font-variant-numeric font-variant-east-asian " +
+            "font-variant-position font-variant-emoji",
+        ["gap"] = "row-gap column-gap",
+        ["grid"] = "grid-template-rows grid-template-columns grid-template-areas grid-auto-flow grid-auto-rows grid-auto-columns",
+        ["grid-area"] = "grid-row-start grid-column-start grid-row-end grid-column-end",
+        ["grid-column"] = "grid-column-start grid-column-end",
+        ["grid-row"] = "grid-row-start grid-row-end",
+        ["grid-template"] = "grid-template-rows grid-template-columns grid-template-areas",
+        ["inset"] = "top right bottom left",
+        ["inset-block"] = "inset-block-start inset-block-end",
+        ["inset-inline"] = "inset-inline-start inset-inline-end",
+        ["list-style"] = "list-style-position list-style-image list-style-type",
+        ["margin"] = "margin-top margin-right margin-bottom margin-left",
+        ["margin-block"] = "margin-block-start margin-block-end",
+        ["margin-inline"] = "margin-inline-start margin-inline-end",
+        ["mask"] = "mask-image -webkit-mask-position-x -webkit-mask-position-y mask-size mask-repeat mask-origin mask-clip mask-composite mask-mode",
+        ["offset"] = "offset-position offset-path offset-distance offset-rotate offset-anchor",
+        ["outline"] = "outline-color outline-style outline-width",
+        ["overflow"] = "overflow-x overflow-y",
+        ["overscroll-behavior"] = "overscroll-behavior-x overscroll-behavior-y",
+        ["padding"] = "padding-top padding-right padding-bottom padding-left",
+        ["padding-block"] = "padding-block-start padding-block-end",
+        ["padding-inline"] = "padding-inline-start padding-inline-end",
+        ["place-content"] = "align-content justify-content",
+        ["place-items"] = "align-items justify-items",
+        ["place-self"] = "align-self justify-self",
+        ["position-try"] = "position-try-order position-try-fallbacks",
+        ["scroll-margin"] = "scroll-margin-top scroll-margin-right scroll-margin-bottom scroll-margin-left",
+        ["scroll-margin-block"] = "scroll-margin-block-start scroll-margin-block-end",
+        ["scroll-margin-inline"] = "scroll-margin-inline-start scroll-margin-inline-end",
+        ["scroll-padding"] = "scroll-padding-top scroll-padding-right scroll-padding-bottom scroll-padding-left",
+        ["scroll-padding-block"] = "scroll-padding-block-start scroll-padding-block-end",
+        ["scroll-padding-inline"] = "scroll-padding-inline-start scroll-padding-inline-end",
+        ["scroll-timeline"] = "scroll-timeline-name scroll-timeline-axis",
+        ["text-box"] = "text-box-trim text-box-edge",
+        ["text-decoration"] = "text-decoration-line text-decoration-thickness text-decoration-style text-decoration-color",
+        ["text-emphasis"] = "text-emphasis-style text-emphasis-color",
+        ["text-wrap"] = "text-wrap-mode text-wrap-style",
+        ["transition"] = "transition-property transition-duration transition-timing-function transition-delay transition-behavior",
+        ["view-timeline"] = "view-timeline-name view-timeline-axis view-timeline-inset",
+        ["white-space"] = "white-space-collapse text-wrap-mode",
+        ["-webkit-mask"] = "mask-image -webkit-mask-position-x -webkit-mask-position-y mask-size mask-repeat mask-origin mask-clip mask-composite mask-mode",
+        ["-webkit-text-stroke"] = "-webkit-text-stroke-width -webkit-text-stroke-color",
+    }.ToDictionary(x => x.Key, IReadOnlySet<string> (x) => x.Value.Split(' ').ToHashSet(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+
     private static readonly HashSet<string> ColorFunctions = new(StringComparer.OrdinalIgnoreCase)
     {
         "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color",
@@ -200,6 +290,8 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         var prelude = new List<CssTokenizer.Token>();
         // what opened each block: an at-rule's name, a keyframe, or a style rule
         var openers = new Stack<string>();
+        // the shorthands with a late value of each open block's declarations so far
+        var lateShorthands = new Stack<List<LateShorthand>>();
         for (var i = 0; i < tokens.Count; i++)
         {
             var token = tokens[i];
@@ -233,6 +325,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                     break;
                 case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly && atDeclarationStart:
                     ValidateCssDeclaration(tokens, i, findings, inDirectionRule: directionRules.Count > 0 && directionRules.Peek());
+                    ValidateCssShorthandParts(tokens, i, lateShorthands.Peek(), findings);
                     break;
             }
 
@@ -253,6 +346,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                 }
 
                 openers.Push(opener);
+                lateShorthands.Push([]);
             }
 
             if (token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.Semicolon)
@@ -285,6 +379,12 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                 {
                     directionRules.Pop();
                     openers.Pop();
+                    lateShorthands.Pop();
+                    // the declarations after a nested rule are a block of their own
+                    if (lateShorthands.Count > 0)
+                    {
+                        lateShorthands.Peek().Clear();
+                    }
                 }
             }
         }
@@ -442,6 +542,55 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
                 findings.Errors.Add($"the CSS sets position to '{Quote(WriteCss(value))}', and a custom section's position is {JoinOr(PositionValues)}");
             }
         }
+    }
+
+    /// <summary>
+    /// A browser keeps a shorthand whose value holds var() as written, and its parts read empty until the page applies it. The storefront
+    /// writes each rule back from what the browser parsed, so a later declaration of the same block that sets only some of those parts leaves
+    /// the rule with those parts alone, and the shorthand is lost.
+    /// </summary>
+    /// <param name="earlier">The block's shorthands with a late value so far; a shorthand with one is added.</param>
+    protected virtual void ValidateCssShorthandParts(IList<CssTokenizer.Token> tokens, int index, List<LateShorthand> earlier, CssFindings findings)
+    {
+        if (ReadDeclarationValue(tokens, index) is not { } value)
+        {
+            return;
+        }
+
+        var name = tokens[index].Value.ToLowerInvariant();
+        var parts = GetShorthandParts(name);
+        var important = IsImportant(value);
+        foreach (var shorthand in earlier.Where(x => (important || !x.Important) && x.Parts.Overlaps(parts) && !parts.IsSupersetOf(x.Parts)))
+        {
+            findings.Errors.Add($"the CSS sets {name} after {shorthand.Name} with {shorthand.Function}() in the same rule, and the storefront then " +
+                $"loses {shorthand.Name}: set each of its parts on its own, such as {shorthand.Parts.First(x => !parts.Contains(x))}");
+        }
+
+        if (Shorthands.ContainsKey(name) && value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && IsLateValueFunction(x.Value)) is { Value: { } function })
+        {
+            earlier.Add(new LateShorthand(name, function.ToLowerInvariant(), parts, important));
+        }
+    }
+
+    /// <summary>A vendor-prefixed property, such as -webkit-background-clip, also sets the property it stands for.</summary>
+    private static IReadOnlySet<string> GetShorthandParts(string name)
+    {
+        if (Shorthands.TryGetValue(name, out var parts))
+        {
+            return parts;
+        }
+
+        var unprefixed = name.StartsWith('-') && !name.StartsWith("--", StringComparison.Ordinal) && name.IndexOf('-', 1) is > 0 and var end
+            ? name[(end + 1)..]
+            : name;
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { name, unprefixed };
+    }
+
+    private static bool IsImportant(List<CssTokenizer.Token> value)
+    {
+        var tokens = value.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList();
+        return tokens.Count >= 2 && tokens[^2] is { Kind: CssTokenizer.TokenKind.Delim, Value: "!" } &&
+            tokens[^1] is { Kind: CssTokenizer.TokenKind.Ident } important && string.Equals(important.Value, "important", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <returns>The one keyword a value is, !important aside; <c>null</c> for any other value.</returns>
@@ -650,6 +799,9 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         CssTokenizer.TokenKind.CloseParen => '(',
         _ => '[',
     };
+
+    /// <param name="Function">The late value function the shorthand's value holds, such as var.</param>
+    protected sealed record LateShorthand(string Name, string Function, IReadOnlySet<string> Parts, bool Important);
 
     /// <summary>What the checks of the CSS's tokens found, before they are reported once each.</summary>
     protected sealed class CssFindings
