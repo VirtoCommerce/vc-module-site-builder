@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
@@ -9,6 +10,7 @@ using Moq;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Jobs;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
@@ -58,7 +60,9 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
 
                 if (request.DryRun)
                 {
-                    return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(null);
+                    var preview = new SiteBuilderChangePreview();
+                    preview.AddObject("page", request.GroupId).AddField("sourceRevisionDate", null, _sourceRevision);
+                    return SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(preview);
                 }
 
                 _marked.Add(request.GroupId);
@@ -115,7 +119,7 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
         var result = await _context.CallAsync(Editor(), Tool, new { translations = new[] { Item("fr", "\"stale\"", "h1", "title", "Printemps") } });
 
         Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("nothing was saved", result.Error);
+        Assert.StartsWith("Not every page can take its translations (1 of 1 cannot), so nothing was saved", result.Error);
         Assert.Empty(_context.Jobs.Enqueued);
     }
 
@@ -222,6 +226,23 @@ public sealed class SetTranslationsToolTests : IAsyncDisposable
             It.Is<MultilanguagePageMarkUpToDateOperationRequest>(r => r.GroupId == "fr" && r.ExpectedSourceRevisionDate == _published && !r.DryRun),
             editor, It.IsAny<CancellationToken>()), Times.Once);
         _context.MultilanguagePages.Verify(x => x.MarkUpToDateAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ADryRun_ShowsTheMarkUpToDate_AsTheDesignersDryRunDoes()
+    {
+        var preview = await CallAsync<TranslationPreview>(Editor(), new { translations = await FrenchAsync(), mark_up_to_date = true, dryRun = true });
+
+        Assert.Contains(preview.Changes, x => x.Field.EndsWith("(fr, fr-FR): sourceRevisionDate", StringComparison.Ordinal) &&
+            x.To?.ToString() == _published.ToString("O", CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task ADryRun_WithoutMarkUpToDate_ShowsNoMark()
+    {
+        var preview = await CallAsync<TranslationPreview>(Editor(), new { translations = await FrenchAsync(), dryRun = true });
+
+        Assert.DoesNotContain(preview.Changes, x => x.Field.EndsWith("sourceRevisionDate", StringComparison.Ordinal));
     }
 
     [Fact]

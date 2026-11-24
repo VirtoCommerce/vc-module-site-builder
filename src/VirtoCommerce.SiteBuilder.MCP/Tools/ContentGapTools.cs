@@ -189,7 +189,8 @@ public class ContentGapTools(
         {
             return Gap("translation-outdated", McpFindingSeverities.Warning, $"The {item.CultureName} version of '{root.Name}' is behind its source language.",
                 $"Page '{item.Page?.Id}': {source} was published after this translation.",
-                "Read both versions with search_site_pages, translate what changed with set_translations, and mark it up to date there.",
+                "Read both versions with search_site_pages. Copy a section the source gained with edit_page_draft (copy_sections_from), then translate " +
+                "what changed with set_translations and mark it up to date there.",
                 TranslationsCategory, new GapObject(ChangePreview.Page, item.Page?.Id, root.Name));
         }
 

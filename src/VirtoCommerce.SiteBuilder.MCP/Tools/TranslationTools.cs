@@ -81,7 +81,7 @@ public class TranslationTools(
         var problems = preview.Pages.Where(x => x.Problem != null).ToList();
         if (problems.Count > 0)
         {
-            throw new McpException($"{problems.Count} pages cannot take their translations, so nothing was saved: " +
+            throw new McpException($"Not every page can take its translations ({problems.Count} of {pages.Count} cannot), so nothing was saved: " +
                 string.Join("; ", problems.Take(MaxNamedProblems).Select(x => $"{x.PageId}: {x.Problem}")) + ". Fix them, or leave those pages out, and call again.");
         }
 
@@ -179,13 +179,13 @@ public class TranslationTools(
         var result = await runner.RunAsync(user, page.PageId, page.VersionToken, TranslationOperations.Create(page.Texts), dryRun: true, cancellationToken);
         var problem = GetProblem(result);
 
-        string markProblem = null;
+        (SiteBuilderChangePreview Preview, string Problem) mark = default;
         if (problem == null && markUpToDate)
         {
-            markProblem = await translationSources.GetProblemAsync(user, group.Id, page.SourceRevisionDate, cancellationToken);
+            mark = await translationSources.PreviewAsync(user, group.Id, page.SourceRevisionDate, cancellationToken);
         }
 
-        AddToPreview(preview, group, page, result, problem, markProblem);
+        AddToPreview(preview, group, page, result, problem, mark);
     }
 
     private static string GetProblem(PageJobResult result) => result.Outcome switch
@@ -196,24 +196,21 @@ public class TranslationTools(
     };
 
     private static void AddToPreview(TranslationPreview preview, GroupedSiteBuilderPage group, SetTranslationsJobPage page, PageJobResult result, string problem,
-        string markProblem)
+        (SiteBuilderChangePreview Preview, string Problem) mark)
     {
         var label = $"page '{group.Name}' ({group.Id}, {group.CultureName})";
         if (preview.Pages.Count < MaxPreviewPages)
         {
-            foreach (var change in result.Changes ?? [])
-            {
-                preview.AddChange($"{label}: {change.Field}", change.From, change.To);
-            }
+            AddChanges(preview, label, result, mark.Preview);
         }
 
         if (problem != null)
         {
             preview.AddWarning($"{label}: {problem}.");
         }
-        else if (markProblem != null)
+        else if (mark.Problem != null)
         {
-            preview.AddWarning($"{label} will be saved but not marked up to date: {markProblem}.");
+            preview.AddWarning($"{label} will be saved but not marked up to date: {mark.Problem}.");
         }
 
         preview.Pages.Add(new TranslationPageRow
@@ -223,8 +220,21 @@ public class TranslationTools(
             Language = group.CultureName,
             TextCount = page.Texts.Count,
             Problem = problem,
-            NotMarkedUpToDate = markProblem,
+            NotMarkedUpToDate = mark.Problem,
         });
+    }
+
+    private static void AddChanges(TranslationPreview preview, string label, PageJobResult result, SiteBuilderChangePreview mark)
+    {
+        foreach (var change in result.Changes ?? [])
+        {
+            preview.AddChange($"{label}: {change.Field}", change.From, change.To);
+        }
+
+        foreach (var field in mark?.Objects.SelectMany(x => x.Fields) ?? [])
+        {
+            preview.AddChange($"{label}: {field.Name}", field.From, field.To);
+        }
     }
 }
 

@@ -65,7 +65,7 @@ public sealed class FindContentGapsToolTests : IAsyncDisposable
         var report = await FindAsync(Reader(), new { store_id = StoreA });
 
         Assert.Contains(report.Findings, x => x.Id == "translation-missing" && x.ObjectId == "root" && x.Title.Contains("de-DE", StringComparison.Ordinal));
-        Assert.Contains(report.Findings, x => x.Id == "translation-outdated" && x.ObjectId == "fr-version");
+        Assert.Contains(report.Findings, x => x.Id == "translation-outdated" && x.ObjectId == "fr-version" && x.Fix.Contains("copy_sections_from", StringComparison.Ordinal));
         Assert.Contains(report.Findings, x => x.Id == "seo-title-missing" && x.ObjectId == "no-seo" && x.Severity == McpFindingSeverities.Warning);
         Assert.Contains(report.Findings, x => x.Id == "seo-description-missing" && x.ObjectId == "no-seo");
         Assert.DoesNotContain(report.Findings, x => x.ObjectId == "with-seo" || x.ObjectId == "b-page");
