@@ -1,20 +1,10 @@
 # Color Control Descriptor
 
-This control uses the [ngx-color](https://ngx-color.vercel.app/) color picker. The [npm package](https://www.npmjs.com/package/ngx-color) is also available.
+This control provides a text field for a color value and a swatch that opens the browser's color picker. The picker writes the color as a hex value. The value is a string, or `null` when the field is cleared. No additional configuration options are required.
 
-| Property       | Type                 | Description                                                                   |
-| -------------- | -------------------- | ----------------------------------------------------------------------------- |
-| `colorMode`    | color <br> presets   | Use the Sketch picker for `color` mode, and the Twitter picker for `presets`. |
-| `disableAlpha` | boolean            | Removes the alpha (transparency) slider and options.                          |
-| `clearValue`   | string             | Text shown for the clear/reset button.                                        |
-| `inline`       | boolean            | Displays the color picker inline instead of as a popup.                       |
-| `presets`      | string[]           | List of predefined color values used in `presets` mode.                       |
+![Color control](images/color.png){: width="300" }
 
-
-## Examples
-### Color picker in HSLA format
-
-<div class="grid" markdown>
+## Example
 
 ```json
 ...
@@ -22,43 +12,12 @@ This control uses the [ngx-color](https://ngx-color.vercel.app/) color picker. T
         {
             "id": "headerColor",
             "label": "Header color",
-            "type": "color",
-            "outputFormat": "hsla"
+            "type": "color"
         },
         ...
     ]
 ...
 ```
-
-![Color picker in HSLA format](media/color-picker-popup.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
-
-
-### Color picker displayed inline
-
-<div class="grid" markdown>
-
-```json
-        "settings": [
-            {
-                "id": "headerColor",
-                "label": "Header color",
-                "type": "color",
-                "inline": "true"
-            },
-            ...
-        ]
-    ```
-
-...
-```
-
-![Inline color picker](media/color-picker-inline.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
 
 
 <br>
@@ -66,6 +25,6 @@ This control uses the [ngx-color](https://ngx-color.vercel.app/) color picker. T
 ********
 
 <div style="display: flex; justify-content: space-between;">
-    <a href="../collection">← Collection </a>
-    <a href="../files">Files →</a>
+    <a href="../list">← Collection </a>
+    <a href="../color-token">Color token →</a>
 </div>

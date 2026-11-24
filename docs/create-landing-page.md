@@ -1,81 +1,58 @@
 # Getting Started
 
-This guide helps you set up the Site Builder for Virto Commerce Platform and Frontend, ensuring content creation works smoothly.
+This guide sets up Site Builder on a Virto Commerce platform with the Virto Frontend and creates a first landing page.
 
 ## Prerequisites
 
-Before you begin, ensure that the following components are installed:
+* Virto Commerce platform with the Site Builder module and the modules it depends on (listed in its `module.manifest`). See [Modules installation](https://docs.virtocommerce.org/platform/user-guide/modules-installation/).
+* Virto Frontend (vc-frontend) with the theme snapshot and preview protocol 2, and `"site_builder_enabled": true` in `client-app/config/settings_data.json`. See [Frontend deployment](https://docs.virtocommerce.org/storefront/developer-guide/deployment/).
+* The Pages module (`VirtoCommerce.Pages`), so the storefront finds database pages by their address. It is optional for the designer itself.
 
-* [Virto Commerce 3.253.0+](https://github.com/VirtoCommerce/vc-platform/releases/)  
-    ![Readmore](media/readmore.png){: width="25"} [Platform deployment guide](../../Getting-Started/Installation-Guide/windows.md)
+## Set up the preview
 
-* [Virto Frontend 2.2.0+](https://github.com/VirtoCommerce/vc-frontend/releases/)  
-    ![Readmore](media/readmore.png){: width="25"} [Frontend deployment guide](../../../../../storefront/developer-guide/deployment)
+The designer shows the storefront in a frame, at the store's address followed by `/designer-preview`.
 
-* [Site Builder module 3.201+](https://github.com/VirtoCommerce/vc-module-site-builder/releases)
+1. Give the store its storefront address: in the store's settings, fill in its URL (or secure URL). The global setting `SiteBuilder.General.StoreUrl` overrides it for every store, and `SiteBuilder.General.StorePreviewPath` changes the path.
+1. Let the platform frame the storefront. The storefront sends this header, with the platform's address:
 
-## Setup content
+    ```http
+    Content-Security-Policy: frame-ancestors 'self' https://<platform>
+    ```
 
-Verify that the Virto Commerce Platform and Frontend are using the same **Shared content** folder for proper page synchronization.
+## Create a page
 
-## Setup store
+=== "Admin Shell"
 
-Configure the public store URL to ensure pages are accessible correctly.
+    1. In the main menu, open **Marketing → Sites** and select the store. The store's pages are listed with their status and languages.
 
-1. Open Platform.
-1. In the main menu, select **Stores**.
-1. In the next blade, select your store.
-1. In the next blade, set up the public store URL, if it is empty.
-1. Click **Save** in the toolbar to save the changes.
+        ![The pages of a store](media/site-builder-site-pages.png){: style="display: block; margin: 0 auto;" }
 
-You store URL has been set.
+    1. Click **New page** in the toolbar.
+    1. Fill in **Name** and **Permalink**, and optionally a **Language**. Under **Advanced options**, **Personalization & Access control** limits who sees the page, and **Scheduling** sets when it is visible.
 
-## Run
+        ![A new page](media/site-builder-new-page.png){: style="display: block; margin: 0 auto;" }
 
-Now you are ready to create and manage content pages:
+    1. Click **Save**, then **Edit in designer**. The page opens in the designer with the store's header and footer.
 
-=== "via the Content module"
+    The store's **Site Builder** widget, in the store's details, opens the same list. There, **Add** creates a Landing Page, or a [Multilanguage Page](multilanguage-pages.md) when the store has more than one language.
 
-    1. Click **Content** in the main menu.
-    1. In the next blade, find the required store and click on the **Pages** widget.
-    1. In the next blade, click **Add** in the toolbar. 
-    1. In the next blade, select **Design page**.
+=== "Classic Manager"
 
-        ![New page](media/new-page.png){: style="display: block; margin: 0 auto;" }
+    1. In the main menu, open **Content**, find the store, and click the **Pages** widget.
+    1. Click **Add** in the toolbar and select **Design page**.
+    1. Fill in the file name, the language and the permalink, and click **Create**.
 
-    1. In the next blade, fill in the following fields:
+    The page is stored as a file, and the designer opens it in a new tab. The store's **Site Builder** widget opens the designer for the store.
 
-        ![Fill in the fields](media/create-page-fields.png){: style="display: block; margin: 0 auto;" width="600"}
+## Edit and publish
 
-    1. Click **Create**. The Site Builder opens the newly created page in a new window. It contains uneditable header and footer by default.  
+![A landing page in the designer](media/site-builder-designer.png){: style="display: block; margin: 0 auto;" }
 
-        ![New page in Site Builder](media/new-page-opens.png){: style="display: block; margin: 0 auto;" }
+* **Sections** lists the page's sections between the header and the footer. **Add section** adds one; selecting a section opens its settings on the right, with **Content** and **Settings** tabs. Sections can be copied, pasted, hidden and reordered.
+* The header and footer are edited in the same list. **Theme** edits the theme settings, logos and palettes; **Shared** lists the Shared Components to place on the page.
+* **Save** keeps the changes as a draft, which the preview shows. **Publish** puts the draft live, **Preview** opens it on the storefront, and **Version history** restores an earlier version.
 
-    1. Click **Save** in the top right corner. 
-
-    You can open it in the browser using the specified permalink.
-
-
-=== "via the Site Builder Office"
-
-    1. Click **Stores** in the main menu.
-    1. In the next blade, select the required store.
-    1. In the next blade, click on the **Site Builder** widget to open the Site Builder Office:
-
-        ![Office](media/site-builder-office.png){: style="display: block; margin: 0 auto;" }
-
-    1. Click **Add** in the toolbar.
-    1. In the next blade, fill in the following fields:
-
-        ![Fill in the fields](media/new-page-office.png){: style="display: block; margin: 0 auto;" }
-
-    1. Click **Save** in the toolbar. 
-
-    Your new page appears in the list of pages.
-
-![Readmore](media/readmore.png){: width="25"} [Adding content to page](../../../../user-guide/site-builder/manage-pages#add-content-to-page)
-
-![Readmore](media/readmore.png){: width="25"} [Publishing and unpublishing pages](../../../../user-guide/site-builder/manage-pages#publish-or-unpublish-pages)
+Read more: [Multilanguage Pages](multilanguage-pages.md), [Version history](version-history.md).
 
 
 <br>
@@ -83,6 +60,6 @@ Now you are ready to create and manage content pages:
 ********
 
 <div style="display: flex; justify-content: space-between;">
-    <a href="../overview">← Site Builder overview </a>
+    <a href="../index">← Site Builder overview </a>
     <a href="../create-new-block">Creating new block →</a>
 </div>

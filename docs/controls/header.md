@@ -1,31 +1,26 @@
 # Header Control Descriptor
 
-This control displays custom informational text inside the editor panel.
+This control displays a heading inside the editor panel.
+
+![Header control](images/header.png){: width="300" }
 
 | Property  | Description                          |
 | --------- | ------------------------------------ |
-| `content` | Text to display in the editor panel. |
+| `label`   | Text to display in the editor panel. |
 
 ## Example
-
-<div class="grid" markdown>
 
 ```json
 ...
     "settings": [
         {
             "type": "header",
-            "content": "Please upload an image of reasonable size"
+            "label": "Please upload an image of reasonable size"
         },
         ...
     ]
 ...
 ```
-
-![Header control](media/header-control.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
 
 <br>
 <br>

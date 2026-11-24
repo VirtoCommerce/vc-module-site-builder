@@ -1,35 +1,25 @@
 # Select Control Descriptor
 
-This control presents a dropdown list of options to the user. This control supports static options, dynamic options from the current component context, or options fetched from an external server.
+This control presents a dropdown list of options to the user. This control supports static options or options fetched from a server.
+
+![Select control](images/select.png){: width="300" }
 
 ## Descriptor properties
 
 | Property          | Type             | Description                                                                                                                                            |
 | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `options`         | OptionModel[]  | Array of static options to display in the dropdown.<br> These values can be grouped using the `group` property.                                        |
-| `optionsSelector` | string         | An [expression](../contracts/preview-protocol.md#schemas) that builds the options from the current component context.<br>Ignored if `request` is defined.      |
-| `request`         | OptionsRequest | Configuration to fetch options via a web [request](server-descriptors.md#serverrequestdescriptor).<br>The `label` property from the result will be used for display,<br>and the option's value is taken from the corresponding field.<br>The fetched data is merged with the array from `options`.                                                                          |
-| `equalKey`        | string         | Compares values between the current value and available options.                                                                                         |
-| `filterList`      | boolean        | Enables filtering the option list in the UI.                                                                                                             |
-| `multiple`        | boolean        | Enables multi-select.                                                                                                                                    |
+| `options`         | OptionModel[]  | Array of static options to display in the dropdown.<br>Ignored if `request` is defined.                                                                 |
+| `request`         | OptionsRequest | Configuration to fetch options via a web request.<br>The `label` property from the result will be used for display,<br>and the option's value is taken from the `value` field. |
+| `searchable`      | boolean        | Lets the user type to filter the options.<br>A select with `request` is always searchable: the typed text goes to the request as `{{__searchQuery}}`. |
+| `required`        | boolean        | The value cannot be cleared. The server refuses a theme file with an empty value; a value left out passes when the setting has a `default`.             |
 
-**Example**:
-
-```js
-toOptions(filterBy(this.page, 'type', 'popup'), ['name', '__id'], '__id')
-```
-
-This expression keeps the blocks of the page whose type is `popup` and turns them into options with `label` and `value` fields.
-
-The resulting list is **merged with the static options** provided via the `options` property, if any.
-
-If the control already has a pre-defined value, it will be matched **using the `equalKey`** after all data (static, selector-based, and/or fetched) is loaded.
+In theme files, such as templates, the server checks that the value of a select with static `options` is one of their values.
 
 
 
 ## Supporting Types
 
-The following types define the structure of values used within the select control — including individual options, how options are loaded from a server, and how values are extracted from responses.
+The following types define the structure of values used within the select control — including individual options and how options are loaded from a server.
 
 ### OptionModel
 
@@ -39,38 +29,28 @@ Defines the shape of a single dropdown option:
 | -------- | -------- | ------------------- |
 | `label`  | string   | Text shown in UI    |
 | `value`  | any      | Option's value      |
-| `group`  | string   | Optional group name |
 
 
 ### OptionsRequest
 
-Extends a generic request definition and adds fields to specify which parts of the server response should be used as labels and groups for the select options:
+Defines the request and which parts of the server response should be used as labels and values for the select options:
 
-| Property | Type     | Description                              |
-| -------- | -------- | ---------------------------------------- |
-| `label`  | string | Field name used for displaying the label |
-| `group`  | string | (Optional) Field name used for grouping  |
+| Property   | Type     | Description                              |
+| ---------- | -------- | ---------------------------------------- |
+| `url`      | string   | Request URL. `{{path}}` placeholders are filled from the context: `location.params.storeId` (the store), `settings` (the page settings, such as `settings.cultureName`), `model` (the values of the section or block), `section`, `block` and `page`. |
+| `method`   | string   | `get` (default) or `post`.               |
+| `body`     | object   | Request body, with placeholders filled as in `url`. |
+| `response` | object   | `result` is a dotted path to the options in the response, such as `data.categories.items`. |
+| `label`    | string | Field name used for displaying the label |
+| `value`    | string | Field name used for the value. Without it, the whole option object is the value. |
 
-See full details in the [ServerRequestDescriptor](server-descriptors.md#serverrequestdescriptor) documentation.
-
-
-### SelectValueDescriptor
-
-Extracts the actual `value` for each option from a server response. 
-
-| Property  | Type      | Description                    |
-| --------- | --------- | ------------------------------ |
-| `key`     | string  | Property name of the value field |
-| `query`   | string  | JSONPath to extract value        |
-| `isArray` | boolean | Whether the value is an array    |
+On the platform, a request can only be `GET /api/site-builder/search` or a `POST /graphql` query that reads data. See [Schemas](../contracts/preview-protocol.md#schemas) in the preview protocol.
 
 
 
 ## Examples
 
 ### Basic select
-
-<div class="grid" markdown>
 
 ```json
 ...
@@ -92,13 +72,7 @@ Extracts the actual `value` for each option from a server response.
 ...
 ```
 
-![Basic select result](media/basic-select-result.png){: style="display: block; margin: 0 auto;" }
-
-</div>
-
 ### Server request
-
-<div class="grid" markdown>
 
 ```json
 ...
@@ -107,24 +81,18 @@ Extracts the actual `value` for each option from a server response.
             "id": "category",
             "label": "Choose category",
             "type": "select",
-            "equalKey": "id",
             "default": null,
             "request": {
-                "url": "/api/reverse-proxy/{{location.params.storeId}}/odt/api/catalog/search/categories",
+                "url": "/graphql",
                 "method": "post",
                 "body": {
-                    "objectType": "Category",
-                    "catalogId": "4974648a41df4e6ea67ef2ad76d7bbd4"
+                    "query": "{categories(storeId:\"{{location.params.storeId}}\",cultureName:\"{{settings.cultureName}}\",first:50){items{id,name}}}"
                 },
                 "response": {
-                    "result": "items",
-                    "isArray": true,
-                    "value": [
-                        "id",
-                        "name"
-                    ]
+                    "result": "data.categories.items"
                 },
-                "label": "name"
+                "label": "name",
+                "value": "id"
             }
         },
         ...
@@ -132,40 +100,11 @@ Extracts the actual `value` for each option from a server response.
 ...
 ```
 
-    
-![Server request result](media/server-request-result.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
-
-### Context-based options
-
-<div class="grid" markdown>
-
-```json
-...
-    "settings": [
-        {
-            "id": "popupId",
-            "label": "Select target popup",
-            "type": "select",
-            "optionsSelector": "toOptions(filterBy(this.page, 'type', 'popup'), ['name', '__id'], '__id')"
-        },
-        ...
-    ]
-...
-```
-
-
-![Context-based select](media/select-control-context-page.png){: style="display: block; margin: 0 auto;" }
-
-</div>
-
 <br>
 <br>
 ********
 
 <div style="display: flex; justify-content: space-between;">
-    <a href="../search">← Search </a>
+    <a href="../_search">← Search </a>
     <a href="../string">String →</a>
 </div>
