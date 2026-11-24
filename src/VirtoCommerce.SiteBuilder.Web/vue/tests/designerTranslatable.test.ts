@@ -4,7 +4,7 @@ import { displayText, isTranslations, resolveTranslations, translationOf, withTr
 import { itemTitle, withTextEdit } from "../src/modules/designer/schema";
 import { hidingLosesMain, keptMainSection, mainSectionState, MAIN_SECTIONS } from "../src/modules/designer/templates";
 import { runSearch, searchDisplayValue, requestResult, type SearchField } from "../src/modules/designer/search";
-import { IMPERSONATE_PERMISSION, previewCodeBody, previewCodeUrl, previewUserIds, previewUsers, readPreviewCode } from "../src/modules/designer/previewUsers";
+import { PREVIEW_AS_PERMISSION, previewCodeBody, previewCodeUrl, previewUserIds, previewUsers, readPreviewCode } from "../src/modules/designer/previewUsers";
 import type { Field, Item, RemoteRequest } from "../src/modules/designer/types";
 
 const en: Translating = { language: "en-US", defaultLanguage: "en-US" };
@@ -162,12 +162,12 @@ test("a search shows the answer's values by their dotted paths; a request's answ
   assert.deepEqual(requestResult(request("/x"), [1]), [1]);
 });
 
-test("the store lists the accounts to preview as, one id per line; the grant needs login on behalf", () => {
+test("the store lists the accounts to preview as, one id per line; previewing as them needs builder:preview-as", () => {
   const store = { settings: [{ name: "SiteBuilder.Store.PreviewUserIds", value: " u1\r\nu2\n\nu1\n" }] };
   assert.deepEqual(previewUserIds(store), ["u1", "u2"]);
   assert.deepEqual(previewUserIds({ settings: [] }), []);
   assert.deepEqual(previewUserIds(undefined), []);
-  assert.equal(IMPERSONATE_PERMISSION, "platform:security:loginOnBehalf");
+  assert.equal(PREVIEW_AS_PERMISSION, "builder:preview-as");
   assert.deepEqual(previewUsers(["u1", "u2", "u3"], [{ id: "u2", email: "b@x" }, { id: "u1", userName: "anna" }]), [
     { id: "u1", name: "anna" },
     { id: "u2", name: "b@x" },

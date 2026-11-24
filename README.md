@@ -40,7 +40,9 @@ Settings forced in configuration under `VirtoCommerce:Settings:Override` need a 
 
 ## Store access
 
-A role can hold `builder:read` and `builder:shared-components:read` for selected stores only (the **Only for selected stores** scope). Every Site Builder endpoint checks the store it addresses: besides its own permission, the user needs the read permission in that store, for every store or through the scope. An account bound to a store reaches that store only.
+A role can hold `builder:read`, `builder:shared-components:read` and `builder:preview-as` for selected stores only (the **Only for selected stores** scope). Every Site Builder endpoint checks the store it addresses: besides its own permission, the user needs the read permission in that store, for every store or through the scope. An account bound to a store reaches that store only.
+
+`builder:preview-as` lets an editor preview pages as one of the store's preview users (the store setting **Preview user IDs**), in the stores the role holds it for: the preview code endpoint checks it in the store in place of the read permission. Only customer accounts can be previewed: an administrator or a manager listed there is refused.
 
 The Vue designer lists a theme's alternate templates through the Content module's theme search (`GET api/content/themes/{storeId}/search`), so switching to one needs `content:read` as well; without it the template switcher offers only the default templates and says why.
 

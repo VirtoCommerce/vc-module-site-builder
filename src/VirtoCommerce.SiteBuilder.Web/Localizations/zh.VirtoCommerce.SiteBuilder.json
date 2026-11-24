@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "允许编辑主题设置",
     "builder:templates": "允许在编辑期间更改模板",
-    "builder:promote": "允许将页面提升到生产环境。此权限独立于发布，发布仅作用于编辑人员使用的环境。"
+    "builder:promote": "允许将页面提升到生产环境。此权限独立于发布，发布仅作用于编辑人员使用的环境。",
+    "builder:preview-as": "允许以商店预览用户的身份预览页面。仅限客户账户。"
   }
 }

@@ -1,4 +1,4 @@
-export const IMPERSONATE_PERMISSION = "platform:security:loginOnBehalf";
+export const PREVIEW_AS_PERMISSION = "builder:preview-as";
 export const PREVIEW_USERS_SETTING = "SiteBuilder.Store.PreviewUserIds";
 
 export interface PreviewUser {

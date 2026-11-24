@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Tillat redigering av temainnstillinger",
     "builder:templates": "Tillat bytte av mal under redigering",
-    "builder:promote": "Tillat overføring av en side til produksjon. Atskilt fra publisering, som bare når miljøet redaktørene arbeider mot."
+    "builder:promote": "Tillat overføring av en side til produksjon. Atskilt fra publisering, som bare når miljøet redaktørene arbeider mot.",
+    "builder:preview-as": "Tillat forhåndsvisning av sider som en av butikkens forhåndsvisningsbrukere. Bare kundekontoer er tillatt."
   }
 }

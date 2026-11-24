@@ -192,9 +192,10 @@ at `url`; a content page shows on the designer's preview route, and its rules se
 | `auth` | `{ code: string, userId: string }` or `{ token: null, userId: null }` | exchanges `code` and renders as that user; `null` renders as an anonymous visitor |
 
 The designer offers the accounts of the store setting `SiteBuilder.Store.PreviewUserIds` to an editor with
-`platform:security:loginOnBehalf`, and sends `auth` with a one-time code from the platform's
+`builder:preview-as`, and sends `auth` with a one-time code from the platform's
 `POST /api/site-builder/preview-auth/code` (`{ storeId, userId }` → `{ code, expiresInSeconds }`). The endpoint asks for
-`platform:security:loginOnBehalf` and `builder:read` in the store, and refuses a user the store does not list. The storefront
+`builder:preview-as` in the store, and refuses a user the store does not list or who is not a customer
+account (`UserType` `Customer`, not an administrator): the token reaches the platform's `/api` through the storefront. The storefront
 exchanges the code at its own `/connect/token`, form-urlencoded `grant_type=site_builder_preview&code=…`: a token minted on
 the storefront's host carries the issuer the storefront's `/graphql` accepts, which a token from the platform's host does not.
 The answer is the access token alone, without a refresh token, naming the editor as its operator as an impersonation token
@@ -203,7 +204,7 @@ does. The storefront keeps it in memory and sends it only to its own `/graphql` 
 A code lives 60 seconds and is exchanged once. The platform remembers used codes per instance, so behind several
 instances a code can be exchanged once on each within its lifetime; the instances share the Data Protection keys the
 platform keeps (Redis in the cloud), without which a code made on one instance is refused on another. The grant checks
-again that the store still lists the user. A preview is not the customer signing in: the user's last login date and
+again that the store still lists the user and that the account is still a customer's. A preview is not the customer signing in: the user's last login date and
 login events are left alone, and the sign-in log records it as `SiteBuilderPreview`.
 
 The storefront still accepts `{ token: { access_token: string }, userId: string }`, which the released Page Builder

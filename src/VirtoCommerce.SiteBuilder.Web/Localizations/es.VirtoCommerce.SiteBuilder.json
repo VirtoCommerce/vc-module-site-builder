@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Permitir editar la configuración del tema",
     "builder:templates": "Permitir cambiar la plantilla durante la edición",
-    "builder:promote": "Permitir promover una página a producción. Es independiente de la publicación, que solo llega al entorno con el que trabajan los editores."
+    "builder:promote": "Permitir promover una página a producción. Es independiente de la publicación, que solo llega al entorno con el que trabajan los editores.",
+    "builder:preview-as": "Permitir previsualizar páginas como uno de los usuarios de vista previa de la tienda. Solo se admiten cuentas de cliente."
   }
 }

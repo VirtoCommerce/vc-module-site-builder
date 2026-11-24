@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Web.Extensions;
-using VirtoCommerce.Platform.Core;
 
 namespace VirtoCommerce.SiteBuilder.Web.Controllers.Api;
 
@@ -16,7 +15,6 @@ public class PreviewAuthController(IPreviewAuthCodeService previewAuthCodeServic
 {
     /// <summary>A one-time code the designer's preview exchanges at the storefront's own token endpoint, to render as one of the store's preview users.</summary>
     [HttpPost("code")]
-    [Authorize(PlatformConstants.Security.Permissions.SecurityLoginOnBehalf)]
     [ProducesResponseType(typeof(PreviewAuthCode), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]

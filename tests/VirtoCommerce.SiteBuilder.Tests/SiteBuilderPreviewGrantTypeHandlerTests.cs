@@ -35,7 +35,7 @@ public class SiteBuilderPreviewGrantTypeHandlerTests
     private const string StoreId = "B2B-store";
     private const string TokenScheme = "OpenIddict.Server.AspNetCore";
 
-    private readonly ApplicationUser _customer = new() { Id = "u1", UserName = "anna", StoreId = StoreId };
+    private readonly ApplicationUser _customer = new() { Id = "u1", UserName = "anna", StoreId = StoreId, UserType = nameof(UserType.Customer) };
     private readonly FakeSettingsManager _settings = new("u1");
     private readonly List<IEvent> _events = [];
     private readonly Mock<UserManager<ApplicationUser>> _userManager;
@@ -59,7 +59,7 @@ public class SiteBuilderPreviewGrantTypeHandlerTests
 
         _codes = new PreviewAuthCodeService(new FakeAuthorizationService(true),
             new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = StoreId })),
-            _settings, new EphemeralDataProtectionProvider(), new MemoryCache(new MemoryCacheOptions()));
+            _settings, new EphemeralDataProtectionProvider(), new MemoryCache(new MemoryCacheOptions()), () => _userManager.Object);
     }
 
     [Fact]
@@ -101,6 +101,15 @@ public class SiteBuilderPreviewGrantTypeHandlerTests
     {
         var code = await CodeAsync();
         _settings.Values[ModuleConstants.Settings.StoreLevelSettings.PreviewUserIds.Name] = "u2";
+
+        AssertInvalidGrant(await HandleAsync(code), SignInFailureReason.NotAllowed);
+    }
+
+    [Fact]
+    public async Task Code_ForAUserMadeAnAdministratorSince_IsAnInvalidGrant()
+    {
+        var code = await CodeAsync();
+        _customer.IsAdministrator = true;
 
         AssertInvalidGrant(await HandleAsync(code), SignInFailureReason.NotAllowed);
     }

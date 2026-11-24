@@ -1,14 +1,18 @@
 using System;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
+using Moq;
 using Newtonsoft.Json;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core;
+using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.StoreModule.Core.Model;
 using Xunit;
 
@@ -20,6 +24,16 @@ public class PreviewAuthCodeServiceTests
     private const string PreviewUsers = " u0\r\nu1 \n\n";
 
     private readonly IDataProtectionProvider _dataProtection = new EphemeralDataProtectionProvider();
+
+    private static readonly ApplicationUser[] Users =
+    [
+        new() { Id = "u0", UserType = nameof(UserType.Customer) },
+        new() { Id = "u1", UserType = nameof(UserType.Customer) },
+        new() { Id = "admin", UserType = nameof(UserType.Administrator), IsAdministrator = true },
+        new() { Id = "manager", UserType = nameof(UserType.Manager) },
+        new() { Id = "customer-admin", UserType = nameof(UserType.Customer), IsAdministrator = true },
+        new() { Id = "no-type" },
+    ];
 
     [Fact]
     public async Task CreateCode_ListedUser_GivesACodeRedeemedOnce()
@@ -68,11 +82,35 @@ public class PreviewAuthCodeServiceTests
     }
 
     [Fact]
-    public async Task CreateCode_EditorWithoutReadInTheStore_IsForbidden()
+    public async Task CreateCode_ListedAdministrator_IsForbidden()
     {
-        var result = await CreateService(authorizationAllowed: false).CreateCodeAsync(Request("u1"), Editor(), TestContext.Current.CancellationToken);
+        var service = CreateService(new FakeSettingsManager("admin"));
+
+        var result = await service.CreateCodeAsync(Request("admin"), Editor(), TestContext.Current.CancellationToken);
 
         Assert.Equal(SiteBuilderOperationStatus.Forbidden, result.Status);
+    }
+
+    [Fact]
+    public async Task CreateCode_EditorWithPreviewAsInTheStore_GetsACode()
+    {
+        var service = CreateService(authorization: new FakeAuthorizationService(StoreId, ModuleConstants.Security.Permissions.PreviewAs));
+
+        var result = await service.CreateCodeAsync(Request("u1"), Editor(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(SiteBuilderOperationStatus.Succeeded, result.Status);
+    }
+
+    [Fact]
+    public async Task CreateCode_EditorWithPreviewAsInAnotherStoreOrOnlyRead_IsForbidden()
+    {
+        var anotherStore = CreateService(authorization: new FakeAuthorizationService("other", ModuleConstants.Security.Permissions.PreviewAs));
+        var onlyRead = CreateService(authorization: new FakeAuthorizationService(StoreId, ModuleConstants.Security.Permissions.Read));
+
+        Assert.Equal(SiteBuilderOperationStatus.Forbidden,
+            (await anotherStore.CreateCodeAsync(Request("u1"), Editor(), TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(SiteBuilderOperationStatus.Forbidden,
+            (await onlyRead.CreateCodeAsync(Request("u1"), Editor(), TestContext.Current.CancellationToken)).Status);
     }
 
     [Fact]
@@ -129,18 +167,38 @@ public class PreviewAuthCodeServiceTests
         Assert.Equal(expected, await CreateService().IsPreviewUserAsync(StoreId, userId));
     }
 
+    [Theory]
+    [InlineData("admin")]
+    [InlineData("manager")]
+    [InlineData("customer-admin")]
+    [InlineData("no-type")]
+    [InlineData("missing")]
+    public async Task IsPreviewUser_ListedAccountThatIsNotACustomer_IsRefused(string userId)
+    {
+        Assert.False(await CreateService(new FakeSettingsManager($"{userId}\nu1")).IsPreviewUserAsync(StoreId, userId));
+    }
+
     [Fact]
     public async Task IsPreviewUser_StoreWithoutTheSetting_ListsNobody()
     {
         Assert.False(await CreateService(new FakeSettingsManager()).IsPreviewUserAsync(StoreId, "u1"));
     }
 
-    private PreviewAuthCodeService CreateService(FakeSettingsManager settings = null, IMemoryCache cache = null, bool authorizationAllowed = true) =>
-        new(new FakeAuthorizationService(authorizationAllowed),
+    private PreviewAuthCodeService CreateService(FakeSettingsManager settings = null, IMemoryCache cache = null, FakeAuthorizationService authorization = null) =>
+        new(authorization ?? new FakeAuthorizationService(true),
             new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = StoreId })),
             settings ?? new FakeSettingsManager(PreviewUsers),
             _dataProtection,
-            cache ?? new MemoryCache(new MemoryCacheOptions()));
+            cache ?? new MemoryCache(new MemoryCacheOptions()),
+            UserManager);
+
+    private static UserManager<ApplicationUser> UserManager()
+    {
+        var userManager = new Mock<UserManager<ApplicationUser>>(Mock.Of<IUserStore<ApplicationUser>>(), null, null, null, null, null, null, null, null);
+        userManager.Setup(x => x.FindByIdAsync(It.IsAny<string>())).ReturnsAsync((string id) => Users.FirstOrDefault(x => x.Id == id));
+
+        return userManager.Object;
+    }
 
     private static PreviewAuthCodeOperationRequest Request(string userId) => new() { StoreId = StoreId, UserId = userId };
 

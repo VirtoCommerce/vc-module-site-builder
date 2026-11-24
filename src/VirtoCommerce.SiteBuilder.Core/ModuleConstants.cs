@@ -151,6 +151,8 @@ namespace VirtoCommerce.SiteBuilder.Core
                 /// </summary>
                 public const string Promote = "builder:promote";
 
+                public const string PreviewAs = "builder:preview-as";
+
                 public static string[] AllPermissions { get; } =
                 [
                     Theme,
@@ -162,6 +164,7 @@ namespace VirtoCommerce.SiteBuilder.Core
                     Delete,
                     Publish,
                     Promote,
+                    PreviewAs,
                     SharedComponentsRead,
                     SharedComponentsCreate,
                     SharedComponentsUpdate,

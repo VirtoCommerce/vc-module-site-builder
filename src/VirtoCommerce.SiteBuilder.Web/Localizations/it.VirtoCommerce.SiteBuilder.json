@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Consenti la modifica delle impostazioni del tema",
     "builder:templates": "Consenti la modifica del modello durante la modifica",
-    "builder:promote": "Consenti di promuovere una pagina in produzione. Separato dalla pubblicazione, che raggiunge solo l'ambiente su cui lavorano gli editor."
+    "builder:promote": "Consenti di promuovere una pagina in produzione. Separato dalla pubblicazione, che raggiunge solo l'ambiente su cui lavorano gli editor.",
+    "builder:preview-as": "Consenti l'anteprima delle pagine come uno degli utenti di anteprima del negozio. Sono ammessi solo account cliente."
   }
 }

@@ -13,7 +13,7 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 internal sealed class FakeAuthorizationService(bool allowed) : IAuthorizationService
 {
     // The permissions a role can scope to a store: such a claim passes the store requirement, never a named policy.
-    private static readonly string[] StoreScopedPermissions = [Permissions.Read, Permissions.SharedComponentsRead];
+    private static readonly string[] StoreScopedPermissions = [Permissions.Read, Permissions.SharedComponentsRead, Permissions.PreviewAs];
 
     private readonly string _storeId;
     private readonly string[] _permissions = [];

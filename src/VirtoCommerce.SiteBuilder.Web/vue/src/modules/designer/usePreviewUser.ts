@@ -3,7 +3,7 @@ import { useLocalStorage } from "@vueuse/core";
 import { usePermissions } from "@vc-shell/framework";
 import { loadPreviewUsers, previewCode } from "./api";
 import { ANONYMOUS, authMessage, type AuthMessage } from "./previewMessages";
-import { IMPERSONATE_PERMISSION, type PreviewUser } from "./previewUsers";
+import { PREVIEW_AS_PERMISSION, type PreviewUser } from "./previewUsers";
 
 /** As long as a code lives: a renewal asked for sooner means the storefront could not exchange the last code. */
 export const CODE_LIFETIME_MS = 60_000;
@@ -17,7 +17,7 @@ export const FAILED_RENEWAL_DELAYS_MS = [1_000, 5_000, 30_000];
  */
 export function usePreviewUser(options: { send: (message: AuthMessage) => void; onFailed: (user: PreviewUser | undefined) => void }) {
   const { hasAccess } = usePermissions();
-  const allowed = computed(() => hasAccess(IMPERSONATE_PERMISSION));
+  const allowed = computed(() => hasAccess(PREVIEW_AS_PERMISSION));
   const users = shallowRef<PreviewUser[]>([]);
   const userId = ref<string | null>(null);
   const user = computed(() => users.value.find((x) => x.id === userId.value));

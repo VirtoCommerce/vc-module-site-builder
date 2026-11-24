@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json;
 using VirtoCommerce.SiteBuilder.Core;
@@ -22,7 +23,8 @@ public class PreviewAuthCodeService(
     IValidator<SiteBuilderStoreRequest> storeRequestValidator,
     ISettingsManager settingsManager,
     IDataProtectionProvider dataProtectionProvider,
-    IMemoryCache memoryCache) : IPreviewAuthCodeService
+    IMemoryCache memoryCache,
+    Func<UserManager<ApplicationUser>> userManagerFactory) : IPreviewAuthCodeService
 {
     private const int NonceByteCount = 16;
 
@@ -43,7 +45,7 @@ public class PreviewAuthCodeService(
         CancellationToken cancellationToken)
     {
         var storeRequest = new SiteBuilderStoreRequest { StoreId = request.StoreId };
-        if ((await authorizationService.CheckStoreOperationAsync(user, storeRequest)
+        if ((await authorizationService.CheckStoreOperationAsync(user, storeRequest, Permissions.PreviewAs)
              ?? await storeRequestValidator.CheckOperationRequestAsync(storeRequest, request.BindingErrors, cancellationToken)) is { } refused)
         {
             return refused.As<PreviewAuthCode>();
@@ -139,8 +141,19 @@ public class PreviewAuthCodeService(
             ModuleConstants.Settings.StoreSettingsObjectType, storeId);
 
         // One id per line, as the designer lists them.
-        return (setting?.Value?.ToString() ?? string.Empty)
+        var listed = (setting?.Value?.ToString() ?? string.Empty)
             .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Contains(userId, StringComparer.Ordinal);
+
+        return listed && await IsCustomerAsync(userId);
+    }
+
+    // The token reaches the platform's API through the storefront, so only customers are previewed.
+    private async Task<bool> IsCustomerAsync(string userId)
+    {
+        using var userManager = userManagerFactory();
+        var user = await userManager.FindByIdAsync(userId);
+
+        return user is { IsAdministrator: false } && user.UserType == nameof(UserType.Customer);
     }
 }
