@@ -1,8 +1,8 @@
 # Virto Commerce Site Builder
 
-The Virto Commerce Site Builder enables users to create e-commerce pages by assembling and customizing blocks through a visual editor. Each page is composed of multiple blocks, with each block’s appearance and settings tailored to the specific needs of the web page. Pages are configured as a list of blocks, each with individual settings, and all data is stored in JSON format.
+The Virto Commerce Site Builder lets business users build storefront pages, catalog templates and the theme in a visual designer, next to a live preview of the real storefront. A page is a list of sections, each with its own settings and blocks, stored as JSON.
 
-![Demo](media/site-builder-demo.png)
+![A landing page in the Site Builder designer](media/site-builder-designer.png)
 
 Site Builder offers the following benefits:
 
@@ -10,47 +10,42 @@ Site Builder offers the following benefits:
     * Fast landing page creation with a visual editor.
     * Content preview exactly as seen by customers.
     * Mobile optimization by default.
-    * Ready-to-use building blocks and best practice tips.
+    * Ready-to-use sections and blocks.
 
 * For developers:
-
-    * Integration into custom designs.
-    * Configurable favorites block set.
-    * Block creation with flexible JSON schema.
-    * Builder integration with existing websites and apps.
-    * DevOps and publishing workflow readiness.
+    * Sections and blocks defined by JSON schemas in the storefront theme.
+    * Pages, templates and theme served to the storefront through xAPI.
+    * Version history and publication through GitHub.
+    * A REST API, and tools for AI agents through the MCP module.
 
 
 ## Key features
 - Visual landing page creation without developer involvement.
 - [Multilanguage pages](multilanguage-pages.md): one page with a version per store language, language switch to the translated permalink, and `hreflang`.
-- Theme editor for easy styling adjustments.
-- Page version history with preview and one-click rollback, for stores whose pages are kept in git.
+- Catalog templates for products, categories and pages, chosen by template rules.
+- Theme editor for the header, footer, logos and the light and dark palettes, with a palette generator that keeps WCAG 2.2 AA contrast.
+- [Version history](version-history.md) with preview and one-click rollback, for stores whose pages are kept in git ([Sites on GitHub](sites-on-github.md)).
 - eCommerce-focused page customization with real-time previews.
 - Mobile responsiveness built in by default.
-- SEO-friendly page structures.
-- Comprehensive block library.
-- Drag-and-drop block management, including copy, paste, hide, and reorder actions.
+- SEO settings per page.
+- Drag-and-drop section management, including copy, paste, hide, and reorder actions.
 - Native integration with the Virto Frontend.
-- Flexible API integration with both Virto Commerce and third-party systems.
-- Native extendability framework.
-- Fine-grained permissions and role management.
+- [AI Assistant](ai-assistant.md) and AI agents through the MCP module.
+- Fine-grained permissions, limited to selected stores where needed.
 
 ## Architecture
 
-The Site Builder consists of two primary subsystems:
+Site Builder has three parts:
 
-- **Creation logic script:** Handles page and theme editing within the administrative interface. It connects with the Virto Commerce Platform to fetch and save page data.
-- **Preview visualization script:** Runs on the Frontend, where it renders pages based on templates and ensures accurate visual representation for customers.
+- **The designer** runs in the back office (an Admin Shell plugin, and a separate app for the classic Manager). It edits pages, templates and the theme, and saves them to the platform.
+- **The platform module** keeps pages, templates and theme drafts, validates them, publishes them, and keeps their version history.
+- **The storefront** (vc-frontend) shows the designer's preview in a frame and renders the published pages, templates and theme for customers.
 
-The two subsystems communicate via `window.postMessage()` to synchronize edits and previews across the Admin and Frontend environments.
+The designer and the storefront's preview talk through `window.postMessage()`, as the [preview protocol](contracts/preview-protocol.md) describes: the designer sends the page being edited, and the storefront sends back its schema catalog, the sections and blocks it can render. Published content reaches the storefront through xAPI; the theme comes as a [theme snapshot](contracts/theme-snapshot.md).
 
-![Architecture](media/pb-architecture.png){: style="display: block; margin: 0 auto;" width="600"}
+![Site Builder architecture](media/site-builder-architecture.png){: style="display: block; margin: 0 auto;" }
 
-
-[![Source code](media/source_code.png)](https://github.com/VirtoCommerce/vc-module-site-builder/)
-
-[![Latest release](media/latest_release.png)](https://github.com/VirtoCommerce/vc-module-site-builder/releases)
+[Source code](https://github.com/VirtoCommerce/vc-module-site-builder/) · [Latest release](https://github.com/VirtoCommerce/vc-module-site-builder/releases)
 
 
 <br>
@@ -58,6 +53,6 @@ The two subsystems communicate via `window.postMessage()` to synchronize edits a
 ********
 
 <div style="display: flex; justify-content: space-between;">
-    <a href="../../Event-Driven-Development/using-domain-events">← Event-driven development </a>
-    <a href="../getting-started">Getting started →</a>
+    <span></span>
+    <a href="../create-landing-page">Getting started →</a>
 </div>

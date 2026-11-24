@@ -6,20 +6,22 @@ It performs one or more backend requests and stores the result in a block's valu
 
 ## Configuration options
 
-| Property      | Type                                         | Description                                                                                       |
-| ------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `request`     | ServerRequestDescriptor                    | A single [server request](server-descriptors.md#serverrequestdescriptor) to be executed.          |
-| `requests`    | { [key: string]: ServerRequestDescriptor } | Use this to define **multiple requests**, executed sequentially.<br>Ignored if **request** is present. |
-| `displayInfo` | DisplaySearchResult[]                      | Defines how the response data is displayed inside the control.                                    |
-| `nodataText`  | string                                       | Text shown if the request returns no data.                                                        |
-| `button`      | boolean <br> string                          | Button text to manually trigger the search.<br>If **false**, the search is triggered on input change.  |
+| Property       | Type                                         | Description                                                                                       |
+| -------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `request`      | OptionsRequest                               | A single request to be executed, described as the [select control](select.md#optionsrequest) describes it.<br>`response.result` is a dotted path to the part of the response to keep. |
+| `requests`     | { [key: string]: OptionsRequest }            | Use this to define **multiple requests**, executed sequentially.<br>Ignored if **request** is present. |
+| `displayInfo`  | DisplaySearchResult[]                        | Defines how the response data is displayed inside the control: a row per item with its `label`, the `path` to the value, and `type`, `text` (default) or `image`. |
+| `nodataText`   | string                                       | Text shown if the request returns no data.                                                        |
+| `button`       | boolean <br> string                          | Shows a button that triggers the search, with this text or, for **true**, with the default text.<br>Without it, the search is triggered on input change. |
+| `debounceTime` | number                                       | Time in milliseconds between the last change of the input and the search. Default is `1000`.     |
 
 
 !!! info
-    * When a `button` is present, the input field and button are shown together. When `button` is **false**, the request is triggered as the user types.<br>
-    * The result of a single `request` is saved to the `value` property of the control.<br>
+    * When a `button` is present, the control shows the button only, and the request runs with an empty query. Without `button`, the request is triggered as the user types, with the typed text as `{{__searchQuery}}`.<br>
+    * The value of the control is `{ __nodata, __searchQuery, value }`. The result of a single `request` is saved to the `value` property of the control.<br>
     * When using `requests`, each request's result is stored under a named key.<br>
-    * Sequential execution of `requests` allows one result to be used in the next request (e.g., pass product ID from the first to the second request).
+    * Sequential execution of `requests` allows one result to be used in the next request (e.g., pass product ID from the first to the second request as `{{item.product.id}}`).<br>
+    * The designer shows the result of `request` only: the `displayInfo` rows, which read their `path` in `value`, or the JSON of `value` without them.
 
 
 ## Single request example
@@ -39,11 +41,9 @@ Performs one API call to retrieve product details using a SKU.
                 "default": {
                     "value": {
                         "id": "9cbd8f316e254a679ba34a900fccb076",
+                        "code": "3DRSOLO",
                         "name": "3DR Solo Quadcopter (No Gimbal)",
-                        "imgSrc": "/themes/assets/blocks/solo-quadcopter.jpg",
-                        "description": "<ul class=\"top-section-list\">&#10;<li class=\"top-section-list-item\">Capture Aerial Photos/Video with a GoPro</li>&#10;<li class=\"top-section-list-item\">Linear Tracking with Cablecam Mode</li>&#10;<li class=\"top-section-list-item\">Follow Me: Tracks Your Mobile Device</li>&#10;<li class=\"top-section-list-item\">HDMI Output on Transmitter</li>&#10;<li class=\"top-section-list-item\">Android and iOS Mobile Apps</li>&#10;<li class=\"top-section-list-item\">Video Game-Style Controls</li>&#10;<li class=\"top-section-list-item\">Return Home and &#34;Safety Net&#34; Modes</li>&#10;<li class=\"top-section-list-item\">One-Button Flying / &#34;Pause&#34; Button</li>&#10;<li class=\"top-section-list-item\">Operate GoPro Through App</li>&#10;<li class=\"top-section-list-item\">Works with Optional Solo Gimbal</li>&#10;</ul>",
-                        "price": "$995.99",
-                        "url": "3dr-solo-quadcopter-no-gimbal"
+                        "imgSrc": "/themes/assets/blocks/solo-quadcopter.jpg"
                     },
                     "__nodata": false,
                     "__searchQuery": "3DRSOLO"
@@ -51,47 +51,24 @@ Performs one API call to retrieve product details using a SKU.
                 "displayInfo": [
                     {
                         "label": "Name",
-                        "key": "name"
+                        "path": "name"
                     },
                     {
                         "label": "Image",
-                        "key": "imgSrc",
+                        "path": "imgSrc",
                         "type": "image"
                     }
                 ],
                 "request": {
-                    "url": "/api/reverse-proxy/{{location.params.storeId}}/virtocommerce/graphql",
+                    "url": "/graphql",
                     "method": "post",
-                    "isArray": false,
                     "body": {
                         "operationName": null,
                         "variables": {},
-                        "query": "{products(storeId:\"odt\",filter:\"sku:{{__searchQuery}}\",userId:\"\"){items{id,code,name,imgSrc,descriptions{reviewType,content}prices{currency,list{formattedAmount}}seoInfo{semanticUrl}}}}"
+                        "query": "{products(storeId:\"{{location.params.storeId}}\",filter:\"sku:{{__searchQuery}}\"){items{id,code,name,imgSrc}}}"
                     },
                     "response": {
-                        "result": "data.products.items",
-                        "isArray": false,
-                        "value": [
-                            "id",
-                            "name",
-                            "code",
-                            "imgSrc",
-                            {
-                                "key": "description",
-                                "query": "$.descriptions[?(@.reviewType=='QuickReview')].content",
-                                "isArray": false
-                            },
-                            {
-                                "key": "price",
-                                "query": "$.prices[?(@.currency=='USD')].list.formattedAmount",
-                                "isArray": false
-                            },
-                            {
-                                "key": "url",
-                                "query": "$.seoInfo.semanticUrl",
-                                "isArray": false
-                            }
-                        ]
+                        "result": "data.products.items.0"
                     }
                 }
             },
@@ -99,11 +76,6 @@ Performs one API call to retrieve product details using a SKU.
         ]
     ...
     ```
-<br>
-<br>
-
-
-![Search results](media/sku-found-not-found.png){: style="display: block; margin: 0 auto;" }
 
 
 ## Multiple requests example
@@ -123,75 +95,35 @@ Uses two API calls: one to get the product by SKU, and another to fetch its pric
                 "default": {
                     "product": {
                         "id": "9cbd8f316e254a679ba34a900fccb076",
+                        "code": "3DRSOLO",
                         "name": "3DR Solo Quadcopter (No Gimbal)",
-                        "imgSrc": "/themes/assets/blocks/solo-quadcopter.jpg",
-                        "description": "<ul class=\"top-section-list\">&#10;<li class=\"top-section-list-item\">Capture Aerial Photos/Video with a GoPro</li>&#10;<li class=\"top-section-list-item\">Linear Tracking with Cablecam Mode</li>&#10;<li class=\"top-section-list-item\">Follow Me: Tracks Your Mobile Device</li>&#10;<li class=\"top-section-list-item\">HDMI Output on Transmitter</li>&#10;<li class=\"top-section-list-item\">Android and iOS Mobile Apps</li>&#10;<li class=\"top-section-list-item\">Video Game-Style Controls</li>&#10;<li class=\"top-section-list-item\">Return Home and &#34;Safety Net&#34; Modes</li>&#10;<li class=\"top-section-list-item\">One-Button Flying / &#34;Pause&#34; Button</li>&#10;<li class=\"top-section-list-item\">Operate GoPro Through App</li>&#10;<li class=\"top-section-list-item\">Works with Optional Solo Gimbal</li>&#10;</ul>",
-                        "url": "3dr-solo-quadcopter-no-gimbal"
+                        "imgSrc": "/themes/assets/blocks/solo-quadcopter.jpg"
                     },
                     "price": {
-                        "effectiveValue": "995.99"
+                        "formattedAmount": "$995.99"
                     },
                     "__nodata": false,
                     "__searchQuery": "3DRSOLO"
                 },
-                "displayInfo": [
-                    {
-                        "label": "Name",
-                        "path": "product.name"
-                    },
-                    {
-                        "label": "Price",
-                        "path": "price.effectiveValue"
-                    },
-                    {
-                        "label": "Image",
-                        "path": "product.imgSrc",
-                        "type": "image"
-                    }
-                ],
                 "requests": {
                     "product": {
-                        "url": "/api/reverse-proxy/{{location.params.storeId}}/odt/api/catalog/search/products",
+                        "url": "/graphql",
                         "method": "post",
-                        "isArray": false,
                         "body": {
-                            "objectType": "Product",
-                            "storeId": "odt",
-                            "catalogId": "4974648a41df4e6ea67ef2ad76d7bbd4",
-                            "searchPhrase": "{{__searchQuery}}",
-                            "skip": 0,
-                            "take": 1
+                            "query": "{products(storeId:\"{{location.params.storeId}}\",filter:\"sku:{{__searchQuery}}\"){items{id,code,name,imgSrc}}}"
                         },
                         "response": {
-                            "result": "items",
-                            "isArray": false,
-                            "value": [
-                                "id",
-                                "name",
-                                "code",
-                                "imgSrc",
-                                {
-                                    "key": "description",
-                                    "query": "$.reviews[?(@.reviewType=='QuickReview')].content",
-                                    "isArray": false
-                                },
-                                {
-                                    "key": "url",
-                                    "query": "$.seoInfos[0].semanticUrl",
-                                    "isArray": false
-                                }
-                            ]
+                            "result": "data.products.items.0"
                         }
                     },
                     "price": {
-                        "url": "/api/reverse-proxy/{{location.params.storeId}}/odt/api/products/{{item.product.id}}/prices",
-                        "method": "get",
+                        "url": "/graphql",
+                        "method": "post",
+                        "body": {
+                            "query": "{product(id:\"{{item.product.id}}\",storeId:\"{{location.params.storeId}}\",cultureName:\"{{settings.cultureName}}\",currencyCode:\"USD\"){price{actual{formattedAmount}}}}"
+                        },
                         "response": {
-                            "result": "$",
-                            "isArray": false,
-                            "value": [
-                                "effectiveValue"
-                            ]
+                            "result": "data.product.price.actual"
                         }
                     }
                 }
@@ -204,13 +136,9 @@ Uses two API calls: one to get the product by SKU, and another to fetch its pric
 
 !!! info
 
-    * `displayInfo` uses the `path` to extract nested values from the response.
-    * Each request result is stored under its key (`product`, `price`), accessible in the final display or subsequent requests.
+    * Each request result is stored under its key (`product`, `price`), accessible in subsequent requests as `{{item.<key>}}`.
 
-![Value preview](media/default-value-preview.png){: style="display: block; margin: 0 auto;" }
-
-
-![Readmore](media/readmore.png){: width="25"} [ServerRequestDescriptor](server-descriptors.md#serverrequestdescriptor)
+See [Schemas](../contracts/preview-protocol.md#schemas) in the preview protocol for the requests a schema can make.
 
 <br>
 <br>

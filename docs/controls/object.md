@@ -1,17 +1,15 @@
 # Object Control Descriptor
 
-This control allows you to edit complex objects composed of multiple fields. You can define the object editor either inline using the `element` property or reference an external descriptor file with `elementDescriptor`. The control supports showing a collapsed summary by specifying which property to display.
+This control allows you to edit complex objects composed of multiple fields. You define the object editor inline using the `element` property. The fields are shown as a group under the title. Site Builder reads the fields from `element` only: it does not resolve descriptors of the `objects` folder.
+
+![Object control](images/object.png){: width="300" }
 
 | Property            | Type                 | Description                                                         |
 | ------------------- | -------------------- | ------------------------------------------------------------------- |
-| `title`             | string               | Title of the object editor.                                         |
-| `displayField`      | string               | Name of the property used to display the object when collapsed.     |
+| `title`             | string               | Title of the object editor. Without it, the `label` is shown.       |
 | `element`           | ControlDescriptor\[] | List of descriptors that define the object’s fields inline.         |
-| `elementDescriptor` | string               | Name of the object descriptor file located in the `objects` folder. |
 
-## Examples
-
-### Inline settings schema
+## Example
 
 ```json
 ...
@@ -21,7 +19,6 @@ This control allows you to edit complex objects composed of multiple fields. You
             "label": "Describe a button",
             "type": "object",
             "title": "The button",
-            "displayField": "caption",
             "element": [
                 {
                     "id": "caption",
@@ -51,7 +48,7 @@ This control allows you to edit complex objects composed of multiple fields. You
 ...
 ```
 
-**Inline settings result**:
+**Result**:
 
 ```json
 {
@@ -60,57 +57,6 @@ This control allows you to edit complex objects composed of multiple fields. You
         "action": "url",
         "url": "https://virtocommerce.com"
     }
-}
-```
-
-### External elementDescriptor schema
-
-You can also define the object editor separately in a file (e.g., `buttonEditor.json`) inside the `theme/config/objects/` folder:
-
-```json
-{
-    "settings": [
-        {
-            "id": "caption",
-            "type": "string",
-            "label": "Caption"
-        },
-        {
-            "id": "action",
-            "type": "select",
-            "label": "onClick action",
-            "default": "popup",
-            "options": [
-                { "label": "Show popup", "value": "popup" },
-                { "label": "Go to link", "value": "url" }
-            ]
-        },
-        {
-            "id": "url",
-            "type": "string",
-            "label": "Enter link",
-            "visibility": "!!this.item && this.item.action === 'url'"
-        }
-    ]
-}
-```
-
-You can reference this descriptor from your main settings:
-
-```json
-{
-    ...
-    "settings": [
-        {
-            "id": "button",
-            "label": "Describe a button",
-            "type": "object",
-            "title": "The button",
-            "displayField": "caption",
-            "elementDescriptor": "buttonEditor"
-        },
-        ...
-    ]
 }
 ```
 
