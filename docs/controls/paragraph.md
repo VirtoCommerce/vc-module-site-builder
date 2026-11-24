@@ -2,30 +2,26 @@
 
 This control displays a static block of text in the editor panel. It's typically used to provide additional instructions or context for other controls.
 
+![Paragraph control](images/paragraph.png){: width="300" }
+
 | Property | Description                          |
 | -------- | ------------------------------------ |
-| content  | Text to display in the editor panel. |
+| `label`  | Text to display in the editor panel. |
+| `info`   | Text to display when there is no `label`. |
 
 ## Example
-
-<div class="grid" markdown>
 
 ```json
 ...
     "settings": [
         {
             "type": "paragraph",
-            "content": "Please upload image of reasonable size"
+            "label": "Please upload image of reasonable size"
         },
         ...
     ]
 ...
 ```
-
-![Paragraph control](media/paragraph-control.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
 
 <br>
 <br>
@@ -33,5 +29,5 @@ This control displays a static block of text in the editor panel. It's typically
 
 <div style="display: flex; justify-content: space-between;">
     <a href="../object">← Object </a>
-    <a href="../search">Search →</a>
+    <a href="../_search">Search →</a>
 </div>
