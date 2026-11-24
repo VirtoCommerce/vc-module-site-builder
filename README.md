@@ -66,30 +66,44 @@ They ask an AI agent (Claude, ChatGPT, VS Code or any MCP client) in plain words
 
 ### Quick setup
 
-For the administrator, once:
+To try the toolset with Claude Code, Claude Desktop or claude.ai and one administrator account:
 
-1. **Install the modules.** Site Builder and the [MCP module](https://github.com/VirtoCommerce/vc-module-mcp), on platform `3.1096.0` or later. The MCP dependency is optional: without the MCP module, Site Builder works as before and the toolset is not served.
-2. **Install Background Jobs** (`VirtoCommerce.BackgroundJobs`) for the bulk tools, `update_sections_bulk` and `set_translations`. Without it they answer that jobs are not available and change nothing; every other tool works.
-3. **Open the endpoint for agents.** Add `https://<platform>/admin/mcp` to `Authorization:Resources` and register the agent in **Security → OAuth applications**, as the MCP module's [Set up the platform for agents](https://github.com/VirtoCommerce/vc-module-mcp#set-up-the-platform-for-agents) describes. Skip this step if agents already connect to `/admin/mcp`.
-4. **Grant the permissions.** Give the content author and the site designer roles with the permissions their work needs. Every tool needs `builder:read` in the store it works in. `builder:read` and `builder:shared-components:read` may be limited to some stores (**Only for selected stores**); the agent then reads and changes those stores only, as in the designer.
+1. **Install the modules** in **Modules** of the back office: Site Builder, the [MCP module](https://github.com/VirtoCommerce/vc-module-mcp) and Background Jobs (`VirtoCommerce.BackgroundJobs`). Background Jobs runs the bulk tools, `update_sections_bulk` and `set_translations`; without it they answer that jobs are not available and change nothing. Without the MCP module, Site Builder works as before and serves no tools.
+2. **Open the endpoint** in `appsettings.json`, then restart the platform. Without `MCP:PublicOrigin` the endpoint refuses every token with `invalid_token`.
 
-   | Permission | Gives |
-   | --- | --- |
-   | `builder:read` | Every read tool, the prompts, and the schema and rule-condition resources, in the stores it covers |
-   | `builder:update` | Editing page drafts, page settings, language links, translations, bulk changes, restoring versions and discarding drafts |
-   | `builder:create` | `create_page`; with `builder:update`, `convert_page_to_multilanguage` |
-   | `builder:publish` | `publish_page`, `unpublish_page` and `publish_theme`, as requests for approval |
-   | `builder:templates` | With `builder:update`: `edit_template` and `edit_template_rules` |
-   | `builder:theme` | With `builder:update`: `edit_theme_draft` |
-   | `builder:shared-components:read`, `:create`, `:update` | `search_shared_components`; with it, `create_shared_component` and `change_shared_component` |
-   | `platform:asset:read` | `search_assets` |
-   | `platform:setting:read` | The store settings and user groups resources |
-   | `customer:read` | The organizations resource, granted for every organization |
-   | `mcp:approve` | Approving publications and changes of published pages in **Agent approvals** |
+   ```json
+   "Authorization": { "Resources": [ "https://<platform>/admin/mcp" ] },
+   "MCP": { "PublicOrigin": "https://<platform>" }
+   ```
 
-5. **Keep approvers apart.** Give `mcp:approve` to another role than the people who ask for changes. For a pilot with one person, the MCP module's setting `MCP.Approval.AllowSelfApproval` lets the requester approve their own changes; switch it off afterwards.
+3. **Connect the agent** to `https://<platform>/admin/mcp`, sign in with the back-office account and allow access. These agents register themselves, so no OAuth application is needed.
+   - Claude Code: `claude mcp add --transport http virto https://<platform>/admin/mcp`, then `/mcp` → **Authenticate**.
+   - Claude Desktop or claude.ai: **Settings → Connectors → Add custom connector** with the endpoint URL.
+4. **Let the account approve its own changes**: set the MCP module's setting `MCP.Approval.AllowSelfApproval` to true, and approve publications in **Agent approvals**. An administrator has every permission the tools need.
 
-For each user: connect the agent to `https://<platform>/admin/mcp` with the client id from the administrator, as the MCP module's [Connect an AI agent](https://github.com/VirtoCommerce/vc-module-mcp#connect-an-ai-agent) describes, and sign in with your back-office account. The agent works as you and sees only the tools your role allows.
+The agent works as the signed-in user and sees only the tools that user's permissions allow.
+
+### Production setup
+
+**Roles.** Give the content author and the site designer roles with the permissions their work needs. Every tool needs `builder:read` in the store it works in. `builder:read` and `builder:shared-components:read` may be limited to some stores (**Only for selected stores**); the agent then reads and changes those stores only, as in the designer.
+
+| Permission | Gives |
+| --- | --- |
+| `builder:read` | Every read tool, the prompts, and the schema and rule-condition resources, in the stores it covers |
+| `builder:update` | Editing page drafts, page settings, language links, translations, bulk changes, restoring versions and discarding drafts |
+| `builder:create` | `create_page`; with `builder:update`, `convert_page_to_multilanguage` |
+| `builder:publish` | `publish_page`, `unpublish_page` and `publish_theme`, as requests for approval |
+| `builder:templates` | With `builder:update`: `edit_template` and `edit_template_rules` |
+| `builder:theme` | With `builder:update`: `edit_theme_draft` |
+| `builder:shared-components:read`, `:create`, `:update` | `search_shared_components`; with it, `create_shared_component` and `change_shared_component` |
+| `platform:asset:read` | `search_assets` |
+| `platform:setting:read` | The store settings and user groups resources |
+| `customer:read` | The organizations resource, granted for every organization |
+| `mcp:approve` | Approving publications and changes of published pages in **Agent approvals** |
+
+**Approvers.** Give `mcp:approve` to another role than the people who ask for changes, and keep `MCP.Approval.AllowSelfApproval` off.
+
+**Other agents.** ChatGPT, VS Code and other agents that do not register themselves need an OAuth application in **Security → OAuth applications**, as the MCP module's [Set up the platform for agents](https://github.com/VirtoCommerce/vc-module-mcp#set-up-the-platform-for-agents) describes; their users enter its client id. [Connect an AI agent](https://github.com/VirtoCommerce/vc-module-mcp#connect-an-ai-agent) has the steps for each agent.
 
 ### Tools
 
