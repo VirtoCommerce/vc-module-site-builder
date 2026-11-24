@@ -9,7 +9,9 @@ public class ThemePaletteTokensValidator : AbstractValidator<ThemePaletteTokens>
     // a few times the storefront's presets
     public const int MaxTokens = 1000;
 
-    private static readonly Regex TokenPattern = new("^[a-z0-9_]{1,100}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    public const int MaxTokenLength = 100;
+
+    private static readonly Regex TokenPattern = new($"\\A[a-z0-9_]{{1,{MaxTokenLength}}}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     public ThemePaletteTokensValidator()
     {
@@ -34,5 +36,5 @@ public class ThemePaletteTokensValidator : AbstractValidator<ThemePaletteTokens>
             .WithMessage("\"{PropertyValue}\" is not a palette token.");
     }
 
-    private static bool IsToken(string token) => token != null && TokenPattern.IsMatch(token);
+    public static bool IsToken(string token) => token != null && TokenPattern.IsMatch(token);
 }

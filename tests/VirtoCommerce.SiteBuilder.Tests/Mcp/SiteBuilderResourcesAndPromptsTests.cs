@@ -256,6 +256,7 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.DoesNotContain("input", Strings(kit.GetProperty("template").GetProperty("elements")));
         Assert.DoesNotContain("h1", Strings(kit.GetProperty("template").GetProperty("elements")));
         Assert.Equal(rules.MaxPartSize, kit.GetProperty("limits").GetProperty("template_bytes").GetInt32());
+        Assert.Equal(256, kit.GetProperty("limits").GetProperty("theme_types").GetInt32());
         Assert.Equal((1500, 64), (kit.GetProperty("limits").GetProperty("template_tags").GetInt32(), kit.GetProperty("limits").GetProperty("template_attributes").GetInt32()));
         Assert.Contains(kit.GetProperty("file").GetProperty("fields").EnumerateArray(),
             x => x.GetString()!.Contains("No setting, a row's field included, has the id id, type, hidden, blocks or __group", StringComparison.Ordinal));
@@ -283,7 +284,8 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
             x => x.GetString()!.StartsWith("a position other than static, relative, absolute, sticky, inherit, initial, unset or revert", StringComparison.Ordinal));
         Assert.Contains(kit.GetProperty("css").GetProperty("refused").EnumerateArray(),
             x => x.GetString()!.StartsWith("expression(), element() and -moz-element()", StringComparison.Ordinal));
-        Assert.Equal((5000, 262144), (kit.GetProperty("limits").GetProperty("render_budget").GetInt32(), kit.GetProperty("limits").GetProperty("render_text").GetInt32()));
+        Assert.Equal((5000, 262144, 2097152), (kit.GetProperty("limits").GetProperty("render_budget").GetInt32(), kit.GetProperty("limits").GetProperty("render_text").GetInt32(),
+            kit.GetProperty("limits").GetProperty("render_template_text").GetInt32()));
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
             x => x.GetString()!.Contains("hasSideEffects", StringComparison.Ordinal) && x.GetString()!.Contains("cost", StringComparison.Ordinal));
         Assert.Contains(kit.GetProperty("kit").GetProperty("usage").EnumerateArray(),
@@ -343,6 +345,21 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
         Assert.Equal(3, masks.GetProperty("count").GetInt32());
         Assert.Contains("site-builder://stores/store-a/section-kit/icons", masks.GetProperty("names").GetString(), StringComparison.Ordinal);
         Assert.Equal(["circle", "star", "wave"], Strings(list.GetProperty("masks")));
+        Assert.EndsWith($": {SectionKitGuide.StorefrontData}.", list.GetProperty("storefront_data_note").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheSchemas_AndOneSchema_MarkTheirTextsAsTheStorefrontsData()
+    {
+        await _context.SeedCatalogAsync(StoreA, ["hero-banner"]);
+
+        var schemas = await ReadAsync(Reader(), "site-builder://stores/store-a/schemas");
+        var schema = await ReadAsync(Reader(), "site-builder://stores/store-a/schemas/sections/hero-banner");
+        var kit = await ReadAsync(Reader(), "site-builder://stores/store-a/section-kit");
+
+        Assert.EndsWith($": {SectionKitGuide.StorefrontData}.", schemas.GetProperty("storefront_data_note").GetString(), StringComparison.Ordinal);
+        Assert.EndsWith($": {SectionKitGuide.StorefrontData}.", schema.GetProperty("storefront_data_note").GetString(), StringComparison.Ordinal);
+        Assert.Contains("palette.tokens", kit.GetProperty("storefront_data_note").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]

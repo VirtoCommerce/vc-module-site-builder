@@ -14,9 +14,11 @@ public class CustomSectionService(IThemeStorageFactory themeStorageFactory, IThe
     {
         themeName ??= await themeStorageFactory.GetThemeNameAsync(storeId);
         var result = new Dictionary<string, JToken>(StringComparer.Ordinal);
-        // a type is part of the path it is read from, so a text that is not one is not read
-        foreach (var type in types?.Where(ThemeStorage.IsCustomSectionType) ?? await ListTypesAsync(storeId, themeName, cancellationToken))
+        var listed = await ListTypesAsync(storeId, themeName, cancellationToken);
+        // only the folder's own types are read, so what a request names costs no read of a type the theme does not hold
+        foreach (var type in types == null ? listed : listed.Intersect(types, StringComparer.Ordinal))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var file = await themeDraftService.ReadAsync(storeId, $"{themeName}/{ThemeStorage.GetCustomSectionFile(type)}", cancellationToken);
             if (Parse(file.Content) is { } content)
             {

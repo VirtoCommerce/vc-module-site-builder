@@ -1,5 +1,5 @@
 import type { Field, ItemSchema } from "./types";
-import { byCodeUnit } from "./json";
+import { byCodeUnit, isRecord } from "./json";
 import { isTranslations, resolveTranslations } from "./translatable";
 import { savedThemeFilesReader } from "./templateDrafts";
 import type { ThemeStatus } from "./themePublication";
@@ -35,6 +35,32 @@ export const draftedCustomSectionTypes = (status: ThemeStatus | undefined): stri
  */
 export const savedCustomSectionsReader = () =>
   savedThemeFilesReader<CustomSectionType>(draftedCustomSectionTypes, (type) => type, { withoutDraft: true, skipUnreadable: true });
+
+// As the server's save takes them (CustomSectionValidator.FieldKeys, FieldTypes): a type file written past it, such as through
+// the content API, would otherwise give the form a field that runs requests with the editor's session.
+const FIELD_KEYS = new Set(["id", "type", "label", "default", "translatable", "tab", "info", "placeholder", "required", "multiline", "multiple", "format", "options", "element", "min", "max", "step"]);
+const FIELD_TYPES = new Set(["header", "paragraph", "string", "text", "number", "slider", "checkbox", "select", "color-token", "images", "calendar", "list", "object"]);
+const SCHEMA_KEYS = ["name", "custom", "settings", "targetTemplates", "limit", "icon", "excludeShared"] as const;
+
+function keptFields(fields: unknown): Field[] {
+  return (Array.isArray(fields) ? fields : [])
+    .filter((field): field is Field => isRecord(field) && typeof field.type === "string" && FIELD_TYPES.has(field.type))
+    .map((field) => {
+      const kept = Object.fromEntries(Object.entries(field).filter(([key]) => FIELD_KEYS.has(key))) as unknown as Field;
+      return field.element ? { ...kept, element: keptFields(field.element) } : kept;
+    });
+}
+
+/** The custom types of a catalog with only what a custom type may declare. */
+export function keptCustomSections(sections: Record<string, ItemSchema>): Record<string, ItemSchema> {
+  return Object.fromEntries(
+    Object.entries(sections).map(([type, schema]) => {
+      if (!schema.custom) return [type, schema];
+      const kept = Object.fromEntries(SCHEMA_KEYS.filter((key) => key in schema).map((key) => [key, schema[key]])) as ItemSchema;
+      return [type, { ...kept, settings: keptFields(schema.settings) }];
+    }),
+  );
+}
 
 /** A custom type's name may be a dictionary by language; the designer shows the one for its own language. */
 export function namedSections(sections: Record<string, ItemSchema>, language: string, defaultLanguage: string): Record<string, ItemSchema> {

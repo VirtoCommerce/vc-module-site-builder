@@ -677,7 +677,7 @@ import { publishActions, themeErrors, themePublishButton } from "../designer/the
 import { CatalogPendingError } from "../designer/designerSave";
 import type { Field, Item, PageDocument, SectionGroup, Selection } from "../designer/types";
 import { draftTemplates, savedTemplatesReader } from "../designer/templateDrafts";
-import { namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
+import { keptCustomSections, namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
 import TemplateSwitcher from "../designer/components/TemplateSwitcher.vue";
 import EntityPicker from "../designer/components/EntityPicker.vue";
 import RulesPanel from "../designer/components/RulesPanel.vue";
@@ -888,7 +888,7 @@ const bridge = usePreviewBridge({
       builtInTemplates: loaded.builtInTemplates,
       paletteTokens: loaded.paletteTokens,
     };
-    const sections = namedSections(loaded.catalog.sections, locale.value, designer.languages.value.default ?? "");
+    const sections = namedSections(keptCustomSections(loaded.catalog.sections), locale.value, designer.languages.value.default ?? "");
     designer.schemas.value = {
       ...loaded.catalog,
       sections: { [PAGE_CONTENT]: { name: t("SITE_BUILDER.DESIGNER.TEMPLATES.PAGE_CONTENT"), icon: "lucide-file-text", targetTemplates: ["page", "page-template"] }, ...sections },

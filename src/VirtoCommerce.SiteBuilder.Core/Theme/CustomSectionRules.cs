@@ -101,4 +101,6 @@ public class CustomSectionRules
 
     /// <summary>Bytes of JSON, for all the theme's types together.</summary>
     public int MaxTotalSize { get; set; }
+
+    public int MaxTypes { get; set; }
 }

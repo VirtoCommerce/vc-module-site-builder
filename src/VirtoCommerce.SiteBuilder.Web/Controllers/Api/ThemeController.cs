@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Net.Mime;
 using System.Threading;
@@ -27,6 +28,9 @@ public class ThemeController(
     IValidator<ThemePaletteGenerationRequest> paletteGenerationRequestValidator,
     IValidator<ThemePaletteCheckRequest> paletteCheckRequestValidator) : Controller
 {
+    /// <summary>Of a catalog upload, in bytes: anyone who may save a page uploads one, and every save and publication reads it.</summary>
+    public const int MaxCatalogSize = 8 * 1024 * 1024;
+
     [HttpPost("theme/publish")]
     [Authorize(ModuleConstants.Security.Permissions.Publish)]
     [ProducesResponseType(typeof(ThemePublicationPointer), StatusCodes.Status200OK)]
@@ -52,6 +56,7 @@ public class ThemeController(
 
     [HttpPut("catalog")]
     [Authorize(ModuleConstants.Security.Permissions.Update)]
+    [RequestSizeLimit(MaxCatalogSize)]
     [ProducesResponseType(typeof(SchemaCatalogPointer), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -63,8 +68,17 @@ public class ThemeController(
         }
 
         // read as text: the service parses the catalog itself, while MVC's JSON settings would turn its dates to UTC
-        using var reader = new StreamReader(Request.Body);
-        var catalog = await reader.ReadToEndAsync(cancellationToken);
+        string catalog;
+        try
+        {
+            using var reader = new StreamReader(Request.Body);
+            catalog = await reader.ReadToEndAsync(cancellationToken);
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return BadRequest(new { error = string.Create(CultureInfo.InvariantCulture, $"The catalog is larger than {MaxCatalogSize / 1024 / 1024} MB.") });
+        }
+
         try
         {
             var result = AbstractTypeFactory<SchemaCatalogPointer>.TryCreateInstance();

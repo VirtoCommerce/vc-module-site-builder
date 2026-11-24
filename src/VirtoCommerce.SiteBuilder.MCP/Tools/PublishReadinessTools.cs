@@ -249,7 +249,7 @@ public class PublishReadinessTools(
         }
         catch (GitContentException ex)
         {
-            readiness.Findings.Add(PublicationDryRuns.Info("history-unavailable", $"Who changed page '{group.Name}' since its publication could not be read.",
+            readiness.Findings.Add(PublicationDryRuns.Info("history-unavailable", $"Who changed page '{CustomSectionText.Quote(group.Name)}' since its publication could not be read.",
                 GitContentFailures.Describe(logger, ex), "The draft's last author is listed; check the history in the designer.", "history", group));
             return [];
         }
@@ -292,7 +292,7 @@ public class PublishReadinessTools(
                 Id = "permalink-shared",
                 Severity = McpFindingSeverities.Warning,
                 Title = $"Another page serves the address '{group.Permalink}' in {group.CultureName}, so the storefront picks one of them.",
-                Evidence = string.Join("; ", usage.Select(x => $"page '{x.GroupId}' ({x.Name}, {x.CultureName})")),
+                Evidence = string.Join("; ", usage.Select(x => $"page '{x.GroupId}' ({CustomSectionText.Quote(x.Name)}, {x.CultureName})")),
                 Fix = "Give one of the pages another address with change_page_settings, or archive the other page in the designer.",
                 Category = "address",
                 ObjectType = ChangePreview.Page,
@@ -424,7 +424,7 @@ public class PublicationDryRuns(
         var groupIds = check.Preview?.Objects.Select(x => x.ObjectId).Where(x => x != null).Distinct().ToList() ?? [];
         if (groupIds.Count == 0)
         {
-            readiness.Findings.Add(Blocker("no-draft", $"No language version of Multilanguage Page '{root.Name}' has a draft, so nothing would be published.",
+            readiness.Findings.Add(Blocker("no-draft", $"No language version of Multilanguage Page '{CustomSectionText.Quote(root.Name)}' has a draft, so nothing would be published.",
                 $"Multilanguage Page '{root.Id}': every language version is published as it is.", "Edit a language version with edit_page_draft first.", "content"));
         }
 
@@ -517,7 +517,7 @@ public class PublicationDryRuns(
         var missing = placed.Where(x => !types.Contains(x)).Order(StringComparer.Ordinal).ToList();
         if (missing.Count > 0)
         {
-            findings.Add(Warning("section-type-missing", $"Page '{pageName}' places custom section types the theme does not hold " +
+            findings.Add(Warning("section-type-missing", $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme does not hold " +
                 $"({string.Join(", ", missing)}): the storefront shows nothing for them.",
                 $"Store '{storeId}': {string.Join(", ", missing.Select(ThemeStorage.GetCustomSectionFile))} do not exist.",
                 "Create them with create_section_type and publish the theme, or remove those sections from the page.", "theme", group));
@@ -531,7 +531,7 @@ public class PublicationDryRuns(
             .ToList();
         if (drafts.Count > 0)
         {
-            findings.Add(Warning("section-type-unpublished", $"Page '{pageName}' places custom section types the theme holds only as a draft " +
+            findings.Add(Warning("section-type-unpublished", $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme holds only as a draft " +
                 $"({string.Join(", ", drafts)}): the storefront shows nothing for them until the theme is published.",
                 $"Store '{storeId}': {string.Join(", ", drafts.Select(ThemeStorage.GetCustomSectionFile))} have no published version.",
                 "Publish the theme first (publish_theme, which a second person approves), then the page.", "theme", group));
@@ -544,7 +544,7 @@ public class PublicationDryRuns(
             .ToList();
         if (changed.Count > 0)
         {
-            findings.Add(Warning("section-type-changed", $"Page '{pageName}' places custom section types with unpublished changes in the theme " +
+            findings.Add(Warning("section-type-changed", $"Page '{CustomSectionText.Quote(pageName)}' places custom section types with unpublished changes in the theme " +
                 $"({string.Join(", ", changed)}): the storefront shows their published version, without what the draft changes or adds, until the theme " +
                 "is published.",
                 $"Store '{storeId}': {string.Join(", ", changed.Select(ThemeStorage.GetCustomSectionFile))} have a draft.",
@@ -583,11 +583,11 @@ public class PublicationDryRuns(
     }
 
     private static McpFinding NoDraft(GroupedSiteBuilderPage group) =>
-        Blocker("no-draft", $"Page '{group.Name}' has no draft, so publishing it would change nothing.", $"Page '{group.Id}' is {group.Status} without unpublished changes.",
+        Blocker("no-draft", $"Page '{CustomSectionText.Quote(group.Name)}' has no draft, so publishing it would change nothing.", $"Page '{group.Id}' is {group.Status} without unpublished changes.",
             "Edit it with edit_page_draft first, or there is nothing to publish.", "content", group);
 
     private static McpFinding PermalinkConflict(GroupedSiteBuilderPage group, IList<SiteBuilderPermalinkUsage> conflicts) =>
-        Blocker("permalink-conflict", $"Published pages serve the permalink '{group.Permalink}' to the same visitors, so publishing page '{group.Name}' " +
+        Blocker("permalink-conflict", $"Published pages serve the permalink '{group.Permalink}' to the same visitors, so publishing page '{CustomSectionText.Quote(group.Name)}' " +
             "would replace them.", PermalinkConflicts.Describe(conflicts), $"{PermalinkConflicts.Fix(conflicts)}.", "address", group);
 
     private static McpFinding UnpublishRefusal(GroupedSiteBuilderPage group)
@@ -595,11 +595,11 @@ public class PublicationDryRuns(
         var published = group.Pages.Any(x => x.Status == PageStatuses.Published);
         if (!published)
         {
-            return Blocker("not-published", $"Page '{group.Name}' is not published, so there is nothing to unpublish.", $"Page '{group.Id}' is {group.Status}.",
+            return Blocker("not-published", $"Page '{CustomSectionText.Quote(group.Name)}' is not published, so there is nothing to unpublish.", $"Page '{group.Id}' is {group.Status}.",
                 "Nothing to do.", "rules", group);
         }
 
-        return Blocker("unpublish-refused-while-draft", $"Page '{group.Name}' has unpublished changes, and a page with a draft cannot be unpublished.",
+        return Blocker("unpublish-refused-while-draft", $"Page '{CustomSectionText.Quote(group.Name)}' has unpublished changes, and a page with a draft cannot be unpublished.",
             $"Page '{group.Id}' has a published version and a draft.", "Publish the draft (publish_page) or discard it (discard_draft) first, then unpublish.", "rules", group);
     }
 
@@ -669,19 +669,19 @@ public static class PageAudience
         var findings = new List<McpFinding>();
         if (!group.Visibility)
         {
-            findings.Add(PublicationDryRuns.Warning("page-hidden", $"Page '{group.Name}' is hidden, so customers do not see it once published.",
+            findings.Add(PublicationDryRuns.Warning("page-hidden", $"Page '{CustomSectionText.Quote(group.Name)}' is hidden, so customers do not see it once published.",
                 "visibility is off.", "Turn visibility on with change_page_settings (visible true), if customers should see it.", "audience", group));
         }
 
         if (group.EndDate < now)
         {
-            findings.Add(PublicationDryRuns.Warning("page-ended", $"The end date of page '{group.Name}' has passed, so customers do not see it once published.",
+            findings.Add(PublicationDryRuns.Warning("page-ended", $"The end date of page '{CustomSectionText.Quote(group.Name)}' has passed, so customers do not see it once published.",
                 $"End date {Format(group.EndDate, null)} UTC, now {Format(now, null)} UTC.", "Move or clear the end date with change_page_settings.", "audience", group));
         }
 
         if (group.StartDate > now)
         {
-            findings.Add(PublicationDryRuns.Info("page-scheduled", $"Page '{group.Name}' is shown only from its start date.",
+            findings.Add(PublicationDryRuns.Info("page-scheduled", $"Page '{CustomSectionText.Quote(group.Name)}' is shown only from its start date.",
                 $"Start date {Format(group.StartDate, null)} UTC.", "Nothing to do, unless it should be shown at once (change_page_settings).", "audience", group));
         }
 

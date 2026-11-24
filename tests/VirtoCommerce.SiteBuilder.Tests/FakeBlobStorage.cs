@@ -22,6 +22,9 @@ internal sealed class FakeBlobStorage : IBlobContentStorageProviderFactory, ICon
 
     public List<string> Read { get; } = [];
 
+    // every path whose blob is looked up, as a read is first, there or not
+    public List<string> LookedUp { get; } = [];
+
     public List<string> Removed { get; } = [];
 
     public List<IEvent> Events { get; } = [];
@@ -76,8 +79,12 @@ internal sealed class FakeBlobStorage : IBlobContentStorageProviderFactory, ICon
             return Task.CompletedTask;
         }
 
-        public Task<BlobInfo> GetBlobInfoAsync(string blobUrl) =>
-            Task.FromResult(storage.Files.ContainsKey(Key(blobUrl)) ? new BlobInfo { Name = blobUrl, RelativeUrl = blobUrl } : null);
+        public Task<BlobInfo> GetBlobInfoAsync(string blobUrl)
+        {
+            storage.LookedUp.Add(Key(blobUrl));
+
+            return Task.FromResult(storage.Files.ContainsKey(Key(blobUrl)) ? new BlobInfo { Name = blobUrl, RelativeUrl = blobUrl } : null);
+        }
 
         public Task<Stream> OpenReadAsync(string blobUrl)
         {

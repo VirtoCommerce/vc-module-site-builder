@@ -32,7 +32,7 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
     private const string FolderType = "folder";
     private const string JsonExtension = ".json";
 
-    private static readonly Regex TemplateKeyPattern = new("^(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex TemplateKeyPattern = new("\\A(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     // .NET's $ also matches before a final line feed
     private static readonly Regex CustomSectionTypeRegex = new($"\\A{CustomSectionTypeName}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));

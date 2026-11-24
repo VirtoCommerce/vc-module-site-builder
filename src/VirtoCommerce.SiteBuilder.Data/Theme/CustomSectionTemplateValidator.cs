@@ -70,6 +70,12 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
     public static IReadOnlyList<string> BindingAttributes { get; } = [EachAttribute, IfAttribute, HtmlAttribute];
 
     /// <summary>Read by people, so a literal value is untranslated text.</summary>
+    /// <summary>The ARIA attributes that name elements by id: a section writes no id, so one could only name an element of the page around it.</summary>
+    public static IReadOnlySet<string> IdReferenceAttributes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "aria-activedescendant", "aria-controls", "aria-describedby", "aria-details", "aria-errormessage", "aria-flowto", "aria-labelledby", "aria-owns",
+    };
+
     public static IReadOnlySet<string> TextAttributes { get; } = new HashSet<string>(StringComparer.Ordinal) { "alt", "aria-label", "label", "title" };
 
     /// <summary>Besides a path starting with a single '/' and an anchor on the page.</summary>
@@ -413,6 +419,10 @@ public class CustomSectionTemplateValidator(CustomSectionUrlPolicy urlPolicy)
         else if (name == AltAttribute)
         {
             ValidateAlt(check, value, where, scope);
+        }
+        else if (IdReferenceAttributes.Contains(name))
+        {
+            check.AddError($"{where} has {name}, which names an element by id: a section has none, so it would name one of the page around it");
         }
         else if (Attributes.Contains(name) || name.StartsWith("aria-", StringComparison.Ordinal))
         {

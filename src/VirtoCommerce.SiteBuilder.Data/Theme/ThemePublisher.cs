@@ -153,8 +153,10 @@ public class ThemePublisher(
         if (placed.Count > 0)
         {
             var storage = await themeStorageFactory.OpenAsync(storeId);
-            foreach (var file in placed.Select(ThemeStorage.GetCustomSectionFile))
+            // only the folder's own types are read, so what the files name costs no read of a type the theme does not hold
+            foreach (var file in (await GetCustomSectionTypesAsync(storage)).Where(placed.Contains).Select(ThemeStorage.GetCustomSectionFile))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 AddThemeFile(source, file, await ReadThemeFileAsync(storage, source, file, includeDrafts: true));
             }
         }
@@ -260,7 +262,7 @@ public class ThemePublisher(
     /// <summary>
     /// A first publication puts the live files out as they are, and a failure keeps the store's storefront from any theme: a custom section
     /// type that is not JSON, fails against the current catalog or the content guard, or uses the kit when there is none, is left out, as a
-    /// shared component is, and so are the largest types until the rest fit the size the snapshot carries.
+    /// shared component is, and so are the largest types until the rest fit the size and the count the snapshot carries.
     /// </summary>
     protected virtual void LeaveOutFailingCustomSections(string storeId, ThemeSource source, JObject catalog)
     {
@@ -288,12 +290,13 @@ public class ThemePublisher(
         var sizes = source.CustomSections
             .Select(x => (Type: x.Key, Size: customSectionValidator.GetSize(new Dictionary<string, JToken> { [x.Key] = x.Value })))
             .OrderByDescending(x => x.Size)
+            .ThenBy(x => x.Type, StringComparer.Ordinal)
             .ToList();
         var size = sizes.Sum(x => x.Size);
-        var maxSize = customSectionValidator.GetRules().MaxTotalSize;
-        for (var i = 0; i < sizes.Count && size > maxSize; i++)
+        var rules = customSectionValidator.GetRules();
+        for (var i = 0; i < sizes.Count && (size > rules.MaxTotalSize || sizes.Count - i > rules.MaxTypes); i++)
         {
-            LeaveOut(sizes[i].Type, "the types together are too large");
+            LeaveOut(sizes[i].Type, size > rules.MaxTotalSize ? "the types together are too large" : "the theme holds too many types");
             size -= sizes[i].Size;
         }
 

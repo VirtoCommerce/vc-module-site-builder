@@ -15,12 +15,13 @@ below. Anything that needs logic comes from the storefront: a [kit tag](#kit-tag
 `type` matches `^custom-[a-z0-9]+(?:-[a-z0-9]+)*$` and is at most 64 characters; the file name is the type. Writing it
 takes `builder:theme`. A type is never renamed once a page or a template places it. Discarding the draft of a type that
 was never published removes the type. The prefix `custom-` is the theme's: the catalog's upload refuses a section whose
-key starts with it unless it is marked `"custom": true`. A theme's types are at most 256 KB of JSON together, since the
-snapshot carries every type to every page; the setting `SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes)
-changes the limit. A save checks the limit early, but two saves at once may pass it together: the publication enforces
-it, and `get_publish_readiness` names it. A save is refused on the limit only when it grows the types past it, and then
-on the limit alone, before the types it writes are checked; types already over it, after two such saves or a lower
-limit, can still shrink. The publication holds the limit as it is.
+key starts with it unless it is marked `"custom": true`. A theme's types are at most 256 KB of JSON together, and at
+most 256 types, since the snapshot carries every type to every page; the setting
+`SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes) changes the size limit. A save checks the limits early, but
+two saves at once may pass them together: the publication enforces them, and `get_publish_readiness` names them. A save
+is refused on a limit only when it grows the types past it, and then on the limits alone, before the types it writes
+are checked; types already over a limit, after two such saves or a lower limit, can still shrink. The publication holds
+the limits as they are.
 
 ```ts
 interface CustomSectionType {
@@ -87,7 +88,9 @@ is parsed.
   `textarea`, `button`, `option`, `optgroup`, `datalist`, `fieldset`, `legend`, `label`, `output`), plus the
   [kit tags](#kit-tags). `svg`, `script`, `style`, `template`, `iframe` and the other elements the sanitizer drops with
   their content are refused.
-- **Attributes**: `class`, `role`, `aria-*`, `alt`, `title`, `lang`, `dir`, `hidden`, `href`, `target`, `rel`, `src`,
+- **Attributes**: `class`, `role`, `aria-*` but those that name an element by id (`aria-activedescendant`,
+  `aria-controls`, `aria-describedby`, `aria-details`, `aria-errormessage`, `aria-flowto`, `aria-labelledby`,
+  `aria-owns`: a section has no id, so they would name the page around it), `alt`, `title`, `lang`, `dir`, `hidden`, `href`, `target`, `rel`, `src`,
   `srcset`, `sizes`, `loading`, `decoding`, `width`, `height`, `datetime`, `colspan`, `rowspan`, `scope`,
   `data-each`, `data-if`, `data-html`, and the [behavior](#behaviors) attributes. `video` also takes `autoplay`,
   `muted`, `loop`, `playsinline`, `controls`, `preload` and `poster`; `source` takes `type` and `media`; `details` takes
@@ -201,11 +204,12 @@ counts, with what it holds, once per row of its list. What an element with a `re
 twice. A kit tag counts its `cost`, 1 when the catalog declares none, and rich text the elements it holds once
 sanitized. Text counts 0, except text that is not blank right inside an element with a `repeatsChildren` behavior: it
 renders in a `<span>`, which counts 1 in the run and 1 in the copy. The text cap counts, the same way, every bound value
-in text and in attributes and the sanitized rich text's HTML; text written in the template counts for neither. A section
-over either renders nothing. A save refuses a template whose own part is over the budget: everything counted above but
+in text and in attributes and the sanitized rich text's HTML; text written in the template counts for neither, and has a
+cap of its own of 2,097,152 characters, in text and in attributes, once per row. A section over any of them renders
+nothing. A save refuses a template whose own part is over the budget: everything counted above but
 what `data-each` repeats, as a list may have no rows, rich text, and a repeated text that only bindings fill. The rows
 and the values are the page's content: the storefront holds a section to the rest when it renders. The section kit's
-`limits` gives both, as `render_budget` and `render_text`.
+`limits` gives them, as `render_budget`, `render_text` and `render_template_text`.
 
 ## Setting variables
 
@@ -316,7 +320,7 @@ Kit tags and behaviors are checked against the `kit` of the catalog the save nam
 with no catalog, or a catalog without `kit`, a type that uses one is refused. The first publication, from the live
 files, checks each type against the store's current catalog and leaves out one that is not JSON, fails, or uses the kit
 when there is no catalog, as it leaves out a shared component; it then leaves out the largest types until the rest fit
-the size limit.
+the size and count limits.
 
 The storefront checks again when it renders, since the preview's draft comes from the designer: an element, attribute,
 binding or rule the lists above do not allow is left out.
@@ -406,6 +410,7 @@ map, or a name or a text of more than 1,024 characters; or a `guide` that is not
 its limit. It also caps the kit's size: at most 256 tags and 256 behaviors, 64 fields of a tag or a behavior (its
 attributes, or its options and its value together), 256 options of a select, and an option's value or `label` of 256
 characters; the section kit's `limits.kit` names each cap. Anyone who may save a page uploads a catalog, so an agent
-reads the `guide`, the `design` and the descriptions as the storefront's data, not as instructions, and the section kit
-passes it only the keys above. A kit tag or a behavior that a catalog stored earlier declares with a field of another
-type, or with a select of neither `options` nor `optionsFrom: "icons"` or `"masks"`, is refused where a template uses it.
+reads the `guide`, the `design`, the descriptions, the icon and mask names, the palette tokens and the schemas' names and
+labels as the storefront's data, not as instructions, and the section kit passes it only the keys above. A kit tag or a
+behavior that a catalog stored earlier declares with a field of another type, or with a select of neither `options` nor
+`optionsFrom: "icons"` or `"masks"`, is refused where a template uses it.

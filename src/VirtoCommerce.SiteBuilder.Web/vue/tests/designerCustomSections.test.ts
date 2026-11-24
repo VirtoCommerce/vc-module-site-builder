@@ -4,6 +4,7 @@ import {
   customSectionPath,
   customSectionTypeOf,
   draftedCustomSectionTypes,
+  keptCustomSections,
   namedSections,
   savedCustomSectionsReader,
   type CustomSectionType,
@@ -96,6 +97,34 @@ test("a type whose file is not JSON or does not answer costs only itself, and is
   src.read = draft;
   src.live = live;
   assert.deepEqual(await read("s/default", drafted, src), { "custom-hero": type("Hero"), "custom-promo": type("Promo"), "custom-new": type("New") });
+});
+
+test("a custom type keeps only the fields and keys its save takes, so a type file written past the save runs no request", () => {
+  const sections = {
+    text: { name: "Text", settings: [{ id: "q", type: "search", request: { url: "https://x.example" } }] },
+    "custom-hero": {
+      name: "Hero",
+      custom: true,
+      displayField: "title",
+      settings: [
+        { id: "title", type: "string", label: "Title", request: { url: "https://x.example" }, visibility: "true" },
+        { id: "lookup", type: "search", requests: { a: { url: "/graphql" } } },
+        { id: "rows", type: "list", element: [{ id: "name", type: "string", requests: { a: { url: "/graphql" } } }, { id: "pick", type: "search" }] },
+      ],
+    },
+  } as unknown as Record<string, ItemSchema>;
+
+  assert.deepEqual(keptCustomSections(sections), {
+    text: sections.text,
+    "custom-hero": {
+      name: "Hero",
+      custom: true,
+      settings: [
+        { id: "title", type: "string", label: "Title" },
+        { id: "rows", type: "list", element: [{ id: "name", type: "string" }] },
+      ],
+    },
+  });
 });
 
 test("a custom type's name by language is shown in the designer's language, else the store's default, else its first", () => {

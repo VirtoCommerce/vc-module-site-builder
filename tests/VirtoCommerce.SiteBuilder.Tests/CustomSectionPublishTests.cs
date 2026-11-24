@@ -345,6 +345,69 @@ public sealed class CustomSectionPublishTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstPublication_LeavesOutTheLargestTypesUntilTheRestFitTheCount()
+    {
+        foreach (var type in Enumerable.Range(0, CustomSectionValidator.MaxTypes - 1).Select(x => $"custom-t{x}"))
+        {
+            _storage.Files[Theme($"default/custom-sections/{type}.json")] = HeroFile;
+        }
+
+        var large = JObject.Parse(HeroFile);
+        large["css"] = $":scope {{ color: var(--color-neutral-900); }} /* {new string('x', 100)} */";
+        // listed out of order, so only the order of the types decides which of the equally large ones stays
+        _storage.Files[Theme("default/custom-sections/custom-large-c.json")] = large.ToString();
+        _storage.Files[Theme("default/custom-sections/custom-large-a.json")] = large.ToString();
+        _storage.Files[Theme("default/custom-sections/custom-large-b.json")] = large.ToString();
+
+        var types = ((JObject)(await SnapshotAsync("en-US"))["customSections"]!).Properties().Select(x => x.Name).ToList();
+
+        Assert.Equal(CustomSectionValidator.MaxTypes, types.Count);
+        Assert.Equal(["custom-large-c"], types.Where(x => x.StartsWith("custom-large-", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task PublishAsync_MoreTypesThanTheLimit_IsRefused()
+    {
+        await SaveCatalogAsync();
+        foreach (var type in Enumerable.Range(0, CustomSectionValidator.MaxTypes + 1).Select(x => $"custom-t{x}"))
+        {
+            _storage.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroFile;
+        }
+
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+
+        Assert.Contains("custom-sections: the theme holds 257 custom section types, more than 256: the snapshot carries every type to every page", exception.Errors);
+    }
+
+    [Fact]
+    public async Task ValidateFilesAsync_TemplatePlacingTypesTheThemeDoesNotHold_ReadsOnlyTheTypesItHolds()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme(Hero)] = HeroFile;
+        var template = TemplateOf([.. Enumerable.Range(0, 200).Select(x => $"custom-planted-{x}"), "custom-hero"]);
+
+        await Record.ExceptionAsync(() => _publisher.ValidateFilesAsync(StoreId, Catalog,
+            new System.Collections.Generic.Dictionary<string, JToken> { ["templates/product.json"] = JToken.Parse(template) }, Ct));
+
+        Assert.DoesNotContain(_storage.LookedUp, x => x.Contains("/custom-planted-", StringComparison.Ordinal));
+        Assert.Equal([Theme(Hero)], _storage.Read.Where(x => x.Contains("/default/custom-sections/", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task ValidateFilesAsync_RequestCancelled_ReadsNoType()
+    {
+        await SaveCatalogAsync();
+        _storage.Files[Theme(Hero)] = HeroFile;
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _publisher.ValidateFilesAsync(StoreId, Catalog,
+            new System.Collections.Generic.Dictionary<string, JToken> { ["templates/product.json"] = JToken.Parse(TemplateOf("custom-hero")) }, cancelled.Token));
+
+        Assert.DoesNotContain(_storage.LookedUp, x => x.Contains("/default/custom-sections/", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task FirstPublication_LeavesOutTheTypesLargestInBytes_AsTheLimitCountsThem()
     {
         var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),

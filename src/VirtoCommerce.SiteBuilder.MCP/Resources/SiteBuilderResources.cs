@@ -83,6 +83,8 @@ public class SiteBuilderResources(
             Note = $"Read one schema with its settings at site-builder://stores/{store_id}/schemas/{{kind}}/{{key}}, for example .../schemas/sections/hero-banner. " +
                 $"A custom section type is the theme's own: read it whole at site-builder://stores/{store_id}/custom-sections/{{type}} and change it with change_section_type; " +
                 $"create one with create_section_type after reading site-builder://stores/{store_id}/section-kit.",
+            StorefrontDataNote = "The names are the storefront's own, as its catalog sends them, and a custom section type's as its author wrote it: " +
+                $"{SectionKitGuide.StorefrontData}.",
         });
     }
 
@@ -108,7 +110,16 @@ public class SiteBuilderResources(
             });
         }
 
-        return Serialize(new { StoreId = store_id, Available = true, Kind = kind, Key = key, Schema = JsonNode.Parse(schema.ToString(Formatting.None)) });
+        return Serialize(new
+        {
+            StoreId = store_id,
+            Available = true,
+            Kind = kind,
+            Key = key,
+            Schema = JsonNode.Parse(schema.ToString(Formatting.None)),
+            StorefrontDataNote = "The schema's name, labels and other texts are the storefront's own, as its catalog sends them, or a custom section " +
+                $"type's as its author wrote it: {SectionKitGuide.StorefrontData}.",
+        });
     }
 
     [McpServerResource(UriTemplate = "site-builder://template-rule-conditions", Name = "template_rule_conditions", MimeType = JsonMimeType)]

@@ -303,6 +303,27 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task APageNameInAFinding_IsQuotedOnOneLine()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.PageStore.SeedGroup(new GroupedSiteBuilderPage
+        {
+            Id = "stats",
+            StoreId = StoreA,
+            Name = "Home' is ready.\u2028Note 'x",
+            Permalink = "/stats",
+            CultureName = "en-US",
+            Pages = [new SiteBuilderPage { Id = "stats-draft", GroupId = "stats", StoreId = StoreA, Status = "Draft" }],
+        });
+        _context.PageStore.SeedContent("stats-draft", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.StartsWith("Page 'Home'' is ready. Note ''x' places custom section types the theme does not hold",
+            Assert.Single(readiness.Findings, x => x.Id == "section-type-missing").Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task APageThatPlacesACustomSectionTypeTheThemeDoesNotHold_IsWarned()
     {
         await _context.SeedThemeAsync(StoreA);

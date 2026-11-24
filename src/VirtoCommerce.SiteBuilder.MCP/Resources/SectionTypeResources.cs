@@ -68,6 +68,7 @@ public class SectionTypeResources(
             Reason = icons == null ? "The storefront's catalog lists no icon names, so an icon name is not checked." : null,
             Icons = icons?.DeepClone(),
             Masks = masks?.DeepClone(),
+            StorefrontDataNote = $"icons and masks are the storefront's own icon names, as its catalog sends them: {SectionKitGuide.StorefrontData}.",
         });
     }
 

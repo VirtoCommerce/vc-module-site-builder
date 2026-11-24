@@ -40,13 +40,13 @@ public static class SiteBuilderContentPaths
     private static readonly Regex ContentHistoryCursorPattern = new("^[A-Za-z0-9_-]{1,4096}$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     // the catalog's file name in the theme, as the storefront names it
-    private static readonly Regex CatalogHashPattern = new("^[A-Za-z0-9_-]{8,128}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex CatalogHashPattern = new("\\A[A-Za-z0-9_-]{8,128}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     // base64url of a commit sha's 20 bytes
-    private static readonly Regex HistoryVersionIdPattern = new("^[A-Za-z0-9_-]{27}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex HistoryVersionIdPattern = new("\\A[A-Za-z0-9_-]{27}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     // the id goes into a commit trailer
-    private static readonly Regex SaveIdPattern = new("^[A-Za-z0-9-]{8,64}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex SaveIdPattern = new("\\A[A-Za-z0-9-]{8,64}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     public static bool IsCatalogHash(string hash) => !string.IsNullOrEmpty(hash) && CatalogHashPattern.IsMatch(hash);
 

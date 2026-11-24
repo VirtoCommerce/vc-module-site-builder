@@ -12,6 +12,7 @@ public class ThemeStorageTests
     [InlineData("blog.json", null)]
     [InlineData("product.B2C.json", null)]
     [InlineData("product.json-draft", null)]
+    [InlineData("product\n.json", null)]
     public void GetTemplateKey_FileName_ReturnsKey(string fileName, string key)
     {
         Assert.Equal(key, ThemeStorage.GetTemplateKey(fileName));

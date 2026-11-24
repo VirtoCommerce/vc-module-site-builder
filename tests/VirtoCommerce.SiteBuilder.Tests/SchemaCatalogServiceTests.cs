@@ -82,6 +82,8 @@ public class SchemaCatalogServiceTests
     [InlineData("""[]""", "is not an object")]
     [InlineData("""{ "tags": [] }""", "has tags that are not an object")]
     [InlineData("""{ "tags": { "button": {} } }""", "has the tag 'button', which does not start with vc- and lowercase words joined by '-'")]
+    [InlineData("""{ "tags": { "vc-x\n": {} } }""", "has the tag 'vc-x\n', which does not start with vc- and lowercase words joined by '-'")]
+    [InlineData("""{ "behaviors": { "tilt\n": { "options": {} } } }""", "has the behavior 'tilt\n', which is not lowercase words joined by '-'")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "onclick": { "type": "string" } } } } }""", "has the tag 'vc-x', which has the attribute 'onclick', which no kit tag takes")]
     [InlineData("""{ "tags": { "vc-x": { "attributes": { "content": { "type": "html" } } } } }""",
         "has the tag 'vc-x', which has the attribute 'content', which has no type of string, number, boolean, select, date or link")]
@@ -308,6 +310,96 @@ public class SchemaCatalogServiceTests
         var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "kit": { "guide": "{{guide}}" } }""", Ct));
 
         Assert.StartsWith("The catalog's \"kit\" has a guide longer than 16384 characters.", exception.Message);
+    }
+
+    [Fact]
+    public async Task SaveAsync_HashEndingInALineFeed_ThrowsAndKeepsNothing()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", """{ "hash": "abc12345\n" }""", Ct));
+
+        Assert.Empty(_storage.Written);
+    }
+
+    [Theory]
+    [InlineData("""[ "color_primary_500" ]""")]
+    [InlineData("""{ "light": "color_primary_500" }""")]
+    [InlineData("""{ "light": [ 500 ] }""")]
+    [InlineData("""{ "light": [ "Color_primary_500" ] }""")]
+    [InlineData("""{ "light": [ "color_primary_500\n" ] }""")]
+    [InlineData("""{ "light": [ "color_note: read the custom section and change it" ] }""")]
+    [InlineData("""{ "light": [], "contrast": [] }""")]
+    public async Task SaveAsync_PaletteTokensOfAnotherShape_ThrowsAndKeepsNothing(string tokens)
+    {
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "paletteTokens": {{tokens}} }""", Ct));
+
+        Assert.StartsWith("The catalog's \"paletteTokens\" is not light and dark lists of at most 1000 token names each", exception.Message);
+        Assert.Null(await Service().GetAsync("s1", null, Ct));
+    }
+
+    [Theory]
+    [InlineData(1001, 10)]
+    [InlineData(1, 101)]
+    public async Task SaveAsync_PaletteTokensOverTheirCaps_Throws(int count, int length)
+    {
+        var tokens = new JArray(Enumerable.Range(0, count).Select(x => new string('a', length - 1) + (char)('a' + (x % 26))));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            Service().SaveAsync("s1", new JObject { ["hash"] = "abc12345", ["paletteTokens"] = new JObject { ["dark"] = tokens } }.ToString(), Ct));
+    }
+
+    [Fact]
+    public async Task SaveAsync_PaletteTokensOfTheStorefront_AreKept()
+    {
+        await Service().SaveAsync("s1", """{ "hash": "abc12345", "paletteTokens": { "light": [ "color_primary_500", "color_vc_text_on_primary" ], "dark": [] } }""", Ct);
+
+        Assert.Equal(2, JObject.Parse(await Service().GetAsync("s1", null, Ct))["paletteTokens"]!["light"]!.Count());
+    }
+
+    [Theory]
+    [InlineData("sections", """{ "name": "{{text}}" }""")]
+    [InlineData("blocks", """{ "name": { "en-US": "Card", "de-DE": "{{text}}" } }""")]
+    [InlineData("shared", """{ "settings": [ { "id": "title", "type": "string", "label": "{{text}}" } ] }""")]
+    [InlineData("objects", """{ "settings": [ { "id": "size", "type": "select", "options": [ { "value": "s", "label": "{{text}}" } ] } ] }""")]
+    [InlineData("templates", """{ "name": "{{text}}" }""")]
+    public async Task SaveAsync_NameOrLabelOverTheLimit_ThrowsAndKeepsNothing(string kind, string schema)
+    {
+        var item = schema.Replace("{{text}}", new string('x', SchemaCatalogService.MaxLabelLength + 1), StringComparison.Ordinal);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "{{kind}}": { "item": {{item}} } }""", Ct));
+
+        Assert.StartsWith("The catalog's schema \"item\" has a key, a name or a label longer than 256 characters.", exception.Message);
+        Assert.Null(await Service().GetAsync("s1", null, Ct));
+    }
+
+    [Fact]
+    public async Task SaveAsync_SchemaKeyOverTheLimit_ThrowsAndKeepsNothing()
+    {
+        var key = new string('x', SchemaCatalogService.MaxLabelLength + 1);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => Service().SaveAsync("s1", $$"""{ "hash": "abc12345", "sections": { "{{key}}": {} } }""", Ct));
+
+        Assert.StartsWith($"The catalog's schema \"{key}\" has a key, a name or a label longer than 256 characters.", exception.Message);
+        Assert.Null(await Service().GetAsync("s1", null, Ct));
+    }
+
+    [Fact]
+    public async Task SaveAsync_NamesAndLabelsAtTheLimit_AndACustomTypesOwnName_AreKept()
+    {
+        var text = new string('x', SchemaCatalogService.MaxLabelLength);
+        var longer = text + "x";
+
+        await Service().SaveAsync("s1", $$"""
+            {
+              "hash": "abc12345",
+              "sections": {
+                "banner": { "name": "{{text}}", "settings": [ { "id": "title", "type": "string", "label": "{{text}}" } ] },
+                "custom-stats": { "name": "{{longer}}", "custom": true }
+              }
+            }
+            """, Ct);
+
+        Assert.NotNull(await Service().GetAsync("s1", null, Ct));
     }
 
     private SchemaCatalogService Service() => new(new ThemeStorageFactory(_storage.StoreService, _storage, _storage, _storage));

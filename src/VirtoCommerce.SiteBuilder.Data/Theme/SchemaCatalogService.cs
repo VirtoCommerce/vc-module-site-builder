@@ -9,7 +9,12 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
 public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : ISchemaCatalogService
 {
+    /// <summary>Of a schema's name and of a setting's label, or of each language's text of one: the agent reads them, as it reads an option's label.</summary>
+    public const int MaxLabelLength = CustomSectionKit.MaxOptionLength;
+
     private const string HashProperty = "hash";
+    private const string NameKey = "name";
+    private const string LabelKey = "label";
 
     private static readonly string[] SchemaKinds =
     [
@@ -98,6 +103,22 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
             throw new ArgumentException($"The catalog's \"kit\" {kitError}.", nameof(catalogJson));
         }
 
+        if (!IsPaletteTokens(catalog[CustomSectionKit.PaletteTokensKey]))
+        {
+            throw new ArgumentException($"The catalog's \"{CustomSectionKit.PaletteTokensKey}\" is not light and dark lists of at most " +
+                $"{ThemePaletteTokensValidator.MaxTokens} token names each, of lowercase letters, digits and '_' and at most " +
+                $"{ThemePaletteTokensValidator.MaxTokenLength} characters.", nameof(catalogJson));
+        }
+
+        // a custom type's section is the theme's, which the module reads from the theme in its place
+        if (ModuleConstants.SchemaKinds.All
+                .SelectMany(kind => ((catalog[kind] as JObject)?.Properties() ?? [])
+                    .Where(x => kind != ModuleConstants.SchemaKinds.Sections || x.Value is not JObject section || !ThemeCustomSections.IsCustom(section)))
+                .FirstOrDefault(x => x.Name.Length > MaxLabelLength || x.Value is JObject schema && !HasShortLabels(schema)) is { } labeled)
+        {
+            throw new ArgumentException($"The catalog's schema \"{labeled.Name}\" has a key, a name or a label longer than {MaxLabelLength} characters.", nameof(catalogJson));
+        }
+
         // the rest of the module takes such a section for a type of the theme
         if ((catalog[ModuleConstants.SchemaKinds.Sections] as JObject)?.Properties()
             .FirstOrDefault(x => x.Name.StartsWith(ThemeStorage.CustomSectionTypePrefix, StringComparison.Ordinal) && !ThemeCustomSections.IsCustom((JObject)x.Value)) is { } section)
@@ -108,6 +129,25 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
 
         return catalog;
     }
+
+    private static bool IsPaletteTokens(JToken tokens) =>
+        tokens is null || tokens.Type == JTokenType.Null ||
+        (tokens is JObject schemes && schemes.Properties().All(x => x.Name is ModuleConstants.Palette.Light or ModuleConstants.Palette.Dark && IsTokenList(x.Value)));
+
+    private static bool IsTokenList(JToken tokens) =>
+        tokens.Type == JTokenType.Null ||
+        (tokens is JArray names && names.Count <= ThemePaletteTokensValidator.MaxTokens &&
+            names.All(x => x is JValue { Type: JTokenType.String } name && ThemePaletteTokensValidator.IsToken((string)name)));
+
+    private static bool HasShortLabels(JObject schema) =>
+        IsShortText(schema[NameKey]) && schema.Descendants().OfType<JProperty>().Where(x => x.Name == LabelKey).All(x => IsShortText(x.Value));
+
+    private static bool IsShortText(JToken text) => text switch
+    {
+        JValue { Type: JTokenType.String } value => ((string)value).Length <= MaxLabelLength,
+        JObject translations => translations.Properties().All(x => x.Value is not JValue { Type: JTokenType.String } value || ((string)value).Length <= MaxLabelLength),
+        _ => true,
+    };
 
     protected virtual string GetHash(JObject catalog) => catalog[HashProperty] is JValue { Type: JTokenType.String } hash ? (string)hash : null;
 

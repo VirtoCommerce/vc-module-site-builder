@@ -8,6 +8,22 @@ namespace VirtoCommerce.SiteBuilder.Tests
     public class SiteBuilderContentPathsTests
     {
         [Theory]
+        [InlineData("abcdefgh", true)]
+        [InlineData("abcdefgh\n", false)]
+        public void CatalogHash_EndingInALineFeed_IsNotOne(string hash, bool expected) => Assert.Equal(expected, SiteBuilderContentPaths.IsCatalogHash(hash));
+
+        [Theory]
+        [InlineData("save-0001", true)]
+        [InlineData("save-0001\n", false)]
+        public void SaveId_EndingInALineFeed_IsNotOne(string saveId, bool expected) => Assert.Equal(expected, SiteBuilderContentPaths.IsSaveId(saveId));
+
+        [Theory]
+        [InlineData("abcdefghijklmnopqrstuvwxyz0", true)]
+        [InlineData("abcdefghijklmnopqrstuvwxyz0\n", false)]
+        public void HistoryVersionId_EndingInALineFeed_IsNotOne(string versionId, bool expected) =>
+            Assert.Equal(expected, SiteBuilderContentPaths.IsHistoryVersionId(versionId));
+
+        [Theory]
         [InlineData("pages")]
         [InlineData("blogs")]
         [InlineData("themes")]

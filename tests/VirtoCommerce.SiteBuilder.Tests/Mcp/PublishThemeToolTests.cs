@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -19,6 +22,7 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
     public PublishThemeToolTests()
     {
         _context.UsePageStore();
+        _context.ListPages(() => []);
     }
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
@@ -67,12 +71,87 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheDryRun_OfACustomSectionTypeDraft_ShowsWhatChangesAndThePagesThatPlaceIt()
+    {
+        await SeedAsync();
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json",
+            StatsSectionType.Replace("\"css\": \"\"", "\"css\": \":scope { padding: 2rem; }\"", StringComparison.Ordinal), draft: true);
+        var page = new GroupedSiteBuilderPage
+        {
+            Id = "spring",
+            StoreId = StoreA,
+            Name = "Spring's\u2028sale",
+            Permalink = "/spring",
+            CultureName = "en-US",
+            Visibility = true,
+            Pages =
+            [
+                new SiteBuilderPage { Id = "spring-published", GroupId = "spring", StoreId = StoreA, Status = "Published" },
+                new SiteBuilderPage { Id = "spring-draft", GroupId = "spring", StoreId = StoreA, Status = "Draft" },
+            ],
+        };
+        _context.PageStore.SeedGroup(page);
+        _context.PageStore.SeedContent("spring-published", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        // the publication changes what customers see now, so the page counts by its published version, not its draft
+        _context.PageStore.SeedContent("spring-draft", """{ "settings": {}, "content": [ { "id": "t1", "type": "text" } ] }""");
+        _context.ListPages(() => [LandingRow(page)]);
+
+        var preview = await DryRunAsync();
+
+        Assert.Contains(preview.Changes, x => x.Field == "default/custom-sections/custom-stats.json css line 1" && x.To?.ToString() == ":scope { padding: 2rem; }");
+        var placed = preview.Drafts.Single(x => x.Path == "default/custom-sections/custom-stats.json").PlacedSections!;
+        Assert.Equal([("spring", "Spring''s sale", 1)], placed.Pages.Select(x => (x.PageId, x.Name, x.Sections)));
+        Assert.Contains("Templates are not scanned", placed.Coverage, StringComparison.Ordinal);
+        Assert.Null(preview.Drafts.Single(x => x.Path == "default/templates/product.bicycles.json").PlacedSections);
+    }
+
+    [Fact]
+    public async Task TheDryRun_AnswersTheCatalogTheThemeIsCheckedAgainst()
+    {
+        await SeedAsync();
+
+        Assert.Equal($"catalog-{StoreA}", (await DryRunAsync()).CatalogHash);
+    }
+
+    [Fact]
+    public async Task ACallWithTheVersionsButNotTheCatalog_IsRefused_AndPublishesNothing()
+    {
+        await SeedAsync();
+        var preview = await DryRunAsync();
+
+        var requesterCheck = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions, dryRun = true });
+        var approved = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions }, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, requesterCheck.Outcome);
+        Assert.Equal(McpToolCallOutcome.Failed, approved.Outcome);
+        Assert.Contains("expected_catalog_hash", approved.Error, StringComparison.Ordinal);
+        Assert.Null(_context.ReadThemeFile(StoreA, "templates/product.bicycles.json"));
+    }
+
+    [Fact]
+    public async Task ACatalogUploadedAfterTheReview_RefusesTheApprovedPublication()
+    {
+        await SeedAsync();
+        var preview = await DryRunAsync();
+        var moved = new JObject { ["hash"] = "moved-catalog", ["sections"] = new JObject(ThemeSections.Select(x => new JProperty(x, new JObject()))) };
+        await new SchemaCatalogService(_context.ThemeStorage).SaveAsync(StoreA, moved.ToString(), TestContext.Current.CancellationToken);
+
+        var approved = await _context.CallAsync(Publisher(), Tool,
+            new { store_id = StoreA, expected_versions = preview.ExpectedVersions, expected_catalog_hash = preview.CatalogHash }, Approved);
+
+        Assert.Equal(McpToolCallOutcome.Failed, approved.Outcome);
+        Assert.Contains("schema catalog changed", approved.Error, StringComparison.Ordinal);
+        Assert.Null(_context.ReadThemeFile(StoreA, "templates/product.bicycles.json"));
+    }
+
+    [Fact]
     public async Task ACallWithTheVersions_WaitsForApproval_AndPublishesNothing()
     {
         await SeedAsync();
         var preview = await DryRunAsync();
 
-        var result = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions });
+        var result = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions, expected_catalog_hash = preview.CatalogHash });
 
         Assert.Equal(McpToolCallOutcome.PendingApproval, result.Outcome);
         Assert.Null(_context.ReadThemeFile(StoreA, "templates/product.bicycles.json"));
@@ -96,7 +175,7 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
         await SeedAsync();
         var preview = await DryRunAsync();
 
-        var result = (await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions }, Approved))
+        var result = (await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions, expected_catalog_hash = preview.CatalogHash }, Approved))
             .EnsureSucceeded().Read<ThemePublication>();
 
         Assert.False(result.DryRun);
@@ -112,8 +191,8 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
         var preview = await DryRunAsync();
         _context.SeedThemeFile(StoreA, "templates/product.json", ProductTemplate.Replace("\"main\"", "\"main2\"", StringComparison.Ordinal), draft: true);
 
-        var requesterCheck = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions, dryRun = true });
-        var approved = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions }, Approved);
+        var requesterCheck = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions, expected_catalog_hash = preview.CatalogHash, dryRun = true });
+        var approved = await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = preview.ExpectedVersions, expected_catalog_hash = preview.CatalogHash }, Approved);
 
         Assert.Equal(McpToolCallOutcome.Failed, requesterCheck.Outcome);
         Assert.Equal(McpToolCallOutcome.Failed, approved.Outcome);

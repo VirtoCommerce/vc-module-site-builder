@@ -247,6 +247,8 @@ public class CustomSectionValidatorTests
     [InlineData("""<section><ul data-inview><li data-inview-once>{{ settings.title }}</li></ul></section>""", "<li> at line 1 has data-inview-once, an option of data-inview, without data-inview on the same element, where the storefront reads it")]
     [InlineData("""<section data-count-up="5"><span data-count-up-duration="900">0</span></section>""", "<span> at line 1 has data-count-up-duration, an option of data-count-up, without data-count-up on the same element, where the storefront reads it")]
     [InlineData("""<section data-countdown="2026-12-31"><span data-countdown-part="weeks"></span></section>""", "<span> at line 1 has data-countdown-part=\"weeks\", which data-countdown does not take: it takes days, hours, minutes, seconds")]
+    [InlineData("""<section aria-owns="site-header"><p>{{ settings.title }}</p></section>""", "<section> at line 1 has aria-owns, which names an element by id: a section has none, so it would name one of the page around it")]
+    [InlineData("""<section><p aria-labelledby="checkout">{{ settings.title }}</p></section>""", "<p> at line 1 has aria-labelledby, which names an element by id: a section has none, so it would name one of the page around it")]
     public void Validate_TemplateThatBreaksARule_IsRefusedWithTheRule(string template, string error)
     {
         var result = _validator.Validate(Type, Section(template), Catalog);
@@ -902,7 +904,7 @@ public class CustomSectionValidatorTests
     [InlineData("""@keyframes custom-hero__x { from { .a { opacity: 0 } } }""",
         "the CSS has a block inside a keyframe of @keyframes, which holds only declarations")]
     [InlineData(""".a { background: url("data:image/svg+xml,<svg><use href='#x'/></svg>"); }""",
-        "the CSS loads 'data:image/svg+xml,<svg><use href='#x'/></svg>', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
+        "the CSS loads 'data:image/svg+xml,<svg><use href=''#x''/></svg>', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
     [InlineData(".a { background: url(\"\u00a0https://cdn.example/assets/a.png\"); }",
         "the CSS loads '\u00a0https://cdn.example/assets/a.png', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
     [InlineData(""".a { background: src("https://evil.example/x.png"); }""", "the CSS loads 'https://evil.example/x.png', which is not a URL of the store's asset library or a data:image/ URL without a raw #")]
@@ -1201,7 +1203,7 @@ public class CustomSectionValidatorTests
             [
                 $"'script' is not a key of a custom section type, which has format, name, schema, template and css",
                 $"'format' is not 1",
-                $"'name' is not a text, or a text per language",
+                $"'name' is not a text, or a text per language, of at most 256 characters",
                 $"'schema.blocks' is not a key of a custom section's schema, which has settings, targetTemplates, limit and icon",
                 $"'schema.targetTemplates' is not a list of template names",
                 $"'schema.limit' is not a whole number from 1",
@@ -1303,12 +1305,14 @@ public class CustomSectionValidatorTests
     [InlineData("""{ "title": "Hero" }""")]
     [InlineData("""{ "en-US": "Hero", "de-DE": 5 }""")]
     [InlineData("5")]
+    [InlineData("\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"")]
+    [InlineData("""{ "en-US": "Hero", "de-DE": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }""")]
     public void Validate_NameThatIsNeitherATextNorATextPerLanguage_IsRefused(string name)
     {
         var file = Section("<section></section>");
         file["name"] = JToken.Parse(name);
 
-        Assert.Equal(["'name' is not a text, or a text per language"], _validator.Validate(Type, file, Catalog).Errors);
+        Assert.Equal(["'name' is not a text, or a text per language, of at most 256 characters"], _validator.Validate(Type, file, Catalog).Errors);
     }
 
     [Theory]
@@ -1490,6 +1494,31 @@ public class CustomSectionValidatorTests
         Assert.Equal(["custom-sections/custom-hero-1.json", "custom-sections"], results.Select(x => x.File));
         Assert.Equal(["the custom section types are 304.9 KB of JSON together, more than 256 KB: the snapshot carries every type to every page"], results[1].Errors);
         Assert.Equal(["custom-sections/custom-hero-1.json"], _validator.ValidateTypes(types, ["custom-hero-1"], Catalog).Select(x => x.File));
+    }
+
+    [Fact]
+    public void ValidateTypes_MoreTypesThanTheLimit_AddTheCountErrorForTheFolder()
+    {
+        var types = Enumerable.Range(0, CustomSectionValidator.MaxTypes + 1).ToDictionary(x => $"custom-hero-{x}", _ => (JToken)Section("<section></section>"));
+
+        var results = _validator.ValidateTypes(types, [], Catalog);
+        types.Remove("custom-hero-0");
+
+        Assert.Equal(["the theme holds 257 custom section types, more than 256: the snapshot carries every type to every page"], Assert.Single(results).Errors);
+        Assert.Empty(_validator.ValidateTypes(types, [], Catalog));
+        Assert.Equal(256, _validator.GetRules().MaxTypes);
+    }
+
+    [Theory]
+    [InlineData("""{ "format": 1, "name": "Hero", "schema": { "settings": [] }, "template": "<section></section>", "it's": 1 }""", "'it''s' is not a key of a custom section type")]
+    [InlineData("""{ "format": 1, "name": "Hero", "schema": { "settings": [], "x\u2028y": 1 }, "template": "<section></section>" }""", "'schema.x y' is not a key of a custom section's schema")]
+    [InlineData("""{ "format": 1, "name": "Hero", "schema": { "settings": [ { "id": "x", "type": "string", "a'b": 1 } ] }, "template": "<section></section>" }""",
+        "setting 'x' has a key a custom section's setting does not take, 'a''b'")]
+    [InlineData("""{ "format": 1, "name": "Hero", "schema": { "settings": [ { "id": "x", "type": "menu\u0085' now" } ] }, "template": "<section></section>" }""",
+        "setting 'x' has a type a custom section does not take, 'menu '' now'")]
+    public void Validate_KeyOrTypeOfTheFile_IsQuotedInTheError(string file, string error)
+    {
+        Assert.Contains(_validator.Validate(Type, JObject.Parse(file), Catalog).Errors, x => x.StartsWith(error, StringComparison.Ordinal));
     }
 
     [Fact]

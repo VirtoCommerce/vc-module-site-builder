@@ -399,6 +399,74 @@ public class CustomSectionSaveTests
     }
 
     [Fact]
+    public async Task SaveAsync_OfAPagePlacingTypesTheThemeDoesNotHold_ReadsNoTypeFile()
+    {
+        await SaveCatalogAsync();
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        var content = new JObject
+        {
+            ["settings"] = new JObject(),
+            ["content"] = new JArray(Enumerable.Range(0, 200).Select(x => new JObject { ["id"] = $"s{x}", ["type"] = $"custom-planted-{x}" })),
+        };
+        var page = new DesignerSavePage
+        {
+            GroupId = "g1",
+            ETag = SiteBuilderContentVersion.Create(await _pages.GetByIdAsync("g1"), Published),
+            Content = content.ToString(Newtonsoft.Json.Formatting.None),
+        };
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(page)), _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.DoesNotContain(_live.LookedUp, x => x.Contains("/custom-sections/", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetTypesAsync_RequestCancelled_ReadsNoType()
+    {
+        _live.Files[Theme($"{Hero}-draft")] = HeroFile;
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        var service = new CustomSectionService(_themes, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance));
+
+        await Assert.ThrowsAnyAsync<System.OperationCanceledException>(() => service.GetTypesAsync("s1", null, cancellationToken: cancelled.Token));
+
+        Assert.DoesNotContain(_live.LookedUp, x => x.Contains("/custom-sections/", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SaveAsync_TypeThatGrowsTheTypesPastTheirCount_IsRefusedOnTheirCountBeforeItIsChecked()
+    {
+        await SaveCatalogAsync();
+        foreach (var type in Enumerable.Range(0, CustomSectionValidator.MaxTypes).Select(x => $"custom-t{x}"))
+        {
+            _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroFile;
+        }
+
+        var validator = new CountingValidator(TestServices.CustomSectionValidator());
+
+        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroFile))), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Equal(["custom-sections: the theme holds 257 custom section types, more than 256: the snapshot carries every type to every page"], result.Errors);
+        Assert.Equal(0, validator.Checked);
+    }
+
+    [Fact]
+    public async Task SaveAsync_TypesAlreadyOverTheirCount_SavesAChangeToOneOfThem()
+    {
+        await SaveCatalogAsync();
+        foreach (var type in Enumerable.Range(0, CustomSectionValidator.MaxTypes).Select(x => $"custom-t{x}").Append("custom-hero"))
+        {
+            _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroFile;
+        }
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { color: var(--color-neutral-800); }")))), _user, Ct);
+
+        Assert.True(result.Succeeded, result.Error);
+    }
+
+    [Fact]
     public async Task SaveAsync_TypesTogetherOverTheLimit_IsInvalid()
     {
         await SaveCatalogAsync();

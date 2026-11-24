@@ -61,6 +61,9 @@ public static class CustomSectionKit
 
     /// <summary>The most characters of bound values and rich text the storefront renders in a section.</summary>
     public const int MaxRenderedText = 262_144;
+
+    /// <summary>The most characters of the template's own text the storefront renders in a section, counted once per row.</summary>
+    public const int MaxRenderedTemplateText = 2_097_152;
     public const int MaxWrites = 32;
     public const int MaxWriteLength = 128;
 
@@ -128,8 +131,8 @@ public static class CustomSectionKit
     private const double MaxDecimal = 7.9e28;
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
-    private static readonly Regex TagNamePattern = new("^vc-[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
-    private static readonly Regex NamePattern = new("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", RegexOptions.None, RegexTimeout);
+    private static readonly Regex TagNamePattern = new("\\Avc-[a-z0-9]+(?:-[a-z0-9]+)*\\z", RegexOptions.None, RegexTimeout);
+    private static readonly Regex NamePattern = new("\\A[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\z", RegexOptions.None, RegexTimeout);
 
     /// <summary>
     /// As written, or as the element gets it: the storefront passes the name camelCased, and one the component does not declare falls through

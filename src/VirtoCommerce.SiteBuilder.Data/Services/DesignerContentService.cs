@@ -141,10 +141,10 @@ public class DesignerContentService(
     }
 
     /// <summary>
-    /// By theme folder: the rules of the types the files write, and the size of all the theme's types once written. A save that grows them
-    /// past the limit is refused on their size alone, as checking each type of a request that large costs far more than the request. One that
-    /// does not grow them is not refused on their size, so types over the limit, after two saves at once or a lower limit, can still shrink;
-    /// the publication holds the limit as it is.
+    /// By theme folder: the rules of the types the files write, and the size and the count of all the theme's types once written. A save that
+    /// grows them past either limit is refused on the limits alone, as checking each type of a request that large costs far more than the
+    /// request. One that does not grow them past a limit is not refused on it, so types over a limit, after two saves at once or a lower limit,
+    /// can still shrink; the publication holds the limits as they are.
     /// </summary>
     /// <param name="files">Contents by the path with the theme folder.</param>
     /// <param name="stored">By theme folder, as <see cref="GetCustomSectionsAsync"/> reads them.</param>
@@ -166,9 +166,12 @@ public class DesignerContentService(
                 continue;
             }
 
-            var sizeResults = customSectionValidator.ValidateTypes(types, [], catalog);
-            result[themeName] = sizeResults.Count > 0 && customSectionValidator.GetSize(types) > customSectionValidator.GetSize(stored[themeName])
-                ? sizeResults
+            var rules = customSectionValidator.GetRules();
+            var size = customSectionValidator.GetSize(types);
+            var growsPast = (size > rules.MaxTotalSize && size > customSectionValidator.GetSize(stored[themeName])) ||
+                (types.Count > rules.MaxTypes && types.Count > stored[themeName].Count);
+            result[themeName] = growsPast
+                ? customSectionValidator.ValidateTypes(types, [], catalog)
                 : [.. customSectionValidator.ValidateTypes(types, written, catalog).Where(x => x.File != ThemeStorage.CustomSectionsFolder)];
         }
 

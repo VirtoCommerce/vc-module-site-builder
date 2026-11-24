@@ -25,6 +25,11 @@ public class CustomSectionValidator(
     /// <summary>UTF-8 bytes, for the template and the CSS each.</summary>
     public const int MaxPartSize = 64 * 1024;
 
+    /// <summary>Of a theme: the snapshot carries every type to every page, and a save reads each of them.</summary>
+    public const int MaxTypes = 256;
+
+    public const int MaxNameLength = 256;
+
     private const string HeaderType = "header";
     private const string ParagraphType = "paragraph";
 
@@ -64,11 +69,12 @@ public class CustomSectionValidator(
 
         var kit = new Lazy<StorefrontKit>(() => CustomSectionKit.Read(catalog));
         var results = checkedTypes.Select(x => ValidateType(x, types.TryGetValue(x, out var content) ? content : null, kit)).ToList();
-        if (GetSizeError(types) is { } sizeError)
+        var folderErrors = new[] { GetSizeError(types), GetCountError(types) }.Where(x => x != null).ToList();
+        if (folderErrors.Count > 0)
         {
             var result = AbstractTypeFactory<CustomSectionValidationResult>.TryCreateInstance();
             result.File = ThemeStorage.CustomSectionsFolder;
-            result.Errors.Add(sizeError);
+            result.Errors = folderErrors;
             results.Add(result);
         }
 
@@ -138,6 +144,7 @@ public class CustomSectionValidator(
         result.MaxAtRuleDepth = CustomSectionCssValidator.MaxAtRuleDepth;
         result.MaxPartSize = MaxPartSize;
         result.MaxTotalSize = options.Value.CustomSectionsMaxSize;
+        result.MaxTypes = MaxTypes;
 
         return result;
     }
@@ -208,11 +215,15 @@ public class CustomSectionValidator(
             $"the custom section types are {FormatSize(size)} of JSON together, more than {FormatSize(maxSize)}: the snapshot carries every type to every page");
     }
 
+    protected virtual string GetCountError(IDictionary<string, JToken> types) =>
+        types.Count <= MaxTypes ? null : string.Create(CultureInfo.InvariantCulture,
+            $"the theme holds {types.Count} custom section types, more than {MaxTypes}: the snapshot carries every type to every page");
+
     protected virtual void ValidateShape(CustomSectionCheck check, JObject file)
     {
         foreach (var key in file.Properties().Select(x => x.Name).Where(x => !TypeKeys.Contains(x)))
         {
-            check.AddError($"'{key}' is not a key of a custom section type, which has format, name, schema, template and css");
+            check.AddError($"'{Quote(key)}' is not a key of a custom section type, which has format, name, schema, template and css");
         }
 
         if (file[ThemeCustomSections.FormatKey] is not JValue { Value: (long)ThemeCustomSections.Format })
@@ -222,7 +233,7 @@ public class CustomSectionValidator(
 
         if (!IsName(file[ThemeCustomSections.NameKey]))
         {
-            check.AddError("'name' is not a text, or a text per language");
+            check.AddError(string.Create(CultureInfo.InvariantCulture, $"'name' is not a text, or a text per language, of at most {MaxNameLength} characters"));
         }
 
         if (file[ThemeCustomSections.SchemaKey] is JObject schema)
@@ -239,7 +250,7 @@ public class CustomSectionValidator(
     {
         foreach (var key in schema.Properties().Select(x => x.Name).Where(x => !SchemaKeys.Contains(x)))
         {
-            check.AddError($"'schema.{key}' is not a key of a custom section's schema, which has {JoinAnd(SchemaKeys)}");
+            check.AddError($"'schema.{Quote(key)}' is not a key of a custom section's schema, which has {JoinAnd(SchemaKeys)}");
         }
 
         if (schema[SettingsKey] is JArray settings)
@@ -305,7 +316,7 @@ public class CustomSectionValidator(
         var setting = DescribeSetting(parent, id, index);
         foreach (var key in field.Properties().Select(x => x.Name).Where(x => !FieldKeys.Contains(x)))
         {
-            check.AddError($"{setting} has a key a custom section's setting does not take, '{key}'");
+            check.AddError($"{setting} has a key a custom section's setting does not take, '{Quote(key)}'");
         }
 
         // the designer shows these as they are
@@ -317,7 +328,7 @@ public class CustomSectionValidator(
         var isGroup = type is ListType or ObjectType;
         if (type == null || !FieldTypes.Contains(type))
         {
-            check.AddError($"{setting} has a type a custom section does not take, '{type}'");
+            check.AddError($"{setting} has a type a custom section does not take, '{Quote(type)}'");
             return null;
         }
 
@@ -555,10 +566,12 @@ public class CustomSectionValidator(
     // a text per language is the shape the snapshot translates and the designer reads; any other object would show the type's id
     private static bool IsName(JToken name) => name switch
     {
-        JValue { Type: JTokenType.String } text => !string.IsNullOrWhiteSpace((string)text),
-        JObject translations => ThemeTranslations.IsTranslation(translations) && translations.Properties().All(x => !string.IsNullOrWhiteSpace((string)x.Value)),
+        JValue { Type: JTokenType.String } text => IsNameText((string)text),
+        JObject translations => ThemeTranslations.IsTranslation(translations) && translations.Properties().All(x => IsNameText((string)x.Value)),
         _ => false,
     };
+
+    private static bool IsNameText(string text) => !string.IsNullOrWhiteSpace(text) && text.Length <= MaxNameLength;
 
     private static bool IsSettingOption(JToken option) =>
         option is JObject { } item && item["value"] is JValue { Type: JTokenType.String or JTokenType.Integer or JTokenType.Float };

@@ -30,7 +30,6 @@ public class SectionTypeTools(
     ISiteBuilderSectionScanner sectionScanner,
     Func<UserManager<ApplicationUser>> userManagerFactory)
 {
-    private const int MaxPlacingPages = 50;
     private const int MaxDefaultLength = 80;
     private static readonly string[] LabelFieldTypes = ["header", "paragraph"];
 
@@ -225,25 +224,15 @@ public class SectionTypeTools(
             return null;
         }
 
-        var scan = await sectionScanner.ScanPagesAsync(new SiteBuilderSectionScanCriteria
-        {
-            Pages = new SiteBuilderPageSearchCriteria { StoreId = storeId, Take = MaxPlacingPages },
-            MaxPages = MaxPlacingPages,
-            SectionType = type,
-            SharedComponentStoreIds = await authorizationService.GetStoreIdsAsync(user, userManagerFactory, storeId, SharedComponentsRead),
-        }, cancellationToken);
+        var (pages, coverage) = await SectionTypePages.FindAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type, published: false,
+            cancellationToken);
 
         return new SectionTypePlacements
         {
             NewSettings = added.Select(x => new NewSettingRow(x.Key, DescribeDefault(x.Value))).ToList(),
             RemovedSettings = removed,
-            Pages = scan.Pages
-                .Where(x => x.Sections.Count > 0)
-                .Select(x => new PlacingPageRow(x.Page.Id, x.Page.CultureName, x.Page.Name, x.Page.Permalink,
-                    x.Sections.Count(y => y.SharedComponentId == null),
-                    x.Sections.Select(y => y.SharedComponentId).Where(y => y != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList()))
-                .ToList(),
-            Coverage = SectionScanCoverage.Describe(scan) + " Templates are not scanned: search_templates lists them.",
+            Pages = pages,
+            Coverage = coverage,
             Note = removed.Count > 0
                 ? "A removed setting stays in the placed sections, but the type no longer reads it: what pages hold in it is no longer shown."
                 : null,

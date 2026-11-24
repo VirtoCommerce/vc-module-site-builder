@@ -7,11 +7,19 @@ public static class CustomSectionText
 
     public static char[] Whitespace { get; } = [' ', '\t', '\n', '\r', '\f'];
 
+    // besides the whitespace, what a reader takes for the end of a line
+    private static readonly char[] LineBreaks = [.. Whitespace, '\v', '\u0085', '\u2028', '\u2029'];
+
+    /// <summary>
+    /// The value on one line, cut short, with each single quote doubled as in a single-quoted YAML text, so that between single quotes it
+    /// cannot end the quote. A backslash stays as it is: a message about a link may be about one.
+    /// </summary>
     public static string Quote(string value)
     {
-        var line = string.Join(' ', value.Split(Whitespace, StringSplitOptions.RemoveEmptyEntries));
+        var line = string.Join(' ', (value ?? string.Empty).Split(LineBreaks, StringSplitOptions.RemoveEmptyEntries));
+        var shown = line.Length > MaxQuoteLength ? line[..MaxQuoteLength] + "…" : line;
 
-        return line.Length > MaxQuoteLength ? line[..MaxQuoteLength] + "…" : line;
+        return shown.Replace("'", "''", StringComparison.Ordinal);
     }
 
     public static string JoinOr(IEnumerable<string> items) => Join(items, "or");
