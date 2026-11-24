@@ -24,6 +24,8 @@ public class PreviewAuthCodeService(
     IDataProtectionProvider dataProtectionProvider,
     IMemoryCache memoryCache) : IPreviewAuthCodeService
 {
+    private const int NonceByteCount = 16;
+
     // Checking and remembering a nonce is one step, or two exchanges of one code at once could both pass.
     private static readonly Lock RedeemLock = new();
 
@@ -52,9 +54,7 @@ public class PreviewAuthCodeService(
             return SiteBuilderOperationResult.Invalid("The request names no user to preview as.").As<PreviewAuthCode>();
         }
 
-        // The impersonate grant names the operator the same way: the one already behind an impersonated session, else the caller.
-        var operatorUserId = user?.FindFirstValue(PlatformConstants.Security.Claims.OperatorUserId).EmptyToNull() ?? user?.GetUserId();
-        var operatorUserName = user?.FindFirstValue(PlatformConstants.Security.Claims.OperatorUserName).EmptyToNull() ?? user?.GetUserName();
+        var operatorUserId = GetOperatorUserId(user);
         if (string.IsNullOrEmpty(operatorUserId) || !await IsPreviewUserAsync(request.StoreId, request.UserId))
         {
             return SiteBuilderOperationResult.Forbidden().As<PreviewAuthCode>();
@@ -64,8 +64,8 @@ public class PreviewAuthCodeService(
         ticket.UserId = request.UserId;
         ticket.StoreId = request.StoreId;
         ticket.OperatorUserId = operatorUserId;
-        ticket.OperatorUserName = operatorUserName;
-        ticket.Nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        ticket.OperatorUserName = GetOperatorUserName(user);
+        ticket.Nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(NonceByteCount));
 
         var code = AbstractTypeFactory<PreviewAuthCode>.TryCreateInstance();
         code.Code = Protector.Protect(JsonConvert.SerializeObject(ticket), PreviewAuth.CodeLifetime);
@@ -73,6 +73,13 @@ public class PreviewAuthCodeService(
 
         return SiteBuilderOperationResult.Success(code);
     }
+
+    // The impersonate grant names the operator the same way: the one already behind an impersonated session, else the caller.
+    private static string GetOperatorUserId(ClaimsPrincipal user) =>
+        user?.FindFirstValue(PlatformConstants.Security.Claims.OperatorUserId).EmptyToNull() ?? user?.GetUserId();
+
+    private static string GetOperatorUserName(ClaimsPrincipal user) =>
+        user?.FindFirstValue(PlatformConstants.Security.Claims.OperatorUserName).EmptyToNull() ?? user?.GetUserName();
 
     public virtual Task<PreviewAuthCodeTicket> RedeemAsync(string code, CancellationToken cancellationToken = default)
     {
