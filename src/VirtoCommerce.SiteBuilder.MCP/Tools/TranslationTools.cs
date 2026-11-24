@@ -261,7 +261,7 @@ public sealed class TranslationItem
     public string Language { get; set; }
 
     [JsonPropertyName("text")]
-    [Description("The translated text.")]
+    [Description(SettingValues.TextDescription)]
     public string Text { get; set; }
 
     [JsonPropertyName("source_revision_date")]

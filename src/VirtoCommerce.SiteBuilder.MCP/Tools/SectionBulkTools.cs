@@ -62,7 +62,7 @@ public class SectionBulkTools(
         [Description("With setting_path: text the setting contains, ignoring case.")] string setting_contains = null,
         [Description("With setting_path: compare only this language's text of a setting that holds a text per language.")] string setting_language = null,
         [Description("set_section_settings: the values to set, as in edit_page_draft: a key is a setting name or a " +
-            "dotted path ('title', 'button.url', 'blocks.b1.text'); null removes the setting.")] Dictionary<string, JsonNode> settings = null,
+            "dotted path ('title', 'button.url', 'blocks.b1.text'); null removes the setting. " + SettingValues.Description)] Dictionary<string, JsonNode> settings = null,
         [Description("set_section_settings: the language whose text the values set, for settings that hold a text per language.")] string text_language = null,
         [Description("true to scan and show the change without starting it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
