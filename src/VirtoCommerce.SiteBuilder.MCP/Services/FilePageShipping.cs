@@ -27,13 +27,7 @@ public class FilePageShipping(
     public async Task<SiteBuilderChange> ShipAsync(ClaimsPrincipal user, FilePageShipCall call, CancellationToken cancellationToken)
     {
         var page = await FilePages.LoadAsync(authorizationService, user, call.StoreId, call.PageId);
-        var owner = string.IsNullOrWhiteSpace(call.DraftOwner) ? user?.Identity?.Name : call.DraftOwner.Trim();
-        if (call.DryRun && !string.Equals(owner, user?.Identity?.Name, StringComparison.Ordinal))
-        {
-            throw new McpException($"{DraftOwnerArgument} '{owner}' is another user: a dry run reviews your own draft of page '{page.PageId}' only. " +
-                $"Omit {DraftOwnerArgument}.");
-        }
-
+        var owner = GetDraftOwner(user, page, call);
         var change = new SiteBuilderChange
         {
             Action = call.Publish ? "publish_page" : "unpublish_page",
@@ -56,6 +50,18 @@ public class FilePageShipping(
         }
 
         return change;
+    }
+
+    private static string GetDraftOwner(ClaimsPrincipal user, FilePage page, FilePageShipCall call)
+    {
+        var owner = string.IsNullOrWhiteSpace(call.DraftOwner) ? user?.Identity?.Name : call.DraftOwner.Trim();
+        if (call.DryRun && !string.Equals(owner, user?.Identity?.Name, StringComparison.Ordinal))
+        {
+            throw new McpException($"{DraftOwnerArgument} '{owner}' is another user: a dry run reviews your own draft of page '{page.PageId}' only. " +
+                $"Omit {DraftOwnerArgument}.");
+        }
+
+        return owner;
     }
 
     private Task<SiteBuilderOperationResult<FilePageShipment>> RunAsync(ClaimsPrincipal user, FilePage page, FilePageShipCall call, SiteBuilderChange pinned,
