@@ -389,6 +389,38 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task InGit_ADryRunOfAnotherUsersDraft_IsRefused_AndReadsNothing()
+    {
+        SetUpGit();
+        _heads["colleague"] = "colleagues-head";
+
+        var result = await _context.CallAsync(Publisher(), "publish_page",
+            new Dictionary<string, object>(FilePage()) { ["draft_owner"] = "colleague", ["dryRun"] = true });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("another user", result.Error, StringComparison.Ordinal);
+        _context.FilePageOperations.Verify(x => x.PublishAsync(It.IsAny<FilePagePublishOperationRequest>(), It.IsAny<ClaimsPrincipal>(),
+            It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public async Task InGit_AnotherUsersDraft_IsNotSubmittedForApproval()
+    {
+        SetUpGit();
+        _heads["colleague"] = "colleagues-head";
+
+        var result = await _context.CallAsync(Publisher(), "unpublish_page", new Dictionary<string, object>(FilePage())
+        {
+            ["draft_owner"] = "colleague",
+            ["expected_versions"] = new Dictionary<string, string> { [PageId] = "colleagues-head" },
+        });
+
+        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
+        Assert.Contains("another user", result.Error, StringComparison.Ordinal);
+        Assert.Empty(_shipped);
+    }
+
+    [Fact]
     public async Task InGit_AnUnpublishReviewedWithNoDraftBranch_ShipsTheRequestersDeletionOfThePublishedPageReviewed()
     {
         SetUpGit();

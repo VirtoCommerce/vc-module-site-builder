@@ -28,6 +28,12 @@ public class FilePageShipping(
     {
         var page = await FilePages.LoadAsync(authorizationService, user, call.StoreId, call.PageId);
         var owner = string.IsNullOrWhiteSpace(call.DraftOwner) ? user?.Identity?.Name : call.DraftOwner.Trim();
+        if (call.DryRun && !string.Equals(owner, user?.Identity?.Name, StringComparison.Ordinal))
+        {
+            throw new McpException($"{DraftOwnerArgument} '{owner}' is another user: a dry run reviews your own draft of page '{page.PageId}' only. " +
+                $"Omit {DraftOwnerArgument}.");
+        }
+
         var change = new SiteBuilderChange
         {
             Action = call.Publish ? "publish_page" : "unpublish_page",

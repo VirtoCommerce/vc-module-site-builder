@@ -30,7 +30,7 @@ public class PagePublishingTools(
     private const string SettingsKeyPrefix = "settings:";
 
     private const string DraftOwnerDescription = "With a page stored as a file in git: the user whose draft branch is shipped, as the dry run " +
-        "answers it in draft_owner (your own when you omit it on the dry run). Send it back unchanged, so that the approver ships the " +
+        "answers it in draft_owner (always your own: omit it on the dry run). Send it back unchanged, so that the approver ships the " +
         "reviewed draft and not their own. Not used for other pages.";
 
     [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
