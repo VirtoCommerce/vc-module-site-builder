@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
 import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
@@ -190,7 +191,7 @@ describe("the preview", () => {
       window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data }));
       await flushPromises();
 
-      expect(wrapper.find(".pd__frame-wait").exists()).toBe(false);
+      await vi.waitFor(() => expect(wrapper.find(".pd__frame-wait").exists()).toBe(false));
       expect(wrapper.text()).not.toContain(NO_STOREFRONT);
     } finally {
       wrapper.unmount();
@@ -686,8 +687,15 @@ describe("the theme's custom section types", () => {
       window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data: { source: "preview", type, data } }));
       await flushPromises();
     };
-    const load = (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+    const sendLoaded = (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
       fromPreview("loaded", { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [], ...extra });
+    const renders = () => posted.mock.calls.filter(([message]) => (message as { type: string }).type === "render").length;
+    // crypto.subtle answers the catalog's SHA-256 after the promises flushPromises waits for, so the handshake may go out later.
+    const load = async (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+      const sent = renders();
+      await sendLoaded(hash, sections, extra);
+      await vi.waitFor(() => expect(renders()).toBeGreaterThan(sent));
+    };
     const lastDraft = () =>
       posted.mock.calls
         .map(([message]) => message as { type: string; theme?: Record<string, unknown> })
@@ -701,6 +709,7 @@ describe("the theme's custom section types", () => {
     const notice = () => wrapper.findComponent(SectionTree).props("customSectionsNotice");
     return {
       load,
+      sendLoaded,
       resolved: (data: unknown) => fromPreview("resolved", data),
       frameLoaded: () => frame.dispatchEvent(new Event("load")),
       lastDraft,
@@ -731,7 +740,9 @@ describe("the theme's custom section types", () => {
       ["custom-hero", "Hero"],
       ["text", "Text"],
     ]);
-    expect(platform.to("/api/site-builder/catalog").map((x) => x.query.hash)).toEqual(["c0ffee01", "c0ffee02"]);
+    const asked = platform.to("/api/site-builder/catalog").map((x) => x.query.hash);
+    expect(asked).toHaveLength(2);
+    expect(new Set(asked).size).toBe(2);
   });
 
   it("leave the preview where the user scrolled it, and the template it reported, when a type change sends loaded again", async () => {
@@ -755,7 +766,7 @@ describe("the theme's custom section types", () => {
     expect(templateNote()).not.toBe(reported);
   });
 
-  it("leave the catalog the designer uploads as the storefront sent it, names by language and kit included", async () => {
+  it("upload the storefront's catalog with its kit but without the custom types, which the server reads from the theme", async () => {
     const page = await openPage([]);
     platform.on("GET", "/api/site-builder/catalog", status(404)).on("PUT", "/api/site-builder/catalog", "");
     const sections = { "custom-hero": { name: { "en-US": "Hero", "de-DE": "Held" }, custom: true, settings: [] } };
@@ -764,8 +775,30 @@ describe("the theme's custom section types", () => {
     await page.load("c0ffee03", sections, { kit });
 
     const [upload] = platform.to("/api/site-builder/catalog", "PUT");
-    expect(upload.body).toMatchObject({ hash: "c0ffee03", sections, kit });
+    expect(upload.body).toMatchObject({ hash: "c0ffee03", kit });
+    expect(upload.body.sections).not.toHaveProperty("custom-hero");
     expect(page.designer.schemas.value.sections["custom-hero"].name).toBe("Hero");
+    const sha = createHash("sha256").update(JSON.stringify(upload.body), "utf8").digest("hex");
+    expect(platform.to("/api/site-builder/catalog", "GET").at(-1)?.query.hash).toBe(sha);
+    expect(page.designer.handshake.value?.hash).toBe(sha);
+  });
+
+  it("have no catalog hash until the catalog is checked, and keep the one loaded last when an earlier check answers last", async () => {
+    const page = await openPage([]);
+    let answerEarlier = () => {};
+    platform.on("GET", "/api/site-builder/catalog", () => new Promise((resolve) => (answerEarlier = () => resolve({}))));
+    await page.sendLoaded("c0ffee06", { text: { name: "Text" } });
+    await vi.waitFor(() => expect(platform.to("/api/site-builder/catalog")).toHaveLength(1));
+    expect(page.designer.handshake.value?.hash).toBeUndefined();
+    platform.on("GET", "/api/site-builder/catalog", {});
+    await page.load("c0ffee07", { hero: { name: "Hero" } });
+    const [earlier, later] = platform.to("/api/site-builder/catalog").map((x) => x.query.hash);
+
+    answerEarlier();
+    await flushPromises();
+
+    expect(later).not.toBe(earlier);
+    expect(page.designer.handshake.value?.hash).toBe(later);
   });
 
   it("are read again when the AI assistant creates one without placing it", async () => {

@@ -882,7 +882,6 @@ const bridge = usePreviewBridge({
     // A new document reports what its rules picked again.
     if (newDocument) reported.value = undefined;
     designer.handshake.value = {
-      hash: loaded.hash,
       capabilities: loaded.capabilities,
       conditions: loaded.conditions,
       builtInTemplates: loaded.builtInTemplates,
@@ -896,10 +895,12 @@ const bridge = usePreviewBridge({
   },
   // Saves, publications and agents check the theme against the catalog of the storefront previewed.
   prepare: async (loaded) => {
-    await Promise.all([
+    const [hash] = await Promise.all([
       designer.storeId.value ? ensureCatalog(designer.storeId.value, loaded.catalog, { has: hasCatalog, upload: uploadCatalog }) : undefined,
       previewAs.refresh(),
     ]);
+    // A later `loaded` has a catalog of its own.
+    if (bridge.loaded.value === loaded && designer.handshake.value) designer.handshake.value = { ...designer.handshake.value, hash };
   },
   // A reloaded frame has lost everything; one whose catalog changed is still where the user scrolled it.
   handshake: (newDocument) =>

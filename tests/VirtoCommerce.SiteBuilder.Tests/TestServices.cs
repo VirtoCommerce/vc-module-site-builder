@@ -207,6 +207,8 @@ internal static class TestServices
         public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
+
+        public Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
     }
 
     private sealed class AssetUrls(string publicUrl) : IBlobUrlResolver

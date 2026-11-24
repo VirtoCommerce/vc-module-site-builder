@@ -27,10 +27,12 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
-    private async Task SeedAsync()
+    private async Task<string> SeedAsync()
     {
-        await _context.SeedThemeAsync(StoreA);
+        var catalog = await _context.SeedThemeAsync(StoreA);
         _context.SeedThemeFile(StoreA, "templates/product.bicycles.json", ProductTemplate, draft: true);
+
+        return catalog;
     }
 
     private async Task<ThemePublication> DryRunAsync() =>
@@ -109,9 +111,9 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
     [Fact]
     public async Task TheDryRun_AnswersTheCatalogTheThemeIsCheckedAgainst()
     {
-        await SeedAsync();
+        var catalog = await SeedAsync();
 
-        Assert.Equal($"catalog-{StoreA}", (await DryRunAsync()).CatalogHash);
+        Assert.Equal(catalog, (await DryRunAsync()).CatalogHash);
     }
 
     [Fact]

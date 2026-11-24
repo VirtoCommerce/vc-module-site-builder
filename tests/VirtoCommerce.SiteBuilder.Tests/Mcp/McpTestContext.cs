@@ -461,7 +461,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService(),
             TestServices.CustomSectionValidator());
 
-    public Task SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null, string kit = null)
+    public Task<string> SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null, string kit = null)
     {
         var catalog = new Newtonsoft.Json.Linq.JObject
         {
@@ -518,15 +518,17 @@ internal sealed class McpTestContext : IAsyncDisposable
         }
         """;
 
-    public async Task SeedThemeAsync(string storeId, string kit = null)
+    public async Task<string> SeedThemeAsync(string storeId, string kit = null)
     {
         var tokens = new Newtonsoft.Json.Linq.JObject
         {
             ["light"] = new Newtonsoft.Json.Linq.JArray(StorefrontPaletteTokens.Light),
             ["dark"] = new Newtonsoft.Json.Linq.JArray(StorefrontPaletteTokens.Dark),
         };
-        await SeedCatalogAsync(storeId, ThemeSections, tokens.ToString(), kit);
+        var catalog = await SeedCatalogAsync(storeId, ThemeSections, tokens.ToString(), kit);
         SeedThemeFile(storeId, "templates/product.json", ProductTemplate);
+
+        return catalog;
     }
 
     public void SeedThemeFile(string storeId, string pathInTheme, string content, bool draft = false) =>

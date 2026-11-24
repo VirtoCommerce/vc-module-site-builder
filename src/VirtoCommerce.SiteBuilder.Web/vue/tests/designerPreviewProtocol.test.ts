@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createPreviewChannel } from "../src/modules/designer/preview";
 import {
@@ -16,7 +17,6 @@ import {
   selectionFrom,
   storefrontPath,
   storefrontRoute,
-  type Catalog,
   type ColorScheme,
   type DesignerMessage,
   type Loaded,
@@ -353,11 +353,15 @@ test("a page type without rules of its own: the storefront's id names one of its
 });
 
 const catalog = (parseLoaded(loadedData()) as Loaded).catalog;
+const text = JSON.stringify(catalog);
+const sha = createHash("sha256").update(text, "utf8").digest("hex");
 
 function fakeServer(has: (hash: string) => boolean | Error, upload: () => void | Error = () => undefined) {
   const calls: string[] = [];
+  const sent: string[] = [];
   return {
     calls,
+    sent,
     api: {
       has: async (storeId: string, hash: string) => {
         calls.push(`GET ${storeId} ${hash}`);
@@ -365,8 +369,9 @@ function fakeServer(has: (hash: string) => boolean | Error, upload: () => void |
         if (result instanceof Error) throw result;
         return result;
       },
-      upload: async (storeId: string, sent: Catalog) => {
-        calls.push(`PUT ${storeId} ${sent.hash}`);
+      upload: async (storeId: string, body: string) => {
+        calls.push(`PUT ${storeId}`);
+        sent.push(body);
         const result = upload();
         if (result instanceof Error) throw result;
       },
@@ -376,43 +381,61 @@ function fakeServer(has: (hash: string) => boolean | Error, upload: () => void |
 const status = (code: number) => Object.assign(new Error(String(code)), { status: code });
 
 test("a catalog the server has is not uploaded, and not asked about again", async () => {
-  const known = new Map<string, Set<string>>();
+  const known = new Map<string, Map<string, string>>();
   const server = fakeServer(() => true);
-  await ensureCatalog("b2b", catalog, server.api, known);
-  await ensureCatalog("b2b", catalog, server.api, known);
-  assert.deepEqual(server.calls, ["GET b2b 0badc0de"]);
+  assert.equal(await ensureCatalog("b2b", catalog, server.api, known), sha);
+  assert.equal(await ensureCatalog("b2b", catalog, server.api, known), sha);
+  assert.deepEqual(server.calls, [`GET b2b ${sha}`]);
 });
 
-test("a catalog the server lacks is uploaded with its hash, once per store", async () => {
-  const known = new Map<string, Set<string>>();
-  let sent: Catalog | undefined;
+test("a catalog the server lacks is uploaded as the text its SHA-256 names, once per store", async () => {
+  const known = new Map<string, Map<string, string>>();
   const server = fakeServer(() => false);
-  const api = { ...server.api, upload: async (storeId: string, value: Catalog) => ((sent = value), server.api.upload(storeId, value)) };
-  await ensureCatalog("b2b", catalog, api, known);
-  await ensureCatalog("b2b", catalog, api, known);
-  await ensureCatalog("b2c", catalog, api, known);
-  assert.deepEqual(server.calls, ["GET b2b 0badc0de", "PUT b2b 0badc0de", "GET b2c 0badc0de", "PUT b2c 0badc0de"]);
-  assert.equal(sent?.hash, "0badc0de");
-  assert.equal("protocol" in (sent ?? {}), false);
+  const hashes = [
+    await ensureCatalog("b2b", catalog, server.api, known),
+    await ensureCatalog("b2b", catalog, server.api, known),
+    await ensureCatalog("b2c", catalog, server.api, known),
+  ];
+  assert.deepEqual(hashes, [sha, sha, sha]);
+  assert.deepEqual(server.calls, [`GET b2b ${sha}`, "PUT b2b", `GET b2c ${sha}`, "PUT b2c"]);
+  assert.deepEqual(server.sent, [text, text]);
+  assert.equal(JSON.parse(text).hash, "0badc0de");
+  assert.equal("protocol" in JSON.parse(text), false);
 });
 
-test("a failed upload is logged and tried again; an editor who may not upload it skips it quietly", async () => {
-  const known = new Map<string, Set<string>>();
+test("a catalog is uploaded without the custom types the draft adds, so the same storefront names the same catalog", async () => {
+  const withTypes = { ...catalog, sections: { ...catalog.sections, "custom-hero": { name: "Hero", custom: true, settings: [] } } };
+  const server = fakeServer(() => false);
+  assert.equal(await ensureCatalog("b2b", withTypes, server.api, new Map()), sha);
+  assert.deepEqual(server.sent, [text]);
+});
+
+test("a storefront hash already known answers its catalog's hash without hashing the catalog again", async () => {
+  const known = new Map([["b2b", new Map([["0badc0de", "f".repeat(64)]])]]);
+  const server = fakeServer(() => false);
+  assert.equal(await ensureCatalog("b2b", catalog, server.api, known), "f".repeat(64));
+  assert.deepEqual(server.calls, []);
+});
+
+test("a failed upload is logged and tried again; an editor who may not upload it skips it quietly; both still get the hash", async () => {
+  const known = new Map<string, Map<string, string>>();
   const failing = fakeServer(() => false, () => status(500));
+  const hashes: string[] = [];
   const logged = await warnings(async () => {
-    await ensureCatalog("b2b", catalog, failing.api, known);
-    await ensureCatalog("b2b", catalog, failing.api, known);
+    hashes.push(await ensureCatalog("b2b", catalog, failing.api, known));
+    hashes.push(await ensureCatalog("b2b", catalog, failing.api, known));
   });
   assert.equal(logged.length, 2);
-  assert.deepEqual(failing.calls, ["GET b2b 0badc0de", "PUT b2b 0badc0de", "GET b2b 0badc0de", "PUT b2b 0badc0de"]);
+  assert.deepEqual(failing.calls, [`GET b2b ${sha}`, "PUT b2b", `GET b2b ${sha}`, "PUT b2b"]);
 
   const forbidden = fakeServer(() => false, () => status(403));
   const quiet = await warnings(async () => {
-    await ensureCatalog("b2c", catalog, forbidden.api, known);
-    await ensureCatalog("b2c", catalog, forbidden.api, known);
+    hashes.push(await ensureCatalog("b2c", catalog, forbidden.api, known));
+    hashes.push(await ensureCatalog("b2c", catalog, forbidden.api, known));
   });
   assert.equal(quiet.length, 0);
-  assert.deepEqual(forbidden.calls, ["GET b2c 0badc0de", "PUT b2c 0badc0de"]);
+  assert.deepEqual(forbidden.calls, [`GET b2c ${sha}`, "PUT b2c"]);
+  assert.deepEqual(hashes, [sha, sha, sha, sha]);
 });
 
 function channel(options: { prepare?: () => Promise<void>; colorScheme?: () => ColorScheme } = {}) {

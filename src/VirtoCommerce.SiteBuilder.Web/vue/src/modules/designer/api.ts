@@ -221,8 +221,9 @@ export async function hasCatalog(storeId: string, hash: string): Promise<boolean
   return !!(await find(catalogUrl({ storeId, hash })));
 }
 
-export async function uploadCatalog(storeId: string, catalog: object) {
-  await call(catalogUrl({ storeId }), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(catalog) });
+/** The server names the catalog by the SHA-256 of this exact text. */
+export async function uploadCatalog(storeId: string, catalog: string) {
+  await call(catalogUrl({ storeId }), { method: "PUT", headers: { "Content-Type": "application/json" }, body: catalog });
 }
 
 export async function generatePalette(storeId: string, tokens: PaletteTokens, primary: string, secondary?: string | null): Promise<GeneratedPalettes> {

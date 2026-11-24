@@ -117,7 +117,7 @@ export function usePreviewBridge(options: Omit<PreviewChannelOptions, "post"> & 
   window.addEventListener("message", onMessage);
   onBeforeUnmount(() => window.removeEventListener("message", onMessage));
 
-  return { connected: channel.connected, unsupported: channel.unsupported, send: channel.send, onFrameLoad: channel.frameLoaded };
+  return { connected: channel.connected, unsupported: channel.unsupported, loaded: channel.loaded, send: channel.send, onFrameLoad: channel.frameLoaded };
 }
 
 export function storefrontPage(storefrontUrl: string | undefined, path: string): URL | undefined {

@@ -58,10 +58,10 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_CustomSectionType_IsSavedAsADraftWithItsWarnings()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var hero = HeroWith(template: "<section><h2>Sale</h2><p>{{ settings.title }}</p></section>");
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, hero))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, hero)), catalog), _user, Ct);
 
         Assert.True(result.Succeeded);
         Assert.Equal(hero, _live.Files[Theme($"{Hero}-draft")]);
@@ -73,10 +73,10 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_CustomSectionType_IsCheckedOnceBeforeTheWrite()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var validator = new CountingValidator(TestServices.CustomSectionValidator());
 
-        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section><h2>Sale</h2></section>")))), _user, Ct);
+        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section><h2>Sale</h2></section>"))), catalog), _user, Ct);
 
         Assert.True(result.Succeeded);
         Assert.Equal(1, validator.Checked);
@@ -86,8 +86,8 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_DryRunOfACustomSectionType_AnswersItsWarningsAndWritesNothing()
     {
-        await SaveCatalogAsync();
-        var request = SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { color: #000; }"))));
+        var catalog = await SaveCatalogAsync();
+        var request = SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { color: #000; }"))), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -102,8 +102,8 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_DryRunOfAMaskFromAGradient_AnswersWithNoWarning()
     {
-        await SaveCatalogAsync();
-        var request = SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { mask-image: linear-gradient(to bottom, black 60%, transparent); }"))));
+        var catalog = await SaveCatalogAsync();
+        var request = SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { mask-image: linear-gradient(to bottom, black 60%, transparent); }"))), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -115,9 +115,9 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_CustomSectionTypeThatBreaksARule_IsInvalidAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section onclick=\"go()\"></section>")))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section onclick=\"go()\"></section>"))), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Equal(["custom-sections/custom-hero.json: <section> at line 1 has an attribute a custom section cannot use, 'onclick': it runs script"], result.Errors);
@@ -127,12 +127,12 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_KitTag_IsCheckedAgainstTheKitOfTheCatalogTheSaveNames()
     {
-        await SaveCatalogAsync(kit: Kit);
+        var catalog = await SaveCatalogAsync(kit: Kit);
         const string button = "<section><vc-button label=\"{{ settings.title }}\"></vc-button></section>";
         const string badge = "<section><vc-badge label=\"{{ settings.title }}\"></vc-badge></section>";
 
-        var saved = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: button)))), _user, Ct);
-        var refused = await Operations().SaveAsync(SaveRequest(Save(null, ("default/custom-sections/custom-badge.json", HeroWith(template: badge)))), _user, Ct);
+        var saved = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: button))), catalog), _user, Ct);
+        var refused = await Operations().SaveAsync(SaveRequest(Save(null, ("default/custom-sections/custom-badge.json", HeroWith(template: badge))), catalog), _user, Ct);
 
         Assert.True(saved.Succeeded, saved.Error);
         Assert.Equal(["custom-sections/custom-badge.json: <vc-badge> at line 1 is not a kit tag the storefront offers"], refused.Errors);
@@ -141,12 +141,12 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_ThemeHoldingATypeThatBreaksARule_SavesTheFilesThatDoNotWriteIt()
     {
-        await SaveCatalogAsync(""", "site-header": {}""");
+        var catalog = await SaveCatalogAsync(""", "site-header": {}""");
         _live.Files[Theme($"{Hero}-draft")] = HeroWith(template: "<section onclick=\"go()\"></section>");
         const string headerFile = """{ "content": [ { "id": "h", "type": "site-header" } ] }""";
 
-        var header = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", headerFile))), _user, Ct);
-        var template = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-hero")))), _user, Ct);
+        var header = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", headerFile)), catalog), _user, Ct);
+        var template = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-hero"))), catalog), _user, Ct);
 
         Assert.True(header.Succeeded, header.Error);
         Assert.True(template.Succeeded, template.Error);
@@ -206,7 +206,7 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task PreviewSaveAsync_PagePlacingATypeOfTheStoresTheme_IsSanitizedWhateverThemeItsFilesAreIn()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         var command = new DesignerSaveCommand
         {
@@ -215,7 +215,7 @@ public class CustomSectionSaveTests
             Group = await _pages.GetByIdAsync("g1"),
             PageContent = """{"settings":{},"content":[{"id":"a","type":"custom-hero","body":"<p>Hi</p><img src=x onerror=alert(1)>"}]}""",
             ThemeFiles = [new DesignerSaveFile { Path = "other/templates/page.json", Content = """{"settings":{},"content":[]}""" }],
-            CatalogHash = Catalog,
+            CatalogHash = catalog,
         };
 
         await Designer().PreviewSaveAsync(command, _user, Ct);
@@ -245,9 +245,9 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_FileOfTheFolderNamedAsNoType_IsInvalid()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/custom-sections/Hero.json", HeroFile))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/custom-sections/Hero.json", HeroFile)), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Equal(["custom-sections/Hero.json: 'Hero' is not a custom section type, which matches ^custom-[a-z0-9]+(?:-[a-z0-9]+)*$ and has at most 64 characters"],
@@ -257,10 +257,10 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TemplatePlacingACustomTypeOfTheDrafts_IsSaved()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-hero")))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-hero"))), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
         Assert.True(_live.Files.ContainsKey(Theme($"{Product}-draft")));
@@ -269,9 +269,9 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TypeAndATemplateThatPlacesIt_AreSavedTogether()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroFile), (Product, TemplateOf("product-info", "custom-hero")))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroFile), (Product, TemplateOf("product-info", "custom-hero"))), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
     }
@@ -279,11 +279,11 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_HeaderGroupPlacingACustomType_IsInvalidAndWritesNothing()
     {
-        await SaveCatalogAsync(""", "site-header": {}""");
+        var catalog = await SaveCatalogAsync(""", "site-header": {}""");
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         const string header = """{ "content": [ { "id": "h", "type": "site-header" }, { "id": "promo", "type": "custom-hero" } ] }""";
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", header))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", header)), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], result.Errors);
@@ -293,11 +293,11 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_HeaderGroupPlacingACustomTypeAsABlock_IsInvalidAndWritesNothing()
     {
-        await SaveCatalogAsync(""", "site-header": {}""");
+        var catalog = await SaveCatalogAsync(""", "site-header": {}""");
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         const string header = """{ "content": [ { "id": "h", "type": "site-header", "blocks": [ { "id": "promo", "type": "custom-hero" } ] } ] }""";
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", header))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/header-group.json", header)), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], result.Errors);
@@ -307,9 +307,9 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TemplatePlacingACustomTypeOnlyThePreviewSaw_IsInvalid()
     {
-        await SaveCatalogAsync(""", "custom-old": { "settings": [], "custom": true }""");
+        var catalog = await SaveCatalogAsync(""", "custom-old": { "settings": [], "custom": true }""");
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-old")))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-old"))), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Equal(["templates/product.json: 's1' has a type the storefront does not have, 'custom-old'"], result.Errors);
@@ -318,7 +318,7 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TemplateWithASectionList_TakesACustomTypeUnlessItNamesOtherTemplates()
     {
-        await new SchemaCatalogService(_themes).SaveAsync("s1",
+        var catalog = await new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""
             {
               "hash": "{{Catalog}}",
@@ -333,7 +333,7 @@ public class CustomSectionSaveTests
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         _live.Files[Theme("default/custom-sections/custom-listing.json-draft")] = listing.ToString();
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-hero", "custom-listing")))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Product, TemplateOf("product-info", "custom-hero", "custom-listing"))), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Equal(["templates/product.json: a product template cannot hold the section 's2' of type 'custom-listing'"], result.Errors);
@@ -342,7 +342,7 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_RichTextOfACustomSectionOnAPage_IsSavedSanitized()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         var page = new DesignerSavePage
         {
@@ -351,7 +351,7 @@ public class CustomSectionSaveTests
             Content = """{"settings":{},"content":[{"id":"a","type":"custom-hero","body":"<p>Hi</p><img src=x onerror=alert(1)>"}]}""",
         };
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(page)), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(page), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
         var saved = await _pages.LoadGroupContentAsync(await _pages.GetByIdAsync("g1"), draft: true, Ct);
@@ -363,7 +363,7 @@ public class CustomSectionSaveTests
     [InlineData("custom-hero", 1)]
     public async Task SaveAsync_OfAPage_ReadsTheThemesTypesOnlyWhenItPlacesOne(string type, int reads)
     {
-        await SaveCatalogAsync(sections: """, "text": {}""");
+        var catalog = await SaveCatalogAsync(sections: """, "text": {}""");
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         var service = new CountingService(new CustomSectionService(_themes, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance)));
         var page = new DesignerSavePage
@@ -373,7 +373,7 @@ public class CustomSectionSaveTests
             Content = $$"""{"settings":{},"content":[{"id":"a","type":"{{type}}"}]}""",
         };
 
-        var result = await Operations(customSectionService: service).SaveAsync(SaveRequest(Save(page)), _user, Ct);
+        var result = await Operations(customSectionService: service).SaveAsync(SaveRequest(Save(page), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
         Assert.Equal(reads, service.Reads);
@@ -382,7 +382,7 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_OfAPage_ReadsOnlyTheTypesItPlaces()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         _live.Files[Theme("default/custom-sections/custom-other.json")] = HeroFile;
         var page = new DesignerSavePage
@@ -392,7 +392,7 @@ public class CustomSectionSaveTests
             Content = """{"settings":{},"content":[{"id":"a","type":"custom-hero"}]}""",
         };
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(page)), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(page), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
         Assert.Equal([Theme($"{Hero}-draft")], _live.Read.Where(x => x.Contains("/custom-sections/", System.StringComparison.Ordinal)));
@@ -401,7 +401,7 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_OfAPagePlacingTypesTheThemeDoesNotHold_ReadsNoTypeFile()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme($"{Hero}-draft")] = HeroFile;
         var content = new JObject
         {
@@ -415,7 +415,7 @@ public class CustomSectionSaveTests
             Content = content.ToString(Newtonsoft.Json.Formatting.None),
         };
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(page)), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(page), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
         Assert.DoesNotContain(_live.LookedUp, x => x.Contains("/custom-sections/", System.StringComparison.Ordinal));
@@ -437,7 +437,7 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TypeThatGrowsTheTypesPastTheirCount_IsRefusedOnTheirCountBeforeItIsChecked()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         foreach (var type in Enumerable.Range(0, CustomSectionValidator.MaxTypes).Select(x => $"custom-t{x}"))
         {
             _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroFile;
@@ -445,7 +445,7 @@ public class CustomSectionSaveTests
 
         var validator = new CountingValidator(TestServices.CustomSectionValidator());
 
-        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroFile))), _user, Ct);
+        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroFile)), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Equal(["custom-sections: the theme holds 257 custom section types, more than 256: the snapshot carries every type to every page"], result.Errors);
@@ -455,13 +455,13 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TypesAlreadyOverTheirCount_SavesAChangeToOneOfThem()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         foreach (var type in Enumerable.Range(0, CustomSectionValidator.MaxTypes).Select(x => $"custom-t{x}").Append("custom-hero"))
         {
             _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroFile;
         }
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { color: var(--color-neutral-800); }")))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: ":scope { color: var(--color-neutral-800); }"))), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
     }
@@ -469,14 +469,14 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TypesTogetherOverTheLimit_IsInvalid()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var padding = $"/* {new string('x', 60 * 1024)} */";
         foreach (var type in new[] { "custom-a", "custom-b", "custom-c", "custom-d" })
         {
             _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroWith(css: padding);
         }
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: padding)))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: padding))), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.StartsWith("custom-sections: the custom section types are ", Assert.Single(result.Errors));
@@ -486,7 +486,7 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_TypeThatGrowsTheTypesPastTheLimit_IsRefusedOnTheirSizeBeforeItIsChecked()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var padding = $"/* {new string('x', 60 * 1024)} */";
         foreach (var type in new[] { "custom-a", "custom-b", "custom-c", "custom-d" })
         {
@@ -495,7 +495,7 @@ public class CustomSectionSaveTests
 
         var validator = new CountingValidator(TestServices.CustomSectionValidator());
 
-        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section onclick=\"go()\"></section>", css: padding)))),
+        var result = await Operations(validator).SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(template: "<section onclick=\"go()\"></section>", css: padding))), catalog),
             _user, Ct);
 
         Assert.StartsWith("custom-sections: the custom section types are ", Assert.Single(result.Errors));
@@ -507,11 +507,11 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_OfACustomSectionType_ReadsEachTypeOfTheThemeOnce()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme("default/custom-sections/custom-a.json-draft")] = HeroFile;
         _live.Files[Theme("default/custom-sections/custom-b.json")] = HeroFile;
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroFile))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroFile)), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
         Assert.Equal([Theme("default/custom-sections/custom-a.json-draft"), Theme("default/custom-sections/custom-b.json")],
@@ -521,9 +521,9 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_CustomSectionTypeNamedFromTheRoot_AnswersItsWarnings()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, ($"/{Hero}", HeroWith(template: "<section><h2>Sale</h2></section>")))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ($"/{Hero}", HeroWith(template: "<section><h2>Sale</h2></section>"))), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
         Assert.Equal(["the template holds text of its own ('Sale'), which is the same in every language: bind it to a translatable setting"],
@@ -533,11 +533,11 @@ public class CustomSectionSaveTests
     [Fact]
     public async Task SaveAsync_FooterGroupWithABlockOfTheCatalogNamedLikeACustomType_IsSaved()
     {
-        await new SchemaCatalogService(_themes).SaveAsync("s1",
+        var catalog = await new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "site-footer": {} }, "blocks": { "custom-links": {} }, "shared": {} }""", Ct);
         const string footer = """{ "content": [ { "id": "f", "type": "site-footer", "blocks": [ { "id": "b1", "type": "custom-links" } ] } ] }""";
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/footer-group.json", footer))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, ("default/sections/footer-group.json", footer)), catalog), _user, Ct);
 
         Assert.True(result.Succeeded, result.Error);
     }
@@ -547,7 +547,7 @@ public class CustomSectionSaveTests
     [InlineData(true, SiteBuilderOperationStatus.Invalid)]
     public async Task SaveAsync_TypesAlreadyOverTheLimit_IsRefusedOnlyWhenItGrowsThem(bool grows, SiteBuilderOperationStatus status)
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var padding = $"/* {new string('x', 60 * 1024)} */";
         foreach (var type in new[] { "custom-a", "custom-b", "custom-c", "custom-d", "custom-e", "custom-hero" })
         {
@@ -555,7 +555,7 @@ public class CustomSectionSaveTests
         }
 
         // each part stays under its own limit, so only the total refuses it
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: grows ? $"/* {new string('x', 62 * 1024)} */" : null)))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Hero, HeroWith(css: grows ? $"/* {new string('x', 62 * 1024)} */" : null))), catalog), _user, Ct);
 
         Assert.Equal(status, result.Status);
         Assert.Equal(grows, result.Errors?.SingleOrDefault()?.StartsWith("custom-sections: the custom section types are ", System.StringComparison.Ordinal) == true);
@@ -633,8 +633,8 @@ public class CustomSectionSaveTests
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization));
     }
 
-    private static DesignerSaveOperationRequest SaveRequest(DesignerSaveRequest changes) =>
-        new() { StoreId = "s1", Changes = changes, CatalogHash = Catalog, SaveId = "save-0001" };
+    private static DesignerSaveOperationRequest SaveRequest(DesignerSaveRequest changes, string catalogHash) =>
+        new() { StoreId = "s1", Changes = changes, CatalogHash = catalogHash, SaveId = "save-0001" };
 
     private DesignerSaveRequest Save(DesignerSavePage page, params (string Path, string Content)[] themeFiles) => new()
     {

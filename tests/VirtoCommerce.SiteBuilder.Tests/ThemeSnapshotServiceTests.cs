@@ -94,14 +94,15 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     public async Task PublishAsync_Published_WritesThePointerAndTheRecordInTheirStorageFormat()
     {
         _storage.Files[Theme(Product + "-draft")] = Template("product-info");
-        await _catalogs.SaveAsync(StoreId, """{ "hash": "abc12345", "sections": { "product-info": {} } }""", Ct);
+        const string catalogJson = """{ "hash": "abc12345", "sections": { "product-info": {} } }""";
+        var catalog = await _catalogs.SaveAsync(StoreId, catalogJson, Ct);
 
-        await _publisher.PublishAsync(StoreId, "abc12345", null, Ct);
+        await _publisher.PublishAsync(StoreId, catalog, null, Ct);
 
         Assert.Equal("""{"publication":1}""", _storage.Files[Theme(Pointer)]);
         Assert.Equal("""{"defaultLanguage":"en-US"}""", _storage.Files[Theme(Record(1))]);
-        Assert.Equal("""{"hash":"abc12345"}""", _storage.Files[Theme("default/catalogs/current.json")]);
-        Assert.Equal("""{"hash":"abc12345","sections":{"product-info":{}}}""", _storage.Files[Theme("default/catalogs/abc12345.json")]);
+        Assert.Equal($$"""{"hash":"{{catalog}}"}""", _storage.Files[Theme("default/catalogs/current.json")]);
+        Assert.Equal(catalogJson, _storage.Files[Theme($"default/catalogs/{catalog}.json")]);
     }
 
     [Fact]
@@ -344,11 +345,11 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     [Fact]
     public async Task PublishAsync_CatalogRefusesDraft_WritesNothing()
     {
-        await _catalogs.SaveAsync(StoreId, """{ "hash": "abc12345", "sections": { "product-info": {} }, "blocks": {}, "shared": {} }""", Ct);
+        var catalog = await _catalogs.SaveAsync(StoreId, """{ "hash": "abc12345", "sections": { "product-info": {} }, "blocks": {}, "shared": {} }""", Ct);
         _storage.Files[Theme(Product + "-draft")] = Template("product-info", "carousel");
         _storage.Written.Clear();
 
-        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, "abc12345", null, Ct));
+        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Contains("'carousel'", failure.Errors.Single());
         Assert.Empty(_storage.Written);
@@ -358,7 +359,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     [Fact]
     public async Task PublishAsync_DraftWithValueTheCatalogLacks_ThrowsAndWritesNothing()
     {
-        await _catalogs.SaveAsync(StoreId, """
+        var catalog = await _catalogs.SaveAsync(StoreId, """
             {
               "hash": "abc12345",
               "sections": { "product-info": { "settings": [ { "id": "background", "type": "color-token" } ] } },
@@ -368,7 +369,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
         _storage.Files[Theme(Product + "-draft")] = """{ "content": [ { "id": "s0", "type": "product-info", "background": "#ff0000" } ] }""";
         _storage.Written.Clear();
 
-        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, "abc12345", null, Ct));
+        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Equal("templates/product.json: 's0' has a value in 'background' the storefront does not have, '#ff0000'", failure.Errors.Single());
         Assert.Empty(_storage.Written);

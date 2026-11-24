@@ -151,9 +151,9 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_ThemeFileWithTypeTheCatalogLacks_ReturnsBadRequestWithErrorsAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Builder().SaveTemplates("s1", "default", HeaderGroup("site-header", "carousel"), draft: true, catalogHash: Catalog);
+        var result = await Builder().SaveTemplates("s1", "default", HeaderGroup("site-header", "carousel"), draft: true, catalogHash: catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result));
         Assert.Contains("'carousel'", (string)body["errors"]!.Single());
@@ -176,7 +176,7 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_ThemeFilesFitCatalog_SavesDrafts()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var files = new SiteBuilderController.SaveFilesModel
         {
             Files = JsonConvert.SerializeObject(new object[]
@@ -187,7 +187,7 @@ public class SiteBuilderControllerThemeFilesTests
             }),
         };
 
-        Assert.IsType<OkObjectResult>(await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: Catalog));
+        Assert.IsType<OkObjectResult>(await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: catalog));
 
         Assert.True(_live.Files.ContainsKey(Theme($"{Path}-draft")));
         Assert.True(_live.Files.ContainsKey(Theme("default/templates/product.json-draft")));
@@ -197,7 +197,7 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_TemplatePlacingSharedComponent_ReturnsBadRequest()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var files = new SiteBuilderController.SaveFilesModel
         {
             Files = JsonConvert.SerializeObject(new[]
@@ -206,7 +206,7 @@ public class SiteBuilderControllerThemeFilesTests
             }),
         };
 
-        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: Catalog);
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: catalog);
 
         Assert.Contains("shared component", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result))["errors"]!.Single());
     }
@@ -493,7 +493,7 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_ThemeFileNamedAgainFromTheRoot_ReturnsNamingErrorAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var files = new SiteBuilderController.SaveFilesModel
         {
             Files = JsonConvert.SerializeObject(new[]
@@ -503,7 +503,7 @@ public class SiteBuilderControllerThemeFilesTests
             }),
         };
 
-        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: Catalog);
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result));
         Assert.Equal(DesignerThemeFiles.NamingError, (string)body["error"]);

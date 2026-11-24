@@ -136,9 +136,9 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_ThemeFileThatDoesNotFitTheCatalog_IsInvalidWithEachError()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Header, """{ "content": [ { "id": "h", "type": "unknown" } ] }"""))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Header, """{ "content": [ { "id": "h", "type": "unknown" } ] }""")), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.NotEmpty(result.Errors);
@@ -148,13 +148,13 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_DryRun_AnswersTheSanitizedContentOverTheDraftsAndWritesNothing()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string liveHeader = """{ "content": [] }""";
         _live.Files[Theme(Header)] = liveHeader;
         var page = DatabasePage();
         page.Content = """{"settings":{},"content":[{"id":"a","type":"notice","body":"<p>Hi</p><script>alert(1)</script>"}]}""";
         const string header = """{ "content": [ { "id": "h", "type": "notice", "note": { "en-US": "<a href=\"javascript:alert(1)\">x</a>" } } ] }""";
-        var request = SaveRequest(Save(page, (Header, header)));
+        var request = SaveRequest(Save(page, (Header, header)), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -178,11 +178,11 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_DryRunOfAFilePage_AnswersWhatIsPublishedAndWritesNoDraft()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string published = """{"settings":{"type":"settings"},"content":[]}""";
         _live.Files[Page("about.page")] = published;
         const string about = """{"settings":{"type":"settings"},"content":[{"id":"a","type":"notice","body":"<p onclick=\"alert(1)\">About</p>"}]}""";
-        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = about }));
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = about }), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -199,12 +199,12 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_FilePageAtTheReviewedVersion_IsSaved()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string published = """{"settings":{"type":"settings"},"content":[]}""";
         _live.Files[Page("about.page")] = published;
-        var dryRun = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        var dryRun = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }), catalog);
         dryRun.DryRun = true;
-        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }), catalog);
         request.ExpectedFilePageVersion = Assert.Single((await Operations().SaveAsync(dryRun, _user, Ct)).Preview.Objects).ETag;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -217,11 +217,11 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_FilePageDraftSavedSinceTheReview_IsAConflictAndWritesNothing()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string published = """{"settings":{"type":"settings"},"content":[]}""";
         const string saved = """{"settings":{"type":"settings","name":"Saved meanwhile"},"content":[]}""";
         _live.Files[Page("about.page")] = published;
-        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }), catalog);
         request.ExpectedFilePageVersion = SiteBuilderContentVersion.CreateForFileContent(published);
         _live.Files[Page("about.page-draft")] = saved;
 
@@ -235,10 +235,10 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_DryRunOfContentThatCanRunScript_IsInvalidAsTheSaveIs()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var page = DatabasePage();
         page.Content = """{"settings":{},"content":[{"id":"a","type":"text","buttons":[{"url":"javascript:alert(1)"}]}]}""";
-        var request = SaveRequest(Save(page));
+        var request = SaveRequest(Save(page), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);

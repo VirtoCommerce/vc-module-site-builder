@@ -73,12 +73,13 @@ public class SiteBuilderResources(
 
         var language = (await storeService.GetNoCloneAsync(store_id))?.DefaultLanguage;
         var kinds = SchemaKindsListed.ToDictionary(x => x, x => ListSchemas(catalog[x] as JObject, language));
+        var catalogHash = await schemaCatalogService.GetCurrentHashAsync(store_id, cancellationToken);
 
         return Serialize(new
         {
             StoreId = store_id,
             Available = true,
-            CatalogHash = ThemeJson.GetString(catalog, ThemeFiles.CatalogHashKey),
+            CatalogHash = catalogHash,
             Kinds = kinds,
             Note = $"Read one schema with its settings at site-builder://stores/{store_id}/schemas/{{kind}}/{{key}}, for example .../schemas/sections/hero-banner. " +
                 $"A custom section type is the theme's own: read it whole at site-builder://stores/{store_id}/custom-sections/{{type}} and change it with change_section_type; " +

@@ -318,8 +318,7 @@ public class PublicationDryRuns(
 
     public async Task CheckThemeAsync(ClaimsPrincipal user, string storeId, PublishReadiness readiness, CancellationToken cancellationToken)
     {
-        var catalog = await ThemeFiles.GetCatalogAsync(schemaCatalogService, storeId, cancellationToken);
-        var catalogHash = ThemeFiles.GetCatalogHash(catalog);
+        var catalogHash = await schemaCatalogService.GetCurrentHashAsync(storeId, cancellationToken);
         if (catalogHash == null)
         {
             readiness.Findings.Add(Blocker("schema-catalog-missing", "The storefront has not sent its schema catalog, so the theme cannot be checked or published.",

@@ -41,13 +41,10 @@ public static class ThemeFiles
         }
     }
 
-    public static async Task<string> RequireCatalogHashAsync(ISchemaCatalogService schemaCatalogService, string storeId, CancellationToken cancellationToken)
-    {
-        var catalog = await GetCatalogAsync(schemaCatalogService, storeId, cancellationToken);
+    public static async Task<string> RequireCatalogHashAsync(ISchemaCatalogService schemaCatalogService, string storeId, CancellationToken cancellationToken) =>
+        await schemaCatalogService.GetCurrentHashAsync(storeId, cancellationToken) ?? throw NoCatalog(storeId);
 
-        return GetCatalogHash(catalog) ?? throw NoCatalog(storeId);
-    }
-
+    [Obsolete("A catalog is stored under the SHA-256 of its text, whatever its hash property says. Use ISchemaCatalogService.GetCurrentHashAsync.")]
     public static string GetCatalogHash(JsonObject catalog) => catalog?[CatalogHashKey] is JsonValue value && value.TryGetValue<string>(out var hash) ? hash : null;
 
     public static McpException NoCatalog(string storeId) =>

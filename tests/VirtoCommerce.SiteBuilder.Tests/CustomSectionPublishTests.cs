@@ -73,11 +73,11 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_CustomSectionDraft_GoesLiveAndIntoTheSnapshotOfEachLanguage()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme($"{Hero}-draft")] = HeroFile;
         _storage.Files[Theme($"{Product}-draft")] = TemplateOf("product-info", "custom-hero");
 
-        await _publisher.PublishAsync(StoreId, Catalog, null, Ct);
+        await _publisher.PublishAsync(StoreId, catalog, null, Ct);
 
         Assert.Equal(HeroFile, _storage.Files[Theme(Hero)]);
         Assert.False(_storage.Files.ContainsKey(Theme($"{Hero}-draft")));
@@ -94,10 +94,10 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_ThemeWithoutCustomSections_LeavesThemOutOfTheSnapshot()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme($"{Product}-draft")] = TemplateOf("product-info");
 
-        await _publisher.PublishAsync(StoreId, Catalog, null, Ct);
+        await _publisher.PublishAsync(StoreId, catalog, null, Ct);
 
         Assert.False((await SnapshotAsync("en-US")).ContainsKey("customSections"));
     }
@@ -105,12 +105,12 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_CustomSectionDraftThatBreaksARule_IsRefusedAndPublishesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var hero = JObject.Parse(HeroFile);
         hero["css"] = "@import url(\"https://evil.example/x.css\");";
         _storage.Files[Theme($"{Hero}-draft")] = hero.ToString();
 
-        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Contains("custom-sections/custom-hero.json: the CSS has @import, and a custom section's CSS has only @media, @supports, @container, @starting-style and @keyframes",
             exception.Errors);
@@ -123,12 +123,12 @@ public sealed class CustomSectionPublishTests : IDisposable
     [InlineData("", "custom-sections/custom-hero.json: <vc-button> at line 1 is a kit tag, and the storefront offers none: its catalog has no kit")]
     public async Task PublishAsync_KitTag_IsCheckedAgainstTheKitOfTheCatalogItPublishesWith(string kit, string error)
     {
-        await SaveCatalogAsync(kit: kit);
+        var catalog = await SaveCatalogAsync(kit: kit);
         var hero = JObject.Parse(HeroFile);
         hero["template"] = "<section><vc-button label=\"{{ settings.title }}\"></vc-button></section>";
         _storage.Files[Theme($"{Hero}-draft")] = hero.ToString();
 
-        var exception = await Record.ExceptionAsync(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Record.ExceptionAsync(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         if (error == null)
         {
@@ -143,11 +143,11 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_FooterGroupPlacingACustomType_IsRefusedAndPublishesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme(Hero)] = HeroFile;
         _storage.Files[Theme("default/sections/footer-group.json-draft")] = """{ "content": [ { "id": "news", "type": "custom-hero" } ] }""";
 
-        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Equal(["sections/footer-group.json: 'news' places a custom section, which only a page or a template can hold"], exception.Errors);
         Assert.False(_storage.Files.ContainsKey(Theme(Pointer)));
@@ -156,10 +156,10 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_FileOfTheFolderNamedAsNoType_IsRefused()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme("default/custom-sections/Hero.json-draft")] = HeroFile;
 
-        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Equal(
             ["custom-sections/Hero.json: 'Hero' is not a custom section type, which matches ^custom-[a-z0-9]+(?:-[a-z0-9]+)*$ and has at most 64 characters"],
@@ -169,10 +169,10 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_TemplatePlacingACustomTypeOnlyThePreviewSaw_IsRefused()
     {
-        await SaveCatalogAsync(""", "custom-old": { "settings": [], "custom": true }""");
+        var catalog = await SaveCatalogAsync(""", "custom-old": { "settings": [], "custom": true }""");
         _storage.Files[Theme($"{Product}-draft")] = TemplateOf("product-info", "custom-old");
 
-        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Equal(["templates/product.json: 's1' has a type the storefront does not have, 'custom-old'"], exception.Errors);
     }
@@ -180,12 +180,12 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_RichTextOfACustomSection_GoesLiveSanitized()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme(Hero)] = HeroFile;
         _storage.Files[Theme($"{Product}-draft")] =
             """{ "settings": {}, "content": [ { "id": "h", "type": "custom-hero", "body": "<p>Sale</p><img src=x onerror=alert(1)>" } ] }""";
 
-        await _publisher.PublishAsync(StoreId, Catalog, null, Ct);
+        await _publisher.PublishAsync(StoreId, catalog, null, Ct);
 
         Assert.Equal("<p>Sale</p><img src=\"x\">", JObject.Parse(_storage.Files[Theme(Product)])["content"]![0]!.Value<string>("body"));
         Assert.Equal("<p>Sale</p><img src=\"x\">", (await SnapshotAsync("en-US"))["templates"]!["product"]!["content"]![0]!.Value<string>("body"));
@@ -240,10 +240,10 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task ValidateFilesAsync_TemplatePlacingATypeTheThemeHolds_IsValidWithoutTheTypesFile()
     {
-        await SaveCatalogAsync(""", "custom-hero": { "settings": [], "custom": true }""");
+        var catalog = await SaveCatalogAsync(""", "custom-hero": { "settings": [], "custom": true }""");
         _storage.Files[Theme($"{Hero}-draft")] = HeroFile;
 
-        var exception = await Record.ExceptionAsync(() => _publisher.ValidateFilesAsync(StoreId, Catalog,
+        var exception = await Record.ExceptionAsync(() => _publisher.ValidateFilesAsync(StoreId, catalog,
             new System.Collections.Generic.Dictionary<string, JToken> { ["templates/product.json"] = JObject.Parse(TemplateOf("product-info", "custom-hero")) }, Ct));
 
         Assert.Null(exception);
@@ -310,7 +310,7 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_TypesTogetherOverTheLimit_IsRefusedAndPublishesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var publisher = new ThemePublisher(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_storageFactory),
             _lock, _storage, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(),
             new ThemePaletteService(), TestServices.CustomSectionValidator(options: new ThemeSnapshotOptions { CustomSectionsMaxSize = 3 * 1024 }));
@@ -320,7 +320,7 @@ public sealed class CustomSectionPublishTests : IDisposable
         _storage.Files[Theme("default/custom-sections/custom-live.json")] = padded.ToString();
         _storage.Files[Theme($"{Hero}-draft")] = padded.ToString();
 
-        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Contains(exception.Errors, x => x.StartsWith("custom-sections: the custom section types are ", StringComparison.Ordinal));
         Assert.False(_storage.Files.ContainsKey(Theme(Pointer)));
@@ -368,13 +368,13 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_MoreTypesThanTheLimit_IsRefused()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         foreach (var type in Enumerable.Range(0, CustomSectionValidator.MaxTypes + 1).Select(x => $"custom-t{x}"))
         {
             _storage.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroFile;
         }
 
-        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Contains("custom-sections: the theme holds 257 custom section types, more than 256: the snapshot carries every type to every page", exception.Errors);
     }
@@ -382,11 +382,11 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task ValidateFilesAsync_TemplatePlacingTypesTheThemeDoesNotHold_ReadsOnlyTheTypesItHolds()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme(Hero)] = HeroFile;
         var template = TemplateOf([.. Enumerable.Range(0, 200).Select(x => $"custom-planted-{x}"), "custom-hero"]);
 
-        await Record.ExceptionAsync(() => _publisher.ValidateFilesAsync(StoreId, Catalog,
+        await Record.ExceptionAsync(() => _publisher.ValidateFilesAsync(StoreId, catalog,
             new System.Collections.Generic.Dictionary<string, JToken> { ["templates/product.json"] = JToken.Parse(template) }, Ct));
 
         Assert.DoesNotContain(_storage.LookedUp, x => x.Contains("/custom-planted-", StringComparison.Ordinal));
@@ -396,12 +396,12 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task ValidateFilesAsync_RequestCancelled_ReadsNoType()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme(Hero)] = HeroFile;
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _publisher.ValidateFilesAsync(StoreId, Catalog,
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _publisher.ValidateFilesAsync(StoreId, catalog,
             new System.Collections.Generic.Dictionary<string, JToken> { ["templates/product.json"] = JToken.Parse(TemplateOf("custom-hero")) }, cancelled.Token));
 
         Assert.DoesNotContain(_storage.LookedUp, x => x.Contains("/default/custom-sections/", StringComparison.Ordinal));
@@ -455,10 +455,10 @@ public sealed class CustomSectionPublishTests : IDisposable
     [Fact]
     public async Task PublishAsync_TypeDraftThatIsNotJson_IsRefused()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _storage.Files[Theme("default/custom-sections/custom-broken.json-draft")] = "{ \"format\": 1,";
 
-        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, Catalog, null, Ct));
+        var exception = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Contains("custom-sections/custom-broken.json: not valid JSON", exception.Errors);
     }

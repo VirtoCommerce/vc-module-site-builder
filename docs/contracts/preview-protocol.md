@@ -39,8 +39,12 @@ Designer to preview: `{ source: "builder", type, ...payload }`. Preview to desig
    `connect` came before its listener, and again whenever what the catalog carries of the custom section types or the
    kit changes: a type added or removed by a `draft`, a type's name, settings, target templates, limit or icon, or a
    kit tag or a behavior registered late.
-4. On every `loaded` the designer uploads the catalog when the server does not have its `hash`, then sends `auth`,
-   `inspector`, `colorScheme`, `draft` and `render`, in that order: after a reload the frame has lost them all.
+4. On every `loaded` the designer uploads the catalog when the server does not have it, then sends `auth`,
+   `inspector`, `colorScheme`, `draft` and `render`, in that order: after a reload the frame has lost them all. The
+   server names a catalog by the SHA-256 of the JSON text uploaded, which the designer computes too and names in its
+   saves and publications; the catalog's own `hash` only tells the designer that it changed. The designer uploads it
+   without the sections marked `custom`, which the server reads from the theme, so a storefront uploads one text
+   whatever its draft holds.
 5. The storefront shows the page after the first `render`; until then the frame stays blank. Until told otherwise
    it is anonymous, light, with the inspector off: no outlines, clicks blocked.
 

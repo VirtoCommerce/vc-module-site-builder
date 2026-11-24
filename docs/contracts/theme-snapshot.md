@@ -527,7 +527,9 @@ A token the generator has no rule for is left out and keeps the preset's color.
 ## Section schema catalog
 
 The catalog is the storefront's section, block, template and palette schemas, the `loaded` data of the
-[preview protocol](preview-protocol.md#handshake), named by its `hash`.
+[preview protocol](preview-protocol.md#handshake), named by its hash: the SHA-256 of its JSON text as uploaded, in
+lowercase hex, whatever the catalog's own `hash` says. The same text always has the same name, and no other text can
+take it.
 
 - The designer uploads the catalog of the storefront it previews when the server does not have that hash. Uploading
   takes `builder:update`, the designer's own permission, so an editor of templates or a publisher is not blocked by a
@@ -582,7 +584,7 @@ All take `storeId` and check the store as the other Site Builder endpoints do.
 | `GET api/site-builder/designer/theme-file?storeId&path` | `builder:read` | `{ path, content?, eTag }`: a theme file as the designer edits it and its version, see [Save](history-api.md#save) |
 | `POST api/site-builder/designer/save?storeId&catalogHash` | see [Save](history-api.md#save) | the designer's Save: the page and the theme files as drafts, all or nothing, one version; 400 when theme files go without `catalogHash`; 412 when one was saved by someone else since it was read |
 | `POST api/site-builder/designer/discard?storeId` | see [Discard](history-api.md#discard) | the designer's Discard: the drafts of the page and the theme files go, all or nothing, one version |
-| `PUT api/site-builder/catalog?storeId`, the catalog as the body | `builder:update` | `{ hash }`; 400 when it has no valid `hash`, is larger than 8 MB, or breaks a rule of its shape, such as `paletteTokens` other than `light` and `dark` lists of at most 1,000 token names, or a schema's name or label of more than 256 characters |
+| `PUT api/site-builder/catalog?storeId`, the catalog as the body | `builder:update` | `{ hash }`, the SHA-256 of the body's UTF-8 text in lowercase hex, which names the catalog stored as sent; 400 when it is larger than 8 MB, or breaks a rule of its shape, such as `paletteTokens` other than `light` and `dark` lists of at most 1,000 token names, or a schema's name or label of more than 256 characters |
 | `GET api/site-builder/catalog?storeId&hash` | `builder:read` | the catalog with that hash, the current one without it; 404 when there is none |
 | `POST api/site-builder/theme/palette?storeId`, `{ primary, secondary?, tokens: { light, dark } }` as the body | `builder:theme` | `{ light, dark, failures }`: the generated palettes and the pairs they still fail (none so far); 400 when a color is not `#rrggbb`/`#rgb` or no light tokens are named |
 | `POST api/site-builder/theme/palette/check?storeId`, `{ palette: { light, dark? }, tokens: { light, dark } }` as the body | `builder:theme` | `{ failures, unchecked }`: the pairs the palette fails and how many pairs could not be checked; 400 without a palette or tokens |

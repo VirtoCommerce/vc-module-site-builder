@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
@@ -25,13 +27,13 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
 
     public virtual async Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default)
     {
-        var catalog = ParseCatalog(catalogJson);
-        var hash = GetHash(catalog);
+        ParseCatalog(catalogJson);
+        var hash = GetHash(catalogJson);
 
         var storage = await themeStorageFactory.OpenAsync(storeId);
         if (await ReadCatalogAsync(storage, hash) == null)
         {
-            await storage.WriteAsync(GetCatalogPath(hash), catalog.ToString(Formatting.None));
+            await storage.WriteAsync(GetCatalogPath(hash), catalogJson);
         }
 
         var pointer = AbstractTypeFactory<SchemaCatalogPointer>.TryCreateInstance();
@@ -46,11 +48,22 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
         var storage = await themeStorageFactory.OpenAsync(storeId);
         if (string.IsNullOrEmpty(hash))
         {
-            hash = (await storage.ReadJsonAsync<SchemaCatalogPointer>(ThemeStorage.CurrentCatalogFile))?.Hash;
+            hash = await ReadCurrentHashAsync(storage);
         }
 
         return IsValidHash(hash) ? await ReadCatalogAsync(storage, hash) : null;
     }
+
+    public virtual async Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default)
+    {
+        var storage = await themeStorageFactory.OpenAsync(storeId);
+        var hash = await ReadCurrentHashAsync(storage);
+
+        return IsValidHash(hash) && await ReadCatalogAsync(storage, hash) != null ? hash : null;
+    }
+
+    protected virtual async Task<string> ReadCurrentHashAsync(IThemeStorage storage) =>
+        (await storage.ReadJsonAsync<SchemaCatalogPointer>(ThemeStorage.CurrentCatalogFile))?.Hash;
 
     /// <summary>Null for none and for a file cut off mid-write, which the next upload of the hash then replaces.</summary>
     protected virtual async Task<string> ReadCatalogAsync(IThemeStorage storage, string hash)
@@ -84,11 +97,6 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
         catch (JsonReaderException)
         {
             throw new ArgumentException("The catalog is not a JSON object.", nameof(catalogJson));
-        }
-
-        if (!IsValidHash(GetHash(catalog)))
-        {
-            throw new ArgumentException("The catalog has no valid hash.", nameof(catalogJson));
         }
 
         var malformed = SchemaKinds.FirstOrDefault(kind =>
@@ -149,6 +157,10 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
         _ => true,
     };
 
+    /// <summary>The name a catalog is stored under: the lowercase hex SHA-256 of its UTF-8 text, so that no other text can take it.</summary>
+    protected virtual string GetHash(string catalogJson) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(catalogJson)));
+
+    [Obsolete("A catalog is stored under the SHA-256 of its text, whatever its hash property says. Use GetHash(string).")]
     protected virtual string GetHash(JObject catalog) => catalog[HashProperty] is JValue { Type: JTokenType.String } hash ? (string)hash : null;
 
     protected virtual string GetCatalogPath(string hash) => $"{ThemeStorage.CatalogsFolder}/{hash}.json";

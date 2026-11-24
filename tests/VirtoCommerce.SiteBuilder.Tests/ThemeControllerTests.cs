@@ -297,5 +297,11 @@ public class ThemeControllerTests
             Calls.Add($"get {storeId}");
             return Task.FromResult<string>(null);
         }
+
+        public Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"get current hash {storeId}");
+            return Task.FromResult<string>(null);
+        }
     }
 }
