@@ -74,6 +74,8 @@ public sealed record PlacingPageRow([property: JsonPropertyName("page_id")] stri
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
 
+public sealed record ThemeFileSaveTarget(string StoreId, string CatalogHash, bool DryRun, string Permission, string ReadAgain);
+
 public static class ThemeFileEdits
 {
     private const int MaxTextChange = 400;
@@ -84,10 +86,9 @@ public static class ThemeFileEdits
     // The diff is of the content as stored: on a dry run, the sanitized content the save would write. A dry run the save refuses
     // answers the errors in the change, with the diff of the content sent.
     public static async Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
-        string storeId, string catalogHash, IList<ThemeFileEdit> edits, bool dryRun, string permission, string readAgain,
-        CancellationToken cancellationToken)
+        ThemeFileSaveTarget target, IList<ThemeFileEdit> edits, CancellationToken cancellationToken)
     {
-        change.DryRun = dryRun;
+        change.DryRun = target.DryRun;
         foreach (var edit in edits)
         {
             change.VersionTokens[edit.Path] = edit.Current.ETag;
@@ -97,7 +98,7 @@ public static class ThemeFileEdits
         if (changed.Count == 0)
         {
             change.AddWarning("The call changes nothing, so nothing was saved.");
-            if (!dryRun)
+            if (!target.DryRun)
             {
                 return;
             }
@@ -105,28 +106,20 @@ public static class ThemeFileEdits
 
         // a dry run that changes nothing still answers what the file breaks
         var files = (changed.Count > 0 ? changed : edits).Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
-        var result = await ThemeFiles.SaveAsync(designerOperationService, user, storeId, catalogHash, files, dryRun, cancellationToken);
-        var refused = dryRun && result.Status == SiteBuilderOperationStatus.Invalid;
+        var result = await ThemeFiles.SaveAsync(designerOperationService, user, target.StoreId, target.CatalogHash, files, target.DryRun, cancellationToken);
+        var refused = target.DryRun && result.Status == SiteBuilderOperationStatus.Invalid;
         if (refused)
         {
             change.Errors = result.Errors?.Count > 0 ? [.. result.Errors] : [result.Error];
         }
         else
         {
-            ThemeFiles.EnsureSaved(result, change.ObjectName ?? change.ObjectId, permission, storeId, readAgain);
+            ThemeFiles.EnsureSaved(result, change.ObjectName ?? change.ObjectId, target.Permission, target.StoreId, target.ReadAgain);
         }
 
-        foreach (var edit in changed)
-        {
-            var saved = dryRun ? GetPreviewContent(result.Preview, edit.Path) ?? edit.Content : edit.Content;
-            var prefix = changed.Count > 1 || edit.Path != change.ObjectId ? $"{GetPathInTheme(edit.Path)}: " : string.Empty;
-            foreach (var item in Compare(edit.Path, edit.Current.Content, saved))
-            {
-                change.AddChange(prefix + item.Field, item.From, item.To);
-            }
-        }
+        AddChanges(change, changed, result, target.DryRun);
 
-        if (!dryRun)
+        if (!target.DryRun)
         {
             foreach (var version in result.Value?.ThemeFiles ?? [])
             {
@@ -134,7 +127,7 @@ public static class ThemeFileEdits
             }
         }
 
-        var warnings = dryRun
+        var warnings = target.DryRun
             ? result.Preview?.Warnings
             : result.Value?.ThemeFiles.SelectMany(x => x.Warnings.Select(warning => $"{GetPathInTheme(x.Path)}: {warning}"));
         foreach (var warning in warnings ?? [])
@@ -145,6 +138,19 @@ public static class ThemeFileEdits
         if (!refused && changed.Count > 0)
         {
             change.NextStep = "Customers see this change only after the theme is published (publish_theme), which a second person approves.";
+        }
+    }
+
+    private static void AddChanges(ThemeFileChange change, List<ThemeFileEdit> changed, SiteBuilderOperationResult<DesignerSaveResult> result, bool dryRun)
+    {
+        foreach (var edit in changed)
+        {
+            var saved = dryRun ? GetPreviewContent(result.Preview, edit.Path) ?? edit.Content : edit.Content;
+            var prefix = changed.Count > 1 || edit.Path != change.ObjectId ? $"{GetPathInTheme(edit.Path)}: " : string.Empty;
+            foreach (var item in Compare(edit.Path, edit.Current.Content, saved))
+            {
+                change.AddChange(prefix + item.Field, item.From, item.To);
+            }
         }
     }
 
@@ -168,9 +174,16 @@ public static class ThemeFileEdits
             return CompareSectionType(before, after);
         }
 
-        var kind = ThemeTemplateMainSections.GetTemplateKey(file) != null
-            ? PageDocumentKind.Template
-            : file.StartsWith("sections/", StringComparison.OrdinalIgnoreCase) ? PageDocumentKind.SectionGroup : (PageDocumentKind?)null;
+        PageDocumentKind? kind = null;
+        if (ThemeTemplateMainSections.GetTemplateKey(file) != null)
+        {
+            kind = PageDocumentKind.Template;
+        }
+        else if (file.StartsWith("sections/", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = PageDocumentKind.SectionGroup;
+        }
+
         if (kind != null &&
             PageDocumentEditor.Read(before ?? EmptyDocument(kind.Value), kind.Value) is { } from &&
             PageDocumentEditor.Read(after ?? EmptyDocument(kind.Value), kind.Value) is { } to)

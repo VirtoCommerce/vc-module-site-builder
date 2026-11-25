@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol;
@@ -26,6 +27,8 @@ public class SharedComponentTools(
 {
     public const int MaxUsagePages = 50;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "search_shared_components", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read, SharedComponentsRead)]
     [Description("Find the Shared Components of a store by name: sections kept once and placed on many pages, so a " +

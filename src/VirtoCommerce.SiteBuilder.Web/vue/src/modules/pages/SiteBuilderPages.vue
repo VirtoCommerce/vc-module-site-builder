@@ -46,6 +46,7 @@ import { VcBlade, VcButton, VcButtonGroup } from "@vc-shell/framework/ui";
 import { PagesList, type ExposedPagesList } from "../site-builder/components";
 import { PageLifecycleFilters, pageCounts, refreshMenuBadges, useUrlParams } from "../site-builder/composables";
 import { usePagesListToolbar } from "../site-builder/composables/usePagesListToolbar";
+import { useGitHubMissingBanner } from "../site-builder/composables/useGitHubMissingBanner";
 
 defineBlade({
   name: "SiteBuilderPages",
@@ -100,6 +101,8 @@ const bladeToolbar = computed((): IBladeToolbar[] => [
     clickHandler: () => openBlade({ name: "SiteBuilderSharedComponents", param: param.value }),
   },
 ]);
+
+useGitHubMissingBanner(param, (closed) => openBlade({ name: "SiteBuilderGit", param: param.value, onClose: closed }));
 
 onMounted(refreshMenuBadges);
 </script>

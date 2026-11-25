@@ -29,6 +29,17 @@ public sealed class EditPageDraftToolTests : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
+    [Theory]
+    [InlineData("edit_page_draft")]
+    [InlineData("update_sections_bulk")]
+    [InlineData("set_translations")]
+    public void TheToolsThatTakeSettingValues_TellTheFormAMarkdownSettingHolds(string tool)
+    {
+        var schema = _context.Harness.GetTool(tool).ProtocolTool.InputSchema.GetRawText();
+
+        Assert.Contains("resultType is markdown", schema, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheTool_IsVisibleWithBuilderReadAndUpdate_Only()
     {

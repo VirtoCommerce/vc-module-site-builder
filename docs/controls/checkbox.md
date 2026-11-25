@@ -2,9 +2,9 @@
 
 This control represents a simple toggle (checked or unchecked). No additional configuration options are required.
 
-## Example
+![Checkbox control](images/checkbox.png){: width="300" }
 
-<div class="grid" markdown>
+## Example
 
 ```json
 ...
@@ -20,11 +20,6 @@ This control represents a simple toggle (checked or unchecked). No additional co
     ]
 ...
 ```
- 
-
-![Checkbox control example](media/checkbox-result.png){: style="display: block; margin: 0 auto;" }
-
-</div>
 
 
 <br>
@@ -33,5 +28,5 @@ This control represents a simple toggle (checked or unchecked). No additional co
 
 <div style="display: flex; justify-content: space-between;">
     <a href="../calendar">← Calendar </a>
-    <a href="../collection">Collection →</a>
+    <a href="../list">Collection →</a>
 </div>

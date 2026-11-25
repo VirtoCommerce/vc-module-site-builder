@@ -1,10 +1,10 @@
 # Images Control Descriptor
 
-This control functions similarly to the [files control](files.md), but with a default `accept` value set to `image/*`.
+This control functions similarly to the [files control](files.md), but with a default `accept` value set to `image/*`, and it shows a preview of the image.
+
+![Images control](images/images.png){: width="300" }
 
 ## Example
-
-<div class="grid" markdown>
 
 ```json
 ...
@@ -13,20 +13,12 @@ This control functions similarly to the [files control](files.md), but with a de
             "id": "image",
             "label": "Image",
             "type": "images",
-            "default": {
-                "url": "/themes/assets/blocks/portfolio.png"
-            }
+            "default": "/themes/assets/blocks/portfolio.png"
         },
         ...
     ]
 ...
 ```
-
-
-![Header control](media/image-control.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
 
 <br>
 <br>

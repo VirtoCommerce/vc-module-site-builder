@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -34,6 +35,8 @@ public class SectionBulkTools(
     private const int MaxPages = 1000;
     private const int MaxPreviewPages = 10;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "update_sections_bulk", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -59,7 +62,7 @@ public class SectionBulkTools(
         [Description("With setting_path: text the setting contains, ignoring case.")] string setting_contains = null,
         [Description("With setting_path: compare only this language's text of a setting that holds a text per language.")] string setting_language = null,
         [Description("set_section_settings: the values to set, as in edit_page_draft: a key is a setting name or a " +
-            "dotted path ('title', 'button.url', 'blocks.b1.text'); null removes the setting.")] Dictionary<string, JsonNode> settings = null,
+            "dotted path ('title', 'button.url', 'blocks.b1.text'); null removes the setting. " + SettingValues.Description)] Dictionary<string, JsonNode> settings = null,
         [Description("set_section_settings: the language whose text the values set, for settings that hold a text per language.")] string text_language = null,
         [Description("true to scan and show the change without starting it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
@@ -104,7 +107,7 @@ public class SectionBulkTools(
             .Where(x => x.SectionIds.Count > 0)
             .ToList();
 
-        var preview = await PreviewAsync(context.User, scan, targets, section_type.Trim(), op, settings, text_language, dryRun, cancellationToken);
+        var preview = await PreviewAsync(context.User, scan, targets, new BulkChange(section_type.Trim(), op, settings, text_language), dryRun, cancellationToken);
         if (dryRun || targets.Count == 0)
         {
             return preview;
@@ -165,15 +168,17 @@ public class SectionBulkTools(
         return result;
     }
 
+    private sealed record BulkChange(string SectionType, string Op, Dictionary<string, JsonNode> Settings, string Language);
+
     private async Task<SectionBulkPreview> PreviewAsync(ClaimsPrincipal user, SiteBuilderSectionScanResult scan, IList<UpdateSectionsBulkJobPage> targets,
-        string sectionType, string op, Dictionary<string, JsonNode> settings, string language, bool dryRun, CancellationToken cancellationToken)
+        BulkChange change, bool dryRun, CancellationToken cancellationToken)
     {
         var componentSections = scan.Pages.SelectMany(x => x.Sections).Count(x => x.SharedComponentId != null);
         var preview = new SectionBulkPreview
         {
             Action = "update_sections_bulk",
             ObjectType = "pages",
-            ObjectName = $"{op} on {sectionType} sections",
+            ObjectName = $"{change.Op} on {change.SectionType} sections",
             DryRun = dryRun,
             TotalPageCount = scan.TotalPageCount,
             ScannedPageCount = scan.ScannedPageCount,
@@ -187,34 +192,46 @@ public class SectionBulkTools(
         var pages = scan.Pages.ToDictionary(x => x.Page.Id, StringComparer.Ordinal);
         foreach (var target in targets.Take(MaxPreviewPages))
         {
-            var page = pages[target.PageId].Page;
-            var result = await runner.RunAsync(user, target.PageId, target.VersionToken,
-                SectionBulkChanges.CreateOperations(op, settings, language, target.SectionIds), dryRun: true, cancellationToken);
-            var label = $"page '{page.Name}' ({page.Id}, {page.CultureName})";
-            foreach (var change in result.Changes ?? [])
-            {
-                preview.AddChange($"{label}: {change.Field}", change.From, change.To);
-            }
-
-            if (result.Outcome is not (PageJobOutcome.Changed or PageJobOutcome.Unchanged))
-            {
-                preview.AddWarning($"{label} would not change: {result.Reason}.");
-            }
-
-            preview.Pages.Add(new SectionBulkPageRow
-            {
-                PageId = page.Id,
-                Name = page.Name,
-                Language = page.CultureName,
-                StoreId = page.StoreId,
-                SectionIds = target.SectionIds,
-                Problem = result.Outcome is PageJobOutcome.Changed or PageJobOutcome.Unchanged ? null : result.Reason,
-            });
+            await PreviewPageAsync(user, preview, pages[target.PageId].Page, target, change, cancellationToken);
         }
 
-        if (targets.Count > MaxPreviewPages)
+        AddPreviewWarnings(preview, scan, targets.Count, componentSections);
+
+        return preview;
+    }
+
+    private async Task PreviewPageAsync(ClaimsPrincipal user, SectionBulkPreview preview, GroupedSiteBuilderPage page, UpdateSectionsBulkJobPage target,
+        BulkChange change, CancellationToken cancellationToken)
+    {
+        var result = await runner.RunAsync(user, target.PageId, target.VersionToken,
+            SectionBulkChanges.CreateOperations(change.Op, change.Settings, change.Language, target.SectionIds), dryRun: true, cancellationToken);
+        var label = $"page '{page.Name}' ({page.Id}, {page.CultureName})";
+        foreach (var pageChange in result.Changes ?? [])
         {
-            preview.AddWarning($"The change is shown on the first {MaxPreviewPages} of {targets.Count} pages.");
+            preview.AddChange($"{label}: {pageChange.Field}", pageChange.From, pageChange.To);
+        }
+
+        if (result.Outcome is not (PageJobOutcome.Changed or PageJobOutcome.Unchanged))
+        {
+            preview.AddWarning($"{label} would not change: {result.Reason}.");
+        }
+
+        preview.Pages.Add(new SectionBulkPageRow
+        {
+            PageId = page.Id,
+            Name = page.Name,
+            Language = page.CultureName,
+            StoreId = page.StoreId,
+            SectionIds = target.SectionIds,
+            Problem = result.Outcome is PageJobOutcome.Changed or PageJobOutcome.Unchanged ? null : result.Reason,
+        });
+    }
+
+    private static void AddPreviewWarnings(SectionBulkPreview preview, SiteBuilderSectionScanResult scan, int targetCount, int componentSections)
+    {
+        if (targetCount > MaxPreviewPages)
+        {
+            preview.AddWarning($"The change is shown on the first {MaxPreviewPages} of {targetCount} pages.");
         }
 
         if (!scan.IsComplete)
@@ -229,14 +246,12 @@ public class SectionBulkTools(
                 "change_shared_component (search_site_pages with section_type lists their shared_component_id).");
         }
 
-        if (targets.Count == 0)
+        if (targetCount == 0)
         {
             preview.AddWarning(scan.IsComplete
                 ? "No page has a section of its own that matches, so there is nothing to change."
                 : "No page among those scanned has a section of its own that matches.");
         }
-
-        return preview;
     }
 }
 

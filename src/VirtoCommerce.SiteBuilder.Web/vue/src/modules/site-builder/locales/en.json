@@ -669,7 +669,8 @@
         "AGAIN": "Set up again"
       },
       "CONNECT_FIRST": "This platform isn't connected to GitHub yet. Connect it once from the Sites panel, then turn history on here.",
-      "OPEN_GITHUB": "GitHub connection"
+      "OPEN_GITHUB": "GitHub connection",
+      "GITHUB_MISSING": "This store publishes pages through Git, but GitHub is not connected. Connect GitHub, or turn off Git publishing for this store."
     },
     "GITHUB": {
       "INTRO": "Connect the platform to a GitHub organization once. Every site then keeps the versions of its pages in its own private repository there.",

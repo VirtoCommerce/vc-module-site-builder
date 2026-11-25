@@ -84,7 +84,8 @@ export interface RenderMessage {
 
 export type DesignerMessage =
   | { type: "connect"; protocol: typeof PREVIEW_PROTOCOL }
-  | { type: "auth"; token: { access_token: string } | null; userId: string | null }
+  | { type: "auth"; code: string; userId: string }
+  | { type: "auth"; token: null; userId: null }
   | { type: "inspector"; enabled: boolean }
   | { type: "colorScheme"; scheme: ColorScheme }
   | DraftMessage
@@ -122,7 +123,8 @@ export type PreviewEvent =
   | { type: "select"; sectionId: string; blockId?: string }
   | { type: "hover"; sectionId: string | null }
   | ({ type: "edit" } & TextEdit)
-  | { type: "resolved"; resolved: Resolved };
+  | { type: "resolved"; resolved: Resolved }
+  | { type: "authRenew"; userId: string };
 
 const SCHEMA_KINDS = ["sections", "blocks", "shared", "objects"] as const;
 
@@ -194,6 +196,8 @@ function parseEvent(type: unknown, data: unknown): PreviewEvent | undefined {
       return parseEdit(data);
     case "resolved":
       return parseResolved(data);
+    case "authRenew":
+      return isRecord(data) && isText(data.userId) ? { type, userId: data.userId } : undefined;
     default:
       return undefined;
   }
@@ -295,7 +299,7 @@ export type AuthMessage = Extract<DesignerMessage, { type: "auth" }>;
 
 export const ANONYMOUS: AuthMessage = { type: "auth", token: null, userId: null };
 
-export const authMessage = (userId: string, accessToken: string): AuthMessage => ({ type: "auth", token: { access_token: accessToken }, userId });
+export const authMessage = (userId: string, code: string): AuthMessage => ({ type: "auth", code, userId });
 
 /** Sent in this order after every `loaded`, because a reloaded frame has lost all of it. */
 export function handshakeMessages(state: {

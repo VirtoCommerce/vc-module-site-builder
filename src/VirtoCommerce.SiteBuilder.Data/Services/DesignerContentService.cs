@@ -8,6 +8,7 @@ using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
@@ -217,7 +218,7 @@ public class DesignerContentService(
     }
 
     private static IEnumerable<string> GetPlacedTypes(string content) =>
-        content != null && content.Contains("custom-", StringComparison.Ordinal) ? ThemeCustomSections.GetPlacedTypes(ParseOrNull(content)) : [];
+        content != null && content.Contains("custom-", StringComparison.Ordinal) ? ThemeCustomSections.GetPlacedTypes(TryParse(content, out var placed) ? placed : null) : [];
 
     private static bool IsCustomSectionFile(string file) => ThemeCustomSections.GetCustomSectionType(file) != null;
 
@@ -254,7 +255,7 @@ public class DesignerContentService(
 
     /// <summary><c>null</c> for no file, or one that is not a page document.</summary>
     protected virtual ThemeTemplateMainSectionState? GetMainSectionState(ThemeFileContent file, string mainSection) =>
-        ParseOrNull(file) is { } document ? ThemeTemplateMainSections.GetState(document, mainSection) : null;
+        TryParse(file, out var document) ? ThemeTemplateMainSections.GetState(document, mainSection) : null;
 
     /// <summary>
     /// A template draft may not gain a section the designer does not offer its template, such as one its template schema does not list.
@@ -284,29 +285,32 @@ public class DesignerContentService(
                 continue;
             }
 
-            var held = ThemeTemplateSections.GetSections(ParseOrNull(await themeDraftService.ReadAsync(storeId, path, cancellationToken)));
+            var held = ThemeTemplateSections.GetSections(
+                TryParse(await themeDraftService.ReadAsync(storeId, path, cancellationToken), out var heldDocument) ? heldDocument : null);
             errors.AddRange(refused.Except(held).Select(x => $"{file}: a {templateType} template cannot hold the section '{x.Id}' of type '{x.Type}'"));
         }
 
         return errors;
     }
 
-    private static JToken ParseOrNull(ThemeFileContent file) => ParseOrNull(file?.Content);
+    private static bool TryParse(ThemeFileContent file, out JToken document) => TryParse(file?.Content, out document);
 
-    private static JToken ParseOrNull(string content)
+    private static bool TryParse(string content, out JToken document)
     {
+        document = null;
         if (string.IsNullOrEmpty(content))
         {
-            return null;
+            return false;
         }
 
         try
         {
-            return ThemeJson.Parse(content);
+            document = ThemeJson.Parse(content);
+            return true;
         }
         catch (JsonReaderException)
         {
-            return null;
+            return false;
         }
     }
 
@@ -585,7 +589,7 @@ public class DesignerContentService(
     protected virtual async Task GuardAsync(DesignerSaveCommand command, CancellationToken cancellationToken)
     {
         var catalog = await GetCatalogAsync(command.StoreId, command.CatalogHash, cancellationToken);
-        var themeFiles = command.ThemeFiles.ToDictionary(x => x.Path, x => ParseOrNull(x.Content), StringComparer.OrdinalIgnoreCase);
+        var themeFiles = command.ThemeFiles.ToDictionary(x => x.Path, x => TryParse(x.Content, out var document) ? document : null, StringComparer.OrdinalIgnoreCase);
         var customSections = catalog == null
             ? new Dictionary<string, IDictionary<string, JToken>>()
             : command.CustomSections ?? (await GetCustomSectionsAsync(command.StoreId, themeFiles, cancellationToken)).Saved;
@@ -616,7 +620,7 @@ public class DesignerContentService(
         var catalog = await ReadCatalogAsync(command.StoreId, hash: null, cancellationToken);
         var themeFiles = command.Contents
             .Where(x => x.Key.Type == HistoryItemType.Theme)
-            .ToDictionary(x => x.Key.Key, x => ParseOrNull(x.Value), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(x => x.Key.Key, x => TryParse(x.Value, out var document) ? document : null, StringComparer.OrdinalIgnoreCase);
         var (storedSections, customSections) = await GetCustomSectionsAsync(command.StoreId, themeFiles, cancellationToken);
         var pageTypes = command.Contents.Where(x => x.Key.Type != HistoryItemType.Theme).SelectMany(x => GetPlacedTypes(x.Value)).ToHashSet(StringComparer.Ordinal);
         var (pageCatalog, themeCatalogs) = await GetGuardCatalogsAsync(command.StoreId, catalog, pageTypes, themeFiles, customSections,
@@ -643,28 +647,16 @@ public class DesignerContentService(
         }
     }
 
-    /// <summary>Null for no hash or an unknown one: the content is then checked without a schema.</summary>
-    protected virtual async Task<JObject> GetCatalogAsync(string storeId, string catalogHash, CancellationToken cancellationToken) =>
-        string.IsNullOrEmpty(catalogHash) ? null : await ReadCatalogAsync(storeId, catalogHash, cancellationToken);
+    /// <summary>
+    /// The catalog of the hash; for no hash or an unknown one, the store's current catalog.
+    /// Null only when the store has none: the content is then checked without a schema.
+    /// </summary>
+    protected virtual Task<JObject> GetCatalogAsync(string storeId, string catalogHash, CancellationToken cancellationToken) =>
+        schemaCatalogService.GetCatalogOrCurrentAsync(storeId, catalogHash, cancellationToken);
 
     /// <summary>The store's current catalog for no hash.</summary>
-    protected virtual async Task<JObject> ReadCatalogAsync(string storeId, string hash, CancellationToken cancellationToken)
-    {
-        var catalog = await schemaCatalogService.GetAsync(storeId, hash, cancellationToken);
-        if (catalog == null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return ThemeJson.ParseObject(catalog);
-        }
-        catch (JsonReaderException)
-        {
-            return null;
-        }
-    }
+    protected virtual Task<JObject> ReadCatalogAsync(string storeId, string hash, CancellationToken cancellationToken) =>
+        schemaCatalogService.GetCatalogObjectAsync(storeId, hash, cancellationToken);
 
     /// <summary>Writes the page last, so that a refused page leaves the theme drafts to be put back.</summary>
     protected virtual async Task<string> SavePageAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken)

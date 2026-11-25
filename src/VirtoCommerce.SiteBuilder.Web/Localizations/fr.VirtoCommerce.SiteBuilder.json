@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Autoriser la modification des paramètres du thème",
     "builder:templates": "Autoriser le changement de modèle pendant la modification",
-    "builder:promote": "Autoriser la promotion d'une page en production. Distinct de la publication, qui n'atteint que l'environnement sur lequel travaillent les éditeurs."
+    "builder:promote": "Autoriser la promotion d'une page en production. Distinct de la publication, qui n'atteint que l'environnement sur lequel travaillent les éditeurs.",
+    "builder:preview-as": "Autoriser l'aperçu des pages en tant que l'un des utilisateurs d'aperçu de la boutique. Seuls les comptes clients sont possibles."
   }
 }

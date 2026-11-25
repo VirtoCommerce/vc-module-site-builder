@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol;
@@ -15,6 +16,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageCreateTools(
@@ -34,6 +37,8 @@ public class PageCreateTools(
 
     private const int MaxOperations = 100;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "create_page", ReadOnly = false, Destructive = false, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Create)]
@@ -61,39 +66,36 @@ public class PageCreateTools(
     {
         return (kind ?? LandingPage) switch
         {
-            LandingPage => await CreateLandingPageAsync(context.User, store_id, name, permalink, language, copy_of_page_id, sections, dryRun, cancellationToken),
+            LandingPage => await CreateLandingPageAsync(context.User, new LandingPageArguments(store_id, name, permalink, language, copy_of_page_id, sections), dryRun, cancellationToken),
             LanguageVersion => await CreateLanguageVersionAsync(context.User, multilanguage_page_id, language, copy_content, sections, dryRun, cancellationToken),
             MultilanguagePageCopy => await CopyMultilanguagePageAsync(context.User, multilanguage_page_id, sections, dryRun, cancellationToken),
             _ => throw new McpException($"kind must be '{LandingPage}', '{LanguageVersion}' or '{MultilanguagePageCopy}'."),
         };
     }
 
-    private async Task<SiteBuilderChange> CreateLandingPageAsync(ClaimsPrincipal user, string storeId, string name, string permalink, string language,
-        string copyOfPageId, PageEditOperation[] sections, bool dryRun, CancellationToken cancellationToken)
+    private sealed record LandingPageArguments(string StoreId, string Name, string Permalink, string Language, string CopyOfPageId, PageEditOperation[] Sections);
+
+    private async Task<SiteBuilderChange> CreateLandingPageAsync(ClaimsPrincipal user, LandingPageArguments arguments, bool dryRun, CancellationToken cancellationToken)
     {
+        var sections = arguments.Sections;
         if (sections?.Length > MaxOperations)
         {
             throw new McpException($"Pass at most {MaxOperations} operations in sections.");
         }
 
-        var page = new CreateGroupedPageRequest { StoreId = storeId, Name = name, Permalink = permalink, CultureName = language, Visibility = true };
+        var page = new CreateGroupedPageRequest
+        {
+            StoreId = arguments.StoreId,
+            Name = arguments.Name,
+            Permalink = arguments.Permalink,
+            CultureName = arguments.Language,
+            Visibility = true,
+        };
         var content = DefaultPageContent;
 
-        if (!string.IsNullOrEmpty(copyOfPageId))
+        if (!string.IsNullOrEmpty(arguments.CopyOfPageId))
         {
-            var source = await groupedPageService.LoadPageAsync(authorizationService, user, copyOfPageId, "copy_of_page_id");
-            var copyName = string.IsNullOrEmpty(name) || string.IsNullOrEmpty(permalink) ? await pageListService.GetCopyNameAsync(source, cancellationToken) : null;
-
-            page.StoreId ??= source.StoreId;
-            page.Name ??= copyName?.Name;
-            page.Permalink ??= copyName?.Permalink;
-            page.CultureName ??= source.CultureName;
-            page.Visibility = source.Visibility;
-            page.UserGroups = source.UserGroups;
-            page.OrganizationId = source.OrganizationId;
-            page.StartDate = source.StartDate;
-            page.EndDate = source.EndDate;
-            content = (await PageEditSources.LoadDraftAsync(pageContentService, source, cancellationToken)).Content ?? DefaultPageContent;
+            content = await CopyFromSourcePageAsync(user, page, arguments, cancellationToken);
         }
 
         if (string.IsNullOrWhiteSpace(page.StoreId))
@@ -111,7 +113,7 @@ public class PageCreateTools(
         var editor = PageDocumentEditor.Read(content);
         if (editor == null || editor.IsLegacyShape)
         {
-            throw new McpException($"Page '{copyOfPageId}' is stored in an older format and cannot be copied here. Open it in the designer and save it once, then copy it.");
+            throw new McpException($"Page '{arguments.CopyOfPageId}' is stored in an older format and cannot be copied here. Open it in the designer and save it once, then copy it.");
         }
 
         if (sections?.Length > 0)
@@ -125,6 +127,29 @@ public class PageCreateTools(
         page.Content = SiteBuilderContentSettings.Synchronize(editor.Write(),
             new GroupedSiteBuilderPage { Name = page.Name, Permalink = page.Permalink, CultureName = page.CultureName });
 
+        return await RunCreatePageAsync(user, page, dryRun, cancellationToken);
+    }
+
+    private async Task<string> CopyFromSourcePageAsync(ClaimsPrincipal user, CreateGroupedPageRequest page, LandingPageArguments arguments, CancellationToken cancellationToken)
+    {
+        var source = await groupedPageService.LoadPageAsync(authorizationService, user, arguments.CopyOfPageId, "copy_of_page_id");
+        var copyName = string.IsNullOrEmpty(arguments.Name) || string.IsNullOrEmpty(arguments.Permalink) ? await pageListService.GetCopyNameAsync(source, cancellationToken) : null;
+
+        page.StoreId ??= source.StoreId;
+        page.Name ??= copyName?.Name;
+        page.Permalink ??= copyName?.Permalink;
+        page.CultureName ??= source.CultureName;
+        page.Visibility = source.Visibility;
+        page.UserGroups = source.UserGroups;
+        page.OrganizationId = source.OrganizationId;
+        page.StartDate = source.StartDate;
+        page.EndDate = source.EndDate;
+
+        return (await PageEditSources.LoadDraftAsync(pageContentService, source, cancellationToken)).Content ?? DefaultPageContent;
+    }
+
+    private async Task<SiteBuilderChange> RunCreatePageAsync(ClaimsPrincipal user, CreateGroupedPageRequest page, bool dryRun, CancellationToken cancellationToken)
+    {
         var change = new SiteBuilderChange { Action = "create_page", ObjectType = ChangePreview.Page, ObjectName = page.Name, DryRun = dryRun };
         var (_, result) = await SiteBuilderChanges.RunAsync(change,
             isDryRun => groupedPageOperationService.CreateWithContentAsync(new GroupedPageCreateOperationRequest { Page = page, DryRun = isDryRun }, user, cancellationToken),

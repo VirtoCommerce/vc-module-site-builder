@@ -10,6 +10,7 @@ using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.MCP.Core.Services;
 using VirtoCommerce.Platform.Core.Security;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
@@ -31,6 +32,7 @@ public class TranslationTools(
     private const int MaxItems = 1000;
     private const int MaxPages = 200;
     private const int MaxPreviewPages = 10;
+    private const int MaxNamedProblems = 10;
 
     [McpServerTool(Name = "set_translations", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
@@ -79,8 +81,8 @@ public class TranslationTools(
         var problems = preview.Pages.Where(x => x.Problem != null).ToList();
         if (problems.Count > 0)
         {
-            throw new McpException($"{problems.Count} pages cannot take their translations, so nothing was saved: " +
-                string.Join("; ", problems.Take(10).Select(x => $"{x.PageId}: {x.Problem}")) + ". Fix them, or leave those pages out, and call again.");
+            throw new McpException($"Not every page can take its translations ({problems.Count} of {pages.Count} cannot), so nothing was saved: " +
+                string.Join("; ", problems.Take(MaxNamedProblems).Select(x => $"{x.PageId}: {x.Problem}")) + ". Fix them, or leave those pages out, and call again.");
         }
 
         var payload = new SetTranslationsJobPayload
@@ -114,29 +116,9 @@ public class TranslationTools(
         for (var i = 0; i < translations.Length; i++)
         {
             var item = translations[i] ?? throw new McpException($"Translation {i + 1} is empty.");
-            if (string.IsNullOrWhiteSpace(item.PageId) || string.IsNullOrWhiteSpace(item.VersionToken) || string.IsNullOrWhiteSpace(item.SettingPath) ||
-                string.IsNullOrWhiteSpace(item.Language) || item.Text == null)
-            {
-                throw new McpException($"Translation {i + 1} needs page_id, version_token, setting_path, language and text.");
-            }
+            ValidateItem(item, i + 1);
 
-            if (!SiteBuilderPageItems.IsLanguageCode(item.Language))
-            {
-                throw new McpException($"Translation {i + 1}: '{item.Language}' is not a language code such as fr-FR.");
-            }
-
-            var page = pages.FirstOrDefault(x => x.PageId == item.PageId);
-            if (page == null)
-            {
-                page = new SetTranslationsJobPage { PageId = item.PageId, VersionToken = item.VersionToken, SourceRevisionDate = item.SourceRevisionDate };
-                pages.Add(page);
-            }
-            else if (page.VersionToken != item.VersionToken || page.SourceRevisionDate != item.SourceRevisionDate)
-            {
-                throw new McpException($"Translation {i + 1}: the texts of page '{item.PageId}' name different version_token or source_revision_date values; " +
-                    "pass the ones of the version you read.");
-            }
-
+            var page = FindOrAddPage(pages, item, i + 1);
             page.Texts.Add(new SetTranslationsJobText
             {
                 SectionId = string.IsNullOrWhiteSpace(item.SectionId) ? null : item.SectionId,
@@ -154,40 +136,81 @@ public class TranslationTools(
         return pages;
     }
 
+    private static void ValidateItem(TranslationItem item, int number)
+    {
+        if (LacksLocation(item) || LacksText(item))
+        {
+            throw new McpException($"Translation {number} needs page_id, version_token, setting_path, language and text.");
+        }
+
+        if (!SiteBuilderPageItems.IsLanguageCode(item.Language))
+        {
+            throw new McpException($"Translation {number}: '{item.Language}' is not a language code such as fr-FR.");
+        }
+    }
+
+    private static bool LacksLocation(TranslationItem item) =>
+        string.IsNullOrWhiteSpace(item.PageId) || string.IsNullOrWhiteSpace(item.VersionToken) || string.IsNullOrWhiteSpace(item.SettingPath);
+
+    private static bool LacksText(TranslationItem item) =>
+        string.IsNullOrWhiteSpace(item.Language) || item.Text == null;
+
+    private static SetTranslationsJobPage FindOrAddPage(List<SetTranslationsJobPage> pages, TranslationItem item, int number)
+    {
+        var page = pages.FirstOrDefault(x => x.PageId == item.PageId);
+        if (page == null)
+        {
+            page = new SetTranslationsJobPage { PageId = item.PageId, VersionToken = item.VersionToken, SourceRevisionDate = item.SourceRevisionDate };
+            pages.Add(page);
+        }
+        else if (page.VersionToken != item.VersionToken || page.SourceRevisionDate != item.SourceRevisionDate)
+        {
+            throw new McpException($"Translation {number}: the texts of page '{item.PageId}' name different version_token or source_revision_date values; " +
+                "pass the ones of the version you read.");
+        }
+
+        return page;
+    }
+
     private async Task CheckAsync(ClaimsPrincipal user, SetTranslationsJobPage page, bool markUpToDate, TranslationPreview preview, CancellationToken cancellationToken)
     {
         var group = await groupedPageService.LoadPageAsync(authorizationService, user, page.PageId);
 
         var result = await runner.RunAsync(user, page.PageId, page.VersionToken, TranslationOperations.Create(page.Texts), dryRun: true, cancellationToken);
-        var problem = result.Outcome switch
-        {
-            PageJobOutcome.Changed or PageJobOutcome.Unchanged => null,
-            PageJobOutcome.Skipped => "it changed since you read it; read it again with search_site_pages (page_id) and translate that version",
-            _ => result.Reason,
-        };
+        var problem = GetProblem(result);
 
-        string markProblem = null;
+        (SiteBuilderChangePreview Preview, string Problem) mark = default;
         if (problem == null && markUpToDate)
         {
-            markProblem = await translationSources.GetProblemAsync(user, group.Id, page.SourceRevisionDate, cancellationToken);
+            mark = await translationSources.PreviewAsync(user, group.Id, page.SourceRevisionDate, cancellationToken);
         }
 
+        AddToPreview(preview, group, page, result, problem, mark);
+    }
+
+    private static string GetProblem(PageJobResult result) => result.Outcome switch
+    {
+        PageJobOutcome.Changed or PageJobOutcome.Unchanged => null,
+        PageJobOutcome.Skipped => "it changed since you read it; read it again with search_site_pages (page_id) and translate that version",
+        _ => result.Reason,
+    };
+
+    private static void AddToPreview(TranslationPreview preview, GroupedSiteBuilderPage group, SetTranslationsJobPage page, PageJobResult result, string problem,
+        (SiteBuilderChangePreview Preview, string Problem) mark)
+    {
         var label = $"page '{group.Name}' ({group.Id}, {group.CultureName})";
         if (preview.Pages.Count < MaxPreviewPages)
         {
-            foreach (var change in result.Changes ?? [])
-            {
-                preview.AddChange($"{label}: {change.Field}", change.From, change.To);
-            }
+            AddChanges(preview, label, result, mark.Preview);
         }
 
         if (problem != null)
         {
             preview.AddWarning($"{label}: {problem}.");
         }
-        else if (markProblem != null)
+        else if (mark.Problem != null)
         {
-            preview.AddWarning($"{label} will be saved but not marked up to date: {markProblem}.");
+            preview.AddWarning($"{label} will be saved but not marked up to date: {mark.Problem}.");
         }
 
         preview.Pages.Add(new TranslationPageRow
@@ -197,8 +220,21 @@ public class TranslationTools(
             Language = group.CultureName,
             TextCount = page.Texts.Count,
             Problem = problem,
-            NotMarkedUpToDate = markProblem,
+            NotMarkedUpToDate = mark.Problem,
         });
+    }
+
+    private static void AddChanges(TranslationPreview preview, string label, PageJobResult result, SiteBuilderChangePreview mark)
+    {
+        foreach (var change in result.Changes ?? [])
+        {
+            preview.AddChange($"{label}: {change.Field}", change.From, change.To);
+        }
+
+        foreach (var field in mark?.Objects.SelectMany(x => x.Fields) ?? [])
+        {
+            preview.AddChange($"{label}: {field.Name}", field.From, field.To);
+        }
     }
 }
 
@@ -225,7 +261,7 @@ public sealed class TranslationItem
     public string Language { get; set; }
 
     [JsonPropertyName("text")]
-    [Description("The translated text.")]
+    [Description(SettingValues.TextDescription)]
     public string Text { get; set; }
 
     [JsonPropertyName("source_revision_date")]

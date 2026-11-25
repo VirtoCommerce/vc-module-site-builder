@@ -669,7 +669,8 @@
         "AGAIN": "Configura di nuovo"
       },
       "CONNECT_FIRST": "Questa piattaforma non è ancora collegata a GitHub. Collegala una volta dal pannello Siti, poi attiva qui la cronologia.",
-      "OPEN_GITHUB": "Connessione GitHub"
+      "OPEN_GITHUB": "Connessione GitHub",
+      "GITHUB_MISSING": "Questo negozio pubblica le pagine tramite Git, ma GitHub non è collegato. Collega GitHub oppure disattiva la pubblicazione tramite Git per questo negozio."
     },
     "GITHUB": {
       "INTRO": "Collega la piattaforma a un'organizzazione GitHub una sola volta. Ogni sito conserva poi le versioni delle sue pagine in un proprio repository privato.",

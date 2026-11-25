@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -48,6 +49,8 @@ public class ContentGapTools(
             "checks only links and HTML against it. A section the storefront does not know shows nothing on the page."),
     ];
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "find_content_gaps", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
     [Description("Find what is missing on the pages of a store, as findings with evidence and a fix: a language a Multilanguage " +
@@ -164,21 +167,34 @@ public class ContentGapTools(
         var source = row.Languages?.FirstOrDefault(x => x.IsDefault)?.CultureName ?? root.DefaultCultureName;
         foreach (var item in (row.Languages ?? []).Where(x => language == null || x.CultureName.EqualsIgnoreCase(language)))
         {
-            if (item.Status == MultilanguagePageLanguage.Missing && item.IsStoreLanguage)
+            var gap = GetTranslationGap(root, item, source);
+            if (gap != null)
             {
-                findings.Add(Gap("translation-missing", McpFindingSeverities.Warning, $"'{root.Name}' has no {item.CultureName} version.",
-                    $"Multilanguage Page '{root.Id}' in store '{root.StoreId}': {item.CultureName} is Missing; the source language is {source}.",
-                    $"Create it with create_page (kind language_version, multilanguage_page_id '{root.Id}', language '{item.CultureName}'), then translate it with set_translations.",
-                    TranslationsCategory, ChangePreview.MultilanguagePage, root.Id, root.Name));
-            }
-            else if (item.IsOutdated)
-            {
-                findings.Add(Gap("translation-outdated", McpFindingSeverities.Warning, $"The {item.CultureName} version of '{root.Name}' is behind its source language.",
-                    $"Page '{item.Page?.Id}': {source} was published after this translation.",
-                    "Read both versions with search_site_pages, translate what changed with set_translations, and mark it up to date there.",
-                    TranslationsCategory, ChangePreview.Page, item.Page?.Id, root.Name));
+                findings.Add(gap);
             }
         }
+    }
+
+    private static McpFinding GetTranslationGap(MultilanguagePage root, MultilanguagePageLanguage item, string source)
+    {
+        if (item.Status == MultilanguagePageLanguage.Missing && item.IsStoreLanguage)
+        {
+            return Gap("translation-missing", McpFindingSeverities.Warning, $"'{root.Name}' has no {item.CultureName} version.",
+                $"Multilanguage Page '{root.Id}' in store '{root.StoreId}': {item.CultureName} is Missing; the source language is {source}.",
+                $"Create it with create_page (kind language_version, multilanguage_page_id '{root.Id}', language '{item.CultureName}'), then translate it with set_translations.",
+                TranslationsCategory, new GapObject(ChangePreview.MultilanguagePage, root.Id, root.Name));
+        }
+
+        if (item.IsOutdated)
+        {
+            return Gap("translation-outdated", McpFindingSeverities.Warning, $"The {item.CultureName} version of '{root.Name}' is behind its source language.",
+                $"Page '{item.Page?.Id}': {source} was published after this translation.",
+                "Read both versions with search_site_pages. Copy a section the source gained with edit_page_draft (copy_sections_from), then translate " +
+                "what changed with set_translations and mark it up to date there.",
+                TranslationsCategory, new GapObject(ChangePreview.Page, item.Page?.Id, root.Name));
+        }
+
+        return null;
     }
 
     private async Task AddSeoGapsAsync(GroupedSiteBuilderPage page, IList<McpFinding> findings, CancellationToken cancellationToken)
@@ -200,14 +216,14 @@ public class ContentGapTools(
         {
             findings.Add(Gap("seo-title-missing", severity, $"'{name}' has no SEO title: search engines show the page name instead.",
                 $"Page '{page.Id}' in store '{page.StoreId}': settings.seoInfo.pageTitle is empty in the draft.",
-                $"Set it with edit_page_draft (set_page_settings, path seoInfo.pageTitle) on page '{page.Id}'.", SeoCategory, ChangePreview.Page, page.Id, name));
+                $"Set it with edit_page_draft (set_page_settings, path seoInfo.pageTitle) on page '{page.Id}'.", SeoCategory, new GapObject(ChangePreview.Page, page.Id, name)));
         }
 
         if (!HasText(seo?[SeoDescriptionKey], page.CultureName))
         {
             findings.Add(Gap("seo-description-missing", severity, $"'{name}' has no SEO description: search engines pick a text of the page.",
                 $"Page '{page.Id}' in store '{page.StoreId}': settings.seoInfo.metaDescription is empty in the draft.",
-                $"Set it with edit_page_draft (set_page_settings, path seoInfo.metaDescription) on page '{page.Id}'.", SeoCategory, ChangePreview.Page, page.Id, name));
+                $"Set it with edit_page_draft (set_page_settings, path seoInfo.metaDescription) on page '{page.Id}'.", SeoCategory, new GapObject(ChangePreview.Page, page.Id, name)));
         }
     }
 
@@ -231,8 +247,7 @@ public class ContentGapTools(
         return texts.Any(x => HasText(x.Value, language: null));
     }
 
-    private static McpFinding Gap(string id, string severity, string title, string evidence, string fix, string category, string objectType, string objectId,
-        string objectName) => new()
+    private static McpFinding Gap(string id, string severity, string title, string evidence, string fix, string category, GapObject target) => new()
     {
         Id = id,
         Severity = severity,
@@ -240,10 +255,12 @@ public class ContentGapTools(
         Evidence = evidence,
         Fix = fix,
         Category = category,
-        ObjectType = objectType,
-        ObjectId = objectId,
-        ObjectName = objectName,
+        ObjectType = target.Type,
+        ObjectId = target.Id,
+        ObjectName = target.Name,
     };
+
+    private readonly record struct GapObject(string Type, string Id, string Name);
 }
 
 public sealed class ContentGapReport

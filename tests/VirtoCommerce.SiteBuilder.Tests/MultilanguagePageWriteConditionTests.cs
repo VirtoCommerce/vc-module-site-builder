@@ -196,6 +196,22 @@ public class MultilanguagePageWriteConditionTests
     }
 
     [Fact]
+    public async Task UpdateAsync_DryRun_TellsTheVersionOfEachLanguageVersionItReaches()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content);
+        var dryRun = Update(root, x => x.Visibility = false);
+        dryRun.DryRun = true;
+
+        var preview = (await Operations(fixture).UpdateAsync(dryRun, _user, Ct)).Preview;
+
+        var version = Assert.Single(preview.Objects, x => x.ObjectId == en.Id);
+        var stored = (await fixture.LoadGroupAsync(en.Id)).ToModel(AbstractTypeFactory<GroupedSiteBuilderPage>.TryCreateInstance());
+        Assert.Equal(SiteBuilderContentVersion.CreateForGroupSettings(stored), version.ETag);
+    }
+
+    [Fact]
     public async Task UpdateAsync_RootChangedSinceTheReview_IsAConflictAndKeepsTheOtherChange()
     {
         await using var fixture = await Fixture.CreateAsync();

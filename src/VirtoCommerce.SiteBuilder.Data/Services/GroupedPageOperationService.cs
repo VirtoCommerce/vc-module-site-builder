@@ -7,6 +7,7 @@ using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
@@ -25,7 +26,8 @@ public class GroupedPageOperationService(
     IDesignerContentService designerContentService,
     ISiteBuilderContentGuard contentGuard,
     IContentHistory contentHistory,
-    ISiteBuilderPublishConflictService publishConflictService) : IGroupedPageOperationService
+    ISiteBuilderPublishConflictService publishConflictService,
+    ISchemaCatalogService schemaCatalogService) : IGroupedPageOperationService
 {
     private const string PageRequiredError = "The page is missing or invalid.";
     private const string CreateFieldsRequiredError = "StoreId, Name and Content are required.";
@@ -106,6 +108,7 @@ public class GroupedPageOperationService(
         }
 
         if ((await authorizationService.CheckStoreOperationAsync(user, model)
+            ?? await GuardCreateContentAsync(model, cancellationToken)
             ?? await CheckSharedComponentsAsync(user, model.StoreId, model.Content, cancellationToken)) is { } refused)
         {
             return refused.As<GroupedSiteBuilderPage>();
@@ -122,22 +125,27 @@ public class GroupedPageOperationService(
         return await SaveNewGroupAsync(groupedPage, model.Content);
     }
 
-    /// <summary>The fields the page is created with, then its content, sanitized in place so that what is written is sanitized.</summary>
-    private SiteBuilderOperationResult CheckCreateRequest(CreateGroupedPageRequest model)
+    /// <summary>The fields the page is created with.</summary>
+    private static SiteBuilderOperationResult CheckCreateRequest(CreateGroupedPageRequest model)
     {
         if (!HasCreateFields(model))
         {
             return SiteBuilderOperationResult.Invalid(CreateFieldsRequiredError);
         }
 
-        if ((CheckPermalink(model.Permalink) ?? CheckName(model.Name) ?? CheckEnvelope(model.Content)) is { } invalid)
-        {
-            return invalid;
-        }
+        return CheckPermalink(model.Permalink) ?? CheckName(model.Name) ?? CheckEnvelope(model.Content);
+    }
 
+    /// <summary>
+    /// Checks the content against the store's current catalog, and sanitizes it in place so that what is written is sanitized.
+    /// After the store access check: the catalog is of a store the user may reach.
+    /// </summary>
+    protected virtual async Task<SiteBuilderOperationResult> GuardCreateContentAsync(CreateGroupedPageRequest model, CancellationToken cancellationToken)
+    {
+        var catalog = await schemaCatalogService.GetCatalogObjectAsync(model.StoreId, hash: null, cancellationToken);
         try
         {
-            model.Content = contentGuard.GuardPageContent(model.Content, PageName, catalog: null);
+            model.Content = contentGuard.GuardPageContent(model.Content, PageName, catalog);
             return null;
         }
         catch (InvalidDataException ex)
@@ -363,18 +371,10 @@ public class GroupedPageOperationService(
 
         if (request.DryRun)
         {
-            var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
-            foreach (var conflictingGroup in conflictingGroups)
-            {
-                var published = await pageContentService.LoadGroupContentAsync(conflictingGroup, draft: false, cancellationToken);
-                dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft).ETag = published.ETag;
-            }
-
-            return dryRun;
+            return await PreviewPublishDraftAsync(groupedPage, conflictingGroups, cancellationToken);
         }
 
-        if (request.ExpectedSettingsVersion != null &&
-            !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(groupedPage), request.ExpectedSettingsVersion.Trim(), StringComparison.Ordinal))
+        if (IsSettingsChanged(groupedPage, request))
         {
             return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.SettingsChangedMessage);
         }
@@ -404,6 +404,23 @@ public class GroupedPageOperationService(
 
         return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
+
+    private async Task<SiteBuilderOperationResult> PreviewPublishDraftAsync(GroupedSiteBuilderPage groupedPage, IList<GroupedSiteBuilderPage> conflictingGroups,
+        CancellationToken cancellationToken)
+    {
+        var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
+        foreach (var conflictingGroup in conflictingGroups)
+        {
+            var published = await pageContentService.LoadGroupContentAsync(conflictingGroup, draft: false, cancellationToken);
+            dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft).ETag = published.ETag;
+        }
+
+        return dryRun;
+    }
+
+    private static bool IsSettingsChanged(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request) =>
+        request.ExpectedSettingsVersion != null &&
+        !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(groupedPage), request.ExpectedSettingsVersion.Trim(), StringComparison.Ordinal);
 
     private async Task<SiteBuilderOperationResult> UnpublishAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
         CancellationToken cancellationToken)
@@ -753,7 +770,8 @@ public class GroupedPageOperationService(
         try
         {
             // here, not only in the writer: the history records what is stored
-            content = contentGuard.GuardPageContent(content, PageName, catalog: null);
+            var catalog = await schemaCatalogService.GetCatalogObjectAsync(group.StoreId, hash: null, cancellationToken);
+            content = contentGuard.GuardPageContent(content, PageName, catalog);
             if (request.DryRun)
             {
                 // the version is compared under the lock of the write; the preview names the current one

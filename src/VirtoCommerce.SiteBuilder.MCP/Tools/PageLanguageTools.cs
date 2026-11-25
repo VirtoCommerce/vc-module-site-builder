@@ -177,12 +177,7 @@ public class PageLanguageTools(
         [Description("true to return the changes without making them.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
-        var unknown = (fields ?? []).Where(x => !InheritableFields.ContainsKey(x)).ToList();
-        if (fields == null || fields.Length == 0 || unknown.Count > 0)
-        {
-            throw new McpException($"fields takes one or more of {string.Join(", ", InheritableFields.Keys)}" +
-                (unknown.Count > 0 ? $"; not {string.Join(", ", unknown)}." : "."));
-        }
+        ValidateFields(fields);
 
         var root = await multilanguagePageService.LoadMultilanguagePageAsync(authorizationService, context.User, multilanguage_page_id);
         var change = new SiteBuilderChange
@@ -215,6 +210,16 @@ public class PageLanguageTools(
         }
 
         return change;
+    }
+
+    private static void ValidateFields(string[] fields)
+    {
+        var unknown = (fields ?? []).Where(x => !InheritableFields.ContainsKey(x)).ToList();
+        if (fields == null || fields.Length == 0 || unknown.Count > 0)
+        {
+            throw new McpException($"fields takes one or more of {string.Join(", ", InheritableFields.Keys)}" +
+                (unknown.Count > 0 ? $"; not {string.Join(", ", unknown)}." : "."));
+        }
     }
 
     private static Task Pin(SiteBuilderChange change, SiteBuilderOperationResult check, IDictionary<string, string> expectedVersions, bool dryRun,

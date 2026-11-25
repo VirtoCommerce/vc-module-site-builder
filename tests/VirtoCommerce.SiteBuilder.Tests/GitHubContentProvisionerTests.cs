@@ -210,6 +210,22 @@ public class GitHubContentProvisionerTests
     }
 
     [Fact]
+    public async Task DisconnectAsync_GitHubNotConnected_StillSwitchesStoreOff()
+    {
+        var setting = new VirtoCommerce.Platform.Core.Settings.ObjectSettingEntry(ModuleConstants.Settings.StoreLevelSettings.GitContentEnabled) { Value = true };
+        var stores = new FakeStoreService(new Store { Id = "s1", Settings = [setting] });
+        var provisioner = Provisioner(new GitHubScript(), configure: x => x.Enabled = false, stores: stores);
+
+        var status = await provisioner.GetStatusAsync("s1", TestContext.Current.CancellationToken);
+        await provisioner.DisconnectAsync("s1", TestContext.Current.CancellationToken);
+
+        Assert.False(status.Configured);
+        Assert.True(status.Enabled);
+        Assert.Null(status.Error);
+        Assert.Equal(false, Assert.Single(Assert.Single(stores.Saved).Settings).Value);
+    }
+
+    [Fact]
     public async Task ArchiveRepositoryAsync_RepositoryOfStore_ArchivesIt()
     {
         var github = new GitHubScript(
@@ -256,6 +272,47 @@ public class GitHubContentProvisionerTests
 
         Assert.False(status.Configured);
         Assert.Equal(0, github.Requests);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetStatusAsync_GitHubNotConfigured_ReportsTheStoresOptIn(bool optedIn)
+    {
+        var github = new GitHubScript();
+
+        var status = await Provisioner(github, new FakeSettingsManager(value: optedIn), configure: x => x.Token = null)
+            .GetStatusAsync("s1", TestContext.Current.CancellationToken);
+
+        Assert.False(status.Configured);
+        Assert.Equal(optedIn, status.Enabled);
+        Assert.Null(status.Error);
+        Assert.Equal(0, github.Requests);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_SwitchedOffGlobally_ReportsGitOffForAStoreThatOptedIn()
+    {
+        var github = new GitHubScript();
+
+        var status = await Provisioner(github, new FakeSettingsManager(value: true), configure: x => x.Enabled = false, configuration: GitHubConnections.SwitchedOff())
+            .GetStatusAsync("s1", TestContext.Current.CancellationToken);
+
+        Assert.False(status.Configured);
+        Assert.False(status.Enabled);
+        Assert.Null(status.Error);
+        Assert.Equal(0, github.Requests);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_StoreSettingsUnreadable_ReportsTheFailure()
+    {
+        var settings = new FakeSettingsManager(value: true) { ReadFailure = new TimeoutException("the database did not answer") };
+
+        var status = await Provisioner(new GitHubScript(), settings, configure: x => x.Token = null).GetStatusAsync("s1", TestContext.Current.CancellationToken);
+
+        Assert.False(status.Enabled);
+        Assert.Contains("did not answer", status.Error);
     }
 
     [Fact]
@@ -311,7 +368,8 @@ public class GitHubContentProvisionerTests
     }
 
     private static NoWaitProvisioner Provisioner(GitHubScript github, FakeSettingsManager settings = null, string repository = null,
-        Action<GitContentOptions> configure = null, FakeGitContentOwnership ownership = null, FakeStoreService stores = null)
+        Action<GitContentOptions> configure = null, FakeGitContentOwnership ownership = null, FakeStoreService stores = null,
+        Microsoft.Extensions.Configuration.IConfiguration configuration = null)
     {
         var options = new GitContentOptions
         {
@@ -328,7 +386,7 @@ public class GitHubContentProvisionerTests
         var gitRepository = new GitHubContentRepository(github, new MemoryCache(new MemoryCacheOptions()), wrapped);
 
         ownership ??= new FakeGitContentOwnership();
-        var connection = GitHubConnections.CreateService(options);
+        var connection = GitHubConnections.CreateService(options, configuration: configuration);
         var policy = new GitContentPolicy(connection, wrapped, settings, ownership);
         return new NoWaitProvisioner(new GitHubApiClient(github), connection, gitRepository, policy, ownership, stores ?? new FakeStoreService(), wrapped);
     }

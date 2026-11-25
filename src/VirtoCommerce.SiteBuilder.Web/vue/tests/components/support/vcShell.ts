@@ -103,6 +103,15 @@ export const blade = {
   callParent: vi.fn(async (_method: string, _args?: unknown): Promise<unknown> => undefined),
   onBeforeClose: vi.fn((_guard: () => Promise<boolean>) => undefined),
   onActivated: vi.fn((_callback: () => void) => undefined),
+  banners: [] as { id: string; variant: string; message?: string; action?: { label: string; handler: () => void } }[],
+  addBanner: vi.fn((banner: { variant: string; message?: string; action?: { label: string; handler: () => void } }) => {
+    const id = `banner-${blade.banners.length + 1}`;
+    blade.banners.push({ id, ...banner });
+    return id;
+  }),
+  removeBanner: vi.fn((id: string) => {
+    blade.banners = blade.banners.filter((x) => x.id !== id);
+  }),
 };
 // A mounted component stands for a blade; as in the framework, called outside any component only openBlade works.
 export function useBlade() {
@@ -124,6 +133,8 @@ export function useBlade() {
     callParent: (method: string, args?: unknown) => inBlade(blade.callParent)(method, args),
     onBeforeClose: (guard: () => Promise<boolean>) => inBlade(blade.onBeforeClose)(guard),
     onActivated: (callback: () => void) => inBlade(blade.onActivated)(callback),
+    addBanner: (banner: Parameters<typeof blade.addBanner>[0]) => inBlade(blade.addBanner)(banner),
+    removeBanner: (id: string) => inBlade(blade.removeBanner)(id),
   };
 }
 export const useBladeStack = () => ({ blades: ref([]), closeChildren: vi.fn() });
@@ -159,5 +170,8 @@ export function resetVcShell() {
   blade.options.value = undefined;
   blade.activeChildParam.value = undefined;
   for (const fn of [blade.openBlade, blade.closeSelf, blade.closeChildren, blade.replaceWith, blade.callParent, blade.onBeforeClose, blade.onActivated]) fn.mockReset();
+  blade.banners = [];
+  blade.addBanner.mockClear();
+  blade.removeBanner.mockClear();
   useBeforeUnload.mockReset();
 }

@@ -1,25 +1,33 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from "vue";
 import { useLocalStorage } from "@vueuse/core";
 import { usePermissions } from "@vc-shell/framework";
-import { impersonate, loadPreviewUsers } from "./api";
+import { loadPreviewUsers, previewCode } from "./api";
 import { ANONYMOUS, authMessage, type AuthMessage } from "./previewMessages";
-import { IMPERSONATE_PERMISSION, TOKEN_MARGIN_MS, usableToken, type PreviewToken, type PreviewUser } from "./previewUsers";
+import { PREVIEW_AS_PERMISSION, type PreviewUser } from "./previewUsers";
 
-/** Keeps a short-lived token from being requested in a loop. */
-const MIN_RENEW_MS = 10_000;
+/** As long as a code lives: a renewal asked for sooner means the storefront could not exchange the last code. */
+export const CODE_LIFETIME_MS = 60_000;
 
+/** The waits before answering renewals after failed exchanges; one more failure shows the anonymous visitor. */
+export const FAILED_RENEWAL_DELAYS_MS = [1_000, 5_000, 30_000];
+
+/**
+ * Who the preview renders as. A code is used once, so every `auth` for a user carries a new one; the storefront asks for the next
+ * with `authRenew` before its token expires or when the exchange failed.
+ */
 export function usePreviewUser(options: { send: (message: AuthMessage) => void; onFailed: (user: PreviewUser | undefined) => void }) {
   const { hasAccess } = usePermissions();
-  const allowed = computed(() => hasAccess(IMPERSONATE_PERMISSION));
+  const allowed = computed(() => hasAccess(PREVIEW_AS_PERMISSION));
   const users = shallowRef<PreviewUser[]>([]);
   const userId = ref<string | null>(null);
   const user = computed(() => users.value.find((x) => x.id === userId.value));
   const picks = useLocalStorage<Record<string, string>>("vc-page-designer-preview-as", {});
 
   let storeId: string | undefined;
-  let token: PreviewToken | undefined;
   let message: AuthMessage = ANONYMOUS;
   let requests = 0;
+  let issuedAt = Number.NEGATIVE_INFINITY;
+  let failedRenewals = 0;
   let renewal: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   onBeforeUnmount(() => {
@@ -37,16 +45,16 @@ export function usePreviewUser(options: { send: (message: AuthMessage) => void; 
     if (userId.value && (await refresh())) options.send(message);
   }
 
+  /** A new message for the user picked, with a new code: the last one may have been exchanged already. */
   async function refresh(): Promise<boolean> {
     if (disposed) return false;
     const request = ++requests;
     const id = userId.value;
-    clearTimeout(renewal);
     let next: AuthMessage = ANONYMOUS;
-    if (id) {
+    if (id && storeId) {
       try {
-        token = usableToken(token, id, Date.now()) ?? (await impersonate(id));
-        next = authMessage(id, token.accessToken);
+        issuedAt = Date.now();
+        next = authMessage(id, await previewCode(storeId, id));
       } catch (e) {
         if (request !== requests) return false;
         console.warn("[site-builder] The preview could not be shown as the user", e);
@@ -56,14 +64,32 @@ export function usePreviewUser(options: { send: (message: AuthMessage) => void; 
     }
     if (request !== requests) return false;
     message = next;
-    if (id && token && next !== ANONYMOUS) {
-      renewal = setTimeout(() => void renew(), Math.max(token.expiresAt - TOKEN_MARGIN_MS - Date.now(), MIN_RENEW_MS));
-    }
     return true;
   }
 
-  async function renew() {
-    if (await refresh()) options.send(message);
+  /**
+   * Answers the storefront's `authRenew`, unless the editor has picked someone else since. A storefront whose exchange keeps failing
+   * is answered a few times, ever later, then shown the anonymous visitor.
+   */
+  function renew(id: string) {
+    if (disposed || id !== userId.value || renewal) return;
+    const failed = Date.now() - issuedAt <= CODE_LIFETIME_MS;
+    if (!failed) failedRenewals = 0;
+    else if (failedRenewals >= FAILED_RENEWAL_DELAYS_MS.length) return giveUp();
+    const delay = failed ? FAILED_RENEWAL_DELAYS_MS[failedRenewals++] : 0;
+    renewal = setTimeout(async () => {
+      renewal = undefined;
+      if (id === userId.value && (await refresh())) options.send(message);
+    }, delay);
+  }
+
+  function giveUp() {
+    console.warn("[site-builder] The storefront could not exchange the preview code; it shows the anonymous visitor");
+    requests++;
+    options.onFailed(user.value);
+    choose(null);
+    message = ANONYMOUS;
+    options.send(message);
   }
 
   function choose(id: string | null) {
@@ -73,9 +99,12 @@ export function usePreviewUser(options: { send: (message: AuthMessage) => void; 
 
   async function pick(id: string | null) {
     if (id === userId.value) return;
+    clearTimeout(renewal);
+    renewal = undefined;
+    failedRenewals = 0;
     choose(id);
     if (await refresh()) options.send(message);
   }
 
-  return { allowed, users, userId, user, load, refresh, pick, message: () => message };
+  return { allowed, users, userId, user, load, refresh, renew, pick, message: () => message };
 }

@@ -1,18 +1,17 @@
 # Number Control Descriptor
 
-This control allows input of numeric values with optional constraints such as minimum, maximum, and step size. It can also display the current value inside the slider thumb if enabled.
+This control allows input of numeric values with optional constraints such as minimum, maximum, and step size. A value outside `min` and `max` is set to the nearest limit when the field loses focus.
+
+![Number control](images/number.png){: width="300" }
 
 | Property | Type    | Description                                                  |
 | -------- | ------- | ------------------------------------------------------------ |
 | `min`      | number  | Minimum allowed value.                                       |
 | `max`      | number  | Maximum allowed value.                                       |
 | `step`     | number  | Increment step for value changes.                            |
-| `thumb`    | boolean | If true, displays the current value inside the slider thumb. |
 
 ## Example
 ### Numeric input field
-
-<div class="grid" markdown>
 
 ```json
 ...
@@ -31,15 +30,9 @@ This control allows input of numeric values with optional constraints such as mi
 ```
 
 
-![Number control](media/number-control.gif){: style="display: block; margin: 0 auto;" }
-
-
-</div>
-
-
 ### Slider control
 
-<div class="grid" markdown>
+The `slider` type takes the same properties and is shown as the same numeric input field.
 
 ```json
 ...
@@ -50,25 +43,18 @@ This control allows input of numeric values with optional constraints such as mi
             "label": "Amount",
             "min": 10,
             "max": 50,
-            "step": 5,
-            "thumb": true
+            "step": 5
         },
         ...
     ]
 ...
 ```
 
-
-![Slider control](media/slider-control.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
-
 <br>
 <br>
 ********
 
 <div style="display: flex; justify-content: space-between;">
-    <a href="../markdown">← Markdown </a>
+    <a href="../menu">← Menu </a>
     <a href="../object">Object →</a>
 </div>

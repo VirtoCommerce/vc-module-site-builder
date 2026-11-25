@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol;
@@ -49,6 +50,8 @@ public static class SectionBulkChanges
     public static string WriteSettings(Dictionary<string, JsonNode> settings) =>
         settings == null ? null : JsonSerializer.Serialize(settings, PageDocumentEditor.WriteOptions);
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the change passes no settings; an empty dictionary is refused as settings with no values.")]
     public static Dictionary<string, JsonNode> ReadSettings(string json) =>
         string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<Dictionary<string, JsonNode>>(json);
 }

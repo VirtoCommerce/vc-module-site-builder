@@ -17,7 +17,7 @@ import {
 } from "./designerSave";
 import { storefrontPage } from "./preview";
 import { storeMenusUrl } from "./storeMenus";
-import { impersonateBody, previewUserIds, previewUsers, readToken, type PreviewToken, type PreviewUser } from "./previewUsers";
+import { previewCodeBody, previewCodeUrl, previewUserIds, previewUsers, readPreviewCode, type PreviewUser } from "./previewUsers";
 import { parseThemeStatus, publishThemeUrl, type ThemeStatus } from "./themePublication";
 import { checkBody, checkPaletteUrl, generateBody, generatePaletteUrl, parseCheck, parseGenerated, type GeneratedPalettes, type PaletteCheck } from "./paletteContrast";
 import type { PaletteTokens } from "./previewMessages";
@@ -188,15 +188,12 @@ export async function loadPreviewUsers(storeId: string): Promise<PreviewUser[]> 
   return previewUsers(ids, found);
 }
 
-export async function impersonate(userId: string): Promise<PreviewToken> {
-  const res = await call("/connect/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: impersonateBody(userId),
-  });
-  const token = readToken(userId, await res.json(), Date.now());
-  if (!token) throw new ApiError(res.status, "The impersonate grant gave no access token");
-  return token;
+/** A one-time code the preview exchanges at the storefront's own token endpoint, so the storefront accepts the token's issuer. */
+export async function previewCode(storeId: string, userId: string): Promise<string> {
+  const res = await call(previewCodeUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: previewCodeBody(storeId, userId) });
+  const code = readPreviewCode(await res.json());
+  if (!code) throw new ApiError(res.status, "The preview code endpoint gave no code");
+  return code;
 }
 
 export interface FilePage {

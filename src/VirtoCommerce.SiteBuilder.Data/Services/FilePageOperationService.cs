@@ -37,7 +37,8 @@ public class FilePageOperationService(
     IFilePageDraftService filePageDraftService,
     IThemeDraftService themeDraftService,
     IContentHistory contentHistory,
-    ISiteBuilderContentGuard contentGuard) : IFilePageOperationService
+    ISiteBuilderContentGuard contentGuard,
+    ISchemaCatalogService schemaCatalogService) : IFilePageOperationService
 {
     private const string Themes = "themes";
     // The content types the git flow covers are pages and blogs — the same .page files, blogs living
@@ -325,8 +326,7 @@ public class FilePageOperationService(
             return moved.As<FilePageShipment>();
         }
 
-        if (request.ExpectedContentVersion != null &&
-            !string.Equals(SiteBuilderContentVersion.CreateForFileContent(published), request.ExpectedContentVersion.Trim(), StringComparison.Ordinal))
+        if (IsPublishedContentChanged(published, request))
         {
             return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage).As<FilePageShipment>();
         }
@@ -334,7 +334,7 @@ public class FilePageOperationService(
         var committed = await CommitUnpublishAsync(location, baseBranch, storeId, path, user, cancellationToken);
 
         // pinned to the deletion, so a commit made to the branch while the merge waits for the checks is not shipped with it
-        var pinnedHead = request.ExpectedDraftHead == null && !request.ExpectNoDraftBranch ? null : committed;
+        var pinnedHead = IsDraftHeadExpected(request) ? committed : null;
         var shipment = await ShipDraftAsync(location, GetPublishBranch(request, user), pinnedHead, $"unpublish {path} (store: {storeId})", path,
             canRebase: false, cancellationToken);
         if (shipment.State == GitPublishState.Merged && storeRepository.IsPlatformManaged)
@@ -344,6 +344,13 @@ public class FilePageOperationService(
 
         return Shipped(shipment, request);
     }
+
+    private static bool IsPublishedContentChanged(string published, FilePageShipOperationRequest request) =>
+        request.ExpectedContentVersion != null &&
+        !string.Equals(SiteBuilderContentVersion.CreateForFileContent(published), request.ExpectedContentVersion.Trim(), StringComparison.Ordinal);
+
+    private static bool IsDraftHeadExpected(FilePageShipOperationRequest request) =>
+        request.ExpectedDraftHead != null || request.ExpectNoDraftBranch;
 
     private async Task<SiteBuilderOperationResult<FilePageShipment>> UnpublishInBlobStorageAsync(FilePageShipOperationRequest request,
         CancellationToken cancellationToken)
@@ -645,8 +652,9 @@ public class FilePageOperationService(
         var errors = PageEnvelopeValidator.Validate(page);
         if (errors.Count == 0)
         {
-            // an old version may predate the checks: it is saved again sanitized, or not at all
-            errors = contentGuard.GuardPage(page, path, catalog: null).Errors;
+            // an old version may predate the checks: it is saved again sanitized, or not at all, as the store's current catalog has it
+            var catalog = await schemaCatalogService.GetCatalogObjectAsync(storeId, hash: null, cancellationToken);
+            errors = contentGuard.GuardPage(page, path, catalog).Errors;
         }
 
         if (errors.Count > 0)

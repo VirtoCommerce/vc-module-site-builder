@@ -305,9 +305,9 @@ test("after loaded: who the preview renders as, the inspector, light or dark, th
     draft,
     render,
   ]);
-  assert.deepEqual(handshakeMessages({ auth: authMessage("u1", "jwt"), inspector: false, colorScheme: "light", draft, render })[0], {
+  assert.deepEqual(handshakeMessages({ auth: authMessage("u1", "c0de"), inspector: false, colorScheme: "light", draft, render })[0], {
     type: "auth",
-    token: { access_token: "jwt" },
+    code: "c0de",
     userId: "u1",
   });
 });
@@ -463,6 +463,7 @@ function channel(options: { prepare?: () => Promise<void>; colorScheme?: () => C
     onHover: (id) => events.push(["hover", id]),
     onEdit: (edit) => events.push(["edit", edit]),
     onResolved: (resolved) => events.push(["resolved", resolved]),
+    onAuthRenew: (userId) => events.push(["authRenew", userId]),
   });
   return { ...created, posted, log, events, newDocuments };
 }
@@ -584,4 +585,18 @@ test("an edit counts only from a storefront with inline-edit; a translatable tex
     ["edit", { itemId: "s1", path: ["title"], value: "Hallo", cultureName: "de-DE" }],
     ["edit", { itemId: "s1", path: ["title"], value: "Hi" }],
   ]);
+});
+
+test("authRenew asks for a new code for the user it names, once the storefront announced itself", async () => {
+  const preview = channel();
+  await preview.receive(fromPreview({ userId: "u1" }, "authRenew"));
+  assert.deepEqual(preview.events, []);
+  await preview.receive(fromPreview(loadedData()));
+  await preview.receive(fromPreview({ userId: "u1" }, "authRenew"));
+  const dropped = await warnings(async () => {
+    await preview.receive(fromPreview({ userId: "" }, "authRenew"));
+    await preview.receive(fromPreview({}, "authRenew"));
+  });
+  assert.deepEqual(preview.events, [["authRenew", "u1"]]);
+  assert.equal(dropped.length, 2);
 });

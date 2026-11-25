@@ -47,6 +47,7 @@ using VirtoCommerce.Platform.Core.Jobs;
 using VirtoCommerce.Platform.Core.Modularity;
 using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.Platform.Core.Settings;
+using VirtoCommerce.Platform.Security.OpenIddict;
 using VirtoCommerce.StoreModule.Core.Events;
 using VirtoCommerce.StoreModule.Core.Security;
 using VirtoCommerce.Xapi.Core.Extensions;
@@ -183,6 +184,8 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<ISiteBuilderSectionScanner, SiteBuilderSectionScanner>();
             serviceCollection.AddTransient<IThemeSnapshotService, ThemeSnapshotService>();
             serviceCollection.AddTransient<IThemePaletteService, ThemePaletteService>();
+            serviceCollection.AddTransient<IPreviewAuthCodeService, PreviewAuthCodeService>();
+            serviceCollection.AddGrantTypeHandler<SiteBuilderPreviewGrantTypeHandler>(ModuleConstants.Security.GrantTypes.SiteBuilderPreview);
             serviceCollection.AddTransient<IValidator<SiteBuilderStoreRequest>, SiteBuilderStoreRequestValidator>();
             serviceCollection.AddTransient<IValidator<ContentHistoryRequest>, ContentHistoryRequestValidator>();
             serviceCollection.AddTransient<IValidator<ContentHistoryRestoreRequest>, ContentHistoryRestoreRequestValidator>();
@@ -269,9 +272,9 @@ namespace VirtoCommerce.SiteBuilder.Web
 
             var permissionsProvider = serviceProvider.GetRequiredService<IPermissionsRegistrar>();
             permissionsProvider.RegisterPermissions(ModuleInfo.Id, "Site builder", ModuleConstants.Security.Permissions.AllPermissions);
-            // the read permissions decide which stores a role works in; each action checks them with the store
+            // these permissions decide which stores a role works in; each action checks them with the store
             permissionsProvider.WithAvailabeScopesForPermissions(
-                [ModuleConstants.Security.Permissions.Read, ModuleConstants.Security.Permissions.SharedComponentsRead],
+                [ModuleConstants.Security.Permissions.Read, ModuleConstants.Security.Permissions.SharedComponentsRead, ModuleConstants.Security.Permissions.PreviewAs],
                 new StoreSelectedScope());
 
             var isFullTextSearchEnabled = Configuration.IsContentFullTextSearchEnabled();

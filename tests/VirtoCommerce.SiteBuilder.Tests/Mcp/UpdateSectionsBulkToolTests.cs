@@ -85,6 +85,23 @@ public sealed class UpdateSectionsBulkToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ADryRun_ShowsTheContentAsTheSaveSanitizesIt()
+    {
+        var preview = await CallAsync<SectionBulkPreview>(Editor(), new
+        {
+            section_type = "hero-banner",
+            setting_path = "title",
+            setting_contains = "friday",
+            change = "set_section_settings",
+            settings = new { title = new { markdown = "Cyber Monday", html = "<p onclick=\"alert(1)\">Cyber Monday</p>" } },
+            dryRun = true,
+        });
+
+        var change = Assert.Single(preview.Changes, x => x.Field.Contains("(a1, ") && x.Field.EndsWith("title.html"));
+        Assert.Equal("<p>Cyber Monday</p>", change.To?.ToString());
+    }
+
+    [Fact]
     public async Task ARealRun_QueuesOneJob_WithThePagesAndVersionsOfTheCall()
     {
         var handle = await CallAsync<McpJobHandle>(Editor(), Rename());

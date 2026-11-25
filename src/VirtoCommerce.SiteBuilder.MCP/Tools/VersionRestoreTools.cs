@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
@@ -32,6 +33,8 @@ public class VersionRestoreTools(
     // The history shows commits in their short form, so that is the shortest name accepted.
     private const int MinCommitLength = 7;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "restore_version", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -161,16 +164,7 @@ public class VersionRestoreTools(
 
         var answer = NewAnswer(page.StoreId, versionId, [page.VersionKey]);
         answer.PageId = page.PageId;
-        foreach (var item in check.Preview?.Objects ?? [])
-        {
-            answer.ExpectedVersions[page.VersionKey] = item.ETag ?? FilePages.VersionOf(item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content)?.From);
-            AddContentChanges(answer, prefix: null, item);
-        }
-
-        foreach (var warning in check.Preview?.Warnings ?? [])
-        {
-            answer.AddWarning(warning);
-        }
+        AddFilePagePreview(answer, page, check);
 
         ReviewedVersions.Pin(answer, answer.ExpectedVersions, Normalize(expectedVersions), dryRun);
         if (dryRun)
@@ -187,6 +181,20 @@ public class VersionRestoreTools(
         return answer;
     }
 
+    private static void AddFilePagePreview(VersionRestore answer, FilePage page, SiteBuilderOperationResult check)
+    {
+        foreach (var item in check.Preview?.Objects ?? [])
+        {
+            answer.ExpectedVersions[page.VersionKey] = item.ETag ?? FilePages.VersionOf(item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content)?.From);
+            AddContentChanges(answer, prefix: null, item);
+        }
+
+        foreach (var warning in check.Preview?.Warnings ?? [])
+        {
+            answer.AddWarning(warning);
+        }
+    }
+
     private static Dictionary<string, string> Normalize(Dictionary<string, string> expectedVersions) =>
         expectedVersions?.ToDictionary(
             x => HistoryItem.TryParse(x.Key?.Trim(), out var item) && item.Type == HistoryItemType.Theme ? HistoryItem.ForThemeFile(item.Key).ToString() : x.Key?.Trim() ?? string.Empty,
@@ -197,9 +205,7 @@ public class VersionRestoreTools(
     {
         var content = item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
         var label = prefix == null ? string.Empty : $"{prefix}: ";
-        var changes = item.ObjectType == ChangePreview.ThemeFile
-            ? ThemeFileEdits.Compare(item.ObjectId, content?.From, content?.To)
-            : CompareDocuments(content?.From, content?.To);
+        var changes = CompareContent(item, content);
 
         if (changes == null)
         {
@@ -218,6 +224,13 @@ public class VersionRestoreTools(
         }
     }
 
+    private static IList<PageDocumentChange> CompareContent(SiteBuilderObjectChange item, SiteBuilderFieldChange content) =>
+        item.ObjectType == ChangePreview.ThemeFile
+            ? ThemeFileEdits.Compare(item.ObjectId, content?.From, content?.To)
+            : CompareDocuments(content?.From, content?.To);
+
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the content is not a page document; an empty list means the draft already holds the version.")]
     private static IList<PageDocumentChange> CompareDocuments(string before, string after) =>
         PageDocumentEditor.Read(before) is { } from && PageDocumentEditor.Read(after) is { } to ? PageDocumentChanges.Compare(from, to) : null;
 

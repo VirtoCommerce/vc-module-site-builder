@@ -669,7 +669,8 @@
         "AGAIN": "Konfigurer på nytt"
       },
       "CONNECT_FIRST": "Denne plattformen er ikke koblet til GitHub ennå. Koble den til én gang fra Nettsteder-panelet, og slå deretter på historikk her.",
-      "OPEN_GITHUB": "GitHub-tilkobling"
+      "OPEN_GITHUB": "GitHub-tilkobling",
+      "GITHUB_MISSING": "Denne butikken publiserer sider via Git, men GitHub er ikke tilkoblet. Koble til GitHub, eller slå av publisering via Git for denne butikken."
     },
     "GITHUB": {
       "INTRO": "Koble plattformen til en GitHub-organisasjon én gang. Hvert nettsted tar deretter vare på versjonene av sidene sine i sitt eget private repositorium der.",

@@ -37,15 +37,17 @@ public class GitHubContentProvisioner(
         var status = AbstractTypeFactory<GitContentSiteStatus>.TryCreateInstance();
         status.Organization = connection.Organization;
         status.BaseBranch = connection.BaseBranch;
-        if (!connection.IsEnabled || !connection.IsConfigured)
-        {
-            return status;
-        }
-
-        status.Configured = true;
+        status.Configured = connection.IsEnabled && connection.IsConfigured;
         try
         {
-            await ReadRepositoryStatusAsync(storeId, connection, status, cancellationToken);
+            if (status.Configured)
+            {
+                await ReadRepositoryStatusAsync(storeId, connection, status, cancellationToken);
+            }
+            else
+            {
+                status.Enabled = await IsOptedInAsync(storeId, cancellationToken);
+            }
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -79,6 +81,23 @@ public class GitHubContentProvisioner(
         if (repositoryInfo != null)
         {
             status.LastCommitSha = await gitContentRepository.GetBranchHeadShaAsync(status.Repository, connection.BaseBranch, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Whether a store asks for git content while GitHub is not usable, so the admin learns why its pages are refused.
+    /// Switched off for every store, git content is simply off.
+    /// </summary>
+    protected virtual async Task<bool> IsOptedInAsync(string storeId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await gitContentPolicy.IsEnabledForStoreAsync(storeId, cancellationToken);
+        }
+        catch (GitContentException)
+        {
+            // without a usable connection the policy refuses only a store that opted in
+            return true;
         }
     }
 

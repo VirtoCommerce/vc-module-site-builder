@@ -146,19 +146,37 @@ public sealed class FilePageShipmentRow
     [JsonPropertyName("can_rebase")]
     public bool CanRebase { get; init; }
 
-    public static FilePageShipmentRow From(FilePageShipment shipment) => shipment == null ? null : new FilePageShipmentRow
+    public static FilePageShipmentRow From(FilePageShipment shipment)
     {
-        State = !shipment.GitFlow ? "done" : shipment.State switch
+        if (shipment == null)
+        {
+            return null;
+        }
+
+        return new FilePageShipmentRow
+        {
+            State = GetState(shipment),
+            Flow = shipment.GitFlow ? "git" : "blob",
+            PullRequest = shipment.Merge?.PullRequestNumber,
+            PullRequestUrl = shipment.Merge?.Url,
+            CanRebase = shipment.State == GitPublishState.Conflict && shipment.CanRebase,
+        };
+    }
+
+    private static string GetState(FilePageShipment shipment)
+    {
+        if (!shipment.GitFlow)
+        {
+            return "done";
+        }
+
+        return shipment.State switch
         {
             GitPublishState.Merged => "merged",
             GitPublishState.Pending => "pending",
             GitPublishState.AwaitingMerge => "awaiting_merge",
             GitPublishState.AlreadyPublished => "already_published",
             _ => "conflict",
-        },
-        Flow = shipment.GitFlow ? "git" : "blob",
-        PullRequest = shipment.Merge?.PullRequestNumber,
-        PullRequestUrl = shipment.Merge?.Url,
-        CanRebase = shipment.State == GitPublishState.Conflict && shipment.CanRebase,
-    };
+        };
+    }
 }

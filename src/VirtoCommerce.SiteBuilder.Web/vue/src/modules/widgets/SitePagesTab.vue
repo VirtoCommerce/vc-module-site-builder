@@ -106,6 +106,7 @@ import {
 } from "../site-builder/composables";
 import { pageLifecycle } from "../site-builder/pageLifecycle";
 import LanguagePills from "../site-builder/components/languagePills.vue";
+import { useGitHubMissingBanner } from "../site-builder/composables/useGitHubMissingBanner";
 
 const props = defineProps<{
   storeId: string;
@@ -195,6 +196,11 @@ defineExpose({
     },
   ]),
 });
+
+useGitHubMissingBanner(
+  () => props.storeId,
+  (closed) => openBlade({ name: "SiteBuilderGit", param: props.storeId, onClose: closed }),
+);
 
 watch(pagesChanged, reload);
 onMounted(reload);

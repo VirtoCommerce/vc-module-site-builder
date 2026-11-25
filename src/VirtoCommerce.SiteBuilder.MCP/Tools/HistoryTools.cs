@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
@@ -28,6 +29,8 @@ public class HistoryTools(
     ISiteBuilderContentQueryService contentQueryService,
     ILogger<HistoryTools> logger)
 {
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "list_versions", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
     [Description("Saved versions of a database page or of theme files of a store, newest first: version id, date, " +

@@ -7,6 +7,7 @@ using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
+using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Jobs;
 
@@ -93,15 +94,33 @@ public class PageDraftJobRunner(
             DryRun = dryRun,
         }, user, cancellationToken);
 
+        // The dry run answers the sanitized content; a save sanitizes what was sent the same way.
+        if (dryRun && result.Status == SiteBuilderOperationStatus.Succeeded && ReadPreviewContent(result.Preview) is { } sanitized)
+        {
+            changes = PageDocumentChanges.Compare(before, sanitized);
+        }
+
+        return ToJobResult(result, group, changes, versionToken, dryRun);
+    }
+
+    private static PageDocumentEditor ReadPreviewContent(SiteBuilderChangePreview preview) =>
+        PageDocumentEditor.Read(preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.Page)?.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content)?.To);
+
+    private static PageJobResult ToJobResult(SiteBuilderOperationResult<DesignerSaveResult> result, GroupedSiteBuilderPage group, IList<PageDocumentChange> changes,
+        string versionToken, bool dryRun)
+    {
         return result.Status switch
         {
             SiteBuilderOperationStatus.Succeeded => new(PageJobOutcome.Changed, Changes: changes, VersionToken: dryRun ? versionToken : result.Value?.ETag),
             SiteBuilderOperationStatus.Forbidden => new(PageJobOutcome.Refused, $"no access to the page in store '{group.StoreId}'"),
             SiteBuilderOperationStatus.Conflict or SiteBuilderOperationStatus.VersionRequired => new(PageJobOutcome.Skipped, ChangedSince),
             SiteBuilderOperationStatus.NotFound => new(PageJobOutcome.Failed, "the page was deleted"),
-            _ => new(PageJobOutcome.Failed, $"not saved: {string.Join(" ", new[] { result.Error }.Concat(result.Errors?.Skip(1) ?? []).Where(x => !string.IsNullOrEmpty(x)))}"),
+            _ => new(PageJobOutcome.Failed, $"not saved: {DescribeErrors(result)}"),
         };
     }
+
+    private static string DescribeErrors(SiteBuilderOperationResult<DesignerSaveResult> result) =>
+        string.Join(" ", new[] { result.Error }.Concat(result.Errors?.Skip(1) ?? []).Where(x => !string.IsNullOrEmpty(x)));
 
     private sealed class NoSources : IPageEditSources
     {

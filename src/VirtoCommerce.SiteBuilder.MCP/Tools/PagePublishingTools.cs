@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
@@ -31,9 +32,11 @@ public class PagePublishingTools(
     private const string SettingsKeyPrefix = "settings:";
 
     private const string DraftOwnerDescription = "With a page stored as a file in git: the user whose draft branch is shipped, as the dry run " +
-        "answers it in draft_owner (your own when you omit it on the dry run). Send it back unchanged, so that the approver ships the " +
+        "answers it in draft_owner (always your own: omit it on the dry run). Send it back unchanged, so that the approver ships the " +
         "reviewed draft and not their own. Not used for other pages.";
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "publish_page", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Publish)]
@@ -72,17 +75,11 @@ public class PagePublishingTools(
         [Description("true to return what would be published, without publishing it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrEmpty(page_id) == !string.IsNullOrEmpty(multilanguage_page_id))
-        {
-            throw new McpException("Pass either page_id or multilanguage_page_id.");
-        }
+        EnsureOneTarget(page_id, multilanguage_page_id);
 
         if (!string.IsNullOrEmpty(page_id))
         {
-            if (languages?.Length > 0 || all_languages)
-            {
-                throw new McpException("languages and all_languages go with multilanguage_page_id; page_id is one page already.");
-            }
+            EnsureNoLanguages(languages, all_languages);
 
             if (PageLookup.IsFilePagePath(page_id))
             {
@@ -102,10 +99,8 @@ public class PagePublishingTools(
         }
 
         EnsureNoRebase(rebase);
-        if (all_languages == languages?.Length > 0)
-        {
-            throw new McpException("With multilanguage_page_id, pass either languages or all_languages: true.");
-        }
+        EnsureOneLanguageChoice(languages, all_languages);
+        EnsureLanguageCodes(languages);
 
         if (all_languages)
         {
@@ -148,6 +143,38 @@ public class PagePublishingTools(
 
     public static bool NeedsApproval(IReadOnlyDictionary<string, JsonElement> arguments) => ReviewedVersions.AreGiven(arguments);
 
+    private static void EnsureOneTarget(string pageId, string multilanguagePageId)
+    {
+        if (!string.IsNullOrEmpty(pageId) == !string.IsNullOrEmpty(multilanguagePageId))
+        {
+            throw new McpException("Pass either page_id or multilanguage_page_id.");
+        }
+    }
+
+    private static void EnsureNoLanguages(string[] languages, bool allLanguages)
+    {
+        if (languages?.Length > 0 || allLanguages)
+        {
+            throw new McpException("languages and all_languages go with multilanguage_page_id; page_id is one page already.");
+        }
+    }
+
+    private static void EnsureOneLanguageChoice(string[] languages, bool allLanguages)
+    {
+        if (allLanguages == languages?.Length > 0)
+        {
+            throw new McpException("With multilanguage_page_id, pass either languages or all_languages: true.");
+        }
+    }
+
+    private static void EnsureLanguageCodes(string[] languages)
+    {
+        if (languages?.Any(string.IsNullOrWhiteSpace) == true)
+        {
+            throw new McpException("languages holds language codes, for example ['fr-FR']; an empty one is not a language.");
+        }
+    }
+
     private static void EnsureNoRebase(bool rebase)
     {
         if (rebase)
@@ -179,11 +206,11 @@ public class PagePublishingTools(
         };
 
         await SiteBuilderChanges.RunAsync(change,
-            isDryRun => RunPublishAsync(user, group.Id, publish, isDryRun, isDryRun ? null : change,
+            isDryRun => RunPublishAsync(user, new PublishTarget(group.Id, publish, unpublishConflicting), isDryRun, isDryRun ? null : change,
                 unpublishConflicting && !isDryRun
                     ? ReplacedVersions(change, change.ExpectedVersions.Keys.Where(x => x != group.Id && x != SettingsKey(group.Id)))
                     : null,
-                unpublishConflicting, cancellationToken),
+                cancellationToken),
             x => EnsurePublished(x, group, publish),
             dryRun,
             checkAsync: x => PinAsync(change, x.Preview?.Objects, publish ? [group.Id] : [], expectedVersions, dryRun));
@@ -219,61 +246,68 @@ public class PagePublishingTools(
     {
         var change = NewMultilanguageChange(root);
         var (_, result) = await SiteBuilderChanges.RunAsync(change,
-            isDryRun => multilanguagePageOperationService.PublishAllAsync(new MultilanguagePagePublishAllOperationRequest
-            {
-                MultilanguagePageId = root.Id,
-                ExpectedDraftVersions = isDryRun ? null : new Dictionary<string, string>(change.ExpectedVersions.Where(x => !IsSettingsKey(x.Key))),
-                ExpectedSettingsVersions = isDryRun
-                    ? null
-                    : change.ExpectedVersions.Where(x => IsSettingsKey(x.Key)).ToDictionary(x => x.Key[SettingsKeyPrefix.Length..], x => x.Value),
-                DryRun = isDryRun,
-                ReportImpact = true,
-            }, user, cancellationToken),
+            isDryRun => multilanguagePageOperationService.PublishAllAsync(NewPublishAllRequest(root, change, isDryRun), user, cancellationToken),
             x => EnsureLanguagesPublished(x, change, root),
             dryRun,
-            checkAsync: async x =>
-            {
-                await PinAsync(change, x.Preview?.Objects, x.Preview?.Objects.Select(y => y.ObjectId) ?? [], expectedVersions, dryRun);
-                if (dryRun)
-                {
-                    await WarnOfSkippedVersionsAsync(user, change, x.Preview?.Objects ?? [], cancellationToken);
-                    var groups = new List<GroupedSiteBuilderPage>();
-                    foreach (var id in x.Preview?.Objects.Select(y => y.ObjectId).Where(y => y != null).Distinct() ?? [])
-                    {
-                        if (await groupedPageService.GetByIdAsync(id) is { } group)
-                        {
-                            groups.Add(group);
-                        }
-                    }
-
-                    await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
-                }
-            });
+            checkAsync: x => PinAllLanguagesAsync(user, change, x.Preview, expectedVersions, dryRun, cancellationToken));
 
         foreach (var skipped in result.Value?.Skipped ?? [])
         {
-            change.AddWarning(skipped.Reason switch
-            {
-                MultilanguagePageBatchResult.NoDraftReason => $"{skipped.CultureName}: no draft, nothing to publish.",
-                MultilanguagePageBatchResult.ChangedReason => $"{skipped.CultureName}: its draft changed since it was reviewed, or its settings did, so it was not " +
-                    "published. Call publish_page with dryRun again for it, show the user the change, and send the new expected_versions.",
-                MultilanguagePageBatchResult.PermalinkConflictReason => $"{skipped.CultureName}: another published page serves its permalink to " +
-                    $"the same visitors, so it was not published. Call publish_page with languages: ['{skipped.CultureName}'] and dryRun to see the " +
-                    "page it would replace, and let the user choose whether to replace it.",
-                _ => $"{skipped.CultureName}: publishing failed; the version is as it was. Try it again with languages: ['{skipped.CultureName}'].",
-            });
+            change.AddWarning(DescribeSkipped(skipped));
         }
 
         return change;
     }
 
+    private static MultilanguagePagePublishAllOperationRequest NewPublishAllRequest(MultilanguagePage root, SiteBuilderChange change, bool isDryRun) => new()
+    {
+        MultilanguagePageId = root.Id,
+        ExpectedDraftVersions = isDryRun ? null : new Dictionary<string, string>(change.ExpectedVersions.Where(x => !IsSettingsKey(x.Key))),
+        ExpectedSettingsVersions = isDryRun
+            ? null
+            : change.ExpectedVersions.Where(x => IsSettingsKey(x.Key)).ToDictionary(x => x.Key[SettingsKeyPrefix.Length..], x => x.Value),
+        DryRun = isDryRun,
+        ReportImpact = true,
+    };
+
+    private async Task PinAllLanguagesAsync(ClaimsPrincipal user, SiteBuilderChange change, SiteBuilderChangePreview preview,
+        IDictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
+    {
+        await PinAsync(change, preview?.Objects, preview?.Objects.Select(y => y.ObjectId) ?? [], expectedVersions, dryRun);
+        if (dryRun)
+        {
+            await WarnOfSkippedVersionsAsync(user, change, preview?.Objects ?? [], cancellationToken);
+            var groups = new List<GroupedSiteBuilderPage>();
+            foreach (var id in preview?.Objects.Select(y => y.ObjectId).Where(y => y != null).Distinct() ?? [])
+            {
+                if (await groupedPageService.GetByIdAsync(id) is { } group)
+                {
+                    groups.Add(group);
+                }
+            }
+
+            await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
+        }
+    }
+
+    private static string DescribeSkipped(MultilanguagePageBatchSkip skipped) => skipped.Reason switch
+    {
+        MultilanguagePageBatchResult.NoDraftReason => $"{skipped.CultureName}: no draft, nothing to publish.",
+        MultilanguagePageBatchResult.ChangedReason => $"{skipped.CultureName}: its draft changed since it was reviewed, or its settings did, so it was not " +
+            "published. Call publish_page with dryRun again for it, show the user the change, and send the new expected_versions.",
+        MultilanguagePageBatchResult.PermalinkConflictReason => $"{skipped.CultureName}: another published page serves its permalink to " +
+            $"the same visitors, so it was not published. Call publish_page with languages: ['{skipped.CultureName}'] and dryRun to see the " +
+            "page it would replace, and let the user choose whether to replace it.",
+        _ => $"{skipped.CultureName}: publishing failed; the version is as it was. Try it again with languages: ['{skipped.CultureName}'].",
+    };
+
     private async Task WarnOfSkippedVersionsAsync(ClaimsPrincipal user, SiteBuilderChange change, IEnumerable<SiteBuilderObjectChange> drafts,
         CancellationToken cancellationToken)
     {
-        foreach (var draft in drafts)
+        foreach (var objectId in drafts.Select(draft => draft.ObjectId))
         {
-            var conflicts = await groupedPageOperationService.FindPermalinkConflictsAsync(user, draft.ObjectId, cancellationToken);
-            if (conflicts.Count > 0 && await groupedPageService.GetByIdAsync(draft.ObjectId) is { } group)
+            var conflicts = await groupedPageOperationService.FindPermalinkConflictsAsync(user, objectId, cancellationToken);
+            if (conflicts.Count > 0 && await groupedPageService.GetByIdAsync(objectId) is { } group)
             {
                 change.AddWarning($"{group.CultureName}: publishing every language skips this version, since published pages serve its permalink to " +
                     $"the same visitors and it would replace them: {PermalinkConflicts.Describe(conflicts)}. " +
@@ -286,6 +320,28 @@ public class PagePublishingTools(
     private async Task<SiteBuilderChange> PublishLanguagesAsync(ClaimsPrincipal user, MultilanguagePage root, string[] languages,
         IDictionary<string, string> expectedVersions, bool unpublishConflicting, bool dryRun, CancellationToken cancellationToken)
     {
+        var groups = await LoadLanguageVersionsAsync(root, languages, cancellationToken);
+
+        var change = NewMultilanguageChange(root);
+        change.DryRun = true;
+        var (drafts, replaced) = await ReviewLanguageVersionsAsync(user, change, groups, unpublishConflicting, cancellationToken);
+
+        change.AffectsPublished = true;
+        await PinAsync(change, drafts, groups.Select(x => x.Id), expectedVersions, dryRun);
+        if (dryRun)
+        {
+            await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
+            return change;
+        }
+
+        await PublishLanguageVersionsAsync(user, change, groups, replaced, unpublishConflicting, cancellationToken);
+
+        change.DryRun = false;
+        return change;
+    }
+
+    private async Task<List<GroupedSiteBuilderPage>> LoadLanguageVersionsAsync(MultilanguagePage root, string[] languages, CancellationToken cancellationToken)
+    {
         var versions = (await multilanguagePageService.GetLanguagesAsync(root.Id, cancellationToken))
             .Where(x => x.Page != null)
             .ToDictionary(x => x.CultureName, x => x.Page, StringComparer.OrdinalIgnoreCase);
@@ -296,63 +352,69 @@ public class PagePublishingTools(
             throw new McpException($"Multilanguage Page '{root.Id}' has no version in {string.Join(", ", missing)}. create_page with kind 'language_version' adds one.");
         }
 
-        var groups = languages
+        return languages
             .Select(x => versions[x])
             .DistinctBy(x => x.Id)
             .OrderByDescending(x => string.Equals(x.CultureName, root.DefaultCultureName, StringComparison.OrdinalIgnoreCase))
             .ToList();
+    }
 
-        var change = NewMultilanguageChange(root);
-        change.DryRun = true;
+    private async Task<(List<SiteBuilderObjectChange> Drafts, Dictionary<string, List<string>> Replaced)> ReviewLanguageVersionsAsync(ClaimsPrincipal user,
+        SiteBuilderChange change, List<GroupedSiteBuilderPage> groups, bool unpublishConflicting, CancellationToken cancellationToken)
+    {
         var drafts = new List<SiteBuilderObjectChange>();
         var replaced = new Dictionary<string, List<string>>();
         foreach (var group in groups)
         {
-            var check = await RunPublishAsync(user, group.Id, publish: true, isDryRun: true, reviewed: null, expectedReplacedVersions: null,
-                unpublishConflicting, cancellationToken);
+            var check = await RunPublishAsync(user, new PublishTarget(group.Id, Publish: true, unpublishConflicting), isDryRun: true, reviewed: null,
+                expectedReplacedVersions: null, cancellationToken);
             EnsurePublished(check, group, publish: true);
             change.AddChanges(check.Preview);
             drafts.AddRange(check.Preview?.Objects ?? []);
             replaced[group.Id] = check.Preview?.Objects.Where(x => x.ObjectId != group.Id).Select(x => x.ObjectId).ToList() ?? [];
         }
 
-        change.AffectsPublished = true;
-        await PinAsync(change, drafts, groups.Select(x => x.Id), expectedVersions, dryRun);
-        if (dryRun)
-        {
-            await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
-            return change;
-        }
+        return (drafts, replaced);
+    }
 
+    private async Task PublishLanguageVersionsAsync(ClaimsPrincipal user, SiteBuilderChange change, List<GroupedSiteBuilderPage> groups,
+        Dictionary<string, List<string>> replaced, bool unpublishConflicting, CancellationToken cancellationToken)
+    {
         var published = new List<string>();
         foreach (var group in groups)
         {
-            var result = await RunPublishAsync(user, group.Id, publish: true, isDryRun: false, change,
-                unpublishConflicting ? ReplacedVersions(change, replaced[group.Id]) : null, unpublishConflicting, cancellationToken);
+            var result = await RunPublishAsync(user, new PublishTarget(group.Id, Publish: true, unpublishConflicting), isDryRun: false, change,
+                unpublishConflicting ? ReplacedVersions(change, replaced[group.Id]) : null, cancellationToken);
             if (!result.Succeeded)
             {
-                var done = published.Count == 0 ? "No version was published." : $"Published: {string.Join(", ", published)}.";
-                var reason = result.Status switch
-                {
-                    SiteBuilderOperationStatus.Conflict => "its draft or its settings changed since it was reviewed; call publish_page with dryRun again and send the new expected_versions",
-                    SiteBuilderOperationStatus.PermalinkConflict => PermalinkConflicts.Explain(result),
-                    _ => result.Error ?? result.Status.ToString(),
-                };
-                throw new McpException($"Publishing the {group.CultureName} version '{group.Id}' failed: {reason}. {done}");
+                throw LanguagePublishFailed(group, result, published);
             }
 
             published.Add(replaced[group.Id].Count == 0
                 ? group.CultureName
                 : $"{group.CultureName} (and unpublished {string.Join(", ", replaced[group.Id].Select(x => $"page '{x}'"))})");
         }
-
-        change.DryRun = false;
-        return change;
     }
 
-    private Task<SiteBuilderOperationResult> RunPublishAsync(ClaimsPrincipal user, string groupId, bool publish, bool isDryRun, IReviewedChange reviewed,
-        IDictionary<string, string> expectedReplacedVersions, bool unpublishConflicting, CancellationToken cancellationToken)
+    private static McpException LanguagePublishFailed(GroupedSiteBuilderPage group, SiteBuilderOperationResult result, List<string> published)
     {
+        var done = published.Count == 0 ? "No version was published." : $"Published: {string.Join(", ", published)}.";
+        var reason = result.Status switch
+        {
+            SiteBuilderOperationStatus.Conflict => "its draft or its settings changed since it was reviewed; call publish_page with dryRun again and send the new expected_versions",
+            SiteBuilderOperationStatus.PermalinkConflict => PermalinkConflicts.Explain(result),
+            _ => result.Error ?? result.Status.ToString(),
+        };
+
+        return new McpException($"Publishing the {group.CultureName} version '{group.Id}' failed: {reason}. {done}");
+    }
+
+    private sealed record PublishTarget(string GroupId, bool Publish, bool UnpublishConflicting);
+
+    private Task<SiteBuilderOperationResult> RunPublishAsync(ClaimsPrincipal user, PublishTarget target, bool isDryRun, IReviewedChange reviewed,
+        IDictionary<string, string> expectedReplacedVersions, CancellationToken cancellationToken)
+    {
+        var (groupId, publish, unpublishConflicting) = target;
         var expectedVersion = reviewed == null ? null : ReviewedVersions.Of(reviewed, groupId);
         return groupedPageOperationService.PublishAsync(new GroupedPagePublishOperationRequest
         {
@@ -397,11 +459,7 @@ public class PagePublishingTools(
     {
         if (result.Status == SiteBuilderOperationStatus.Invalid)
         {
-            var hint = publish
-                ? "There is no draft to publish: the page is published as it is."
-                : group.Pages.All(x => x.Status != PageStatuses.Published)
-                    ? "It is not published."
-                    : "It has unpublished changes: publish them with publish_page or discard them with discard_draft first.";
+            var hint = NotPublishedHint(group, publish);
             throw new McpException($"Page '{group.Id}' was not {(publish ? "published" : "unpublished")}. {hint}");
         }
 
@@ -418,6 +476,18 @@ public class PagePublishingTools(
         }
 
         SiteBuilderChanges.EnsureSucceeded(result, $"Page '{group.Id}'", PageLookup.ForbiddenPage(group));
+    }
+
+    private static string NotPublishedHint(GroupedSiteBuilderPage group, bool publish)
+    {
+        if (publish)
+        {
+            return "There is no draft to publish: the page is published as it is.";
+        }
+
+        return group.Pages.All(x => x.Status != PageStatuses.Published)
+            ? "It is not published."
+            : "It has unpublished changes: publish them with publish_page or discard them with discard_draft first.";
     }
 
     private static void EnsureLanguagesPublished(SiteBuilderOperationResult result, SiteBuilderChange change, MultilanguagePage root)

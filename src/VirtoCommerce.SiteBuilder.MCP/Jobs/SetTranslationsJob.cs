@@ -43,6 +43,8 @@ public class SetTranslationsJob(
     ILogger<SetTranslationsJob> logger)
     : IBackgroundJobHandler<SetTranslationsJobPayload>
 {
+    private const int MaxNamedNotMarked = 10;
+
     public async Task Execute(SetTranslationsJobPayload payload, IJobExecutionContext context, CancellationToken cancellationToken = default)
     {
         var tally = new PageJobTally();
@@ -110,8 +112,13 @@ public class SetTranslationsJob(
         }
 
         text += $" {marked} marked up to date";
-        return notMarked.Count == 0 ? text + "." : $"{text}; not marked: {string.Join(", ", notMarked.Take(10))}" +
-            (notMarked.Count > 10 ? $" and {notMarked.Count - 10} more." : ".");
+        if (notMarked.Count == 0)
+        {
+            return text + ".";
+        }
+
+        var more = notMarked.Count > MaxNamedNotMarked ? $" and {notMarked.Count - MaxNamedNotMarked} more." : ".";
+        return $"{text}; not marked: {string.Join(", ", notMarked.Take(MaxNamedNotMarked))}" + more;
     }
 }
 

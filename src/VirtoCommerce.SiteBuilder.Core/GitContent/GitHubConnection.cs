@@ -6,6 +6,9 @@ public class GitHubConnection
 {
     public bool IsEnabled { get; set; }
 
+    /// <summary>The configuration switches git content off for every store, the saved App included.</summary>
+    public bool IsSwitchedOff { get; set; }
+
     public string Repository { get; set; }
 
     public string Organization { get; set; }

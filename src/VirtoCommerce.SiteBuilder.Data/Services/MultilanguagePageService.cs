@@ -244,9 +244,9 @@ public class MultilanguagePageService(
         foreach (var group in await GetLanguageVersionsAsync(existing.Id))
         {
             var updated = group.CloneTyped();
-            if (MultilanguagePageInheritance.Apply(root, updated))
+            if (MultilanguagePageInheritance.Apply(root, updated) && preview.AddPage(group, updated) is { } change)
             {
-                preview.AddPage(group, updated);
+                change.ETag = SiteBuilderContentVersion.CreateForGroupSettings(group);
             }
         }
 
@@ -413,6 +413,26 @@ public class MultilanguagePageService(
             await CheckRootVersionAsync(root.Id, expectedVersion, cancellationToken);
         }
 
+        var resets = await ResetLanguageVersionsAsync(root, fields);
+
+        if (expectedPageVersions != null)
+        {
+            CheckResetVersions(resets, expectedPageVersions);
+        }
+
+        var changedCultureNames = new List<string>();
+        foreach (var (group, version) in resets)
+        {
+            var expectedPageVersion = expectedPageVersions == null ? null : version;
+            await SaveResetGroupAsync(group, requireUnpublished, expectedPageVersion, expectedVersion, cancellationToken);
+            changedCultureNames.Add(group.CultureName);
+        }
+
+        return changedCultureNames;
+    }
+
+    private async Task<List<(GroupedSiteBuilderPage Group, string Version)>> ResetLanguageVersionsAsync(MultilanguagePage root, IList<string> fields)
+    {
         var resets = new List<(GroupedSiteBuilderPage Group, string Version)>();
 #pragma warning disable S3267 // Reset changes the group; a Where predicate should not have side effects
         foreach (var group in await GetLanguageVersionsAsync(root.Id))
@@ -426,28 +446,19 @@ public class MultilanguagePageService(
         }
 #pragma warning restore S3267
 
-        if (expectedPageVersions != null)
-        {
-            CheckResetVersions(resets, expectedPageVersions);
-        }
-
-        var changedCultureNames = new List<string>();
-        foreach (var (group, version) in resets)
-        {
-            var expectedPageVersion = expectedPageVersions == null ? null : version;
-            await (requireUnpublished || expectedPageVersion != null || expectedVersion != null
-                ? groupedPageContentService.SaveGroupSettingsAsync(group, new GroupedPageSaveCondition
-                {
-                    RequireUnpublished = requireUnpublished,
-                    ExpectedSettingsVersion = expectedPageVersion,
-                    ExpectedMultilanguagePageVersion = expectedVersion,
-                }, cancellationToken)
-                : groupedPageContentService.SaveGroupSettingsAsync(group, cancellationToken));
-            changedCultureNames.Add(group.CultureName);
-        }
-
-        return changedCultureNames;
+        return resets;
     }
+
+    private Task SaveResetGroupAsync(GroupedSiteBuilderPage group, bool requireUnpublished, string expectedPageVersion, string expectedVersion,
+        CancellationToken cancellationToken) =>
+        requireUnpublished || expectedPageVersion != null || expectedVersion != null
+            ? groupedPageContentService.SaveGroupSettingsAsync(group, new GroupedPageSaveCondition
+            {
+                RequireUnpublished = requireUnpublished,
+                ExpectedSettingsVersion = expectedPageVersion,
+                ExpectedMultilanguagePageVersion = expectedVersion,
+            }, cancellationToken)
+            : groupedPageContentService.SaveGroupSettingsAsync(group, cancellationToken);
 
     private static void CheckResetVersions(IList<(GroupedSiteBuilderPage Group, string Version)> resets, IDictionary<string, string> expectedPageVersions)
     {
@@ -932,8 +943,7 @@ public class MultilanguagePageService(
         IDictionary<string, string> expectedSettingsVersions, CancellationToken cancellationToken)
     {
         var drafted = groups.Where(x => GroupedPagePublishing.GetDraft(x) != null).ToList();
-        if ((expectedDraftVersions != null && drafted.Count != expectedDraftVersions.Count) ||
-            (expectedSettingsVersions != null && drafted.Count != expectedSettingsVersions.Count))
+        if (IsCountDifferent(drafted.Count, expectedDraftVersions) || IsCountDifferent(drafted.Count, expectedSettingsVersions))
         {
             throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
         }
@@ -957,6 +967,9 @@ public class MultilanguagePageService(
             }
         }
     }
+
+    private static bool IsCountDifferent(int draftedCount, IDictionary<string, string> expectedVersions) =>
+        expectedVersions != null && draftedCount != expectedVersions.Count;
 
     private static bool IsAtSettingsVersion(GroupedSiteBuilderPage group, IDictionary<string, string> expectedSettingsVersions) =>
         expectedSettingsVersions.TryGetValue(group.Id, out var version) &&

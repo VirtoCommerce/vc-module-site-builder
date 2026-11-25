@@ -95,37 +95,13 @@ public class SiteBuilderSectionScanner(
     protected virtual async Task ScanVersionAsync(SiteBuilderPageListItem row, GroupedSiteBuilderPage page, SiteBuilderSectionScanCriteria criteria,
         Dictionary<string, SiteBuilderPageDocument> components, SiteBuilderSectionScanResult result, CancellationToken cancellationToken)
     {
-        SiteBuilderContentSnapshot snapshot;
-        try
+        var read = await ReadVersionAsync(page, criteria, result, cancellationToken);
+        if (read == null)
         {
-            snapshot = await pageContentService.LoadGroupContentAsync(page, draft: !criteria.Published, cancellationToken);
-        }
-        catch (KeyNotFoundException)
-        {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.Deleted));
             return;
         }
 
-        // Without a published version the published read answers an archived one, which the storefront does not show.
-        if (criteria.Published && page.Pages?.FirstOrDefault(x => x.Id == snapshot.PageId)?.Status != Published)
-        {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NotPublished));
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(snapshot.Content))
-        {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NoContent));
-            return;
-        }
-
-        var document = SiteBuilderPageDocument.Read(snapshot.Content);
-        if (document == null)
-        {
-            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NotADocument));
-            return;
-        }
-
+        var (snapshot, document) = read.Value;
         var match = AbstractTypeFactory<SiteBuilderSectionScanPage>.TryCreateInstance();
         match.Page = page;
         match.ListItem = row;
@@ -135,25 +111,68 @@ public class SiteBuilderSectionScanner(
 
         for (var position = 0; position < document.Sections.Count; position++)
         {
-            if (document.Sections[position] is not JsonObject section || IsInGroup(section))
-            {
-                continue;
-            }
-
-            // A page of the older shape holds no Shared Component placement.
-            if (!document.IsLegacyShape && IsPlacement(section))
-            {
-                await ScanPlacementAsync(page, section, position, criteria, components, match, cancellationToken);
-            }
-            else if (SiteBuilderSectionConditions.IsMatch(section, criteria.SectionType, criteria.Condition))
-            {
-                match.Sections.Add(CreateMatch(section, position));
-            }
+            await ScanSectionAsync(page, document, position, criteria, components, match, cancellationToken);
         }
 
         if (match.Sections.Count > 0 || match.UnreadSharedComponentIds.Count > 0)
         {
             result.Pages.Add(match);
+        }
+    }
+
+    private async Task<(SiteBuilderContentSnapshot Snapshot, SiteBuilderPageDocument Document)?> ReadVersionAsync(GroupedSiteBuilderPage page,
+        SiteBuilderSectionScanCriteria criteria, SiteBuilderSectionScanResult result, CancellationToken cancellationToken)
+    {
+        SiteBuilderContentSnapshot snapshot;
+        try
+        {
+            snapshot = await pageContentService.LoadGroupContentAsync(page, draft: !criteria.Published, cancellationToken);
+        }
+        catch (KeyNotFoundException)
+        {
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.Deleted));
+            return null;
+        }
+
+        // Without a published version the published read answers an archived one, which the storefront does not show.
+        if (criteria.Published && page.Pages?.FirstOrDefault(x => x.Id == snapshot.PageId)?.Status != Published)
+        {
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NotPublished));
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(snapshot.Content))
+        {
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NoContent));
+            return null;
+        }
+
+        var document = SiteBuilderPageDocument.Read(snapshot.Content);
+        if (document == null)
+        {
+            result.Unread.Add(Unread(page, SiteBuilderSectionScanUnread.NotADocument));
+            return null;
+        }
+
+        return (snapshot, document);
+    }
+
+    private async Task ScanSectionAsync(GroupedSiteBuilderPage page, SiteBuilderPageDocument document, int position, SiteBuilderSectionScanCriteria criteria,
+        Dictionary<string, SiteBuilderPageDocument> components, SiteBuilderSectionScanPage match, CancellationToken cancellationToken)
+    {
+        if (document.Sections[position] is not JsonObject section || IsInGroup(section))
+        {
+            return;
+        }
+
+        // A page of the older shape holds no Shared Component placement.
+        if (!document.IsLegacyShape && IsPlacement(section))
+        {
+            await ScanPlacementAsync(page, section, position, criteria, components, match, cancellationToken);
+        }
+        else if (SiteBuilderSectionConditions.IsMatch(section, criteria.SectionType, criteria.Condition))
+        {
+            match.Sections.Add(CreateMatch(section, position));
         }
     }
 
@@ -177,15 +196,13 @@ public class SiteBuilderSectionScanner(
             return;
         }
 
-        foreach (var section in component.Sections.OfType<JsonObject>().Where(x => !IsPlacement(x) && !IsInGroup(x)))
+        foreach (var section in component.Sections.OfType<JsonObject>()
+            .Where(x => !IsPlacement(x) && !IsInGroup(x) && SiteBuilderSectionConditions.IsMatch(x, criteria.SectionType, criteria.Condition)))
         {
-            if (SiteBuilderSectionConditions.IsMatch(section, criteria.SectionType, criteria.Condition))
-            {
-                var result = CreateMatch(section, position);
-                result.SharedComponentId = componentId;
-                result.PlacementId = GetId(placement);
-                match.Sections.Add(result);
-            }
+            var result = CreateMatch(section, position);
+            result.SharedComponentId = componentId;
+            result.PlacementId = GetId(placement);
+            match.Sections.Add(result);
         }
     }
 
@@ -247,14 +264,7 @@ public class SiteBuilderSectionScanner(
             template.IsDraft = draft != null;
 
             // The storefront shows no Shared Component outside pages, so a placement in a template brings no sections.
-            for (var position = 0; position < document.Sections.Count; position++)
-            {
-                if (document.Sections[position] is JsonObject section && !IsInGroup(section) && !IsPlacement(section) &&
-                    SiteBuilderSectionConditions.IsMatch(section, criteria.SectionType, criteria.Condition))
-                {
-                    template.Sections.Add(CreateMatch(section, position));
-                }
-            }
+            AddTemplateMatches(template, document, criteria);
 
             if (template.Sections.Count > 0)
             {
@@ -263,6 +273,19 @@ public class SiteBuilderSectionScanner(
         }
 
         return result;
+    }
+
+    private static void AddTemplateMatches(SiteBuilderTemplateSectionScanTemplate template, SiteBuilderPageDocument document,
+        SiteBuilderTemplateSectionScanCriteria criteria)
+    {
+        for (var position = 0; position < document.Sections.Count; position++)
+        {
+            if (document.Sections[position] is JsonObject section && !IsInGroup(section) && !IsPlacement(section) &&
+                SiteBuilderSectionConditions.IsMatch(section, criteria.SectionType, criteria.Condition))
+            {
+                template.Sections.Add(CreateMatch(section, position));
+            }
+        }
     }
 
     protected static SiteBuilderSectionMatch CreateMatch(JsonObject section, int position)

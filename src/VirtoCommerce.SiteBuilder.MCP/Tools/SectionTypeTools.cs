@@ -165,8 +165,9 @@ public class SectionTypeTools(
         };
 
         var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, storeId, cancellationToken);
-        await ThemeFileEdits.SaveAsync(change, designerOperationService, user, storeId, catalogHash, [new ThemeFileEdit(path, current, content)],
-            dryRun, Theme, $"Read it again at {resource} and repeat the change on that version.", cancellationToken);
+        await ThemeFileEdits.SaveAsync(change, designerOperationService, user,
+            new ThemeFileSaveTarget(storeId, catalogHash, dryRun, Theme, $"Read it again at {resource} and repeat the change on that version."),
+            [new ThemeFileEdit(path, current, content)], cancellationToken);
 
         if (change.Errors != null)
         {

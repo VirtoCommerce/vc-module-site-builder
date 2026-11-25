@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
@@ -25,6 +26,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class PageTools(
@@ -43,6 +46,8 @@ public class PageTools(
 
     private const int MaxModifiedDays = 365;
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "search_site_pages", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
     [Description("Find pages of Site Builder. Returns one page of compact rows: a Landing Page is a row with its language; a " +
@@ -353,15 +358,20 @@ public sealed class SitePageRow
             Type = item.Type,
             Name = item.Name,
             Permalink = item.Permalink,
-            StoreId = page?.StoreId ?? root?.StoreId,
+            StoreId = StoreIdOf(page, root),
             Language = page?.CultureName,
             Status = page?.Status,
             HasUnpublishedChanges = page == null ? null : page.Status == PageStatuses.Published && page.HasChanges,
             Languages = item.Languages?.Select(SitePageLanguageRow.From).ToList(),
             ModifiedDate = item.ModifiedDate ?? item.CreatedDate,
-            ModifiedBy = page?.ModifiedBy ?? page?.CreatedBy ?? root?.ModifiedBy ?? root?.CreatedBy,
+            ModifiedBy = ModifiedByOf(page, root),
         };
     }
+
+    private static string StoreIdOf(GroupedSiteBuilderPage page, MultilanguagePage root) => page?.StoreId ?? root?.StoreId;
+
+    private static string ModifiedByOf(GroupedSiteBuilderPage page, MultilanguagePage root) =>
+        page?.ModifiedBy ?? page?.CreatedBy ?? root?.ModifiedBy ?? root?.CreatedBy;
 
     public static SitePageRow FromFile(string storeId, string contentType, SiteBuilderFileSearchItem item) => new()
     {
@@ -478,10 +488,18 @@ public sealed class SitePageDetails
             VersionToken = snapshot.ETag,
             Settings = content?.Settings,
             Sections = content?.Sections,
-            ContentNote = snapshot.Content == null
-                ? "The page has no content in this version."
-                : content == null ? "The stored content is not a page document." : null,
+            ContentNote = NoteOf(snapshot.Content, content != null),
         };
+    }
+
+    private static string NoteOf(string rawContent, bool isDocument)
+    {
+        if (rawContent == null)
+        {
+            return "The page has no content in this version.";
+        }
+
+        return isDocument ? null : "The stored content is not a page document.";
     }
 }
 
@@ -526,14 +544,24 @@ public sealed class FilePageDetails
             Flow = status?.Flow,
             Published = status?.Published,
             HasUnpublishedChanges = status?.HasChanges,
-            PublishPending = status == null ? null : status.Pending || status.AwaitingMerge,
+            PublishPending = IsPublishPending(status),
             ContentVersion = published ? "published" : "draft",
             VersionToken = FilePages.VersionOf(content),
             Settings = document?.Settings,
             Sections = document?.Sections,
-            ContentNote = content == null
-                ? "The page is not published."
-                : document == null ? "The stored content is not a page document." : null,
+            ContentNote = NoteOf(content, document != null),
         };
+    }
+
+    private static bool? IsPublishPending(PagePublishStatus status) => status == null ? null : status.Pending || status.AwaitingMerge;
+
+    private static string NoteOf(string content, bool isDocument)
+    {
+        if (content == null)
+        {
+            return "The page is not published.";
+        }
+
+        return isDocument ? null : "The stored content is not a page document.";
     }
 }

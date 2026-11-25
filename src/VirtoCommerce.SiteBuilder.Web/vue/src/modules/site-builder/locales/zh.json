@@ -669,7 +669,8 @@
         "AGAIN": "重新设置"
       },
       "CONNECT_FIRST": "此平台尚未连接到 GitHub。请先在“站点”面板中连接一次，然后在此处启用历史。",
-      "OPEN_GITHUB": "GitHub 连接"
+      "OPEN_GITHUB": "GitHub 连接",
+      "GITHUB_MISSING": "此商店通过 Git 发布页面，但尚未连接 GitHub。请连接 GitHub，或为此商店关闭 Git 发布。"
     },
     "GITHUB": {
       "INTRO": "只需将平台连接到 GitHub 组织一次。之后每个站点都会将其页面的版本保存在该组织中自己的私有仓库里。",

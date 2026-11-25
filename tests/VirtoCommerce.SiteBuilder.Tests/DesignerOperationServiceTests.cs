@@ -175,6 +175,52 @@ public class DesignerOperationServiceTests
         Assert.Empty(_live.Events.OfType<SiteBuilderPageChangedEvent>());
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("fedcba98")]
+    public async Task SaveAsync_PageWithoutAKnownCatalogHash_IsCheckedAgainstTheStoresCurrentCatalog(string catalogHash)
+    {
+        await SaveLinkCatalogAsync();
+        var page = DatabasePage();
+        page.Content = """{"settings":{},"content":[{"id":"a","type":"notice","link":"data:text/html,<p>x</p>"}]}""";
+
+        var result = await Operations().SaveAsync(SaveRequest(Save(page), catalogHash), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("page: 'content[0].link' links to a data: URL", result.Error);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveAsync_PageWithoutCatalogHash_SanitizesTheHtmlOfAFieldTheCurrentCatalogNames()
+    {
+        await SaveLinkCatalogAsync();
+        var page = DatabasePage();
+        page.Content = """{"settings":{},"content":[{"id":"a","type":"notice","note":"<p>x</p><script>alert(1)</script>"}]}""";
+        var request = SaveRequest(Save(page), catalogHash: null);
+        request.DryRun = true;
+
+        var result = await Operations().SaveAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("""{"settings":{},"content":[{"id":"a","type":"notice","note":"<p>x</p>"}]}""", Assert.Single(Assert.Single(result.Preview.Objects).Fields).To);
+    }
+
+    [Fact]
+    public async Task SaveAsync_PageWithoutCatalogHashInAStoreWithoutACatalog_IsCheckedWithoutASchema()
+    {
+        const string content = """{"settings":{},"content":[{"id":"a","type":"notice","link":"data:text/html,<p>x</p>","note":"<p>x</p><script>alert(1)</script>"}]}""";
+        var page = DatabasePage();
+        page.Content = content;
+        var request = SaveRequest(Save(page), catalogHash: null);
+        request.DryRun = true;
+
+        var result = await Operations().SaveAsync(request, _user, Ct);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(content, Assert.Single(Assert.Single(result.Preview.Objects).Fields).To);
+    }
+
     [Fact]
     public async Task SaveAsync_DryRunOfAFilePage_AnswersWhatIsPublishedAndWritesNoDraft()
     {
@@ -581,6 +627,19 @@ public class DesignerOperationServiceTests
     private Task<string> SaveCatalogAsync() =>
         new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "site-header": {}, "text": {} }, "blocks": {}, "shared": {} }""", Ct);
+
+    private Task<string> SaveLinkCatalogAsync() =>
+        new SchemaCatalogService(_themes).SaveAsync("s1",
+            $$"""
+            {
+              "hash": "{{Catalog}}",
+              "sections": {
+                "notice": { "settings": [ { "id": "link", "type": "url" }, { "id": "note", "type": "markdown", "resultType": "html" } ] }
+              },
+              "blocks": {},
+              "shared": {}
+            }
+            """, Ct);
 
     private Task<string> SaveContentCatalogAsync() =>
         new SchemaCatalogService(_themes).SaveAsync("s1",

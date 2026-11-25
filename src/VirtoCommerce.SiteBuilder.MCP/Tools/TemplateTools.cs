@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
@@ -22,6 +23,8 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class TemplateTools(
@@ -41,6 +44,8 @@ public class TemplateTools(
 
     private static readonly string[] Layouts = ["full", "minimal", "blank"];
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "search_templates", ReadOnly = true, Destructive = false, Idempotent = true)]
     [McpPermission(Read)]
     [Description("List the templates of a store's theme: key, page type (product, category, page), whether it is the type's " +
@@ -126,6 +131,8 @@ public class TemplateTools(
         return answer;
     }
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "edit_template", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -152,22 +159,7 @@ public class TemplateTools(
         await EnsureStoreAsync(context.User, store_id);
         var key = template_key?.Trim();
         var type = TemplateRulesDocument.PageTypeOf(key);
-        if (key == null || type == null || !ThemeStorage.IsTemplateKey(key))
-        {
-            throw new McpException("template_key must be a template key: product, category or page, or one of them with an alternate name such as 'product.bicycles'.");
-        }
-
-        if ((operations?.Length ?? 0) > MaxOperations)
-        {
-            throw new McpException($"Pass at most {MaxOperations} operations in one call.");
-        }
-
-        if (layout != null && (type != "page" || !Layouts.Contains(layout)))
-        {
-            throw new McpException(type == "page"
-                ? $"layout must be one of {string.Join(", ", Layouts)}."
-                : "layout applies to page templates only: product and category pages always show the site's header and footer.");
-        }
+        ValidateEdit(key, type, operations, layout);
 
         var templates = await ThemeTemplates.ListAsync(contentQueryService, context.User, store_id, cancellationToken);
         var path = await ThemeFiles.GetPathAsync(themeStorageFactory, store_id, ThemeFiles.GetTemplateFile(key));
@@ -179,10 +171,63 @@ public class TemplateTools(
             ? ReadExisting(key, current, version_token, copy_of)
             : await CreateAsync(context.User, store_id, key, type, templates, copy_of, cancellationToken);
 
+        await ApplyEditsAsync(editor, operations, layout, created, context.User, store_id, cancellationToken);
+
+        var change = new ThemeFileChange
+        {
+            Action = created ? "create_template" : "edit_template",
+            ObjectType = "template",
+            ObjectId = path,
+            ObjectName = $"Template '{key}'",
+            StoreId = store_id,
+        };
+
+        var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, store_id, cancellationToken);
+        await ThemeFileEdits.SaveAsync(change, designerOperationService, context.User,
+            new ThemeFileSaveTarget(store_id, catalogHash, dryRun, Templates, $"Read it again with search_templates (template_key '{key}') and repeat the edit on that version."),
+            [new ThemeFileEdit(path, current, editor.Write())], cancellationToken);
+
+        change.Sections = SectionRow.From(editor.Sections);
+        if (created && !ThemeTemplates.BuiltIn.Contains(key))
+        {
+            change.AddWarning($"Template '{key}' gets pages only through a template rule: add one with edit_template_rules (template '{key}').");
+        }
+
+        return change;
+    }
+
+    private static void ValidateEdit(string key, string type, PageEditOperation[] operations, string layout)
+    {
+        if (key == null || type == null || !ThemeStorage.IsTemplateKey(key))
+        {
+            throw new McpException("template_key must be a template key: product, category or page, or one of them with an alternate name such as 'product.bicycles'.");
+        }
+
+        if ((operations?.Length ?? 0) > MaxOperations)
+        {
+            throw new McpException($"Pass at most {MaxOperations} operations in one call.");
+        }
+
+        ValidateLayout(type, layout);
+    }
+
+    private static void ValidateLayout(string type, string layout)
+    {
+        if (layout != null && (type != "page" || !Layouts.Contains(layout)))
+        {
+            throw new McpException(type == "page"
+                ? $"layout must be one of {string.Join(", ", Layouts)}."
+                : "layout applies to page templates only: product and category pages always show the site's header and footer.");
+        }
+    }
+
+    private async Task ApplyEditsAsync(PageDocumentEditor editor, PageEditOperation[] operations, string layout, bool created, ClaimsPrincipal user,
+        string storeId, CancellationToken cancellationToken)
+    {
         if (operations?.Length > 0)
         {
             var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
-                sharedComponentContentService, context.User, store_id);
+                sharedComponentContentService, user, storeId);
             await editor.ApplyAsync(operations, sources, cancellationToken);
         }
 
@@ -195,27 +240,6 @@ public class TemplateTools(
         {
             throw new McpException("Pass operations or layout: the changes to make.");
         }
-
-        var change = new ThemeFileChange
-        {
-            Action = created ? "create_template" : "edit_template",
-            ObjectType = "template",
-            ObjectId = path,
-            ObjectName = $"Template '{key}'",
-            StoreId = store_id,
-        };
-
-        var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, store_id, cancellationToken);
-        await ThemeFileEdits.SaveAsync(change, designerOperationService, context.User, store_id, catalogHash, [new ThemeFileEdit(path, current, editor.Write())],
-            dryRun, Templates, $"Read it again with search_templates (template_key '{key}') and repeat the edit on that version.", cancellationToken);
-
-        change.Sections = SectionRow.From(editor.Sections);
-        if (created && !ThemeTemplates.BuiltIn.Contains(key))
-        {
-            change.AddWarning($"Template '{key}' gets pages only through a template rule: add one with edit_template_rules (template '{key}').");
-        }
-
-        return change;
     }
 
     private static PageDocumentEditor ReadExisting(string key, ThemeFileContent current, string versionToken, string copyOf)
@@ -242,19 +266,7 @@ public class TemplateTools(
         var content = ThemeFileEdits.EmptyDocument(PageDocumentKind.Template);
         if (!string.IsNullOrWhiteSpace(copyOf))
         {
-            var source = copyOf.Trim();
-            if (TemplateRulesDocument.PageTypeOf(source) != type)
-            {
-                throw new McpException($"copy_of must be a {type} template, as '{key}' lays out {type} pages.");
-            }
-
-            if (templates.All(x => x.Key != source))
-            {
-                throw new McpException($"The theme has no template '{source}' to copy. Call search_templates for its templates.");
-            }
-
-            var sourcePath = await ThemeFiles.GetPathAsync(themeStorageFactory, storeId, ThemeFiles.GetTemplateFile(source));
-            content = (await ThemeFiles.ReadAsync(designerOperationService, user, storeId, sourcePath, cancellationToken)).Content ?? content;
+            content = await ReadCopySourceAsync(user, storeId, key, type, templates, copyOf, content, cancellationToken);
         }
 
         var root = JsonNode.Parse(content) as JsonObject;
@@ -274,6 +286,24 @@ public class TemplateTools(
         }
 
         return editor;
+    }
+
+    private async Task<string> ReadCopySourceAsync(ClaimsPrincipal user, string storeId, string key, string type, IList<ThemeTemplate> templates,
+        string copyOf, string fallbackContent, CancellationToken cancellationToken)
+    {
+        var source = copyOf.Trim();
+        if (TemplateRulesDocument.PageTypeOf(source) != type)
+        {
+            throw new McpException($"copy_of must be a {type} template, as '{key}' lays out {type} pages.");
+        }
+
+        if (templates.All(x => x.Key != source))
+        {
+            throw new McpException($"The theme has no template '{source}' to copy. Call search_templates for its templates.");
+        }
+
+        var sourcePath = await ThemeFiles.GetPathAsync(themeStorageFactory, storeId, ThemeFiles.GetTemplateFile(source));
+        return (await ThemeFiles.ReadAsync(designerOperationService, user, storeId, sourcePath, cancellationToken)).Content ?? fallbackContent;
     }
 
     private async Task<TemplateDetails> ReadTemplateAsync(ClaimsPrincipal user, string storeId, TemplateRow row, bool published, CancellationToken cancellationToken)
@@ -305,10 +335,18 @@ public class TemplateTools(
             Sections = document?.Sections,
             MainSection = main,
             MainSectionState = document == null ? null : ThemeTemplateMainSections.GetState(Newtonsoft.Json.Linq.JToken.Parse(content), main)?.ToString(),
-            Note = content == null
-                ? "The template has no file in this version."
-                : document == null ? "The stored template is not a template document." : null,
+            Note = GetNote(content, document),
         };
+    }
+
+    private static string GetNote(string content, SiteBuilderPageDocument document)
+    {
+        if (content == null)
+        {
+            return "The template has no file in this version.";
+        }
+
+        return document == null ? "The stored template is not a template document." : null;
     }
 
     private Task EnsureStoreAsync(ClaimsPrincipal user, string storeId)
@@ -328,7 +366,7 @@ public class TemplateTools(
             return null;
         }
 
-        return TemplateRulesDocument.PageTypes.FirstOrDefault(x => x == pageType.Trim().ToLowerInvariant())
+        return TemplateRulesDocument.PageTypes.FirstOrDefault(x => string.Equals(x, pageType.Trim(), StringComparison.OrdinalIgnoreCase))
             ?? throw new McpException("page_type must be product, category or page.");
     }
 }

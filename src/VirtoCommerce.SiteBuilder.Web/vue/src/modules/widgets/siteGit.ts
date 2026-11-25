@@ -9,6 +9,12 @@ export function siteGitView(status: GitContentSiteStatus): SiteGitView {
   return status.url ? "on" : "missing";
 }
 
+/**
+ * A store keeps its pages in git while GitHub is not usable, so its pages are refused until GitHub is connected or
+ * git is turned off for it. Git switched off for the whole platform is reported as off.
+ */
+export const gitHubMissing = (status: GitContentSiteStatus) => !!status.enabled && !status.configured;
+
 /** The Git endpoints say what went wrong in `{ error }`, except a refusal, which has no body. */
 export function gitErrorMessage(error: unknown, forbidden: string): string {
   if (!(error instanceof ApiException)) return error instanceof Error ? error.message : String(error);

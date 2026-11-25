@@ -669,7 +669,8 @@
         "AGAIN": "Määritä uudelleen"
       },
       "CONNECT_FIRST": "Tätä alustaa ei ole vielä yhdistetty GitHubiin. Yhdistä se kerran Sivustot-paneelista ja ota sitten historia käyttöön täällä.",
-      "OPEN_GITHUB": "GitHub-yhteys"
+      "OPEN_GITHUB": "GitHub-yhteys",
+      "GITHUB_MISSING": "Tämä kauppa julkaisee sivut Gitin kautta, mutta GitHubia ei ole yhdistetty. Yhdistä GitHub tai poista Git-julkaisu käytöstä tältä kaupalta."
     },
     "GITHUB": {
       "INTRO": "Yhdistä alusta kerran GitHub-organisaatioon. Jokainen sivusto säilyttää sen jälkeen sivujensa versiot omassa yksityisessä repositoriossaan siellä.",

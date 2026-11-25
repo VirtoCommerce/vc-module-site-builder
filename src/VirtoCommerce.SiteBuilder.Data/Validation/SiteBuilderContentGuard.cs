@@ -138,10 +138,10 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
                 Sanitize(text, result);
             }
         }
-        else if (value is JObject translation && IsTranslatedMarkdownValue(type, resultType, translation))
+        else if (type == MarkdownFieldType && resultType != MarkdownFieldType)
         {
-            // the texts of a translated markdown value are its HTML, as the designer stores them
-            foreach (var text in translation.Properties().Select(x => x.Value).OfType<JValue>().Where(x => x.Type == JTokenType.String))
+            // a plain or translated text of a markdown value is the HTML the storefront shows
+            foreach (var text in GetMarkdownHtmlTexts(value))
             {
                 Sanitize(text, result);
             }
@@ -167,8 +167,13 @@ public class SiteBuilderContentGuard(ISiteBuilderHtmlSanitizer htmlSanitizer) : 
     private static bool IsHtmlValue(string type, string resultType) =>
         type is HtmlFieldType or RichTextFieldType || (type == MarkdownFieldType && resultType == HtmlFieldType);
 
-    private static bool IsTranslatedMarkdownValue(string type, string resultType, JObject value) =>
-        type == MarkdownFieldType && resultType != MarkdownFieldType && !IsMarkdownValue(value);
+    /// <summary>A <c>{ markdown, html }</c> value is left out: <see cref="GuardValues"/> sanitizes its HTML.</summary>
+    private static IEnumerable<JValue> GetMarkdownHtmlTexts(JToken value) => value switch
+    {
+        JValue { Type: JTokenType.String } text => [text],
+        JObject translation when !IsMarkdownValue(translation) => translation.Properties().Select(x => x.Value).OfType<JValue>().Where(x => x.Type == JTokenType.String),
+        _ => [],
+    };
 
     private void GuardUrlTexts(JToken value, string name, SiteBuilderContentGuardResult result)
     {

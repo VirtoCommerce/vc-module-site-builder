@@ -143,6 +143,27 @@ public class SiteBuilderSharedComponentCreateStoreTests
             Assert.Single(change.Fields, x => x.Name == ModuleConstants.ChangePreview.Content).To);
     }
 
+    [Fact]
+    public async Task CreateOperation_LinkToADataUrl_IsInvalidAgainstTheStoresCurrentCatalog()
+    {
+        var components = new RecordingComponentService();
+        var operations = TestServices.SharedComponentOperations(new FakeAuthorizationService(true), components,
+            storeService: new FakeStoreService(new Store { Id = "store" }),
+            catalogs: new TestServices.CurrentSchemaCatalog("""{ "hash": "abc12345", "sections": { "text": { "settings": [ { "id": "link", "type": "url" } ] } } }"""));
+        var request = new SharedComponentCreateOperationRequest
+        {
+            StoreId = "store",
+            Name = "Shared hero",
+            Content = JObject.Parse("""{"settings":{},"content":[{"id":"hero","type":"text","link":"data:text/html,<p>x</p>"}]}"""),
+        };
+
+        var result = await operations.CreateAsync(request, new ClaimsPrincipal(new ClaimsIdentity()), TestContext.Current.CancellationToken);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("shared component: 'content[0].link' links to a data: URL", result.Error);
+        Assert.Null(components.SavedContent);
+    }
+
     private static SiteBuilderSharedComponentCreateModel Request(string storeId) => new()
     {
         StoreId = storeId,

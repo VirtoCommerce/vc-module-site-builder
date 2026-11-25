@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -36,6 +37,8 @@ public class SharedComponentWriteTools(
     private const string ComponentKeyPrefix = "shared_component:";
     private const string PageKeyPrefix = "page:";
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "create_shared_component", ReadOnly = false, Destructive = false, Idempotent = false)]
     [McpPermission(Read, SharedComponentsRead)]
     [Authorize(SharedComponentsCreate)]
@@ -62,21 +65,7 @@ public class SharedComponentWriteTools(
         var storeId = store_id.Trim();
         await authorizationService.EnsureStoreAllowedAsync(context.User, storeId, SharedComponentsRead);
 
-        var operations = new List<PageEditOperation>();
-        if (!string.IsNullOrWhiteSpace(source_page_id))
-        {
-            operations.Add(new PageEditOperation { Op = "copy_sections_from", SourcePageId = source_page_id.Trim(), SectionIds = section_ids });
-        }
-        else if (section_ids?.Length > 0)
-        {
-            throw new McpException("section_ids go with source_page_id, the page to copy them from.");
-        }
-
-        operations.AddRange((sections ?? []).Select(x => x?.ToOperation() ?? throw new McpException("A section is empty.")));
-        if (operations.Count == 0)
-        {
-            throw new McpException("Pass sections, source_page_id or both: a Shared Component starts with sections.");
-        }
+        var operations = BuildCreateOperations(sections, source_page_id, section_ids);
 
         var editor = PageDocumentEditor.Read(null, PageDocumentKind.SharedComponent);
         await editor.ApplyAsync(operations, CreateSources(context.User, storeId), cancellationToken);
@@ -144,22 +133,9 @@ public class SharedComponentWriteTools(
         [Description("true to return what would change and the pages the component stands on, without changing it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(shared_component_id))
-        {
-            throw new McpException("Pass shared_component_id; search_shared_components finds it.");
-        }
+        ValidateChangeArguments(shared_component_id, name, operations);
 
-        if (name == null && operations == null)
-        {
-            throw new McpException("Pass operations to change the content, name to rename the component, or both.");
-        }
-
-        var component = await sharedComponentService.GetByIdAsync(shared_component_id.Trim())
-            ?? throw new McpException($"Shared Component '{shared_component_id}' was not found. Call search_shared_components to find its id.");
-        if (!await authorizationService.IsAllowedAsync(context.User, component, SharedComponentsRead))
-        {
-            throw new McpForbiddenException($"Your {SharedComponentsRead} permission does not cover the store of Shared Component '{component.Id}'.");
-        }
+        var component = await GetAllowedComponentAsync(context.User, shared_component_id);
 
         var change = new SharedComponentChange
         {
@@ -179,17 +155,7 @@ public class SharedComponentWriteTools(
             : await CheckContentAsync(context.User, component, operations, new ReviewedCall(expected_versions, dryRun), change, cancellationToken);
 
         var newName = name?.Trim();
-        var rename = newName != null && !string.Equals(newName, component.Name, StringComparison.Ordinal);
-        if (rename)
-        {
-            var check = await sharedComponentOperationService.UpdateAsync(RenameRequest(component, newName, isDryRun: true), context.User, cancellationToken);
-            EnsureSucceeded(check, subject, component.StoreId, SharedComponentsUpdate);
-            change.AddChanges(check.Preview);
-        }
-        else if (newName != null)
-        {
-            change.AddWarning($"The component is already named '{component.Name}'.");
-        }
+        var rename = await CheckRenameAsync(change, component, newName, subject, context.User, cancellationToken);
 
         if (content == null && !rename)
         {
@@ -202,11 +168,63 @@ public class SharedComponentWriteTools(
             return change;
         }
 
+        await WriteChangeAsync(change, component, content, rename ? newName : null, subject, context.User, cancellationToken);
+
+        change.DryRun = false;
+        return change;
+    }
+
+    private static void ValidateChangeArguments(string sharedComponentId, string name, PageEditOperation[] operations)
+    {
+        if (string.IsNullOrWhiteSpace(sharedComponentId))
+        {
+            throw new McpException("Pass shared_component_id; search_shared_components finds it.");
+        }
+
+        if (name == null && operations == null)
+        {
+            throw new McpException("Pass operations to change the content, name to rename the component, or both.");
+        }
+    }
+
+    private async Task<SiteBuilderSharedComponent> GetAllowedComponentAsync(ClaimsPrincipal user, string sharedComponentId)
+    {
+        var component = await sharedComponentService.GetByIdAsync(sharedComponentId.Trim())
+            ?? throw new McpException($"Shared Component '{sharedComponentId}' was not found. Call search_shared_components to find its id.");
+        if (!await authorizationService.IsAllowedAsync(user, component, SharedComponentsRead))
+        {
+            throw new McpForbiddenException($"Your {SharedComponentsRead} permission does not cover the store of Shared Component '{component.Id}'.");
+        }
+
+        return component;
+    }
+
+    private async Task<bool> CheckRenameAsync(SharedComponentChange change, SiteBuilderSharedComponent component, string newName, string subject,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var rename = newName != null && !string.Equals(newName, component.Name, StringComparison.Ordinal);
+        if (rename)
+        {
+            var check = await sharedComponentOperationService.UpdateAsync(RenameRequest(component, newName, isDryRun: true), user, cancellationToken);
+            EnsureSucceeded(check, subject, component.StoreId, SharedComponentsUpdate);
+            change.AddChanges(check.Preview);
+        }
+        else if (newName != null)
+        {
+            change.AddWarning($"The component is already named '{component.Name}'.");
+        }
+
+        return rename;
+    }
+
+    private async Task WriteChangeAsync(SharedComponentChange change, SiteBuilderSharedComponent component, JObject content, string newName, string subject,
+        ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
         if (content != null)
         {
             ReviewedVersions.EnsureUnchanged(change, await ReadVersionsAsync(component, change.ExpectedVersions.Keys, cancellationToken));
             var result = await sharedComponentOperationService.SaveContentAsync(
-                ContentRequest(component, content, isDryRun: false, ReviewedVersions.Of(change, ComponentKeyPrefix + component.Id)), context.User, cancellationToken);
+                ContentRequest(component, content, isDryRun: false, ReviewedVersions.Of(change, ComponentKeyPrefix + component.Id)), user, cancellationToken);
             if (result.Status == SiteBuilderOperationStatus.Conflict)
             {
                 throw ReviewedVersions.Changed(change);
@@ -216,15 +234,38 @@ public class SharedComponentWriteTools(
             change.AffectsPublished = result.AffectsPublished;
         }
 
-        if (rename)
+        if (newName != null)
         {
-            var result = await sharedComponentOperationService.UpdateAsync(RenameRequest(component, newName, isDryRun: false), context.User, cancellationToken);
+            var result = await sharedComponentOperationService.UpdateAsync(RenameRequest(component, newName, isDryRun: false), user, cancellationToken);
             EnsureSucceeded(result, subject, component.StoreId, SharedComponentsUpdate);
             change.ObjectName = newName;
         }
+    }
 
-        change.DryRun = false;
-        return change;
+    private static List<PageEditOperation> BuildCreateOperations(NewSection[] sections, string sourcePageId, string[] sectionIds)
+    {
+        var operations = new List<PageEditOperation>();
+        if (!string.IsNullOrWhiteSpace(sourcePageId))
+        {
+            operations.Add(new PageEditOperation { Op = "copy_sections_from", SourcePageId = sourcePageId.Trim(), SectionIds = sectionIds });
+        }
+        else if (sectionIds?.Length > 0)
+        {
+            throw new McpException("section_ids go with source_page_id, the page to copy them from.");
+        }
+
+        if (sections?.Length > MaxOperations)
+        {
+            throw new McpException($"Pass at most {MaxOperations} operations in sections.");
+        }
+
+        operations.AddRange((sections ?? []).Select(x => x?.ToOperation() ?? throw new McpException("A section is empty.")));
+        if (operations.Count == 0)
+        {
+            throw new McpException("Pass sections, source_page_id or both: a Shared Component starts with sections.");
+        }
+
+        return operations;
     }
 
     // A rename shows nowhere on the storefront, and a content call without expected versions is refused before writing.

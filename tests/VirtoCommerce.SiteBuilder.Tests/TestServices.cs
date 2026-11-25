@@ -83,7 +83,8 @@ internal static class TestServices
         var contentGuard = ContentGuard;
         var contentWriter = pages == null
             ? null
-            : new GroupedPageContentWriter(pages, new Fakes.FakeSiteBuilderPageService(pages), events ?? new Fakes.NoopEventPublisher(), contentGuard);
+            : new GroupedPageContentWriter(pages, new Fakes.FakeSiteBuilderPageService(pages), events ?? new Fakes.NoopEventPublisher(), contentGuard,
+                catalogs ?? new NoSchemaCatalogs());
 
         return new DesignerContentService(themeDrafts, themePublisher, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
             pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs(),
@@ -109,12 +110,14 @@ internal static class TestServices
         ISiteBuilderSharedComponentPlacementValidator sharedComponentPlacementValidator = null,
         IDesignerContentService designerContentService = null,
         IContentHistory contentHistory = null,
-        ISiteBuilderPublishConflictService publishConflictService = null) =>
+        ISiteBuilderPublishConflictService publishConflictService = null,
+        ISchemaCatalogService catalogs = null) =>
         new(authorizationService, groupedPageService, pageService, pageContentService,
             sharedComponentPlacementValidator ?? new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorizationService),
             designerContentService ?? Designer(contentHistory ?? new NoContentHistory()), ContentGuard, contentHistory ?? new NoContentHistory(),
             publishConflictService ?? new SiteBuilderPublishConflictService(groupedPageService, new Fakes.FakeGroupedPageSearchService(), storeService: null,
-                distributedLock: null));
+                distributedLock: null),
+            catalogs ?? new NoSchemaCatalogs());
 
     public static ThemeOperationService ThemeOperations(IAuthorizationService authorizationService, IThemePublisher themePublisher,
         IContentHistory contentHistory = null, string storeId = "s1") =>
@@ -129,9 +132,9 @@ internal static class TestServices
     public static SiteBuilderSharedComponentOperationService SharedComponentOperations(IAuthorizationService authorizationService,
         ISiteBuilderSharedComponentService sharedComponentService, ISiteBuilderSharedComponentContentService sharedComponentContentService = null,
         ISiteBuilderSharedComponentUsageService sharedComponentUsageService = null, IStoreService storeService = null,
-        ISiteBuilderSharedComponentSearchService sharedComponentSearchService = null) =>
+        ISiteBuilderSharedComponentSearchService sharedComponentSearchService = null, ISchemaCatalogService catalogs = null) =>
         new(sharedComponentService, sharedComponentSearchService, sharedComponentContentService, sharedComponentUsageService, authorizationService, storeService,
-            ContentGuard);
+            ContentGuard, catalogs ?? new NoSchemaCatalogs());
 
     public static SiteBuilderPublishStatusQueryService PublishStatuses(IAuthorizationService authorizationService, IGroupedPageService groupedPageService) =>
         new(authorizationService, null, groupedPageService, null, null, null, null, null, null, null);
@@ -152,10 +155,11 @@ internal static class TestServices
         IThemeDraftService themeDraftService = null,
         IContentHistory contentHistory = null,
         IContentPermissionService contentPermissionService = null,
-        ISiteBuilderContentGuard contentGuard = null) =>
+        ISiteBuilderContentGuard contentGuard = null,
+        ISchemaCatalogService catalogs = null) =>
         new(authorizationService, requestValidator, contentPermissionService ?? Permissions(authorizationService), publishingService, gitContentPolicy,
             gitContentRepository, gitContentHistory, gitContentPublisher, gitLivePageService, gitHubConnectionService, gitContentOptions, filePageDraftService,
-            themeDraftService, contentHistory ?? new NoContentHistory(), contentGuard ?? ContentGuard);
+            themeDraftService, contentHistory ?? new NoContentHistory(), contentGuard ?? ContentGuard, catalogs ?? new NoSchemaCatalogs());
 
     /// <summary>The controller with its query and operation services built from the same fakes, as the platform's container builds them.</summary>
     [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "One for each service of the controller.")]
@@ -183,7 +187,8 @@ internal static class TestServices
         IFilePageDraftService filePageDraftService,
         IThemeStorageFactory themeStorageFactory,
         ISiteBuilderContentGuard contentGuard,
-        IGroupedPageService groupedPageService = null)
+        IGroupedPageService groupedPageService = null,
+        ISchemaCatalogService catalogs = null)
     {
         var contentQueries = new SiteBuilderContentQueryService(authorizationService, requestValidator, pathResolver, blobContentStorageProviderFactory,
             publishingService, themeStorageFactory, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions, gitContentHistory);
@@ -194,15 +199,15 @@ internal static class TestServices
 
         var filePageOperations = FilePageOperations(authorizationService, requestValidator, gitContentOptions, gitHubConnectionService, gitContentPolicy,
             gitContentRepository, gitContentHistory, gitContentPublisher, gitLivePageService, filePageDraftService, publishingService, themeDraftService,
-            contentHistory, contentPermissionService, contentGuard);
+            contentHistory, contentPermissionService, contentGuard, catalogs);
 
         return new SiteBuilderController(pathResolver, blobContentStorageProviderFactory, publishingService, eventPublisher, gitContentOptions,
             gitHubConnectionService, gitContentPolicy, gitContentRepository, authorizationService, distributedLock, requestValidator,
             contentHistory, designerOperationService, contentPermissionService, filePageDraftService, themeStorageFactory, contentGuard, contentQueries,
-            previews, publishStatuses, filePageOperations);
+            previews, publishStatuses, filePageOperations, catalogs ?? new NoSchemaCatalogs());
     }
 
-    private sealed class NoSchemaCatalogs : ISchemaCatalogService
+    internal sealed class NoSchemaCatalogs : ISchemaCatalogService
     {
         public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
@@ -214,5 +219,18 @@ internal static class TestServices
     private sealed class AssetUrls(string publicUrl) : IBlobUrlResolver
     {
         public string GetAbsoluteUrl(string blobKey) => publicUrl == null ? null : publicUrl + blobKey.TrimStart('/');
+    }
+
+    /// <summary>A store whose current catalog is the one given, and which has no other.</summary>
+    internal sealed class CurrentSchemaCatalog(string catalog) : ISchemaCatalogService
+    {
+        public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        private readonly string _hash = catalog == null ? null : Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(catalog)));
+
+        public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default) =>
+            Task.FromResult(string.IsNullOrEmpty(hash) || hash == _hash ? catalog : null);
+
+        public Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default) => Task.FromResult(_hash);
     }
 }

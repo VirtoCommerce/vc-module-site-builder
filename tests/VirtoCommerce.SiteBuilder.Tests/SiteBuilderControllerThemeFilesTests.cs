@@ -31,6 +31,7 @@ public class SiteBuilderControllerThemeFilesTests
     private const string Path = "default/sections/header-group.json";
 
     private const string Catalog = "abc12345";
+    private const string DataLink = "data:text/html,<p>x</p>";
 
     private readonly FakeBlobStorage _live = new();
     private readonly FakeGitContentOwnership _ownership = new("another-store");
@@ -237,11 +238,47 @@ public class SiteBuilderControllerThemeFilesTests
     }
 
     [Fact]
-    public async Task SaveTemplates_NoCatalogHash_DoesNotCheckTheFiles()
+    public async Task SaveTemplates_NoCatalogHashInAStoreWithoutACatalog_ChecksTheFilesWithoutASchema()
     {
         Assert.IsType<OkObjectResult>(await Builder().SaveTemplates("s1", "default", HeaderGroup("carousel"), draft: true));
 
         Assert.True(_live.Files.ContainsKey(Theme($"{Path}-draft")));
+    }
+
+    [Fact]
+    public async Task SaveTemplates_NoCatalogHash_ChecksTheFilesAgainstTheStoresCurrentCatalog()
+    {
+        await SaveCatalogAsync();
+        var files = new SiteBuilderController.SaveFilesModel
+        {
+            Files = JsonConvert.SerializeObject(new[]
+            {
+                new { path = Path, type = "themes", content = new { content = new[] { new { id = "s0", type = "site-header", link = DataLink } } } },
+            }),
+        };
+
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true);
+
+        Assert.Contains("links to a data: URL", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result))["error"]);
+        Assert.False(_live.Files.ContainsKey(Theme($"{Path}-draft")));
+    }
+
+    [Fact]
+    public async Task SaveTemplates_NoCatalogHash_ChecksThePagesAgainstTheStoresCurrentCatalog()
+    {
+        await SaveCatalogAsync();
+        var files = new SiteBuilderController.SaveFilesModel
+        {
+            Files = JsonConvert.SerializeObject(new[]
+            {
+                new { path = "about.page", type = "pages", content = new { settings = new { type = "settings" }, content = new[] { new { id = "s0", type = "site-header", link = DataLink } } } },
+            }),
+        };
+
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true);
+
+        Assert.Contains("about.page: 'content[0].link' links to a data: URL", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result))["error"]);
+        Assert.DoesNotContain(_live.Files.Keys, x => x.StartsWith("pages/"));
     }
 
     [Fact]
@@ -523,7 +560,7 @@ public class SiteBuilderControllerThemeFilesTests
 
     private Task<string> SaveCatalogAsync() =>
         new SchemaCatalogService(_themeStorageFactory).SaveAsync("s1",
-            $$"""{ "hash": "{{Catalog}}", "sections": { "site-header": {}, "product-info": {}, "text": {} }, "blocks": {}, "shared": {} }""", Ct);
+            $$"""{ "hash": "{{Catalog}}", "sections": { "site-header": { "settings": [ { "id": "link", "type": "url" } ] }, "product-info": {}, "text": {} }, "blocks": {}, "shared": {} }""", Ct);
 
     private static object Group(params string[] types) => new
     {
@@ -573,12 +610,13 @@ public class SiteBuilderControllerThemeFilesTests
                 requestValidator: RequestValidators.Content("s1"),
                 designerContentService: TestServices.Designer(history ?? new NoContentHistory(), filePageDrafts,
                     new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance), null, eventPublisher ?? _live, themePublisher,
-                    themes: _themeStorageFactory),
+                    new SchemaCatalogService(_themeStorageFactory), _themeStorageFactory),
                 themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance)),
             contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),
             filePageDraftService: filePageDrafts,
             contentGuard: TestServices.ContentGuard,
-            themeStorageFactory: _themeStorageFactory);
+            themeStorageFactory: _themeStorageFactory,
+            catalogs: new SchemaCatalogService(_themeStorageFactory));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test")) },

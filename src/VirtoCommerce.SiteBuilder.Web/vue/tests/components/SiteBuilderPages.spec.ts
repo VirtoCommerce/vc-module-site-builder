@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, ref } from "vue";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import SiteBuilderPages from "../../src/modules/pages/SiteBuilderPages.vue";
 import { BladeMaximizedKey, blade, resetVcShell } from "./support/vcShell";
+import { fakePlatform } from "./support/fakePlatform";
 
 vi.mock("../../src/modules/site-builder/components", () => ({ PagesList: defineComponent({ render: () => null }) }));
 vi.mock("../../src/modules/site-builder/composables", async () => {
@@ -35,5 +36,19 @@ describe("SiteBuilderPages", () => {
     const [[activated]] = blade.onActivated.mock.calls;
     activated();
     expect(maximized.value).toBe(true);
+  });
+
+  it("warns that the store's GitHub is missing and opens the store's Git panel from the warning", async () => {
+    blade.param.value = "s1";
+    fakePlatform()
+      .install()
+      .on("GET", "/api/site-builder/git/connection", { configured: false })
+      .on("GET", "/api/site-builder/git/site", { configured: false, enabled: true });
+
+    mount(SiteBuilderPages);
+    await flushPromises();
+    blade.banners[0].action?.handler();
+
+    expect(blade.openBlade).toHaveBeenCalledWith(expect.objectContaining({ name: "SiteBuilderGit", param: "s1" }));
   });
 });

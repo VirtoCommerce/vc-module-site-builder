@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using VirtoCommerce.SiteBuilder.Core.Events;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.Platform.Core.Events;
@@ -30,7 +31,8 @@ public sealed class SiteBuilderPageContentService(
         IEventPublisher eventPublisher,
         ILogger<SiteBuilderPageContentService> logger)
         : this(pageService, groupedPageService, eventPublisher, logger, groupedPageService as IGroupedPageContentService,
-            new GroupedPageContentWriter(groupedPageService as IGroupedPageContentService, pageService, eventPublisher, new SiteBuilderContentGuard()))
+            new GroupedPageContentWriter(groupedPageService as IGroupedPageContentService, pageService, eventPublisher, new SiteBuilderContentGuard(),
+                new NoSchemaCatalogs()))
     {
     }
 
@@ -251,6 +253,16 @@ public sealed class SiteBuilderPageContentService(
     }
 
     private sealed record DraftPage(SiteBuilderPage Page, string CreatedPageId);
+
+    /// <summary>A content service built without the container reads no theme storage: its writes are checked without a schema.</summary>
+    private sealed class NoSchemaCatalogs : ISchemaCatalogService
+    {
+        public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
+
+        public Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
+    }
 }
 
 public sealed record SiteBuilderPageContentWriteResult(bool PageFound, string ErrorMessage)

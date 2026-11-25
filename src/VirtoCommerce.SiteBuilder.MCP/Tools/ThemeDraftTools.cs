@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -19,6 +20,8 @@ using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class ThemeDraftTools(
@@ -46,6 +49,8 @@ public class ThemeDraftTools(
         ("faviconUrl", "favicon_image"),
     ];
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = "edit_theme_draft", ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -83,7 +88,7 @@ public class ThemeDraftTools(
         await authorizationService.EnsureStoreAllowedAsync(context.User, store_id);
 
         var name = part?.Trim().ToLowerInvariant();
-        CheckArguments(name, operations, logo_url, secondary_logo_url, favicon_url, primary_color, secondary_color, light_colors, dark_colors);
+        CheckArguments(name, new PartArguments(operations, logo_url, secondary_logo_url, favicon_url, primary_color, secondary_color, light_colors, dark_colors));
         var change = new ThemeFileChange { Action = "edit_theme_draft", ObjectType = "theme-part", StoreId = store_id };
         var request = new PartRequest(context.User, store_id, operations, cancellationToken);
         var edits = name switch
@@ -106,8 +111,10 @@ public class ThemeDraftTools(
         }
 
         var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, store_id, cancellationToken);
-        await ThemeFileEdits.SaveAsync(change, designerOperationService, context.User, store_id, catalogHash, edits, dryRun, Theme,
-            $"Call edit_theme_draft with part '{name}', dryRun and nothing else to read it again, then repeat the edit.", cancellationToken);
+        await ThemeFileEdits.SaveAsync(change, designerOperationService, context.User,
+            new ThemeFileSaveTarget(store_id, catalogHash, dryRun, Theme,
+                $"Call edit_theme_draft with part '{name}', dryRun and nothing else to read it again, then repeat the edit."),
+            edits, cancellationToken);
 
         return change;
     }
@@ -128,7 +135,19 @@ public class ThemeDraftTools(
             return null;
         }
 
-        if (request.Operations.Length > MaxOperations)
+        CheckGroupEdit(request.Operations, group, versionToken, current);
+
+        var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
+            sharedComponentContentService, request.User, request.StoreId);
+        await editor.ApplyAsync(request.Operations, sources, request.CancellationToken);
+        change.Sections = SectionRow.From(editor.Sections);
+
+        return [new ThemeFileEdit(path, current, editor.Write())];
+    }
+
+    private static void CheckGroupEdit(PageEditOperation[] operations, string group, string versionToken, ThemeFileContent current)
+    {
+        if (operations.Length > MaxOperations)
         {
             throw new McpException($"Pass at most {MaxOperations} operations in one call.");
         }
@@ -138,13 +157,6 @@ public class ThemeDraftTools(
             throw new McpException($"The {group} changed since you read it, or version_token is not its version. Call edit_theme_draft with part " +
                 $"'{group}', dryRun and nothing else to read it, and make the edit with its version token.");
         }
-
-        var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
-            sharedComponentContentService, request.User, request.StoreId);
-        await editor.ApplyAsync(request.Operations, sources, request.CancellationToken);
-        change.Sections = SectionRow.From(editor.Sections);
-
-        return [new ThemeFileEdit(path, current, editor.Write())];
     }
 
     private async Task<IList<ThemeFileEdit>> EditBrandAsync(PartRequest request, Dictionary<string, string> values, string versionToken, ThemeFileChange change)
@@ -333,34 +345,39 @@ public class ThemeDraftTools(
         }
     }
 
-    private static void CheckArguments(string part, PageEditOperation[] operations, string logo, string secondaryLogo, string favicon, string primary,
-        string secondary, Dictionary<string, string> light, Dictionary<string, string> dark)
+    private static void CheckArguments(string part, PartArguments arguments)
     {
         if (part is not (HeaderPart or FooterPart or BrandPart or PalettePart))
         {
             throw new McpException("part must be header, footer, brand or palette.");
         }
 
-        var misplaced = new List<string>();
-        if (part is not (HeaderPart or FooterPart) && operations?.Length > 0)
-        {
-            misplaced.Add("operations");
-        }
-
-        if (part != BrandPart && (logo ?? secondaryLogo ?? favicon) != null)
-        {
-            misplaced.Add("logo_url, secondary_logo_url, favicon_url");
-        }
-
-        if (part != PalettePart && ((primary ?? secondary) != null || light != null || dark != null))
-        {
-            misplaced.Add("primary_color, secondary_color, light_colors, dark_colors");
-        }
-
+        var misplaced = FindMisplaced(part, arguments);
         if (misplaced.Count > 0)
         {
             throw new McpException($"{string.Join("; ", misplaced)} do not apply to part '{part}', so nothing was saved.");
         }
+    }
+
+    private static List<string> FindMisplaced(string part, PartArguments arguments)
+    {
+        var misplaced = new List<string>();
+        if (part is not (HeaderPart or FooterPart) && arguments.HasOperations)
+        {
+            misplaced.Add("operations");
+        }
+
+        if (part != BrandPart && arguments.HasBrandValues)
+        {
+            misplaced.Add("logo_url, secondary_logo_url, favicon_url");
+        }
+
+        if (part != PalettePart && arguments.HasPaletteValues)
+        {
+            misplaced.Add("primary_color, secondary_color, light_colors, dark_colors");
+        }
+
+        return misplaced;
     }
 
     private static Dictionary<string, string> ReadColors(string content) =>
@@ -372,6 +389,8 @@ public class ThemeDraftTools(
     private static JsonObject ToJson(Dictionary<string, string> colors) =>
         new(colors.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => KeyValuePair.Create(x.Key, (JsonNode)x.Value)));
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the data holds no settings object; an empty object is a settings object with no values.")]
     private static JsonObject CurrentSettings(JsonObject data)
     {
         if (data == null)
@@ -385,6 +404,8 @@ public class ThemeDraftTools(
         return name != null && current?["settings"] is JsonObject settings ? settings : current;
     }
 
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the content is not a JSON object; an empty object is a valid, empty file.")]
     private static JsonObject ParseObject(string content)
     {
         if (string.IsNullOrWhiteSpace(content))
@@ -400,6 +421,16 @@ public class ThemeDraftTools(
         {
             return null;
         }
+    }
+
+    private sealed record PartArguments(PageEditOperation[] Operations, string LogoUrl, string SecondaryLogoUrl, string FaviconUrl, string PrimaryColor,
+        string SecondaryColor, Dictionary<string, string> LightColors, Dictionary<string, string> DarkColors)
+    {
+        public bool HasOperations => Operations?.Length > 0;
+
+        public bool HasBrandValues => (LogoUrl ?? SecondaryLogoUrl ?? FaviconUrl) != null;
+
+        public bool HasPaletteValues => (PrimaryColor ?? SecondaryColor) != null || LightColors != null || DarkColors != null;
     }
 
     private sealed record PartRequest(ClaimsPrincipal User, string StoreId, PageEditOperation[] Operations, CancellationToken CancellationToken);
