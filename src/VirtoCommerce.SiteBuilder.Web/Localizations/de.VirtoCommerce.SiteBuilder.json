@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Erlaubnis, Theme-Einstellungen zu bearbeiten",
     "builder:templates": "Erlaubnis, Vorlage während der Bearbeitung zu ändern",
-    "builder:promote": "Erlaubnis, eine Seite in Produktion zu übernehmen. Getrennt vom Veröffentlichen, das nur die Umgebung erreicht, mit der Redakteure arbeiten."
+    "builder:promote": "Erlaubnis, eine Seite in Produktion zu übernehmen. Getrennt vom Veröffentlichen, das nur die Umgebung erreicht, mit der Redakteure arbeiten.",
+    "builder:preview-as": "Erlaubt die Vorschau von Seiten als einer der Vorschau-Benutzer des Shops. Nur Kundenkonten sind möglich."
   }
 }

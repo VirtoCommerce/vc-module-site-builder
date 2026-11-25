@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Salli teeman asetusten muokkaus",
     "builder:templates": "Salli mallin vaihto muokkauksen aikana",
-    "builder:promote": "Salli sivun siirto tuotantoon. Erillään julkaisusta, joka ulottuu vain toimittajien käyttämään ympäristöön."
+    "builder:promote": "Salli sivun siirto tuotantoon. Erillään julkaisusta, joka ulottuu vain toimittajien käyttämään ympäristöön.",
+    "builder:preview-as": "Salli sivujen esikatselu kaupan esikatselukäyttäjänä. Vain asiakastilit ovat sallittuja."
   }
 }

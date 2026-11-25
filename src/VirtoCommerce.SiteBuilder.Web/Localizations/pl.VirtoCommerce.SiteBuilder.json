@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Zezwól na edytowanie ustawień motywu",
     "builder:templates": "Zezwól na zmianę szablonu podczas edycji",
-    "builder:promote": "Zezwól na przenoszenie strony na produkcję. Niezależne od publikowania, które obejmuje tylko środowisko, na którym pracują redaktorzy."
+    "builder:promote": "Zezwól na przenoszenie strony na produkcję. Niezależne od publikowania, które obejmuje tylko środowisko, na którym pracują redaktorzy.",
+    "builder:preview-as": "Zezwalaj na podgląd stron jako jeden z użytkowników podglądu sklepu. Dozwolone są tylko konta klientów."
   }
 }
