@@ -57,6 +57,8 @@ public class EndpointPermissionsTests
         [(typeof(MultilanguagePageController), nameof(MultilanguagePageController.Clone))] = Permissions.Create,
         [(typeof(MultilanguagePageController), nameof(MultilanguagePageController.PublishAll))] = Permissions.Publish,
         [(typeof(MultilanguagePageController), nameof(MultilanguagePageController.ArchiveAll))] = Permissions.Delete,
+        // builder:preview-as can be scoped to the store, so the action checks it; the store's preview users are checked there too.
+        [(typeof(PreviewAuthController), nameof(PreviewAuthController.CreateCode))] = NoPolicy,
         [(typeof(SiteBuilderAssetsController), nameof(SiteBuilderAssetsController.Search))] = PlatformPermissions.AssetRead,
         [(typeof(SiteBuilderAssetsController), nameof(SiteBuilderAssetsController.SearchReferences))] = NoPolicy,
         [(typeof(SiteBuilderPageController), nameof(SiteBuilderPageController.SearchGroups))] = NoPolicy,

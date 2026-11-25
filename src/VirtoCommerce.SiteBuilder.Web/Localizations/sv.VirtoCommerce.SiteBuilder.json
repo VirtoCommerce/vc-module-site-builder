@@ -147,6 +147,7 @@
   "permissions": {
     "builder:theme": "Tillåt redigering av temainställningar",
     "builder:templates": "Tillåt byte av mall under redigering",
-    "builder:promote": "Tillåt flytt av en sida till produktion. Separat från publicering, som bara når den miljö som redaktörerna arbetar mot."
+    "builder:promote": "Tillåt flytt av en sida till produktion. Separat från publicering, som bara når den miljö som redaktörerna arbetar mot.",
+    "builder:preview-as": "Tillåt förhandsgranskning av sidor som en av butikens förhandsgranskningsanvändare. Endast kundkonton är tillåtna."
   }
 }
