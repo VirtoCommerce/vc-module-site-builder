@@ -1,29 +1,13 @@
 # Files Control Descriptor
 
-This control uses the [file-upload](https://pivan.github.io/file-upload/) component. The corresponding [npm package](https://www.npmjs.com/package/@iplab/ngx-file-upload) is also available.
+This control lets users pick a file in the Site Builder asset library or enter the file URL.
 
 | Property                 | Type                  | Description                                                                                                                            |
 | ------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `accept`                 | string              | Comma-separated list of accepted file extensions or MIME types.<br>Used directly in [`accept`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file#accept) attribute. |
-| `multiple`               | boolean               | Allows multiple file uploads. Default is `true`.                                                                                 |
-| `sortable`               | boolean               | Allows files to be reordered. Default is `true`.                                                               |
-| `maxFileSize`            | number                | Maximum allowed file size (in bytes).                                                                                            |
-| `collapseThreshold`      | number                | Number of files after which the preview panel collapses. Default is `6`.                                                         |
-| `collapseCount`          | number                | Number of file previews shown in collapsed state. Default is `4`.                                                                |
-| `skipRemoveConfirmation` | boolean               | Skips the confirmation prompt when removing a file.                                                                              |
-| `removeMessage`          | string              | Message shown in the remove confirmation dialog.                                                                                 |
-| `urlField`               | string              | Field name containing the file URL (if value is an object).                                                                      |
-| `filenameField`          | string              | Field name containing the filename (if value is an object).                                                                      |
-| `element`                | ControlDescriptor[] | Additional descriptors for custom fields in the file object.                                                                     |
-| `UploadAcceptRequest`    | <br> AssetsRequest<br> string <br> inline       | Custom request descriptor used to upload assets.                                                     |
+| `accept`                 | string              | Comma-separated list of accepted file extensions (`.pdf`) or MIME types (`application/pdf`, `image/*`).<br>The asset library shows only the matching files. |
+| `multiple`               | boolean               | Allows multiple files. Default is `false`.                                                                                 |
 
-The value of this control is an array of URLs by default, or an array of objects if the `element` property is defined.
-
-If `uploadAssetsRequest` is **inline**, the file will be converted into **base64** and stored directly into page, without uploading to server. Such image can be used as the [data URL](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/data).
-
-If `uploadAssetsRequest` is **string**, it should be property name from the [builder settings](settings.md) object. Also it can be just [ServerRequestDescriptor](server-descriptors.md#serverrequestdescriptor) object, which will be used to upload files to server.
-
-If `uploadAssetsRequest` is not defined, the default request will be used, which is defined in [builder settings](settings.md) as `uploadAssetsRequest`.
+The value of this control is a file URL, or an array of URLs when `multiple` is `true`. The files of a multiple control can be reordered and removed.
 
 ## Examples
 ### Single file
@@ -45,9 +29,6 @@ If `uploadAssetsRequest` is not defined, the default request will be used, which
 ```
 
 **Result**
-<div class="grid" markdown>
-
-![Single file](media/file-control-single.gif)
 
 ```json
 ...
@@ -60,7 +41,6 @@ If `uploadAssetsRequest` is not defined, the default request will be used, which
     ]
 ...
 ```
-</div>
 
 
 
@@ -70,10 +50,10 @@ If `uploadAssetsRequest` is not defined, the default request will be used, which
 ...
     "settings": [
         {
-            "id": "attachment",
-            "label": "Attach a file",
+            "id": "attachments",
+            "label": "Attach files",
             "type": "files",
-            "multiple": false,
+            "multiple": true,
             "accept": ".pdf,application/pdf"
         },
         ...
@@ -82,10 +62,6 @@ If `uploadAssetsRequest` is not defined, the default request will be used, which
 ```
 
 **Result**
-
-<div class="grid" markdown>
-
-![Multiple files](media/file-control.png)
 
 ```json
 ...
@@ -103,82 +79,12 @@ If `uploadAssetsRequest` is not defined, the default request will be used, which
     ]
 ...
 ```
-</div>
-
-
-
-### Files as objects
-
-```json
-...
-    "settings": [
-        {
-            "id": "attachments",
-            "label": "Attach files",
-            "type": "files",
-            "urlField": "url",
-            "filenameField": "filename",
-            "element": [
-                {
-                    "id": "filename",
-                    "type": "string",
-                    "label": "File name"
-                },
-                {
-                    "id": "url",
-                    "type": "string",
-                    "label": "File url"
-                },
-                {
-                    "id": "altText",
-                    "type": "string",
-                    "label": "Alternative text"
-                }
-            ]
-        },
-        ...
-    ]
-...
-```
-
-**Result**
-
-<div class="grid" markdown>
-
-![Multiple files](media/file-control-object.png)
-
-```json
-...
-    "content": [
-        {
-            "attachments": [
-                {
-                    "filename": "2-requerimento.pdf",
-                    "url": "https://localhost:5001/cms-content/Pages/B2B-store/assets/pages/2-requerimento.pdf",
-                    "altText": "Requerimento"
-                },
-                {
-                    "filename": "89e49b95-98e5-43fe-a250-3746af0660bf.pdf",
-                    "url": "https://localhost:5001/cms-content/Pages/B2B-store/assets/pages/89e49b95-98e5-43fe-a250-3746af0660bf.pdf",
-                    "altText": "Another file"
-                },
-                ...
-            ]
-            ...
-        },
-        ...
-    ]
-...
-```
-
-
-</div>
 
 <br>
 <br>
 ********
 
 <div style="display: flex; justify-content: space-between;">
-    <a href="../color">← Color </a>
+    <a href="../color-token">← Color token </a>
     <a href="../header">Header →</a>
 </div>

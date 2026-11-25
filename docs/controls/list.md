@@ -1,20 +1,16 @@
 # Collection Control Descriptor
 
-This control allows the user to manage a list of repeatable items, each defined by its own set of nested fields.
+This control allows the user to manage a list of repeatable items, each defined by its own set of nested fields. The **Add** button adds an item with the default values of its fields. Items can be moved up and down and removed.
+
+![Collection control](images/list.png){: width="300" }
 
 | Property                 | Type                  | Description                                                          |
 | ------------------------ | --------------------- | -------------------------------------------------------------------- |
-| `addText`                | string                | Text for the “Add item” button. Default is `Add item`.               |
-| `displayField`           | string                | Property name used to display a collection item in the list.         |
-| `skipRemoveConfirmation` | boolean               | If **true**, skips the confirmation dialog when removing an item.      |
-| `removeMessage`          | string                | Custom message for the item removal confirmation dialog.             |
-| `elementDescriptor`      | string                | Name of the object in the `objects` folder to be used as a template. |
+| `displayField`           | string                | Property name used to display a collection item in the list.<br>A dotted path, such as `product.name`, reads a nested value. Without it, the first filled `string` field is used. |
 | `element`                | ControlDescriptor[] | Describes the structure of each collection item.                     |
 
 ## Example
 
-
-<div class="grid" markdown>
 
 ```json
 ...
@@ -23,7 +19,6 @@ This control allows the user to manage a list of repeatable items, each defined 
             "id": "formFields",
             "label": "Fields list",
             "type": "list",
-            "addText": "Add a field",
             "displayField": "labelText",
             "element": [
                 {
@@ -39,12 +34,12 @@ This control allows the user to manage a list of repeatable items, each defined 
                 {
                     "id": "fieldName",
                     "label": "Name",
-                    "type": string  
+                    "type": "string"
                 },
                 {
                     "id": "labelText",
                     "label": "Label",
-                    "type": string  
+                    "type": "string"
                 }
             ],
             "default": [
@@ -69,11 +64,6 @@ This control allows the user to manage a list of repeatable items, each defined 
     ]
 ...
 ```
-
-![List control](media/list-control.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
 
 
 <br>

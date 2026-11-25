@@ -2,16 +2,15 @@
 
 This control is used to input short or long text values. You can configure it to allow single-line or multi-line input.
 
+![String control](images/string.png){: width="300" }
+
 | Property  | Type    | Default | Description                             |
 | --------- | ------- | ------- | --------------------------------------- |
 | `multiline` | boolean | `false` | Allows entering text in multiple lines. |
-| `minRowsCount` | number | `1` | Minimum number of visible rows for the multiline textarea. Defines the initial height. Only applies when `multiline` is `true`. |
-| `maxRowsCount` | number | `4` | Maximum number of rows the textarea will expand to before showing a scrollbar. Only applies when `multiline` is `true`. |
+| `format`    | string  |         | `url` marks a link. Such a field is edited in the settings panel only, not in the preview, and the server refuses links in it that run script, such as `javascript:`, and `data:` links. |
 
 ## Example
 
-
-<div class="grid" markdown>
 
 ```json
 ...
@@ -30,23 +29,15 @@ This control is used to input short or long text values. You can configure it to
             "multiline": true
         },
         {
-            "id": "description",
+            "id": "link",
             "type": "string",
-            "label": "Description",
-            "multiline": true,
-            "minRowsCount": 2,
-            "maxRowsCount": 8
+            "label": "Link",
+            "format": "url"
         },
         ...
     ]
 ...
 ```
-
-
-![String control](media/string-control.png){: style="display: block; margin: 0 auto;" }
-
-
-</div>
 
 <br>
 <br>
