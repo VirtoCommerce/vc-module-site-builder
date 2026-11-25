@@ -31,6 +31,7 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 public class MultilanguagePageServiceTests
 {
     private const string StoreId = "store";
+    private const string OtherStoreId = "other-store";
 
     [Fact]
     public async Task SaveChangesAsync_NewRoot_TakesDefaultCultureFromStore()
@@ -580,9 +581,30 @@ public class MultilanguagePageServiceTests
         Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
 
         await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() =>
-            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken));
+            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, expectedSettingsVersion: null, TestContext.Current.CancellationToken));
 
         Assert.Equal("Draft", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
+    }
+
+    [Fact]
+    public async Task SaveGroupAtVersionAsync_SettingsChangedSinceTheyWereRead_WritesNothing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var en = await fixture.CreateLanguageAsync(root, "en-US", draftContent: Content("en"));
+        var group = await fixture.Groups.GetByIdAsync(en.Id);
+        var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
+        var settingsVersion = SiteBuilderContentVersion.CreateForGroupSettings(group);
+        var colleagues = await fixture.Groups.GetByIdAsync(en.Id);
+        colleagues.UserGroups = "vip";
+        await fixture.Groups.SaveGroupSettingsAsync(colleagues, TestContext.Current.CancellationToken);
+        Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
+
+        await Assert.ThrowsAsync<SiteBuilderContentConflictException>(() =>
+            fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, settingsVersion, TestContext.Current.CancellationToken));
+
+        var stored = await fixture.Groups.GetByIdAsync(en.Id);
+        Assert.Equal(("Draft", "vip"), (stored.Status, stored.UserGroups));
     }
 
     [Fact]
@@ -595,7 +617,7 @@ public class MultilanguagePageServiceTests
         var read = await fixture.Groups.LoadGroupContentAsync(group, draft: true, TestContext.Current.CancellationToken);
         Assert.True(GroupedPagePublishing.TryPublishDraft(group, out _));
 
-        await fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, TestContext.Current.CancellationToken);
+        await fixture.Groups.SaveGroupAtVersionAsync(group, draft: true, read.ETag, expectedSettingsVersion: null, TestContext.Current.CancellationToken);
 
         Assert.Equal("Published", (await fixture.Groups.GetByIdAsync(en.Id)).Status);
     }
@@ -795,6 +817,35 @@ public class MultilanguagePageServiceTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal([root.Id], result.Results.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task List_StoreIds_ListsThePagesOfThoseStoresOnly()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var root = await fixture.CreateRootAsync();
+        var landing = await fixture.CreateLanguageAsync(null, "en-US", permalink: "/a", name: "A landing", draftContent: Content("a"));
+        await fixture.Roots.SaveChangesAsync([new MultilanguagePage { StoreId = OtherStoreId, Name = "Other root", Permalink = "/other", Visibility = true }]);
+        await fixture.Groups.SaveChangesAsync([new GroupedSiteBuilderPage { StoreId = OtherStoreId, Name = "Other landing", Permalink = "/b", CultureName = "en-US" }]);
+
+        var mine = await fixture.List.SearchAsync(
+            new SiteBuilderPageSearchCriteria { StoreIds = [StoreId, "third"], Take = 10 }, TestContext.Current.CancellationToken);
+        var narrowed = await fixture.List.SearchAsync(
+            new SiteBuilderPageSearchCriteria { StoreId = OtherStoreId, StoreIds = [StoreId], Take = 10 }, TestContext.Current.CancellationToken);
+        var none = await fixture.List.SearchAsync(
+            new SiteBuilderPageSearchCriteria { StoreIds = [], Take = 10 }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { root.Id, landing.Id }.Order(), mine.Results.Select(x => x.Id).Order());
+        Assert.Empty(narrowed.Results);
+        Assert.Empty(none.Results);
+    }
+
+    [Fact]
+    public void SearchCriteria_StoreIds_AreAPartOfTheCacheKey()
+    {
+        Assert.NotEqual(
+            new SiteBuilderPageSearchCriteria { StoreIds = ["a"] }.GetCacheKey(),
+            new SiteBuilderPageSearchCriteria { StoreIds = ["b"] }.GetCacheKey());
     }
 
     [Fact]
@@ -1105,7 +1156,9 @@ public class MultilanguagePageServiceTests
                 failPublishingCultureName);
             var groupSearch = new GroupedPageSearchService(repositoryFactory, _cache, Groups, Options.Create(new CrudOptions()));
             GroupSearch = groupSearch;
-            var storeService = StoreService = new FakeStoreService(new Store { Id = StoreId, DefaultLanguage = "en-US", Languages = ["en-US", "nl-NL", "de-DE"] });
+            var storeService = StoreService = new FakeStoreService(
+                new Store { Id = StoreId, DefaultLanguage = "en-US", Languages = ["en-US", "nl-NL", "de-DE"] },
+                new Store { Id = OtherStoreId, DefaultLanguage = "en-US", Languages = ["en-US"] });
             Roots = new MultilanguagePageService(
                 repositoryFactory,
                 _cache,

@@ -371,20 +371,26 @@ public class GroupedPageOperationService(
 
         if (request.DryRun)
         {
-            var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
-            foreach (var conflictingGroup in conflictingGroups)
-            {
-                dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft);
-            }
+            return await PreviewPublishDraftAsync(groupedPage, conflictingGroups, cancellationToken);
+        }
 
-            return dryRun;
+        if (IsSettingsChanged(groupedPage, request))
+        {
+            return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.SettingsChangedMessage);
+        }
+
+        if (request.ExpectedReplacedVersions != null &&
+            !await AreReplacedAsReviewedAsync(conflictingGroups, request.ExpectedReplacedVersions, cancellationToken))
+        {
+            return SiteBuilderOperationResult.Conflict(SiteBuilderContentConflictException.PageChangedMessage);
         }
 
         GroupedPagePublishing.TryPublishDraft(groupedPage, out var obsoletePageIds);
         var pagesToDelete = obsoletePageIds.ToList();
         pagesToDelete.AddRange(conflictingGroups.SelectMany(UnpublishConflictingGroup));
         var publishedPageId = groupedPage.Pages.Single(x => !obsoletePageIds.Contains(x.Id)).Id;
-        if (await SavePublishingAsync(groupedPage, conflictingGroups, pagesToDelete, draft: true, request.ExpectedDraftVersion, cancellationToken) is { } conflict)
+        if (await SavePublishingAsync(groupedPage, conflictingGroups, pagesToDelete, draft: true, request.ExpectedDraftVersion, request.ExpectedSettingsVersion,
+            cancellationToken) is { } conflict)
         {
             return conflict;
         }
@@ -398,6 +404,23 @@ public class GroupedPageOperationService(
 
         return SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
+
+    private async Task<SiteBuilderOperationResult> PreviewPublishDraftAsync(GroupedSiteBuilderPage groupedPage, IList<GroupedSiteBuilderPage> conflictingGroups,
+        CancellationToken cancellationToken)
+    {
+        var dryRun = await PreviewPublishingAsync(groupedPage, Draft, Published, cancellationToken);
+        foreach (var conflictingGroup in conflictingGroups)
+        {
+            var published = await pageContentService.LoadGroupContentAsync(conflictingGroup, draft: false, cancellationToken);
+            dryRun.Preview.AddPublishing(conflictingGroup, Published, Draft).ETag = published.ETag;
+        }
+
+        return dryRun;
+    }
+
+    private static bool IsSettingsChanged(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request) =>
+        request.ExpectedSettingsVersion != null &&
+        !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(groupedPage), request.ExpectedSettingsVersion.Trim(), StringComparison.Ordinal);
 
     private async Task<SiteBuilderOperationResult> UnpublishAsync(GroupedSiteBuilderPage groupedPage, GroupedPagePublishOperationRequest request,
         CancellationToken cancellationToken)
@@ -422,7 +445,8 @@ public class GroupedPageOperationService(
         pageToUnpublish.Status = Draft;
         var pagesToDelete = groupedPage.Pages.Where(x => x.Id != pageToUnpublish.Id).Select(x => x.Id).ToList();
 
-        return await SavePublishingAsync(groupedPage, [], pagesToDelete, draft: false, request.ExpectedPublishedVersion, cancellationToken)
+        return await SavePublishingAsync(groupedPage, [], pagesToDelete, draft: false, request.ExpectedPublishedVersion, expectedSettingsVersion: null,
+            cancellationToken)
             ?? SiteBuilderOperationResult.Success(affectsPublished: request.ReportImpact);
     }
 
@@ -433,7 +457,7 @@ public class GroupedPageOperationService(
     /// <param name="expectedVersion">The version the page has to be at, compared under the lock of the save; <c>null</c> saves it whatever it holds.</param>
     /// <returns>The conflict when the page is at another version, with nothing written; <c>null</c> when it is saved.</returns>
     private async Task<SiteBuilderOperationResult> SavePublishingAsync(GroupedSiteBuilderPage groupedPage, IList<GroupedSiteBuilderPage> unpublishedGroups,
-        List<string> pagesToDelete, bool draft, string expectedVersion, CancellationToken cancellationToken)
+        List<string> pagesToDelete, bool draft, string expectedVersion, string expectedSettingsVersion, CancellationToken cancellationToken)
     {
         if (expectedVersion == null)
         {
@@ -443,7 +467,7 @@ public class GroupedPageOperationService(
         {
             try
             {
-                await pageContentService.SaveGroupAtVersionAsync(groupedPage, draft, expectedVersion.Trim(), cancellationToken);
+                await pageContentService.SaveGroupAtVersionAsync(groupedPage, draft, expectedVersion.Trim(), expectedSettingsVersion?.Trim(), cancellationToken);
             }
             catch (SiteBuilderContentConflictException ex)
             {
@@ -472,6 +496,26 @@ public class GroupedPageOperationService(
         }
 
         return conflictingGroups.Count > 0 ? await authorizationService.CheckStoreOperationAsync(user, conflictingGroups) : null;
+    }
+
+    private async Task<bool> AreReplacedAsReviewedAsync(IList<GroupedSiteBuilderPage> conflictingGroups, IDictionary<string, string> expectedVersions,
+        CancellationToken cancellationToken)
+    {
+        if (conflictingGroups.Count != expectedVersions.Count)
+        {
+            return false;
+        }
+
+        foreach (var group in conflictingGroups)
+        {
+            var published = await pageContentService.LoadGroupContentAsync(group, draft: false, cancellationToken);
+            if (!expectedVersions.TryGetValue(group.Id, out var eTag) || !string.Equals(eTag?.Trim(), published.ETag, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Turns the published page of a group without a draft back into a draft, like unpublishing does, and returns

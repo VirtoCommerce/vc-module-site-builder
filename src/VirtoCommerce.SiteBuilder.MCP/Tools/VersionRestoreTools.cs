@@ -1,0 +1,311 @@
+using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+using VirtoCommerce.MCP.Core;
+using VirtoCommerce.MCP.Core.Attributes;
+using VirtoCommerce.MCP.Core.Models;
+using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.SiteBuilder.Core.History;
+using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
+using VirtoCommerce.SiteBuilder.MCP.Services;
+using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
+using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
+
+namespace VirtoCommerce.SiteBuilder.MCP.Tools;
+
+[McpServerToolType]
+[McpScope(McpScopes.Admin)]
+public class VersionRestoreTools(
+    IAuthorizationService authorizationService,
+    IGroupedPageService groupedPageService,
+    IContentHistoryOperationService contentHistoryOperationService,
+    IFilePageOperationService filePageOperationService,
+    ILogger<VersionRestoreTools> logger)
+{
+    // The history shows commits in their short form, so that is the shortest name accepted.
+    private const int MinCommitLength = 7;
+
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
+    [McpServerTool(Name = "restore_version", ReadOnly = false, Destructive = true, Idempotent = false)]
+    [McpPermission(Read)]
+    [Authorize(Update)]
+    [McpRequiresConfirmation(Fallback = McpConfirmationFallback.Refuse)]
+    [Description("Bring back an earlier version of a page or of theme files as their draft, to edit or publish from there: " +
+        "the drafts they have now are overwritten, and customers see nothing until the draft is published (publish_page, " +
+        "publish_theme). Name the version with version_id from list_versions and the items with page_id, theme_files or both " +
+        "(a database page and theme files of one version are restored together). A page stored as a file in git is named by " +
+        "its path with store_id, and version_id is a commit list_versions gives for that path. First call it with dryRun: it shows what each " +
+        "draft would lose and answers expected_versions, the versions of the drafts now. Then call it without dryRun and with " +
+        "those expected_versions (or the version_token search_site_pages or search_templates gave for each item); a draft " +
+        "changed since is not overwritten. Theme files need builder:templates for templates and rules, builder:theme for the " +
+        "others. The user confirms the call in the chat; a client that cannot ask refuses it.")]
+    public async Task<VersionRestore> RestoreVersion(
+        RequestContext<CallToolRequestParams> context,
+        [Description("Store id.")] string store_id,
+        [Description("version_id of list_versions; for a page stored as a file in git, the commit list_versions gives for its path.")] string version_id,
+        [Description("Id of a database page, or the path of a page stored as a file ('pages/about.page').")] string page_id = null,
+        [Description("Theme files by their path with the theme folder, as list_versions names them, for example 'default/templates/product.json'.")] string[] theme_files = null,
+        [Description("The versions of the drafts the restore overwrites, by item: 'page:<page_id>' or 'theme:<path>', as the dry run answers " +
+            "them. Required to restore.")] Dictionary<string, string> expected_versions = null,
+        [Description("true to show what the restore would overwrite, without restoring.")] bool dryRun = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(store_id) || string.IsNullOrWhiteSpace(version_id))
+        {
+            throw new McpException("Pass store_id and version_id; list_versions names the versions of a page or a theme file.");
+        }
+
+        var storeId = store_id.Trim();
+        var versionId = version_id.Trim();
+
+        // The store is checked first, so an answer about the other arguments does not reveal which stores exist.
+        await authorizationService.EnsureStoreAllowedAsync(context.User, storeId);
+
+        var themeFiles = (theme_files ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().TrimStart('/')).Distinct().ToList();
+        if (PageLookup.IsFilePagePath(page_id))
+        {
+            if (themeFiles.Count > 0)
+            {
+                throw new McpException("A page stored as a file is restored from its own history, apart from the theme: call restore_version once for each.");
+            }
+
+            return await RestoreFilePageAsync(context.User, FilePages.Parse(storeId, page_id), versionId, expected_versions, dryRun, cancellationToken);
+        }
+
+        var items = themeFiles.Select(x => HistoryItem.ForThemeFile(x).ToString()).ToList();
+        if (!string.IsNullOrWhiteSpace(page_id))
+        {
+            var group = await groupedPageService.LoadPageAsync(authorizationService, context.User, page_id.Trim());
+            if (!storeId.EqualsIgnoreCase(group.StoreId))
+            {
+                throw new McpException($"Page '{group.Id}' is not a page of store '{storeId}'.");
+            }
+
+            items.Insert(0, new HistoryItem(HistoryItemType.Page, group.Id).ToString());
+        }
+
+        if (items.Count == 0)
+        {
+            throw new McpException("Pass page_id, theme_files or both: the items of the version to restore.");
+        }
+
+        return await RestoreHistoryAsync(context.User, storeId, versionId, items, expected_versions, dryRun, cancellationToken);
+    }
+
+    private async Task<VersionRestore> RestoreHistoryAsync(ClaimsPrincipal user, string storeId, string versionId, IList<string> items,
+        Dictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
+    {
+        ContentHistoryRestoreOperationRequest Request(bool isDryRun, IDictionary<string, string> versions) => new()
+        {
+            StoreId = storeId,
+            VersionId = versionId,
+            Items = items,
+            SaveId = Guid.NewGuid().ToString("N"),
+            DryRun = isDryRun,
+            ExpectedVersions = versions,
+        };
+
+        var check = await contentHistoryOperationService.RestoreAsync(Request(true, null), user, cancellationToken);
+        EnsureRestored(check, storeId, versionId);
+
+        var answer = NewAnswer(storeId, versionId, items);
+        foreach (var item in check.Preview?.Objects ?? [])
+        {
+            var key = item.ObjectType == ChangePreview.Page
+                ? new HistoryItem(HistoryItemType.Page, item.ObjectId).ToString()
+                : HistoryItem.ForThemeFile(item.ObjectId).ToString();
+            answer.ExpectedVersions[key] = item.ETag;
+            AddContentChanges(answer, items.Count > 1 ? key : null, item);
+        }
+
+        ReviewedVersions.Pin(answer, answer.ExpectedVersions, Normalize(expectedVersions), dryRun);
+        if (dryRun)
+        {
+            return answer;
+        }
+
+        var result = await contentHistoryOperationService.RestoreAsync(Request(false, answer.ExpectedVersions), user, cancellationToken);
+        EnsureRestored(result, storeId, versionId);
+        answer.DryRun = false;
+
+        return answer;
+    }
+
+    private async Task<VersionRestore> RestoreFilePageAsync(ClaimsPrincipal user, FilePage page, string versionId,
+        Dictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
+    {
+        if (versionId.Length < MinCommitLength)
+        {
+            throw new McpException($"'{versionId}' is not a commit: name the version of a page stored as a file by its commit, at least {MinCommitLength} characters.");
+        }
+
+        FilePageRestoreVersionOperationRequest Request(bool isDryRun, string expectedVersion) => new()
+        {
+            StoreId = page.StoreId,
+            ContentType = page.ContentType,
+            Path = page.Path,
+            Sha = versionId,
+            DryRun = isDryRun,
+            ReportImpact = true,
+            ExpectedContentVersion = expectedVersion,
+        };
+
+        var check = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(true, null), user, cancellationToken));
+        EnsureFilePageRestored(check, page, versionId);
+
+        var answer = NewAnswer(page.StoreId, versionId, [page.VersionKey]);
+        answer.PageId = page.PageId;
+        AddFilePagePreview(answer, page, check);
+
+        ReviewedVersions.Pin(answer, answer.ExpectedVersions, Normalize(expectedVersions), dryRun);
+        if (dryRun)
+        {
+            return answer;
+        }
+
+        var expectedVersion = ReviewedVersions.Of(answer, page.VersionKey);
+        var result = await FilePages.RunAsync(logger, () => filePageOperationService.RestoreVersionAsync(Request(false, expectedVersion), user, cancellationToken));
+        EnsureFilePageRestored(result, page, versionId);
+        answer.DryRun = false;
+        answer.Commit = result.Value?.CommitSha;
+
+        return answer;
+    }
+
+    private static void AddFilePagePreview(VersionRestore answer, FilePage page, SiteBuilderOperationResult check)
+    {
+        foreach (var item in check.Preview?.Objects ?? [])
+        {
+            answer.ExpectedVersions[page.VersionKey] = item.ETag ?? FilePages.VersionOf(item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content)?.From);
+            AddContentChanges(answer, prefix: null, item);
+        }
+
+        foreach (var warning in check.Preview?.Warnings ?? [])
+        {
+            answer.AddWarning(warning);
+        }
+    }
+
+    private static Dictionary<string, string> Normalize(Dictionary<string, string> expectedVersions) =>
+        expectedVersions?.ToDictionary(
+            x => HistoryItem.TryParse(x.Key?.Trim(), out var item) && item.Type == HistoryItemType.Theme ? HistoryItem.ForThemeFile(item.Key).ToString() : x.Key?.Trim() ?? string.Empty,
+            x => x.Value?.Trim(),
+            StringComparer.Ordinal);
+
+    private static void AddContentChanges(VersionRestore answer, string prefix, SiteBuilderObjectChange item)
+    {
+        var content = item.Fields.FirstOrDefault(x => x.Name == ChangePreview.Content);
+        var label = prefix == null ? string.Empty : $"{prefix}: ";
+        var changes = CompareContent(item, content);
+
+        if (changes == null)
+        {
+            answer.AddChange(label + "content", "draft", "content of the version (not a page document)");
+            return;
+        }
+
+        if (changes.Count == 0)
+        {
+            answer.AddWarning($"{(prefix ?? item.ObjectId)}: the draft already holds the version; the restore changes nothing in it.");
+        }
+
+        foreach (var change in changes)
+        {
+            answer.AddChange(label + change.Field, change.From, change.To);
+        }
+    }
+
+    private static IList<PageDocumentChange> CompareContent(SiteBuilderObjectChange item, SiteBuilderFieldChange content) =>
+        item.ObjectType == ChangePreview.ThemeFile
+            ? ThemeFileEdits.Compare(item.ObjectId, content?.From, content?.To)
+            : CompareDocuments(content?.From, content?.To);
+
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null means the content is not a page document; an empty list means the draft already holds the version.")]
+    private static IList<PageDocumentChange> CompareDocuments(string before, string after) =>
+        PageDocumentEditor.Read(before) is { } from && PageDocumentEditor.Read(after) is { } to ? PageDocumentChanges.Compare(from, to) : null;
+
+    private static VersionRestore NewAnswer(string storeId, string versionId, IList<string> items)
+    {
+        var answer = new VersionRestore
+        {
+            Action = "restore_version",
+            ObjectType = "version",
+            ObjectId = versionId,
+            ObjectName = $"Version {versionId} of {string.Join(", ", items)}",
+            StoreId = storeId,
+            VersionId = versionId,
+            DryRun = true,
+        };
+        answer.AddWarning("The version becomes the draft: customers see it only once it is published (publish_page, publish_theme).");
+
+        return answer;
+    }
+
+    private static void EnsureRestored(SiteBuilderOperationResult result, string storeId, string versionId)
+    {
+        switch (result.Status)
+        {
+            case SiteBuilderOperationStatus.Succeeded:
+                return;
+            case SiteBuilderOperationStatus.Forbidden:
+                throw new McpForbiddenException($"You may not restore these items in store '{storeId}': it needs builder:update, builder:templates " +
+                    "for templates and rules and builder:theme for the other theme files, and builder:read there (with " +
+                    "builder:shared-components:read when the page places Shared Components).");
+            case SiteBuilderOperationStatus.NotFound:
+                throw new McpException($"Version '{versionId}' of these items was not found in store '{storeId}': list_versions names the versions " +
+                    "and the items each one changed.");
+            case SiteBuilderOperationStatus.Conflict:
+            case SiteBuilderOperationStatus.VersionRequired:
+                throw new McpException("A draft changed since its version was read, so nothing was restored. Call restore_version with dryRun " +
+                    "again, show the user what it would overwrite now, and send the new expected_versions.");
+            default:
+                var details = result.Errors?.Count > 0 ? $" {string.Join("; ", result.Errors)}" : string.Empty;
+                throw new McpException($"Version '{versionId}' was not restored: {result.Error}{details}");
+        }
+    }
+
+    private static void EnsureFilePageRestored(SiteBuilderOperationResult result, FilePage page, string versionId)
+    {
+        if (result.Status == SiteBuilderOperationStatus.NotFound)
+        {
+            throw new McpException($"Page '{page.PageId}' has no version '{versionId}' in store '{page.StoreId}': the store keeps versions of pages " +
+                "stored as files only in git, and the commit must hold the page.");
+        }
+
+        if (result.Status == SiteBuilderOperationStatus.Conflict)
+        {
+            throw new McpException($"The draft of page '{page.PageId}' changed since its version was read, so nothing was restored. Call " +
+                "restore_version with dryRun again, show the user what it would overwrite now, and send the new expected_versions.");
+        }
+
+        FilePages.EnsureSucceeded(result, page, "restore a version of");
+    }
+}
+
+public sealed class VersionRestore : McpChangePreview, IReviewedChange
+{
+    [JsonPropertyName("store_id")]
+    public string StoreId { get; set; }
+
+    [JsonPropertyName("version_id")]
+    public string VersionId { get; set; }
+
+    [JsonPropertyName("page_id")]
+    public string PageId { get; set; }
+
+    [JsonPropertyName("expected_versions")]
+    public IDictionary<string, string> ExpectedVersions { get; set; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("commit")]
+    public string Commit { get; set; }
+}

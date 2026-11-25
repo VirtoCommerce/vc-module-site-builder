@@ -23,6 +23,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VirtoCommerce.SiteBuilder.D
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VirtoCommerce.SiteBuilder.Xapi", "src\VirtoCommerce.SiteBuilder.Xapi\VirtoCommerce.SiteBuilder.Xapi.csproj", "{0931F2E0-8B1B-4046-95D1-1F8F3407C897}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VirtoCommerce.SiteBuilder.MCP", "src\VirtoCommerce.SiteBuilder.MCP\VirtoCommerce.SiteBuilder.MCP.csproj", "{5F19071B-F593-4194-8B07-21262783A751}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -61,6 +63,10 @@ Global
 		{0931F2E0-8B1B-4046-95D1-1F8F3407C897}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0931F2E0-8B1B-4046-95D1-1F8F3407C897}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0931F2E0-8B1B-4046-95D1-1F8F3407C897}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F19071B-F593-4194-8B07-21262783A751}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F19071B-F593-4194-8B07-21262783A751}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F19071B-F593-4194-8B07-21262783A751}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F19071B-F593-4194-8B07-21262783A751}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -74,6 +80,7 @@ Global
 		{24D31299-890A-4D5F-830F-A35DC2B12B48} = {6E3252B4-5DFC-4DB3-A00E-B74077B7B237}
 		{29C77A7F-C264-4C11-BA57-A1F99211D433} = {6E3252B4-5DFC-4DB3-A00E-B74077B7B237}
 		{0931F2E0-8B1B-4046-95D1-1F8F3407C897} = {6E3252B4-5DFC-4DB3-A00E-B74077B7B237}
+		{5F19071B-F593-4194-8B07-21262783A751} = {6E3252B4-5DFC-4DB3-A00E-B74077B7B237}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A855B472-948E-4956-B4FD-FFC53C09D85E}

@@ -74,7 +74,7 @@ public class GitHubAuthHandler(IGitHubConnectionService gitHubConnectionService,
 
         var fallback = connection.Organization ?? connection.Repository?.Split('/')[0];
         return string.IsNullOrWhiteSpace(fallback)
-            ? throw new GitContentException($"Cannot tell which GitHub account the request to {request.RequestUri} acts on.")
+            ? throw new GitContentException($"Cannot tell which GitHub account the request to {request.RequestUri} acts on.", GitContentFailureKind.NotConfigured)
             : fallback.Trim();
     }
 
@@ -107,10 +107,11 @@ public class GitHubAuthHandler(IGitHubConnectionService gitHubConnectionService,
         var installation = await SendAsAppAsync<Installation>(HttpMethod.Get, $"orgs/{escapedOwner}/installation", jwt, cancellationToken)
                            ?? await SendAsAppAsync<Installation>(HttpMethod.Get, $"users/{escapedOwner}/installation", jwt, cancellationToken)
                            ?? throw new GitContentException(
-                               $"The GitHub App {connection.AppId} is not installed on \"{owner}\". Install it there with access to all repositories.");
+                               $"The GitHub App {connection.AppId} is not installed on \"{owner}\". Install it there with access to all repositories.",
+                               GitContentFailureKind.NoAccess);
 
         var accessToken = await SendAsAppAsync<InstallationToken>(HttpMethod.Post, $"app/installations/{installation.Id}/access_tokens", jwt, cancellationToken)
-                          ?? throw new GitContentException($"GitHub did not issue a token for the App's installation on \"{owner}\".");
+                          ?? throw new GitContentException($"GitHub did not issue a token for the App's installation on \"{owner}\".", GitContentFailureKind.NoAccess);
 
         var expiresAt = accessToken.ExpiresAt is { } expires
             ? new DateTimeOffset(DateTime.SpecifyKind(expires, DateTimeKind.Utc))
@@ -148,7 +149,8 @@ public class GitHubAuthHandler(IGitHubConnectionService gitHubConnectionService,
         catch (Exception ex) when (ex is ArgumentException or CryptographicException)
         {
             throw new GitContentException(
-                $"The private key of the GitHub App {appId} is not a PEM private key. Check SiteBuilder:GitContent:PrivateKey, or set the App up again.", ex);
+                $"The private key of the GitHub App {appId} is not a PEM private key. Check SiteBuilder:GitContent:PrivateKey, or set the App up again.",
+                GitContentFailureKind.NotConfigured, ex);
         }
 
         // a provider cached across calls would keep the RSA instance disposed here

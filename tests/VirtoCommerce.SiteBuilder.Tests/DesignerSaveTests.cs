@@ -1060,6 +1060,36 @@ public class DesignerSaveTests
     }
 
     [Theory]
+    [InlineData("product", "product-info", "features")]
+    [InlineData("product.with-video", "product-info", "features")]
+    [InlineData("category", "category-listing", "product-info")]
+    public async Task SaveDesignerChanges_TemplateGainingASectionTheDesignerDoesNotOfferIt_ReturnsBadRequestAndWritesNothing(string key, string main, string section)
+    {
+        await SaveSectionRuleCatalogAsync();
+        var path = $"default/templates/{key}.json";
+        _live.Files[Theme(path)] = TemplateOf((main, false));
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (path, TemplateOf((main, false), (section, false)))), Catalog);
+
+        var error = $"templates/{key}.json: a {key.Split('.')[0]} template cannot hold the section 's1' of type '{section}'";
+        Assert.Equal($$"""{"error":"The theme is not valid: {{error}}","errors":["{{error}}"]}""", PlatformJson.SerializeBody(Assert.IsType<BadRequestObjectResult>(result.Result)));
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveDesignerChanges_TemplateKeepingASectionItHeldAlready_SavesIt()
+    {
+        await SaveSectionRuleCatalogAsync();
+        _live.Files[Theme(Template)] = TemplateOf(("product-info", false), ("features", false));
+        var edited = TemplateOf(("product-info", false), ("features", false), ("text", false));
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, edited)), Catalog);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(edited, _live.Files[Theme($"{Template}-draft")]);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("default")]
     public async Task SaveTemplates_DraftRemovingTheMainSectionOfTheTemplate_ReturnsBadRequestAndWritesNothing(string theme)
@@ -1172,6 +1202,26 @@ public class DesignerSaveTests
     private Task<string> SaveMainSectionCatalogAsync() =>
         new SchemaCatalogService(_themes).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "product-info": {}, "category-listing": {}, "text": {} }, "blocks": {}, "shared": {} }""", Ct);
+
+    private Task<string> SaveSectionRuleCatalogAsync() =>
+        new SchemaCatalogService(_themes).SaveAsync("s1",
+            $$"""
+            {
+              "hash": "{{Catalog}}",
+              "templates": {
+                "product": { "type": "themes", "previewMessage": { "templateKey": "product" }, "sections": [ "product-info", "text" ] },
+                "category": { "type": "themes", "previewMessage": { "templateKey": "category" } }
+              },
+              "sections": {
+                "product-info": { "targetTemplates": [ "product" ] },
+                "category-listing": { "targetTemplates": [ "category" ] },
+                "text": {},
+                "features": {}
+              },
+              "blocks": {},
+              "shared": {}
+            }
+            """, Ct);
 
     private static string TemplateOf(params (string Type, bool Hidden)[] sections) =>
         new JObject

@@ -584,7 +584,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             return await ReadContentAsync(repository, current, draft, cancellationToken);
         }
 
-        public virtual Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag,
+        public virtual Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, string expectedSettingsVersion,
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(group);
@@ -593,10 +593,17 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
             {
                 // read under the lock of the save, so that the version compared is the one the save replaces
                 var entity = entities.SingleOrDefault();
-                var current = entity == null ? null : await ReadContentAsync(repository, ToModel(entity, null), draft, ct);
+                var stored = entity == null ? null : ToModel(entity, null);
+                var current = stored == null ? null : await ReadContentAsync(repository, stored, draft, ct);
                 if (!string.Equals(current?.ETag, expectedETag, StringComparison.Ordinal))
                 {
                     throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.PageChangedMessage);
+                }
+
+                if (expectedSettingsVersion != null &&
+                    !string.Equals(SiteBuilderContentVersion.CreateForGroupSettings(stored), expectedSettingsVersion, StringComparison.Ordinal))
+                {
+                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
                 }
                 return new PreparedSave(group);
             }, cancellationToken);
@@ -731,15 +738,41 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
 
             if (condition.SourceGroupId != null)
             {
-                var source = await repository.GroupedSiteBuilderPages.AsNoTracking()
-                    .Where(x => x.Id == condition.SourceGroupId)
-                    .Select(x => new { x.SourceRevisionDate })
-                    .FirstOrDefaultAsync(cancellationToken);
-                if (source == null || source.SourceRevisionDate != condition.ExpectedSourceRevisionDate)
-                {
-                    throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
-                }
+                await CheckSourceRevisionAsync(repository, condition, cancellationToken);
             }
+
+            if (condition.ExpectedMultilanguagePageVersion != null && !string.Equals(await GetRootVersionAsync(repository, group, existing, cancellationToken),
+                    condition.ExpectedMultilanguagePageVersion.Trim(), StringComparison.Ordinal))
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SettingsChangedMessage);
+            }
+        }
+
+        private static async Task CheckSourceRevisionAsync(ISiteBuilderRepository repository, GroupedPageSaveCondition condition, CancellationToken cancellationToken)
+        {
+            var source = await repository.GroupedSiteBuilderPages.AsNoTracking()
+                .Where(x => x.Id == condition.SourceGroupId)
+                .Select(x => new { x.SourceRevisionDate })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (source == null || source.SourceRevisionDate != condition.ExpectedSourceRevisionDate)
+            {
+                throw new SiteBuilderContentConflictException(SiteBuilderContentConflictException.SourceRevisionChangedMessage);
+            }
+        }
+
+        // The stored link wins, as in the save that derives the overrides from it.
+        private static async Task<string> GetRootVersionAsync(ISiteBuilderRepository repository, GroupedSiteBuilderPage group,
+            GroupedSiteBuilderPageEntity existing, CancellationToken cancellationToken)
+        {
+            var rootId = existing != null ? existing.MultilanguagePageId : group.MultilanguagePageId;
+            if (string.IsNullOrEmpty(rootId))
+            {
+                return null;
+            }
+
+            var root = await repository.MultilanguagePages.AsNoTracking().FirstOrDefaultAsync(x => x.Id == rootId, cancellationToken);
+
+            return root == null ? null : SiteBuilderContentVersion.CreateForMultilanguagePage(root.ToModel(AbstractTypeFactory<MultilanguagePage>.TryCreateInstance()));
         }
 
         /// <summary>The rule a dry run tells it by: a published page one of whose settings changes.</summary>

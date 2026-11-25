@@ -23,6 +23,7 @@ public class GitHubApiClientTests
 
         Assert.IsType<HttpRequestException>(error.InnerException);
         Assert.Contains("No such host is known.", error.Message);
+        Assert.Equal(GitContentFailureKind.Unreachable, error.Kind);
     }
 
     [Fact]
@@ -33,6 +34,7 @@ public class GitHubApiClientTests
         var error = await Assert.ThrowsAsync<GitContentException>(() => new GitHubApiClient(github).GetRepositoryAsync(Repo, TestContext.Current.CancellationToken));
 
         Assert.Contains("HttpClient.Timeout", error.Message);
+        Assert.Equal(GitContentFailureKind.Unreachable, error.Kind);
     }
 
     [Fact]
@@ -105,5 +107,30 @@ public class GitHubApiClientTests
 
         Assert.Contains("Something went wrong", error.Message);
         github.AssertDone();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, GitContentFailureKind.NoAccess)]
+    [InlineData(HttpStatusCode.Forbidden, GitContentFailureKind.NoAccess)]
+    [InlineData(HttpStatusCode.NotFound, GitContentFailureKind.NoAccess)]
+    [InlineData(HttpStatusCode.TooManyRequests, GitContentFailureKind.Unreachable)]
+    [InlineData(HttpStatusCode.BadGateway, GitContentFailureKind.Unreachable)]
+    [InlineData(HttpStatusCode.UnprocessableEntity, GitContentFailureKind.Unknown)]
+    public void CreateException_TellsTheKindOfFailure_ByTheStatus(HttpStatusCode status, GitContentFailureKind kind)
+    {
+        using var response = new HttpResponseMessage(status);
+
+        Assert.Equal(kind, GitHubApiClient.CreateException(response, "details", "read the repository").Kind);
+    }
+
+    [Theory]
+    [InlineData("retry-after", "60")]
+    [InlineData("x-ratelimit-remaining", "0")]
+    public void CreateException_TellsARateLimitedForbidden_IsUnreachable(string header, string value)
+    {
+        using var response = new HttpResponseMessage(HttpStatusCode.Forbidden);
+        response.Headers.Add(header, value);
+
+        Assert.Equal(GitContentFailureKind.Unreachable, GitHubApiClient.CreateException(response, "details", "read the repository").Kind);
     }
 }

@@ -18,6 +18,7 @@ public class SiteBuilderSharedComponentContentService(
     : ISiteBuilderSharedComponentContentService
 {
     private const int QueryBatchSize = 500;
+    private const string ContentChangedMessage = "The content of the Shared Component changed since it was reviewed: review it again.";
 
     public async Task<string> LoadContentAsync(
         string sharedComponentId,
@@ -104,6 +105,7 @@ public class SiteBuilderSharedComponentContentService(
                 sharedComponentId,
                 expectedComponent: null,
                 content,
+                expectedContentVersion: null,
                 cancellationToken))
         {
             throw new KeyNotFoundException($"Shared Component '{sharedComponentId}' was not found.");
@@ -113,6 +115,7 @@ public class SiteBuilderSharedComponentContentService(
     public Task<bool> TrySaveContentAsync(
         SiteBuilderSharedComponent expectedComponent,
         string content,
+        string expectedContentVersion,
         CancellationToken cancellationToken = default)
     {
         ValidateExpectedComponent(expectedComponent);
@@ -121,6 +124,7 @@ public class SiteBuilderSharedComponentContentService(
             expectedComponent.Id,
             expectedComponent,
             content,
+            expectedContentVersion,
             cancellationToken);
     }
 
@@ -128,12 +132,14 @@ public class SiteBuilderSharedComponentContentService(
         string sharedComponentId,
         SiteBuilderSharedComponent expectedComponent,
         string content,
+        string expectedContentVersion,
         CancellationToken cancellationToken)
     {
         if (!await TryPersistContentAsync(
                 sharedComponentId,
                 expectedComponent,
                 content,
+                expectedContentVersion,
                 cancellationToken))
         {
             return false;
@@ -149,6 +155,7 @@ public class SiteBuilderSharedComponentContentService(
         string sharedComponentId,
         SiteBuilderSharedComponent expectedComponent,
         string content,
+        string expectedContentVersion,
         CancellationToken cancellationToken)
     {
         using (var repository = repositoryFactory())
@@ -162,6 +169,7 @@ public class SiteBuilderSharedComponentContentService(
                         sharedComponentId,
                         expectedComponent,
                         content,
+                        expectedContentVersion,
                         transactionCancellationToken),
                 cancellationToken);
 
@@ -174,6 +182,7 @@ public class SiteBuilderSharedComponentContentService(
         string sharedComponentId,
         SiteBuilderSharedComponent expectedComponent,
         string content,
+        string expectedContentVersion,
         CancellationToken cancellationToken)
     {
         var component = await repository.SiteBuilderSharedComponents
@@ -185,6 +194,12 @@ public class SiteBuilderSharedComponentContentService(
             (!HasExpectedIdentity(component, expectedComponent) || contentEntity == null))
         {
             return false;
+        }
+
+        if (expectedContentVersion != null &&
+            !string.Equals(SiteBuilderContentVersion.CreateForFileContent(contentEntity?.ComponentContent), expectedContentVersion.Trim(), StringComparison.Ordinal))
+        {
+            throw new SiteBuilderContentConflictException(ContentChangedMessage);
         }
 
         // Validate only after the locked identity check so a stale authorized snapshot fails closed.

@@ -158,7 +158,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         // ---------------------------------------------------------------------------------------
         // Faithful in-memory IGroupedPageService.
         // ---------------------------------------------------------------------------------------
-        internal sealed class FakeGroupedPageService : IGroupedPageService, IGroupedPageContentService
+        internal sealed class FakeGroupedPageService : IGroupedPageService, IGroupedPageContentService, IGroupedPageSearchService
         {
             // Controller-only fake. Transaction, index, and GET/save token guarantees are tested
             // against the real GroupedPageService in PageContentAtomicWriteTests.
@@ -198,7 +198,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 return new(draft.Id, SiteBuilderContentVersion.Create(current, content)) { GroupedEventsPublished = groupedEventsPublished };
             }
 
-            public async Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag,
+            public async Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, string expectedSettingsVersion,
                 CancellationToken cancellationToken = default)
             {
                 var current = _groups.ContainsKey(group.Id ?? "") ? await LoadGroupContentAsync(group, draft, cancellationToken) : null;
@@ -298,6 +298,22 @@ namespace VirtoCommerce.SiteBuilder.Tests
 
             /// <summary>A change of the stored group behind the back of whoever read it.</summary>
             public void ChangeGroup(string groupId, Action<GroupedSiteBuilderPage> change) => change(_groups[groupId]);
+
+            public Task<GroupedSiteBuilderPageSearchResult> SearchAsync(SiteBuilderPageSearchCriteria criteria, bool clone = true)
+            {
+                var permalink = SiteBuilderPermalinkConflicts.Normalize(criteria.Permalink);
+                var groups = _groups.Values
+                    .Where(x => criteria.StoreId == null || x.StoreId == criteria.StoreId)
+                    .Where(x => permalink == null || SiteBuilderPermalinkConflicts.Normalize(x.Permalink) == permalink)
+                    .Select(x => clone ? DeepClone(x) : x)
+                    .ToList();
+
+                return Task.FromResult(new GroupedSiteBuilderPageSearchResult
+                {
+                    TotalCount = groups.Count,
+                    Results = groups.Skip(criteria.Skip).Take(criteria.Take).ToList(),
+                });
+            }
 
             public Task<IList<GroupedSiteBuilderPage>> GetAsync(IList<string> ids, string responseGroup = null, bool clone = true)
             {
@@ -502,6 +518,9 @@ namespace VirtoCommerce.SiteBuilder.Tests
                     StartDate = group.StartDate,
                     EndDate = group.EndDate,
                     OrganizationId = group.OrganizationId,
+                    MultilanguagePageId = group.MultilanguagePageId,
+                    OverriddenFields = group.OverriddenFields,
+                    SourceRevisionDate = group.SourceRevisionDate,
                     CreatedDate = group.CreatedDate,
                     ModifiedDate = group.ModifiedDate,
                     Pages = group.Pages.Select(p => new SiteBuilderPage

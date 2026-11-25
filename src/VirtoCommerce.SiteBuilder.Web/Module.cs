@@ -36,6 +36,7 @@ using VirtoCommerce.SiteBuilder.Data.Search;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.Data.Validation;
+using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.Web.Extensions;
 using VirtoCommerce.SiteBuilder.Xapi;
 using VirtoCommerce.SiteBuilder.Xapi.Extensions;
@@ -54,13 +55,17 @@ using VirtoCommerce.Xapi.Core.Infrastructure;
 
 namespace VirtoCommerce.SiteBuilder.Web
 {
-    public class Module : IModule, IExportSupport, IImportSupport, IHasConfiguration
+    public class Module : IModule, IExportSupport, IImportSupport, IHasConfiguration, IHasModuleService
     {
+        // Optional dependency, initialized first when installed; its contract assemblies ship with this module.
+        private const string McpModuleId = "VirtoCommerce.MCP";
+
         private IApplicationBuilder _appBuilder;
         private List<RenamedConfigurationKey> _pageBuilderConfigurationKeys = [];
 
         public ManifestModuleInfo ModuleInfo { get; set; }
         public IConfiguration Configuration { get; set; }
+        public IModuleService ModuleService { get; set; }
 
         public void Initialize(IServiceCollection serviceCollection)
         {
@@ -171,6 +176,7 @@ namespace VirtoCommerce.SiteBuilder.Web
             serviceCollection.AddTransient<IContentHistoryOperationService, ContentHistoryOperationService>();
             serviceCollection.AddTransient<ISiteBuilderSharedComponentOperationService, SiteBuilderSharedComponentOperationService>();
             serviceCollection.AddTransient<IContentPermissionService, ContentPermissionService>();
+            serviceCollection.AddTransient<ISiteBuilderSectionScanner, SiteBuilderSectionScanner>();
             serviceCollection.AddTransient<IThemeSnapshotService, ThemeSnapshotService>();
             serviceCollection.AddTransient<IThemePaletteService, ThemePaletteService>();
             serviceCollection.AddTransient<IPreviewAuthCodeService, PreviewAuthCodeService>();
@@ -199,6 +205,11 @@ namespace VirtoCommerce.SiteBuilder.Web
 
             serviceCollection.AddSingleton<ScopedSchemaFactory<XapiAssemblyMarker>>();
             serviceCollection.AddSiteBuilderPreview();
+
+            if (ModuleService.IsInstalled(McpModuleId))
+            {
+                serviceCollection.AddSiteBuilderMcp();
+            }
         }
 
         internal static List<RenamedConfigurationKey> AddSiteBuilderOptions(IServiceCollection serviceCollection, IConfiguration configuration)

@@ -23,6 +23,8 @@ public class ContentHistoryOperationService(
     IValidator<ContentHistoryRequest> requestValidator,
     IValidator<ContentHistoryRestoreRequest> restoreRequestValidator) : IContentHistoryOperationService
 {
+    public const string UnknownCursorError = "The cursor is not one this history returned: list the history again without it.";
+
     public virtual Task<SiteBuilderOperationResult<ContentHistoryStatusResult>> GetStatusAsync(SiteBuilderOperationRequest request, ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
@@ -69,9 +71,9 @@ public class ContentHistoryOperationService(
             return SiteBuilderOperationResult.Success(await contentHistory.ListAsync(request.StoreId, ParseItems(historyRequest), request.Cursor, request.Take,
                 cancellationToken));
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return SiteBuilderOperationResult.Invalid(ex.Message).As<ContentVersionPage>();
+            return SiteBuilderOperationResult.Invalid(UnknownCursorError).As<ContentVersionPage>();
         }
     }
 

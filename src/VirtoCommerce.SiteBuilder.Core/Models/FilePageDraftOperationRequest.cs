@@ -10,4 +10,10 @@ public class FilePageDraftOperationRequest : FilePageOperationRequest
     /// while the merge waits for the repository's checks, is not merged with it.
     /// </summary>
     public string ExpectedDraftHead { get; set; }
+
+    /// <summary>
+    /// With no <see cref="ExpectedDraftHead"/>: the write is refused once a draft branch exists. An unpublish ships its deletion from a branch of
+    /// its own, as with <see cref="ExpectedDraftHead"/>.
+    /// </summary>
+    public bool ExpectNoDraftBranch { get; set; }
 }

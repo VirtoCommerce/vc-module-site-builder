@@ -119,8 +119,9 @@ public sealed class SiteBuilderPageContentService(
     }
 
     /// <exception cref="SiteBuilderContentConflictException">The content is not at <paramref name="expectedETag"/>: nothing is written.</exception>
-    public Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, CancellationToken cancellationToken)
-        => VersionedContent.SaveGroupAtVersionAsync(group, draft, expectedETag, cancellationToken);
+    public Task SaveGroupAtVersionAsync(GroupedSiteBuilderPage group, bool draft, string expectedETag, string expectedSettingsVersion,
+        CancellationToken cancellationToken)
+        => VersionedContent.SaveGroupAtVersionAsync(group, draft, expectedETag, expectedSettingsVersion, cancellationToken);
 
     public async Task<SiteBuilderPageContentWriteResult> CopyContentAsync(
         string targetGroupId,

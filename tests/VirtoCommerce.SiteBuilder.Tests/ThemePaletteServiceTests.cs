@@ -210,8 +210,9 @@ public class ThemePaletteServiceTests
         Assert.Equal(2.11, solid.Ratio);
         Assert.Equal(4.5, solid.MinimumRatio);
         Assert.Contains(result.Failures, x => x.Pair == "button-outline-primary" && x.Text == "color_primary_500" && x.Background == "color_additional_50");
+        Assert.Contains(result.Failures, x => x.Pair == "header-bottom-icon" && x.Text == "color_primary_500" && x.Background == "color_additional_50");
         // The rest of the pairs need colors the palette leaves to the preset.
-        Assert.Equal(DefaultPairs.Count - 3, result.Unchecked);
+        Assert.Equal(DefaultPairs.Count - 4, result.Unchecked);
     }
 
     [Theory]
@@ -302,6 +303,27 @@ public class ThemePaletteServiceTests
 
         Assert.DoesNotContain(result.Failures, x => x.Pair.EndsWith("-primary"));
         Assert.Equal(DefaultPairs.Count, result.Unchecked);
+    }
+
+    [Theory]
+    [InlineData("#1f4d3a", true)]
+    [InlineData("#41a17a", false)]
+    public void CheckPalette_HeaderIconsInThePrimaryColor_FailBelow3OnTheHeader(string primary, bool fails)
+    {
+        var result = _service.CheckPalette(Check(new Dictionary<string, string>
+        {
+            ["color_primary_500"] = primary,
+            ["color_header_bottom_bg"] = "#1a1a1a",
+        }));
+
+        var failure = result.Failures.SingleOrDefault(x => x.Pair == "header-bottom-icon");
+        Assert.Equal(fails, failure != null);
+        if (failure != null)
+        {
+            Assert.Equal(3, failure.MinimumRatio);
+            Assert.Equal("color_primary_500", failure.Text);
+            Assert.Equal("color_header_bottom_bg", failure.Background);
+        }
     }
 
     [Fact]

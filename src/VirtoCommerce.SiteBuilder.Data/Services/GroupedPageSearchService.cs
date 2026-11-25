@@ -38,6 +38,12 @@ namespace VirtoCommerce.SiteBuilder.Data.Services
                 query = query.Where(x => x.StoreId == criteria.StoreId);
             }
 
+            if (criteria.StoreIds != null)
+            {
+                var storeIds = criteria.StoreIds;
+                query = query.Where(x => storeIds.Contains(x.StoreId));
+            }
+
             if (!criteria.Keyword.IsNullOrEmpty())
             {
                 // PostgreSQL compares case-sensitively; lower case on both sides ignores case on every provider.

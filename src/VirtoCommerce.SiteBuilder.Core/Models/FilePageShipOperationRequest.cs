@@ -10,9 +10,8 @@ public class FilePageShipOperationRequest : FilePageDraftOperationRequest
     public string DraftOwner { get; set; }
 
     /// <summary>
-    /// Blob storage only: the version of the content the caller reviewed, as <see cref="SiteBuilderContentVersion.CreateForFileContent"/> makes it of
-    /// what the page reads (for a publish, the draft, else what is published; for an unpublish, what is published). It is read again right before
-    /// the write, as blob storage holds no lock over a page, and the write is refused when it differs. <c>null</c> takes the page as it is.
+    /// The <see cref="SiteBuilderObjectChange.ETag"/> a dry run answered: of the draft for a publish in blob storage, else of what is published.
+    /// Compared right before the write, which is refused when it differs; a publish in git does not check it. <c>null</c> skips the check.
     /// </summary>
     public string ExpectedContentVersion { get; set; }
 }

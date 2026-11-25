@@ -59,7 +59,7 @@ public class GitHubConnectionService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "The saved GitHub connection could not be read.");
-            return SetError(connection, "The saved GitHub connection could not be read. Try again in a moment.");
+            return SetError(connection, "The saved GitHub connection could not be read. Try again in a moment.", GitContentFailureKind.Unknown);
         }
 
         if (string.IsNullOrWhiteSpace(stored))
@@ -77,7 +77,7 @@ public class GitHubConnectionService(
         {
             logger.LogWarning(ex, "The saved GitHub connection cannot be decrypted on this server.");
             return SetError(connection, "The saved GitHub connection cannot be read on this server: it was made on another one, or this server's " +
-                                        "data protection keys have changed. Set it up again.");
+                                        "data protection keys have changed. Set it up again.", GitContentFailureKind.NotConfigured);
         }
 
         ApplyApp(connection, app);
@@ -191,10 +191,11 @@ public class GitHubConnectionService(
     }
 
     /// <summary>Keeps the connection enabled unless the configuration switches git content off, so a store that opted in refuses git operations and never falls back to the blob flow.</summary>
-    protected virtual GitHubConnection SetError(GitHubConnection connection, string error)
+    protected virtual GitHubConnection SetError(GitHubConnection connection, string error, GitContentFailureKind kind)
     {
         connection.IsEnabled = !_isSwitchedOff;
         connection.Error = error;
+        connection.ErrorKind = kind;
         return connection;
     }
 

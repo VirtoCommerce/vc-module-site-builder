@@ -300,6 +300,8 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Equal(
                 [(ModuleConstants.ChangePreview.Status, PageStatuses.Published, PageStatuses.Draft), (ModuleConstants.ChangePreview.Content, Published, null)],
                 change.Fields.Select(x => (x.Name, x.From, x.To)));
+            Assert.Equal((MyBranch, SiteBuilderContentVersion.CreateForFileContent(Published)), (change.DraftBranch, change.ETag));
+            Assert.Null(change.DraftHead);
             Assert.Empty(repository.CreatedBranches);
             Assert.Empty(repository.DeletedFiles);
             Assert.Empty(repository.DeletedBranches);
@@ -392,6 +394,72 @@ namespace VirtoCommerce.SiteBuilder.Tests
             Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftBranchMovedMessage), (result.Status, result.Error));
             Assert.Empty(repository.DeletedFiles);
             Assert.Empty(repository.CreatedBranches);
+            Assert.Empty(publisher.Merges);
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_ReviewedWithNoDraftBranch_ABranchMadeSince_IsAConflictAndCommitsNothing()
+        {
+            var repository = Repository();
+            var publisher = Publisher();
+            var request = new FilePageShipOperationRequest { StoreId = "s1", ContentType = "pages", Path = Page, ExpectNoDraftBranch = true };
+
+            var result = await Operations(repository, publisher, new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.DraftBranchMovedMessage), (result.Status, result.Error));
+            Assert.Empty(repository.DeletedFiles);
+            Assert.Empty(publisher.Merges);
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_ReviewedWithNoDraftBranch_ShipsTheDeletionItCommits_NotACommitMadeWhileTheMergeWaits()
+        {
+            const string savedAgain = "7555555555555555555555555555555555555555";
+            var repository = Repository(withBranch: false);
+            var publisher = Publisher(GitPublishState.Merged);
+            publisher.OnMerge = () =>
+            {
+                repository.BranchHeads[MyBranch] = savedAgain;
+                repository.Files[(RepoPath, MyBranch)] = Published;
+            };
+            var request = new FilePageShipOperationRequest
+            {
+                StoreId = "s1",
+                ContentType = "pages",
+                Path = Page,
+                ExpectNoDraftBranch = true,
+                ExpectedContentVersion = SiteBuilderContentVersion.CreateForFileContent(Published),
+            };
+
+            var result = await Operations(repository, publisher, new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            Assert.Equal((MyBranch, "master"), Assert.Single(repository.CreatedBranches));
+            Assert.Equal((RepoPath, MyBranch), Assert.Single(repository.DeletedFiles));
+            Assert.Equal((MyPublishBranch, RecordingRepository.NewCommitSha), Assert.Single(repository.MovedBranches));
+            Assert.Equal((MyPublishBranch, "master"), Assert.Single(publisher.Merges));
+            Assert.DoesNotContain(MyBranch, repository.DeletedBranches);
+        }
+
+        [Fact]
+        public async Task UnpublishOperation_PublishedPageChangedSinceTheReview_IsAConflictAndCommitsNothing()
+        {
+            var repository = Repository();
+            repository.Files[(RepoPath, "master")] = Published.Replace("About", "About us", StringComparison.Ordinal);
+            var publisher = Publisher();
+            var request = new FilePageShipOperationRequest
+            {
+                StoreId = "s1",
+                ContentType = "pages",
+                Path = Page,
+                ExpectedDraftHead = BranchHead,
+                ExpectedContentVersion = SiteBuilderContentVersion.CreateForFileContent(Published),
+            };
+
+            var result = await Operations(repository, publisher, new FakeBlobStorage()).UnpublishAsync(request, User, CancellationToken.None);
+
+            Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
+            Assert.Empty(repository.DeletedFiles);
             Assert.Empty(publisher.Merges);
         }
 

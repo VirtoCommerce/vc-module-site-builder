@@ -16,4 +16,10 @@ public class GroupedPageSaveCondition
     public string SourceGroupId { get; set; }
 
     public DateTime? ExpectedSourceRevisionDate { get; set; }
+
+    /// <summary>
+    /// The <see cref="SiteBuilderContentVersion.CreateForMultilanguagePage"/> version of the root the save derives the overrides from. The root has no
+    /// lock of its own, so it is compared right before the commit; <c>null</c> skips the check.
+    /// </summary>
+    public string ExpectedMultilanguagePageVersion { get; set; }
 }

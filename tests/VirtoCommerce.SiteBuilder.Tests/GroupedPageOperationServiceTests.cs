@@ -385,7 +385,11 @@ public class GroupedPageOperationServiceTests
     public async Task PublishAsync_TheReviewedDraft_IsPublished()
     {
         var dryRun = await Operations().PublishAsync(new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, DryRun = true }, _user, Ct);
-        var request = new GroupedPagePublishOperationRequest { GroupId = "edited", Publish = true, ExpectedDraftVersion = dryRun.Preview.Objects[0].ETag };
+        var request = new GroupedPagePublishOperationRequest
+        {
+            GroupId = "edited", Publish = true, ExpectedDraftVersion = dryRun.Preview.Objects[0].ETag,
+            ExpectedSettingsVersion = SiteBuilderContentVersion.CreateForGroupSettings(await GetAsync("edited")),
+        };
 
         var result = await Operations().PublishAsync(request, _user, Ct);
 
@@ -406,6 +410,34 @@ public class GroupedPageOperationServiceTests
         Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.PageChangedMessage), (result.Status, result.Error));
         Assert.Equal([Draft, Published], (await GetAsync("edited")).Pages.Select(x => x.Status).Order());
         Assert.Equal(EditedContent, await _pages.LoadContent("edited-draft", Ct));
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task PublishAsync_AudienceWidenedSinceItWasReviewed_IsAConflictAndPublishesNothing()
+    {
+        const string content = """{"settings":{"name":"Offer","permalink":"/offer","cultureName":"en-US"},"content":[]}""";
+        _pages.SeedGroup(new GroupedSiteBuilderPage
+        {
+            Id = "offer", StoreId = "s1", Name = "Offer", Permalink = "/offer", CultureName = "en-US", OrganizationId = "org-a",
+            Pages = [new SiteBuilderPage { Id = "offer-draft", StoreId = "s1", Status = Draft }],
+        });
+        _pages.SeedContent("offer-draft", content);
+        var reviewedDraft = await ETagAsync("offer");
+        var reviewedSettings = SiteBuilderContentVersion.CreateForGroupSettings(await GetAsync("offer"));
+        var everyone = await GetAsync("offer");
+        everyone.OrganizationId = null;
+        Assert.True((await Operations().UpdateAsync(new GroupedPageSaveOperationRequest { Page = everyone, RequireUnpublished = true }, _user, Ct)).Succeeded);
+        var request = new GroupedPagePublishOperationRequest
+        {
+            GroupId = "offer", Publish = true, ExpectedDraftVersion = reviewedDraft, ExpectedSettingsVersion = reviewedSettings,
+        };
+
+        var result = await Operations().PublishAsync(request, _user, Ct);
+
+        Assert.Equal(reviewedDraft, await ETagAsync("offer"));
+        Assert.Equal((SiteBuilderOperationStatus.Conflict, SiteBuilderContentConflictException.SettingsChangedMessage), (result.Status, result.Error));
+        Assert.Equal(Draft, Assert.Single((await GetAsync("offer")).Pages).Status);
         Assert.Empty(_history.Records);
     }
 
