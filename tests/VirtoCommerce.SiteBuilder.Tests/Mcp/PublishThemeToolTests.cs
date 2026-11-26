@@ -95,7 +95,7 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
         };
         _context.PageStore.SeedGroup(page);
         _context.PageStore.SeedContent("spring-published", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
-        // the publication changes what customers see now, so the page counts by its published version, not its draft
+        // only the published version places the type here: the draft places no section of it, so the page is listed once
         _context.PageStore.SeedContent("spring-draft", """{ "settings": {}, "content": [ { "id": "t1", "type": "text" } ] }""");
         _context.ListPages(() => [LandingRow(page)]);
 
@@ -106,6 +106,50 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
         Assert.Equal([("spring", "Spring''s sale", 1)], placed.Pages.Select(x => (x.PageId, x.Name, x.Sections)));
         Assert.Contains("Templates are not scanned", placed.Coverage, StringComparison.Ordinal);
         Assert.Null(preview.Drafts.Single(x => x.Path == "default/templates/product.bicycles.json").PlacedSections);
+    }
+
+    [Fact]
+    public async Task TheDryRun_OfACustomSectionTypeDraft_AlsoListsThePageDraftsThatPlaceIt()
+    {
+        await SeedAsync();
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        var published = new GroupedSiteBuilderPage
+        {
+            Id = "spring",
+            StoreId = StoreA,
+            Name = "Spring",
+            Permalink = "/spring",
+            CultureName = "en-US",
+            Pages =
+            [
+                new SiteBuilderPage { Id = "spring-published", GroupId = "spring", StoreId = StoreA, Status = "Published" },
+                new SiteBuilderPage { Id = "spring-draft", GroupId = "spring", StoreId = StoreA, Status = "Draft" },
+            ],
+        };
+        _context.PageStore.SeedGroup(published);
+        _context.PageStore.SeedContent("spring-published", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        _context.PageStore.SeedContent("spring-draft", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" }, { "id": "s2", "type": "custom-stats" } ] }""");
+        var unchanged = new GroupedSiteBuilderPage
+        {
+            Id = "about",
+            StoreId = StoreA,
+            Name = "About",
+            Permalink = "/about",
+            CultureName = "en-US",
+            Pages = [new SiteBuilderPage { Id = "about-published", GroupId = "about", StoreId = StoreA, Status = "Published" }],
+        };
+        _context.PageStore.SeedGroup(unchanged);
+        _context.PageStore.SeedContent("about-published", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        var neverPublished = _context.SeedDraft("landing", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        _context.ListPages(() => [LandingRow(published), LandingRow(unchanged), LandingRow(neverPublished)]);
+
+        var preview = await DryRunAsync();
+
+        var placed = preview.Drafts.Single(x => x.Path == "default/custom-sections/custom-stats.json").PlacedSections!;
+        Assert.Equal([("about", "published", 1), ("landing", "draft", 1), ("spring", "draft", 2), ("spring", "published", 1)],
+            placed.Pages.Select(x => (x.PageId, x.Version, x.Sections)).Order());
+        Assert.StartsWith("Scanned all 3 pages (3 language versions).", placed.Coverage, StringComparison.Ordinal);
+        Assert.Contains("its published version and in its draft", placed.Coverage, StringComparison.Ordinal);
     }
 
     [Fact]

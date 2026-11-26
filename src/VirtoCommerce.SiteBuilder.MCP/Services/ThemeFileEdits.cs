@@ -70,7 +70,13 @@ public sealed record NewSettingRow([property: JsonPropertyName("id")] string Id,
 // sections counts only the page's own: edit_page_draft cannot set those of a placed Shared Component.
 public sealed record PlacingPageRow([property: JsonPropertyName("page_id")] string PageId, [property: JsonPropertyName("language")] string Language,
     [property: JsonPropertyName("name")] string Name, [property: JsonPropertyName("permalink")] string Permalink,
-    [property: JsonPropertyName("sections")] int Sections, [property: JsonPropertyName("shared_component_ids")] IList<string> SharedComponentIds);
+    [property: JsonPropertyName("sections")] int Sections, [property: JsonPropertyName("shared_component_ids")] IList<string> SharedComponentIds)
+{
+    // publish_theme's dry run only: whether the page's published version or its draft places the type
+    [JsonPropertyName("version")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string Version { get; init; }
+}
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
 

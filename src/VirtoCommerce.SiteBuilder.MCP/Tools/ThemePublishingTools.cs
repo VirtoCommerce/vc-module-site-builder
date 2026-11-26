@@ -189,7 +189,7 @@ public class ThemePublishingTools(
             change.AddChange($"{draft.ObjectId} {item.Field}", item.From, item.To);
         }
 
-        var (pages, coverage) = await SectionTypePages.FindAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type, published: true,
+        var (pages, coverage) = await SectionTypePages.FindPublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type,
             cancellationToken);
 
         return new SectionTypePlacements { Pages = pages, Coverage = coverage };
@@ -255,7 +255,7 @@ public sealed class ThemeDraftRow
     [JsonPropertyName("changed_date")]
     public DateTime? ChangedDate { get; init; }
 
-    // a custom section type's draft only: the publication changes the published pages at once, so those are the ones listed
+    // a custom section type's draft only: the publication changes the published pages at once, and the page drafts that place it from then on
     [JsonPropertyName("placed_sections")]
     public SectionTypePlacements PlacedSections { get; init; }
 }

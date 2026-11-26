@@ -388,6 +388,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
         Assert.Equal(["value"], placed.RemovedSettings);
         var page = Assert.Single(placed.Pages);
         Assert.Equal(("landing", 2), (page.PageId, page.Sections));
+        Assert.Null(page.Version);
         Assert.Contains("Templates are not scanned", placed.Coverage, StringComparison.Ordinal);
         Assert.Contains("no longer shown", placed.Note, StringComparison.Ordinal);
         Assert.Contains("update_sections_bulk", change.NextStep, StringComparison.Ordinal);
