@@ -222,6 +222,49 @@ public sealed class TemplateToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ACustomSectionTypeTheThemeDoesNotHold_IsAnErrorOfTheDryRun_AsTheSaveRefusesIt()
+    {
+        await SeedAsync();
+        var token = await VersionOfAsync("product");
+        object Edit(bool dryRun) => new
+        {
+            store_id = StoreA,
+            template_key = "product",
+            version_token = token,
+            operations = new[] { new { op = "add_section", type = "custom-stats" } },
+            dryRun,
+        };
+
+        var preview = (await _context.CallAsync(Designer(), "edit_template", Edit(dryRun: true))).EnsureSucceeded().Read<ThemeFileChange>();
+        var save = await _context.CallAsync(Designer(), "edit_template", Edit(dryRun: false));
+
+        Assert.Contains(preview.Errors, x => x.Contains("has a type the storefront does not have, 'custom-stats'", StringComparison.Ordinal));
+        Assert.Null(preview.NextStep);
+        Assert.Equal(McpToolCallOutcome.Failed, save.Outcome);
+        Assert.Contains("has a type the storefront does not have, 'custom-stats'", save.Error, StringComparison.Ordinal);
+        Assert.Null(_context.ReadThemeFile(StoreA, "templates/product.json", draft: true));
+    }
+
+    [Fact]
+    public async Task ACustomSectionTypeTheThemeHoldsAsADraft_IsPlacedWithoutAWarning_SinceTheThemePublishesThemTogether()
+    {
+        await SeedAsync();
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+
+        var change = (await _context.CallAsync(Designer(), "edit_template", new
+        {
+            store_id = StoreA,
+            template_key = "product",
+            version_token = await VersionOfAsync("product"),
+            operations = new[] { new { op = "add_section", type = "custom-stats" } },
+        })).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Null(change.Errors);
+        Assert.DoesNotContain(change.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
+        Assert.Contains("custom-stats", _context.ReadThemeFile(StoreA, "templates/product.json", draft: true), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AStaleVersion_IsRefused()
     {
         await SeedAsync();
