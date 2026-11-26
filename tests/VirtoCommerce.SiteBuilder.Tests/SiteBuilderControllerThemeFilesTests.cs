@@ -586,6 +586,32 @@ public class SiteBuilderControllerThemeFilesTests
         Assert.Empty(_live.Files);
     }
 
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/x/bar.json")]
+    [InlineData("default/sections/x.json")]
+    public async Task SaveTemplates_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndWritesNothing(string path)
+    {
+        var history = new RecordingContentHistory();
+
+        var result = await Builder(history: history).SaveTemplates("s1", "default", ThemeFile(path), draft: true);
+
+        Assert.Contains($"\"{path}\"", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result))["error"]);
+        Assert.Empty(_live.Files);
+        Assert.Empty(history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardDraft_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestAndKeepsTheDraft()
+    {
+        const string draft = "default/agent-test.json-draft";
+        _live.Files[Theme(draft)] = "{}";
+
+        Assert.IsType<BadRequestObjectResult>(await Builder().DiscardDraft("s1", "default/agent-test.json", "themes", "default"));
+
+        Assert.Equal("{}", _live.Files[Theme(draft)]);
+    }
+
     private Task<string> SaveCatalogAsync() =>
         new SchemaCatalogService(_themeStorageFactory).SaveAsync("s1",
             $$"""{ "hash": "{{Catalog}}", "sections": { "site-header": { "settings": [ { "id": "link", "type": "url" } ] }, "product-info": {}, "text": {} }, "blocks": {}, "shared": {} }""", Ct);

@@ -83,8 +83,12 @@ public class SiteBuilderContentRequestValidator : AbstractValidator<SiteBuilderC
 
         Include(storeRequestValidator);
 
+        // the class-level Stop leaves a path in another theme folder with the folder's error alone
         RuleFor(x => x.Files)
             .InTheStoresTheme(themeStorageFactory, files => files.Where(IsThemeFile).Select(x => x.Path));
+
+        RuleFor(x => x.Files)
+            .SavedByTheBuilder(files => files.Where(IsThemeFile).Select(x => x.Path));
     }
 
     private static bool IsThemeFile(SiteBuilderContentFile file) =>

@@ -48,16 +48,8 @@ public class ThemePublisher(
     private const double TextContrastRatio = 4.5;
     private const int RatioDecimals = 2;
 
-    private static readonly Dictionary<string, Action<ThemeSource, JToken>> ThemeParts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [ThemeStorage.TemplateRulesFile] = (source, content) => source.Rules = content,
-        [ThemeStorage.HeaderGroupFile] = (source, content) => source.Header = content,
-        [ThemeStorage.FooterGroupFile] = (source, content) => source.Footer = content,
-        [ThemeStorage.BrandFile] = (source, content) => source.Brand = content,
-        [ThemeStorage.SettingsDataFile] = (source, content) => source.SettingsData = content,
-        [ThemeStorage.PaletteFile] = (source, content) => source.Palette = content,
-        [ThemeStorage.DarkPaletteFile] = (source, content) => source.PaletteDark = content,
-    };
+    private static readonly Dictionary<string, Action<ThemeSource, JToken>> ThemeParts =
+        ThemeStorage.PartFiles.ToDictionary(x => x, GetPartSetter, StringComparer.OrdinalIgnoreCase);
 
     public virtual Task<int> PublishAsync(string storeId, string catalogHash, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
@@ -541,11 +533,24 @@ public class ThemePublisher(
         var templateKeys = await GetTemplateKeysAsync(storage);
         var customSectionTypes = await GetCustomSectionTypesAsync(storage);
 
-        return ThemeParts.Keys
+        return ThemeStorage.PartFiles
             .Concat(templateKeys.Select(ThemeStorage.GetTemplateFile))
             .Concat(customSectionTypes.Select(ThemeStorage.GetCustomSectionFile))
             .ToList();
     }
+
+    // a part the source has no place for fails at the first use of the publisher, not by leaving the part out of every publication
+    private static Action<ThemeSource, JToken> GetPartSetter(string file) => file switch
+    {
+        ThemeStorage.TemplateRulesFile => (source, content) => source.Rules = content,
+        ThemeStorage.HeaderGroupFile => (source, content) => source.Header = content,
+        ThemeStorage.FooterGroupFile => (source, content) => source.Footer = content,
+        ThemeStorage.BrandFile => (source, content) => source.Brand = content,
+        ThemeStorage.SettingsDataFile => (source, content) => source.SettingsData = content,
+        ThemeStorage.PaletteFile => (source, content) => source.Palette = content,
+        ThemeStorage.DarkPaletteFile => (source, content) => source.PaletteDark = content,
+        _ => throw new InvalidOperationException($"The theme part '{file}' has no place in the theme source."),
+    };
 
     protected virtual void AddThemeFile(ThemeSource source, string file, JToken content)
     {

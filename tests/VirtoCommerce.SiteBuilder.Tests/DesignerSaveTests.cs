@@ -287,6 +287,49 @@ public class DesignerSaveTests
         Assert.IsType<BadRequestObjectResult>((await Builder().GetDesignerThemeFile("s1", path)).Result);
     }
 
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/sections/x.json")]
+    public async Task GetDesignerThemeFile_JsonFileTheBuilderDoesNotRead_ReturnsBadRequest(string path)
+    {
+        _live.Files[Theme($"{path}-draft")] = "{}";
+
+        Assert.IsType<BadRequestObjectResult>((await Builder().GetDesignerThemeFile("s1", path)).Result);
+    }
+
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/x/bar.json")]
+    [InlineData("default/sections/x.json")]
+    [InlineData("default/content/templates/product.json")]
+    [InlineData("default/templates/x/product.json")]
+    [InlineData("default/templates/Product.json")]
+    [InlineData("default/Templates/product.json")]
+    [InlineData("default/custom-sections/a/custom-x.json")]
+    public async Task SaveDesignerChanges_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndWritesNothing(string path)
+    {
+        var catalog = await SaveCatalogAsync();
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, HeaderFile), (path, "{}")), catalog);
+
+        Assert.Contains($"\"{path}\"", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result))["error"]);
+        AssertNothingWritten();
+    }
+
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/sections/x.json")]
+    public async Task DiscardDesignerChanges_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndKeepsItsDraft(string path)
+    {
+        _live.Files[Theme($"{path}-draft")] = "{}";
+
+        var result = await Builder().DiscardDesignerChanges("s1", Discard(null, path));
+
+        Assert.Contains($"\"{path}\"", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result))["error"]);
+        Assert.Equal("{}", _live.Files[Theme($"{path}-draft")]);
+        Assert.Empty(_history.Records);
+    }
+
     [Fact]
     public async Task SaveDesignerChanges_PageRefusedAfterTheThemeFiles_PutsTheirDraftsBack()
     {

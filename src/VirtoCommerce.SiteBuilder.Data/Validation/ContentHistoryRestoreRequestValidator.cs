@@ -13,20 +13,16 @@ public class ContentHistoryRestoreRequestValidator : AbstractValidator<ContentHi
 
         Include(requestValidator);
 
-        RuleForEach(x => x.Items)
-            .Must(IsSavedItem)
-            .WithMessage("\"{PropertyValue}\" is a theme file the builder does not save.");
-
         RuleFor(x => x.Items)
             .Must(items => DesignerThemeFiles.AreNamedOnce(items.Select(GetThemeFile).Where(x => x != null).ToList()))
             .WithMessage(DesignerThemeFiles.NamingError);
 
         RuleFor(x => x.Items)
             .InTheStoresTheme(themeStorageFactory, items => items.Select(GetThemeFile).Where(x => x != null));
-    }
 
-    private static bool IsSavedItem(string value) =>
-        HistoryItem.TryParse(value, out var item) && (item.Type == HistoryItemType.Page || SiteBuilderContentPaths.IsWritableThemeFile(item.Key));
+        RuleFor(x => x.Items)
+            .SavedByTheBuilder(items => items.Select(GetThemeFile).Where(x => x != null));
+    }
 
     private static string GetThemeFile(string value) => HistoryItem.TryParse(value, out var item) && item.Type == HistoryItemType.Theme ? item.Key : null;
 }

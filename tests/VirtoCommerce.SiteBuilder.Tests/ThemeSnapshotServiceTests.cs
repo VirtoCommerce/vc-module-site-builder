@@ -232,6 +232,39 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
         Assert.Equal(1, (await publisher.GetStatusAsync(StoreId, Ct)).Publication);
     }
 
+    [Theory]
+    [InlineData("config/template_rules.json")]
+    [InlineData("sections/header-group.json")]
+    [InlineData("sections/footer-group.json")]
+    [InlineData("config/brand.json")]
+    [InlineData("config/settings_data.json")]
+    [InlineData("config/palette.json")]
+    [InlineData("config/palette.dark.json")]
+    [InlineData("templates/product.json")]
+    [InlineData("templates/page.landing-2.json")]
+    [InlineData("custom-sections/custom-promo.json")]
+    [InlineData("custom-sections/Bad_Name.json")]
+    [InlineData("agent-test.json")]
+    [InlineData("x/bar.json")]
+    [InlineData("sections/x.json")]
+    [InlineData("content/templates/product.json")]
+    [InlineData("templates/x/product.json")]
+    [InlineData("templates/Product.json")]
+    [InlineData("templates/product.JSON")]
+    [InlineData("templates/not-a-key.json")]
+    [InlineData("Templates/product.json")]
+    [InlineData("custom-sections/a/custom-x.json")]
+    [InlineData("Config/brand.json")]
+    [InlineData("config/settings_schema.json")]
+    public async Task GetStatusAsync_ListsADraftExactlyWhenTheSaveTakesItsPath(string file)
+    {
+        _storage.Files[Theme($"default/{file}-draft")] = "{}";
+
+        var status = await _publisher.GetStatusAsync(StoreId, Ct);
+
+        Assert.Equal(status.Drafts.Contains(file, StringComparer.Ordinal), SiteBuilderContentPaths.CanSaveThemeFile($"default/{file}"));
+    }
+
     [Fact]
     public async Task PublishAsync_LockLost_KeepsPreviousPublicationAndDraftsAndRecordsNothing()
     {

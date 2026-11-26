@@ -139,6 +139,32 @@ namespace VirtoCommerce.SiteBuilder.Tests
         }
 
         [Theory]
+        [InlineData("default/agent-test.json")]
+        [InlineData("default/sections/x.json")]
+        public async Task AThemeFileTheBuilderDoesNotRead_IsInvalidNamingIt(string path)
+        {
+            var result = await Validator().ValidateAsync(Request(type: null, files: [File("themes", path, "{}")]), TestContext.Current.CancellationToken);
+
+            Assert.Contains($"\"{path}\" is not a theme file the builder saves", result.Errors.Single().ErrorMessage);
+        }
+
+        [Fact]
+        public async Task AFileTheBuilderSavesNamedWithoutTheThemeFolder_InAThemeNamedAsOneOfItsFolders_IsInvalidNamingIt()
+        {
+            const string path = "sections/header-group.json";
+            var store = new Store
+            {
+                Id = Store,
+                DynamicProperties = [new DynamicObjectProperty { Name = ModuleConstants.Theme.ThemeNamePropertyName, Values = [new DynamicPropertyObjectValue { Value = "sections" }] }],
+            };
+
+            var result = await RequestValidators.Content(new FakeStoreService(store))
+                .ValidateAsync(Request(type: null, files: [File("themes", path, """{ "content": [] }""")]), TestContext.Current.CancellationToken);
+
+            Assert.Contains($"\"{path}\" is not a theme file the builder saves", result.Errors.Single().ErrorMessage);
+        }
+
+        [Theory]
         [InlineData("default/sections/header-group.json", true)]
         [InlineData("coffee/sections/header-group.json", false)]
         public async Task AThemeFile_OfAStoreWithoutATheme_IsInTheDefaultThemeFolder(string path, bool valid)

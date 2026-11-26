@@ -271,6 +271,23 @@ public class HistoryControllerTests
         Assert.Empty(_history.Records);
     }
 
+    [Theory]
+    [InlineData("theme:default/agent-test.json")]
+    [InlineData("theme:default/x/bar.json")]
+    [InlineData("theme:default/sections/x.json")]
+    [InlineData("theme:default/content/templates/product.json")]
+    public async Task Restore_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndWritesNothing(string item)
+    {
+        _history.Versions[(VersionId, item)] = "{}";
+
+        var result = await Controller().Restore(VersionId, "s1", [item], Ct);
+
+        Assert.Contains($"\"{item["theme:".Length..]}\" is not a theme file the builder saves",
+            (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result))["error"]);
+        Assert.Empty(_live.Files);
+        Assert.Empty(_history.Records);
+    }
+
     [Fact]
     public async Task Restore_ThemeFileNotInTheStoresTheme_ReturnsBadRequestAndWritesNothing()
     {

@@ -63,8 +63,8 @@ a page of that store, or `theme:{path}`, a theme file outside `snapshots/`; it m
 Restore writes the items as of the version as their drafts, in one save under the theme lock, all or nothing, and
 records it as one version, "Restored {the first 7 characters of the versionId}". It names at most one page, and needs
 `builder:templates` for templates and the rules, and `builder:theme` for the other
-theme files. A theme item must be a file the builder saves: not under `catalogs/`, and in `config/` only the builder's
-own files. The order of the checks: the store (403), the items (400), the permission of every item (403), the page
+theme files. A theme item must be a file the builder saves: one of the [theme files](theme-snapshot.md#theme-files) other
+than the snapshots and the catalogs. The order of the checks: the store (403), the items (400), the permission of every item (403), the page
 (404, or 403 for another store's), the items as of the version (404), and the page's shared components as a save
 checks them (403 without `builder:shared-components:read`, 400). Restore takes no versions: it replaces the items as
 they are now, and the designer reads them again. The editor then publishes as usual. To preview a version, the designer reads the page and the theme files
@@ -114,7 +114,7 @@ The designer discards what it shows in one request ([Discard](#discard)). A data
 are discarded with `POST api/site-builder-pages/grouped/{groupId}/discard` (`builder:update`; 400 for a page never
 published), which records the published content as one version, "Discarded unpublished changes". A theme file's draft
 alone is discarded with `POST api/site-builder/discard-draft`, recorded the same way; its path is checked as the
-designer's Discard checks it (400 outside the store's theme folder).
+designer's Discard checks it (400 outside the store's theme folder or for a file the builder does not save).
 
 ## Save
 
@@ -141,7 +141,7 @@ interface DesignerSave {
   page's version format over the store, the path and the content; a file that does not exist has a version of its own,
   so creating a file is checked as well. A theme publication moves the bytes live unchanged, and keeps the version.
 - Everything is checked before anything is written: the store and each part's permission (403), the database page
-  (404, or 403 for another store's), the paths, each in the store's theme folder, and the JSON (400), the page's envelope and shared components as `grouped/{groupId}/content` checks them (400; 403 without
+  (404, or 403 for another store's), the paths, each a [theme file](theme-snapshot.md#theme-files) the builder saves in the store's theme folder, and the JSON (400), the page's envelope and shared components as `grouped/{groupId}/content` checks them (400; 403 without
   `builder:shared-components:read`), its version (428 without one; 412 when the page was saved since it was read), each
   theme file's version (428 without one, 400 when it is not one the server gives), and the theme files against the
   catalog named: their section and block types and the values of fields with a closed set of values, a `color-token`'s

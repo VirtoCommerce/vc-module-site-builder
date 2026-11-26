@@ -65,6 +65,18 @@ public static class SiteBuilderContentRules
             }
         });
 
+    /// <summary>Once the store's theme folder is known (after <see cref="InTheStoresTheme"/>), the file must be a theme file the builder saves.</summary>
+    /// <param name="getThemeFiles">The paths, with the theme folder, of the theme files the value names.</param>
+    public static IRuleBuilderOptionsConditions<T, TProperty> SavedByTheBuilder<T, TProperty>(this IRuleBuilder<T, TProperty> rule,
+        Func<TProperty, IEnumerable<string>> getThemeFiles) =>
+        rule.Custom((value, context) =>
+        {
+            foreach (var path in (value == null ? [] : getThemeFiles(value)).Where(x => !SiteBuilderContentPaths.CanSaveThemeFile(x)))
+            {
+                context.AddFailure(SiteBuilderContentPaths.GetNotSavedError(path));
+            }
+        });
+
     public static IRuleBuilderOptions<T, string> ReadVersion<T>(this IRuleBuilder<T, string> rule, bool trim = false) =>
         rule
             .Must(eTag => string.IsNullOrWhiteSpace(eTag) || SiteBuilderContentVersion.IsWellFormed(trim ? eTag.Trim() : eTag))

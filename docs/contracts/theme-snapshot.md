@@ -29,6 +29,8 @@ store's `DefaultThemeName` property, `default` when it is empty. Paths below are
 
 Every file except the snapshots and the catalogs has a draft next to it, `{file}-draft`. Only a publication writes
 `snapshots/` and only a catalog upload writes `catalogs/`: a save or a restore naming either is refused with 400.
+The status and a publication read no file the table does not list, so a save, a discard or a restore naming one is
+refused with 400 as well.
 The designer and the agents write drafts only:
 the builder's save refuses a live write of a theme file (`draft=false`) with 400.
 The designer saves the page and the theme files it changed in one request, all or nothing
@@ -580,7 +582,7 @@ All take `storeId` and check the store as the other Site Builder endpoints do.
 |---|---|---|
 | `POST api/site-builder/theme/publish?storeId&catalogHash` | `builder:publish` | `{ publication }`; 400 `{ error, errors }` when it names no catalog or the theme does not fit it |
 | `GET api/site-builder/theme/status?storeId` | `builder:read` | `{ publication, drafts, newDrafts }`: the current publication, left out before the first, the theme files with a draft by their path in the theme (`templates/product.json`, `config/template_rules.json`), and those of them with no live file, which a Discard keeps, but for a custom section type's, which it removes |
-| `POST api/site-builder/save?storeId&theme&draft&catalogHash`, the files as the body | `builder:update`; `builder:templates` or `builder:theme` by theme file | 200; 400 `{ error, errors }` when a theme file does not fit the catalog it names; 400 `{ error }` for a live theme write, for a theme file outside the store's theme folder, for a file under `snapshots/` or `catalogs/`, or for a file in `config/` other than `settings_data.json`, `template_rules.json`, `brand.json`, `palette.json` and `palette.dark.json`; a live write of a page needs `builder:publish` |
+| `POST api/site-builder/save?storeId&theme&draft&catalogHash`, the files as the body | `builder:update`; `builder:templates` or `builder:theme` by theme file | 200; 400 `{ error, errors }` when a theme file does not fit the catalog it names; 400 `{ error }` for a live theme write, for a theme file outside the store's theme folder, for a file under `snapshots/` or `catalogs/`, or for any other file the [table](#theme-files) does not list; a live write of a page needs `builder:publish` |
 | `GET api/site-builder/designer/theme-file?storeId&path` | `builder:read` | `{ path, content?, eTag }`: a theme file as the designer edits it and its version, see [Save](history-api.md#save) |
 | `POST api/site-builder/designer/save?storeId&catalogHash` | see [Save](history-api.md#save) | the designer's Save: the page and the theme files as drafts, all or nothing, one version; 400 when theme files go without `catalogHash`; 412 when one was saved by someone else since it was read |
 | `POST api/site-builder/designer/discard?storeId` | see [Discard](history-api.md#discard) | the designer's Discard: the drafts of the page and the theme files go, all or nothing, one version |

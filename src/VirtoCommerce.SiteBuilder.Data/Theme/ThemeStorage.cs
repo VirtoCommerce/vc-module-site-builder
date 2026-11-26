@@ -42,7 +42,22 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
         ContractResolver = new DefaultContractResolver { NamingStrategy = new CamelCaseNamingStrategy() },
     };
 
+    /// <summary>
+    /// The theme's files other than its templates and custom section types. With those, they are all the status lists and a publication reads,
+    /// so <see cref="IsThemeFile"/> is the whole set the builder saves: a publisher that reads another file names it here.
+    /// </summary>
+    public static IReadOnlyList<string> PartFiles { get; } =
+        [TemplateRulesFile, HeaderGroupFile, FooterGroupFile, BrandFile, SettingsDataFile, PaletteFile, DarkPaletteFile];
+
     public string ThemeName { get; } = themeName;
+
+    /// <summary>
+    /// A file the theme's status lists and a publication reads, by the name they list it under: a part, a template or a custom section type,
+    /// valid or not; only such a file is saved, restored or discarded by the builder.
+    /// </summary>
+    /// <param name="file">The path relative to the theme folder.</param>
+    public static bool IsThemeFile(string file) =>
+        file != null && (PartFiles.Contains(file, StringComparer.Ordinal) || IsTemplateFile(file) || IsCustomSectionFile(file));
 
     public static string GetLockResource(string storeId) => $"SiteBuilder:Theme:{storeId}";
 
@@ -242,6 +257,20 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
         {
             return null;
         }
+    }
+
+    private static bool IsTemplateFile(string file) =>
+        GetFileName(file, TemplatesFolder) is { } fileName && GetTemplateKey(fileName) is { } key && GetTemplateFile(key) == file;
+
+    private static bool IsCustomSectionFile(string file) =>
+        GetFileName(file, CustomSectionsFolder) is { } fileName && GetCustomSectionType(fileName) is { } type && GetCustomSectionFile(type) == file;
+
+    /// <summary>The name of a file right in the folder, as the folder's listing gives it; null for a file anywhere else.</summary>
+    private static string GetFileName(string file, string folder)
+    {
+        var prefix = folder + "/";
+
+        return file.StartsWith(prefix, StringComparison.Ordinal) && file.IndexOf('/', prefix.Length) < 0 ? file[prefix.Length..] : null;
     }
 
     private static int? GetPublication(ThemePublicationPointer pointer) => pointer?.Publication > 0 ? pointer.Publication : null;
