@@ -153,6 +153,40 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheDryRun_OfACustomSectionTypeDraft_ListsTheSettingsItAddsAndRemovesAgainstTheLiveVersion()
+    {
+        await SeedAsync();
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType
+            .Replace("""{ "id": "title", "type": "string", "translatable": true }""", """{ "id": "subtitle", "type": "string", "default": "Since 2020" }""",
+                StringComparison.Ordinal)
+            .Replace("settings.title", "settings.subtitle", StringComparison.Ordinal), draft: true);
+        var spring = _context.SeedPage("spring", StoreA, published: true, draft: false,
+            content: """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+        _context.ListPages(() => [LandingRow(spring)]);
+
+        var placed = (await DryRunAsync()).Drafts.Single(x => x.Path == "default/custom-sections/custom-stats.json").PlacedSections!;
+
+        Assert.Equal([("subtitle", "its default 'Since 2020'")], placed.NewSettings.Select(x => (x.Id, x.PlacedSectionsShow)));
+        Assert.Equal(["title"], placed.RemovedSettings);
+        Assert.Contains("no longer reads it", placed.Note, StringComparison.Ordinal);
+        Assert.Equal(["spring"], placed.Pages.Select(x => x.PageId));
+    }
+
+    [Fact]
+    public async Task TheDryRun_OfACustomSectionTypeThatIsNotLive_ListsNoSettingAsAddedOrRemoved()
+    {
+        await SeedAsync();
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+
+        var placed = (await DryRunAsync()).Drafts.Single(x => x.Path == "default/custom-sections/custom-stats.json").PlacedSections!;
+
+        Assert.Empty(placed.NewSettings);
+        Assert.Empty(placed.RemovedSettings);
+        Assert.Null(placed.Note);
+    }
+
+    [Fact]
     public async Task TheDryRunAndTheApprovalPreview_WarnOfALiveCustomSectionTypeWhoseFileIsGone_WithThePagesThatPlaceIt()
     {
         await _context.SeedThemeAsync(StoreA);

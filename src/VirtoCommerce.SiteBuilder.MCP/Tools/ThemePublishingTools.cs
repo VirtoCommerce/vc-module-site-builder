@@ -202,8 +202,12 @@ public class ThemePublishingTools(
 
         var (pages, coverage) = await SectionTypePages.FindPublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type,
             cancellationToken);
+        // a type that is not live yet is shown for the first time, so none of its settings is new to a section that showed it
+        var settings = live == null
+            ? SectionTypeSettingChanges.None
+            : SectionTypeSettingChanges.Compare(SectionTypeSettingChanges.ReadSchema(live), SectionTypeSettingChanges.ReadSchema(file.Content));
 
-        return new SectionTypePlacements { Pages = pages, Coverage = coverage };
+        return settings.ToPlacements(pages, coverage);
     }
 
     private static bool SameVersions(IDictionary<string, string> expected, IDictionary<string, string> current)

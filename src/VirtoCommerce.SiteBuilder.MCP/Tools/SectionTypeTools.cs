@@ -16,7 +16,6 @@ using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
-using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
@@ -30,9 +29,6 @@ public class SectionTypeTools(
     ISiteBuilderSectionScanner sectionScanner,
     Func<UserManager<ApplicationUser>> userManagerFactory)
 {
-    private const int MaxDefaultLength = 80;
-    private static readonly string[] LabelFieldTypes = ["header", "paragraph"];
-
     private const string CreateAction = "create_section_type";
     private const string ChangeAction = "change_section_type";
 
@@ -212,15 +208,11 @@ public class SectionTypeTools(
         return change;
     }
 
-    // A placed section keeps the settings it holds: a new setting shows its default there, and a removed one is held but read by nothing.
     private async Task<SectionTypePlacements> DescribePlacementsAsync(ClaimsPrincipal user, string storeId, string type, string currentContent, JsonObject schema,
         CancellationToken cancellationToken)
     {
-        var before = GetSettings(ParseSchema(currentContent));
-        var after = GetSettings(schema);
-        var added = after.Where(x => !before.ContainsKey(x.Key)).ToList();
-        var removed = before.Keys.Where(x => !after.ContainsKey(x)).ToList();
-        if (added.Count == 0 && removed.Count == 0)
+        var settings = SectionTypeSettingChanges.Compare(SectionTypeSettingChanges.ReadSchema(currentContent), schema);
+        if (settings.IsEmpty)
         {
             return null;
         }
@@ -228,46 +220,8 @@ public class SectionTypeTools(
         var (pages, coverage) = await SectionTypePages.FindAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type, published: false,
             cancellationToken);
 
-        return new SectionTypePlacements
-        {
-            NewSettings = added.Select(x => new NewSettingRow(x.Key, DescribeDefault(x.Value))).ToList(),
-            RemovedSettings = removed,
-            Pages = pages,
-            Coverage = coverage,
-            Note = removed.Count > 0
-                ? "A removed setting stays in the placed sections, but the type no longer reads it: what pages hold in it is no longer shown."
-                : null,
-        };
+        return settings.ToPlacements(pages, coverage);
     }
-
-    private static Dictionary<string, JsonNode> GetSettings(JsonObject schema) =>
-        (schema?["settings"] as JsonArray ?? [])
-            .OfType<JsonObject>()
-            .Where(x => x["id"] is JsonValue && !LabelFieldTypes.Contains(GetString(x["type"]), StringComparer.Ordinal))
-            .GroupBy(x => x["id"]!.ToString(), StringComparer.Ordinal)
-            .ToDictionary(x => x.Key, x => x.First()["default"], StringComparer.Ordinal);
-
-    private static JsonObject ParseSchema(string content)
-    {
-        try
-        {
-            return (JsonNode.Parse(content ?? "") as JsonObject)?[ThemeCustomSections.SchemaKey] as JsonObject;
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string DescribeDefault(JsonNode value) => value switch
-    {
-        null => "nothing: the setting has no default",
-        JsonArray rows => $"its default, {rows.Count} rows",
-        JsonValue text when text.TryGetValue<string>(out var str) => string.IsNullOrEmpty(str)
-            ? "nothing: its default is empty"
-            : $"its default '{(str.Length > MaxDefaultLength ? str[..MaxDefaultLength] + "…" : str)}'",
-        _ => $"its default {value.ToJsonString()}",
-    };
 
     private sealed record SectionTypeRequest(string StoreId, string Type, JsonNode Name, JsonObject Schema, string Template, string Css, string VersionToken,
         bool Create);
