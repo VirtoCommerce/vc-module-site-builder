@@ -690,7 +690,7 @@ import { useThemeLook } from "../designer/useThemeLook";
 import { usePreviewUser } from "../designer/usePreviewUser";
 import { LOOK_FILES } from "../designer/themeLook";
 import { PERMISSIONS, refusedParts } from "../designer/permissions";
-import { discardOptions, type DiscardOption, type DiscardThemePart } from "../designer/discard";
+import { discardOptions, removedSectionTypes, type DiscardOption, type DiscardThemePart } from "../designer/discard";
 import DiscardDialog from "../designer/components/DiscardDialog.vue";
 
 defineBlade({
@@ -1514,9 +1514,10 @@ async function discardChanges() {
 async function discardDrafts(choice: { page: boolean; theme: DiscardThemePart[] }) {
   discarding.value = undefined;
   const drafts = choice.page || choice.theme.length > 0;
+  const removedTypes = removedSectionTypes(discardChoices.value, choice.theme).map((x) => x.part);
   let failed = false;
   try {
-    if (drafts) await designer.discardDrafts(choice);
+    if (drafts && (await designer.discardDrafts(choice))) readSavedCustomSections.forget(removedTypes);
     if (choice.page) notifyPagesChanged();
   } catch {
     failed = true;

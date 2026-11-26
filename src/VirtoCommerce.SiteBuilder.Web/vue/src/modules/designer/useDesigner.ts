@@ -624,8 +624,9 @@ export function useDesigner() {
     status.value = own ?? templateStatus(themeStatus.value, page!.theme, page!.path);
   }
 
-  async function discardDrafts(choice: { page: boolean; theme: DiscardThemePart[] }) {
-    if (busy.value || !storeId.value) return;
+  /** Whether a discard was sent. */
+  async function discardDrafts(choice: { page: boolean; theme: DiscardThemePart[] }): Promise<boolean> {
+    if (busy.value || !storeId.value) return false;
     const page = file.value;
     const themeName = theme.value;
     const files = themeName
@@ -639,10 +640,11 @@ export function useDesigner() {
       else if (page && themeFileOpen.value) files.push(page.path);
       else if (page) pagePart = { path: page.path, type: page.type };
     }
-    if (!pagePart && !files.length) return;
+    if (!pagePart && !files.length) return false;
     busy.value = "restoring";
     try {
       await api.discardDesigner(storeId.value, { page: pagePart, themeFiles: files });
+      return true;
     } finally {
       busy.value = undefined;
     }

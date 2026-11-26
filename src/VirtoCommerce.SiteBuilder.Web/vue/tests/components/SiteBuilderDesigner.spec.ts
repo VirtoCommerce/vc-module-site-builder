@@ -715,6 +715,7 @@ describe("the theme's custom section types", () => {
       lastDraft,
       lastRender,
       notice,
+      wrapper,
       designer: (wrapper.vm as unknown as { designer: Designer }).designer,
     };
   }
@@ -929,6 +930,29 @@ describe("the theme's custom section types", () => {
     expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
     expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/custom-sections")).toHaveLength(1);
     expect(platform.to("/api/site-builder/template").filter((x) => x.query.path.startsWith("default/custom-sections/"))).toHaveLength(2);
+  });
+
+  it("go without a type never published once Discard deletes it, which is not read again", async () => {
+    const NEW_PATH = "default/custom-sections/custom-new.json";
+    const page = await openPage(["custom-sections/custom-new.json"], { listed: () => [...LISTED, { name: "custom-new.json-draft" }] });
+    platform
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: ["custom-sections/custom-new.json"], newDrafts: ["custom-sections/custom-new.json"] })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({ ...FILES, [NEW_PATH]: { ...HERO, name: "New" } }))
+      .on("POST", "/api/site-builder/designer/discard", {});
+    await page.designer.refreshThemeStatus();
+    await page.load("0badc0de");
+    await draftSent();
+    expect(Object.keys(page.lastDraft()?.theme?.customSections ?? {})).toContain("custom-new");
+
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: [] }).on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer(FILES));
+    await page.wrapper.find('[role="toolbar"] [data-test-id="discard"]').trigger("click");
+    await flushPromises();
+    page.wrapper.findComponent(DiscardDialog).vm.$emit("discard", { page: false, theme: ["custom-new"] });
+    await draftSent();
+
+    expect(platform.to("/api/site-builder/designer/discard", "POST")[0].body).toEqual({ themeFiles: [NEW_PATH] });
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+    expect(platform.to("/api/site-builder/template").filter((x) => x.query.path === NEW_PATH)).toEqual([]);
   });
 
   it("are left to the published snapshot while the theme has none", async () => {

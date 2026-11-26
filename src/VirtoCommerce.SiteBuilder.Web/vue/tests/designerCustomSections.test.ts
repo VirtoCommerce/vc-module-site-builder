@@ -149,6 +149,19 @@ test("a type never published is gone from the draft once its draft is discarded,
   assert.deepEqual(Object.keys((await read("s/default", status([], 3), src)) ?? {}), ["custom-hero"]);
 });
 
+test("a type never published that is deleted is forgotten, so it is not read as a live file it never had", async () => {
+  const { src, requests, files } = source({ "custom-hero": type("Hero"), "custom-new": type("New") });
+  const read = savedCustomSectionsReader();
+  await read("s/default", status(["custom-sections/custom-new.json"], 3), src);
+  delete files["custom-new"];
+  requests.length = 0;
+
+  read.forget(["custom-new"]);
+
+  assert.deepEqual(await read("s/default", status([], 3), src), { "custom-hero": type("Hero") });
+  assert.deepEqual(requests, []);
+});
+
 test("a section of a custom type the theme does not hold, or holds only as a draft never published, is not shown on the storefront", () => {
   const sections: Record<string, ItemSchema> = { hero: { name: "Hero" }, "custom-hero": { name: "Coffee hero", custom: true }, "custom-numbers": { name: "Roastery in numbers", custom: true } };
   const drafted: ThemeStatus = { publication: 3, drafts: ["custom-sections/custom-numbers.json", "custom-sections/custom-hero.json"], newDrafts: ["custom-sections/custom-numbers.json"] };

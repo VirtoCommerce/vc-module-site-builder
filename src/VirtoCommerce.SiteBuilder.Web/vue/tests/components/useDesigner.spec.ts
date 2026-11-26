@@ -399,6 +399,15 @@ describe("useDesigner: editing and saving", () => {
     expect(platform.to("/api/site-builder/designer/discard")[0].body).toEqual({ themeFiles: ["default/custom-sections/custom-numbers.json"] });
   });
 
+  it("says whether it sent a discard, so a type never published is forgotten only once it is deleted", async () => {
+    themeStatus = { publication: 3, drafts: ["custom-sections/custom-numbers.json"], newDrafts: ["custom-sections/custom-numbers.json"] };
+    await openDatabasePage();
+
+    expect(await designer.discardDrafts({ page: false, theme: ["custom-hero"] })).toBe(false);
+    expect(await designer.discardDrafts({ page: false, theme: ["custom-numbers"] })).toBe(true);
+    expect(platform.to("/api/site-builder/designer/discard")).toHaveLength(1);
+  });
+
   it("does not offer a template with nothing live to go back to", async () => {
     themeStatus = { publication: 3, drafts: ["templates/product.json"], newDrafts: ["templates/product.json"] };
     await openTemplate();

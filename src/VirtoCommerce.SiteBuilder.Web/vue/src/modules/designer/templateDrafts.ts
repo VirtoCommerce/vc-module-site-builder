@@ -26,7 +26,7 @@ export function savedThemeFilesReader<T>(
   { withoutDraft = false, skipUnreadable = false } = {},
 ) {
   let live: { scope: string; keys?: string[]; docs: Map<string, T | undefined> } | undefined;
-  return async function read(scope: string, status: ThemeStatus, source: ThemeFileSource<T>): Promise<Record<string, T> | undefined> {
+  async function read(scope: string, status: ThemeStatus, source: ThemeFileSource<T>): Promise<Record<string, T> | undefined> {
     const drafted = draftedKeys(status);
     if (!drafted.length && !withoutDraft) return undefined;
     const at = `${scope}#${status.publication ?? ""}`;
@@ -47,7 +47,13 @@ export function savedThemeFilesReader<T>(
       if (doc) files[key] = kept(doc);
     });
     return files;
+  }
+
+  /** Files deleted since the folder was listed, such as a draft never published that was discarded: there is no live file to read. */
+  const forget = (keys: string[]) => {
+    if (live?.keys) live.keys = live.keys.filter((key) => !keys.includes(key));
   };
+  return Object.assign(read, { forget });
 }
 
 export const savedTemplatesReader = () =>
