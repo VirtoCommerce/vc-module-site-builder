@@ -25,7 +25,7 @@ import { moveItem } from "./rules";
 import type { Capability, Handshake } from "./previewMessages";
 import { hasThemeDraft, isNewThemeDraft, templateStatus, type ThemeStatus } from "./themePublication";
 import { CatalogPendingError, type DesignerDiscardPage, type DesignerSaveFile, type DesignerSavePage } from "./designerSave";
-import { customSectionPath, draftedCustomSectionTypes, isCustomSectionPart } from "./customSections";
+import { customSectionGap, customSectionPath, draftedCustomSectionTypes, isCustomSectionPart } from "./customSections";
 import type { DiscardThemePart } from "./discard";
 
 const EMPTY_SCHEMAS: Schemas = { sections: {}, blocks: {}, shared: {}, objects: {} };
@@ -587,6 +587,8 @@ export function useDesigner() {
   }
 
   const themeStatus = ref<ThemeStatus>();
+  const sectionGap = (type: string) =>
+    customSectionGap(type, { sections: schemas.value === EMPTY_SCHEMAS ? undefined : schemas.value.sections, status: themeStatus.value });
   const themeFileOpen = computed(() => file.value?.type === "themes");
   // A custom section type never published goes too: discarding it is how a type an agent made is deleted.
   const discardable = computed<{ page: boolean; theme: DiscardThemePart[] }>(() => ({
@@ -803,6 +805,7 @@ export function useDesigner() {
     templateIsNew,
     extraPageFields,
     sectionSchema,
+    sectionGap,
     blockSchema,
     sectionTypes,
     pageRows,

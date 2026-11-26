@@ -472,6 +472,28 @@ function select(sel: Selection) {
       background: var(--danger-50);
       color: var(--danger-700);
     }
+
+    &--warning {
+      background: var(--warning-50);
+      color: var(--warning-700);
+    }
+
+    // The label gives way before the section's name does in a narrow tree; the title and the hidden hint keep the whole text.
+    &--with-icon {
+      display: inline-flex;
+      flex: 0 1 auto;
+      align-items: center;
+      gap: 3px;
+      min-width: 0;
+      max-width: 45%;
+    }
+  }
+
+  &__badge-label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   &__row--bottom {

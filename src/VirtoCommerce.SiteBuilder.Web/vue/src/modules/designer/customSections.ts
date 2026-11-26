@@ -28,6 +28,16 @@ export function customSectionTypeOf(path: string): CustomSectionPart | undefined
   return type && isCustomSectionPart(type) ? type : undefined;
 }
 
+/** Why the storefront will not show a section of a custom type: the theme lacks the type, or holds only a draft never published. */
+export type CustomSectionGap = "missing" | "unpublished";
+
+/** `sections` is the catalog the preview named, left out until it names one. */
+export function customSectionGap(type: string, theme: { sections?: Record<string, ItemSchema>; status?: ThemeStatus }): CustomSectionGap | undefined {
+  if (!isCustomSectionPart(type)) return undefined;
+  if (theme.status?.newDrafts.some((x) => customSectionTypeOf(x) === type)) return "unpublished";
+  return theme.sections && !(type in theme.sections) ? "missing" : undefined;
+}
+
 export const draftedCustomSectionTypes = (status: ThemeStatus | undefined): CustomSectionPart[] =>
   [...new Set((status?.drafts ?? []).map(customSectionTypeOf).filter((x): x is CustomSectionPart => !!x))].sort(byCodeUnit);
 

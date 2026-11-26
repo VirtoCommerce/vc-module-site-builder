@@ -83,3 +83,29 @@ describe("SectionTree: adding a section", () => {
     expect(wrapper.find(".pd-add__notice").text()).toBe("Custom sections are shown as published.");
   });
 });
+
+describe("SectionTree: custom section types the storefront will not show", () => {
+  it("marks a section whose custom type the theme lacks, and one whose type is not published yet, saying why", async () => {
+    designer.schemas.value = { ...SCHEMAS, sections: { ...SCHEMAS.sections, "custom-numbers": { name: "Roastery in numbers", custom: true }, "custom-hero": { name: "Coffee hero", custom: true } } };
+    designer.themeStatus.value = { publication: 3, drafts: ["custom-sections/custom-numbers.json"], newDrafts: ["custom-sections/custom-numbers.json"] };
+    const wrapper = mountTree([
+      { id: "promo-1", type: "promo" },
+      { id: "hero-1", type: "custom-hero" },
+      { id: "numbers-1", type: "custom-numbers" },
+      { id: "gone-1", type: "custom-gone" },
+      { id: "shared-1", type: "componentRef", componentRef: "custom-gone" },
+    ]);
+    await nextTick();
+
+    const badges = wrapper.findAll(".pd-tree__item").map((row) => row.find(".pd-tree__badge--with-icon"));
+    expect(badges.map((x) => x.exists())).toEqual([false, false, true, true, false]);
+    const unpublished = 'Section type "Roastery in numbers" is not published yet: this section will not be shown until the theme is published.';
+    const missing = 'Section type "custom-gone" not found: this section will not be shown on the storefront.';
+    expect(badges[2].find(".pd-tree__badge-label").text()).toBe("Not published");
+    expect(badges[2].attributes("title")).toBe(unpublished);
+    expect(badges[2].find(".tw-sr-only").text()).toBe(unpublished);
+    expect(badges[3].find(".pd-tree__badge-label").text()).toBe("Not found");
+    expect(badges[3].attributes("title")).toBe(missing);
+    expect(badges[3].find(".tw-sr-only").text()).toBe(missing);
+  });
+});

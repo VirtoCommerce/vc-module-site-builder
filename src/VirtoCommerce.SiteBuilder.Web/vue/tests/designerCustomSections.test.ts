@@ -12,6 +12,7 @@ import {
 import type { ThemeFileSource } from "../src/modules/designer/templateDrafts";
 import type { ThemeStatus } from "../src/modules/designer/themePublication";
 import type { ItemSchema } from "../src/modules/designer/types";
+import { customSectionGap } from "../src/modules/designer/customSections";
 
 const type = (name: string): CustomSectionType => ({ format: 1, name, schema: { settings: [] }, template: "<section></section>", css: "" });
 const status = (drafts: string[], publication?: number): ThemeStatus => ({ publication, drafts, newDrafts: [] });
@@ -146,4 +147,21 @@ test("a type never published is gone from the draft once its draft is discarded,
 
   assert.deepEqual(Object.keys((await read("s/default", status(["custom-sections/custom-hero.json"], 3), src)) ?? {}), ["custom-hero"]);
   assert.deepEqual(Object.keys((await read("s/default", status([], 3), src)) ?? {}), ["custom-hero"]);
+});
+
+test("a section of a custom type the theme does not hold, or holds only as a draft never published, is not shown on the storefront", () => {
+  const sections: Record<string, ItemSchema> = { hero: { name: "Hero" }, "custom-hero": { name: "Coffee hero", custom: true }, "custom-numbers": { name: "Roastery in numbers", custom: true } };
+  const drafted: ThemeStatus = { publication: 3, drafts: ["custom-sections/custom-numbers.json", "custom-sections/custom-hero.json"], newDrafts: ["custom-sections/custom-numbers.json"] };
+
+  assert.equal(customSectionGap("custom-hero", { sections, status: drafted }), undefined);
+  assert.equal(customSectionGap("custom-numbers", { sections, status: drafted }), "unpublished");
+  assert.equal(customSectionGap("custom-gone", { sections, status: drafted }), "missing");
+  assert.equal(customSectionGap("custom-numbers", { sections, status: status([], 3) }), undefined);
+  // The preview may not hold a draft's type, as when the theme's custom types cannot be listed.
+  assert.equal(customSectionGap("custom-new", { sections, status: { publication: 3, drafts: ["custom-sections/custom-new.json"], newDrafts: ["custom-sections/custom-new.json"] } }), "unpublished");
+  // Only custom types: a built-in section the catalog lacks is the storefront's to render.
+  assert.equal(customSectionGap("banner", { sections, status: drafted }), undefined);
+  // Before the preview names its catalog nothing is known to be missing.
+  assert.equal(customSectionGap("custom-gone", { status: drafted }), undefined);
+  assert.equal(customSectionGap("custom-numbers", { status: drafted }), "unpublished");
 });

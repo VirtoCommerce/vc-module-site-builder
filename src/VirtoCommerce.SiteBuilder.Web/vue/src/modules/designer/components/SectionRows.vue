@@ -62,6 +62,21 @@
         />
         <span class="pd-tree__name">{{ sectionName(section) }}</span>
         <span
+          v-if="gapOf(section)"
+          class="pd-tree__badge pd-tree__badge--with-icon"
+          :class="gapOf(section) === 'missing' ? 'pd-tree__badge--missing' : 'pd-tree__badge--warning'"
+          :title="gapHint(section)"
+        >
+          <VcIcon
+            icon="lucide-triangle-alert"
+            size="xs"
+          />
+          <span class="pd-tree__badge-label">{{
+            $t(gapOf(section) === "missing" ? "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_MISSING" : "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_UNPUBLISHED")
+          }}</span>
+          <span class="tw-sr-only">{{ gapHint(section) }}</span>
+        </span>
+        <span
           v-if="isComponentRef(section)"
           class="pd-tree__badge"
           :class="{ 'pd-tree__badge--missing': designer.components.get(section.componentRef) === null }"
@@ -198,6 +213,12 @@ const sectionName = (section: Item) =>
   isComponentRef(section)
     ? (props.designer.components.get(section.componentRef)?.name ?? t("SITE_BUILDER.DESIGNER.SHARED_COMPONENT"))
     : itemTitle(section, props.designer.sectionSchema(section.type), props.designer.languages.value.default);
+// The storefront shows nothing for such a section, while the preview shows a draft's type.
+const gapOf = (section: Item) => (isComponentRef(section) ? undefined : props.designer.sectionGap(section.type));
+const gapHint = (section: Item) =>
+  t(gapOf(section) === "missing" ? "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_MISSING_HINT" : "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_UNPUBLISHED_HINT", {
+    name: props.designer.sectionSchema(section.type)?.name ?? section.type,
+  });
 const isSelected = (id: string) => {
   const sel = props.designer.selection.value;
   return !!sel && sel.kind !== "page" && sel.id === id;
