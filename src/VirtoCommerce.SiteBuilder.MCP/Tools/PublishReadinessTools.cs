@@ -51,7 +51,8 @@ public class PublishReadinessTools(
         "who changed it), findings (critical ones block the publication: no draft, a page document that is refused, published " +
         "pages it would replace, a palette below WCAG 2.2 AA, no schema catalog; warnings: hidden page, ended dates, an address " +
         "another page serves, a language version that publishing every language skips, a custom section type the theme does not " +
-        "hold, holds only as a draft or holds with unpublished changes), affected (the audience) and the next step. Pass unpublish " +
+        "hold, holds only as a draft or holds with unpublished changes, a live custom section type whose file is gone, which the theme's " +
+        "publication removes), affected (the audience) and the next step. Pass unpublish " +
         "true to check taking a page off instead. Changes nothing. To publish, use publish_page or publish_theme.")]
     public async Task<PublishReadiness> GetPublishReadiness(
         RequestContext<CallToolRequestParams> context,

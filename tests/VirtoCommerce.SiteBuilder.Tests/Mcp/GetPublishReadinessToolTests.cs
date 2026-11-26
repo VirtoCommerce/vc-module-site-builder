@@ -224,6 +224,34 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheTheme_WithoutDrafts_WarnsOfALiveCustomSectionTypeWhoseFileIsGone_AsTheDryRunOfItsPublicationDoes()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        var first = (await _context.CallAsync(Publisher(), "publish_theme", new { store_id = StoreA, dryRun = true })).EnsureSucceeded().Read<ThemePublication>();
+        (await _context.CallAsync(Publisher(), "publish_theme", new { store_id = StoreA, expected_versions = first.ExpectedVersions, expected_catalog_hash = first.CatalogHash },
+            Approved)).EnsureSucceeded();
+        _context.Blobs.Files.Remove(ThemeFileKey(StoreA, "custom-sections/custom-stats.json"));
+        var spring = _context.SeedPage("spring", StoreA, published: true, draft: false,
+            content: """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        _context.ListPages(() => [LandingRow(spring)]);
+
+        var readiness = await CheckAsync(Reader(), new { theme = true, store_id = StoreA });
+        var publication = (await _context.CallAsync(Publisher(), "publish_theme", new { store_id = StoreA, dryRun = true })).EnsureSucceeded().Read<ThemePublication>();
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-removed");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Equal("Section type 'Stats' (custom-stats) will be removed: it is live now, but its file is no longer in the theme, so this publication " +
+            "leaves it out. 1 page places it and will show nothing in its place: 'Page spring' (/spring).", finding.Title);
+        Assert.Contains(finding.Title, publication.Warnings);
+        var part = Assert.Single(readiness.Parts);
+        Assert.Equal("default/custom-sections/custom-stats.json", part.ObjectId);
+        Assert.Equal([("status", "published", "removed")], part.Changes.Select(x => (x.Field, x.From, x.To)));
+        Assert.DoesNotContain(readiness.Findings, x => x.Id == "nothing-to-publish");
+        Assert.True(readiness.Ready);
+    }
+
+    [Fact]
     public void TheTool_NamesTheCustomSectionTypeFindings_AndTheThemesCustomSectionTypeDrafts()
     {
         var tool = _context.Harness.GetTool("get_publish_readiness").ProtocolTool;

@@ -21,6 +21,7 @@ public class PublicationDryRuns(
     ISchemaCatalogService schemaCatalogService,
     ICustomSectionService customSectionService,
     IGroupedPageContentService pageContentService,
+    RemovedSectionTypes removedSectionTypes,
     ILogger<PublicationDryRuns> logger)
 {
     private const string ContrastMarker = "contrast";
@@ -47,14 +48,26 @@ public class PublicationDryRuns(
             return;
         }
 
-        AddThemeDryRun(check, storeId, readiness);
+        AddThemeDryRun(check, storeId, await removedSectionTypes.FindAsync(user, storeId, cancellationToken), readiness);
     }
 
-    private static void AddThemeDryRun(SiteBuilderOperationResult check, string storeId, PublishReadiness readiness)
+    private static void AddThemeDryRun(SiteBuilderOperationResult check, string storeId, IList<RemovedSectionType> removed, PublishReadiness readiness)
     {
         foreach (var draft in check.Preview?.Objects ?? [])
         {
             readiness.Parts.Add(PublishPart.FromPreview(draft));
+        }
+
+        foreach (var type in removed)
+        {
+            readiness.Parts.Add(new PublishPart
+            {
+                ObjectType = ChangePreview.ThemeFile,
+                ObjectId = type.Path,
+                Changes = [new PartChange("status", RemovedSectionType.PublishedStatus, RemovedSectionType.RemovedStatus)],
+            });
+            readiness.Findings.Add(Warning("section-type-removed", type.Warning, $"Store '{storeId}': {type.Path} is live, but the theme no longer holds it.",
+                "To keep it, create it again with create_section_type before publishing; otherwise remove its sections from the pages that place it.", "theme"));
         }
 
         foreach (var warning in check.Preview?.Warnings ?? [])
