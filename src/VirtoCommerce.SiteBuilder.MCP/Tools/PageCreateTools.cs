@@ -29,7 +29,8 @@ public class PageCreateTools(
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
     IGroupedPageOperationService groupedPageOperationService,
-    IMultilanguagePageOperationService multilanguagePageOperationService)
+    IMultilanguagePageOperationService multilanguagePageOperationService,
+    PublicationDryRuns dryRuns)
 {
     public const string LandingPage = "landing_page";
     public const string LanguageVersion = "language_version";
@@ -48,8 +49,10 @@ public class PageCreateTools(
         "away by the operations of edit_page_draft. kind 'language_version' adds the missing language of a " +
         "Multilanguage Page, starting from its source language's content. kind 'multilanguage_page_copy' copies a " +
         "Multilanguage Page with every language version. Returns the new page's id, its settings and sections; read it " +
-        "with search_site_pages (page_id) for its version_token before editing it with edit_page_draft. Call it with " +
-        "dryRun first to show the user what will be created.")]
+        "with search_site_pages (page_id) for its version_token before editing it with edit_page_draft. A page of any kind that " +
+        "places a section of a custom section type the theme does not hold, or holds only as a draft, is created with a warning, " +
+        "which names the language for a language version: it can still be published, but the section shows nothing until the type " +
+        "is published. Call it with dryRun first to show the user what will be created.")]
     public async Task<SiteBuilderChange> CreatePage(
         RequestContext<CallToolRequestParams> context,
         [Description("'landing_page' (default), 'language_version' or 'multilanguage_page_copy'.")] string kind = null,
@@ -127,7 +130,10 @@ public class PageCreateTools(
         page.Content = SiteBuilderContentSettings.Synchronize(editor.Write(),
             new GroupedSiteBuilderPage { Name = page.Name, Permalink = page.Permalink, CultureName = page.CultureName });
 
-        return await RunCreatePageAsync(user, page, dryRun, cancellationToken);
+        var change = await RunCreatePageAsync(user, page, dryRun, cancellationToken);
+        await WarnOfSectionTypesAsync(user, change, page.StoreId, page.Name, editor, prefix: null, cancellationToken);
+
+        return change;
     }
 
     private async Task<string> CopyFromSourcePageAsync(ClaimsPrincipal user, CreateGroupedPageRequest page, LandingPageArguments arguments, CancellationToken cancellationToken)
@@ -197,6 +203,15 @@ public class PageCreateTools(
 
         change.ObjectId = change.PageId = result.Value?.Id;
 
+        var source = copyContent
+            ? (await GetLanguageVersionsAsync(root, cancellationToken))
+                .FirstOrDefault(x => string.Equals(x.CultureName, root.DefaultCultureName, StringComparison.OrdinalIgnoreCase))
+            : null;
+        if (source != null)
+        {
+            await WarnOfCopiedSectionTypesAsync(user, change, result.Value?.Name ?? root.Name, source, result.Value?.CultureName ?? language, cancellationToken);
+        }
+
         return change;
     }
 
@@ -222,7 +237,38 @@ public class PageCreateTools(
 
         change.ObjectId = change.MultilanguagePageId = result.Value?.Id;
 
+        var name = result.Value?.Name ?? GetPreviewName(result.Preview) ?? root.Name;
+        foreach (var version in await GetLanguageVersionsAsync(root, cancellationToken))
+        {
+            await WarnOfCopiedSectionTypesAsync(user, change, name, version, version.CultureName, cancellationToken);
+        }
+
         return change;
+    }
+
+    private async Task<IList<GroupedSiteBuilderPage>> GetLanguageVersionsAsync(MultilanguagePage root, CancellationToken cancellationToken) =>
+        (await multilanguagePageService.GetLanguagesAsync(root.Id, cancellationToken)).Select(x => x.Page).Where(x => x != null).ToList();
+
+    private static string GetPreviewName(SiteBuilderChangePreview preview) =>
+        preview?.Objects.FirstOrDefault(x => x.ObjectType == ChangePreview.MultilanguagePage)?.Fields.FirstOrDefault(x => x.Name == ChangePreview.Name)?.To;
+
+    // Every section a new page starts with is added by the call, the copied ones too.
+    private async Task WarnOfSectionTypesAsync(ClaimsPrincipal user, SiteBuilderChange change, string storeId, string pageName, PageDocumentEditor content,
+        string prefix, CancellationToken cancellationToken)
+    {
+        foreach (var finding in await dryRuns.GetAddedSectionTypeFindingsAsync(user, storeId, pageName, before: null, content, group: null, cancellationToken))
+        {
+            change.AddWarning($"{prefix}{finding.Title} {finding.Fix}");
+        }
+    }
+
+    // A new language version starts from the draft of the version it copies, and takes the name of its root; read from the source, a dry run
+    // answers what the write would. Language versions share their name, so each warning names its language.
+    private async Task WarnOfCopiedSectionTypesAsync(ClaimsPrincipal user, SiteBuilderChange change, string pageName, GroupedSiteBuilderPage source,
+        string cultureName, CancellationToken cancellationToken)
+    {
+        var content = (await PageEditSources.LoadDraftAsync(pageContentService, source, cancellationToken)).Content;
+        await WarnOfSectionTypesAsync(user, change, source.StoreId, pageName, PageDocumentEditor.Read(content), $"{cultureName}: ", cancellationToken);
     }
 
     private static void RefuseSections(PageEditOperation[] sections, string kind)

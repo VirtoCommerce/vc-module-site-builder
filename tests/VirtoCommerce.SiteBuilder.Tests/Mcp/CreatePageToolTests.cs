@@ -31,6 +31,9 @@ public sealed class CreatePageToolTests : IAsyncDisposable
             .Setup(x => x.GetCopyNameAsync(It.IsAny<GroupedSiteBuilderPage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((GroupedSiteBuilderPage page, CancellationToken _) => new PageCopyName { Name = $"{page.Name} (copy)", Permalink = $"{page.Permalink}-copy" });
         _context.AddMultilanguagePages(Root("ml-a", StoreA), Root("ml-b", StoreB));
+        _context.MultilanguagePages
+            .Setup(x => x.GetLanguagesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
     }
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
@@ -74,6 +77,62 @@ public sealed class CreatePageToolTests : IAsyncDisposable
         Assert.Equal("Spring sale", content["content"]![0]!["title"]!.GetValue<string>());
         Assert.Equal("/spring-sale", content["settings"]!["permalink"]!.GetValue<string>());
         Assert.Equal(["hero-banner"], change.Sections.Select(x => x.Type));
+    }
+
+    [Theory]
+    [InlineData(false, false, "the theme does not hold")]
+    [InlineData(true, false, "the theme holds only as a draft")]
+    [InlineData(false, true, "the theme does not hold")]
+    [InlineData(true, true, "the theme holds only as a draft")]
+    public async Task ASectionOfACustomSectionTypeThePublishedThemeLacks_IsCreatedWithAWarning(bool draftType, bool dryRun, string why)
+    {
+        await _context.SeedThemeAsync(StoreA);
+        if (draftType)
+        {
+            _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        }
+
+        var change = (await _context.CallAsync(Author(), Tool, new
+        {
+            store_id = StoreA,
+            name = "Stats",
+            permalink = "/stats",
+            sections = new object[] { new { op = "add_section", type = "custom-stats" } },
+            dryRun,
+        })).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(change.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.StartsWith($"Page 'Stats' places custom section types {why} (custom-stats): it can still be published, but the storefront shows nothing in their place",
+            warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ACopyOfAPageThatPlacesACustomSectionTypeTheThemeDoesNotHold_IsCreatedWithAWarning()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+
+        var change = (await _context.CallAsync(Author(), Tool, new { copy_of_page_id = "stats", name = "Stats copy", permalink = "/stats-copy" }))
+            .EnsureSucceeded().Read<SiteBuilderChange>();
+
+        Assert.Contains(change.Warnings, x => x.StartsWith("Page 'Stats copy' places custom section types the theme does not hold (custom-stats)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ASectionOfAPublishedCustomSectionType_IsCreatedWithoutASectionTypeWarning()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+
+        var change = (await _context.CallAsync(Author(), Tool, new
+        {
+            store_id = StoreA,
+            name = "Stats",
+            permalink = "/stats",
+            sections = new object[] { new { op = "add_section", type = "custom-stats" } },
+        })).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        Assert.DoesNotContain(change.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -129,6 +188,75 @@ public sealed class CreatePageToolTests : IAsyncDisposable
         _context.MultilanguagePageOperations.Verify(x => x.CreateLanguageAsync(
             It.Is<MultilanguagePageLanguageOperationRequest>(r => r.MultilanguagePageId == "ml-a" && r.CultureName == "fr-FR" && r.CopyContent && !r.DryRun),
             It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ALanguageVersionCopiedFromASourceThatPlacesACustomSectionTypeTheThemeDoesNotHold_IsCreatedWithAWarningInItsLanguage(bool dryRun)
+    {
+        await SeedLanguageVersionsPlacingAMissingTypeAsync();
+        _context.MultilanguagePageOperations
+            .Setup(x => x.CreateLanguageAsync(It.IsAny<MultilanguagePageLanguageOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageLanguageOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("cultureName", null, "de-DE"))
+                : SiteBuilderOperationResult.Success(new GroupedSiteBuilderPage { Id = "de-version", Name = "Root ml-a", CultureName = "de-DE" }));
+
+        var change = (await _context.CallAsync(Author(), Tool, new { kind = "language_version", multilanguage_page_id = "ml-a", language = "de-DE", dryRun }))
+            .EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(change.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.StartsWith("de-DE: Page 'Root ml-a' places custom section types the theme does not hold (custom-stats): it can still be published, but the " +
+            "storefront shows nothing in their place.", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnEmptyLanguageVersion_IsCreatedWithoutASectionTypeWarning()
+    {
+        await SeedLanguageVersionsPlacingAMissingTypeAsync();
+        _context.MultilanguagePageOperations
+            .Setup(x => x.CreateLanguageAsync(It.IsAny<MultilanguagePageLanguageOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SiteBuilderOperationResult.DryRun<GroupedSiteBuilderPage>(Preview("cultureName", null, "de-DE")));
+
+        var change = (await _context.CallAsync(Author(), Tool,
+            new { kind = "language_version", multilanguage_page_id = "ml-a", language = "de-DE", copy_content = false, dryRun = true })).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        Assert.DoesNotContain(change.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ACopyOfAMultilanguagePageThatPlacesACustomSectionTypeTheThemeDoesNotHold_IsCreatedWithAWarningPerLanguage(bool dryRun)
+    {
+        await SeedLanguageVersionsPlacingAMissingTypeAsync();
+        _context.MultilanguagePageOperations
+            .Setup(x => x.CloneAsync(It.IsAny<MultilanguagePageOperationRequest>(), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MultilanguagePageOperationRequest request, ClaimsPrincipal _, CancellationToken _) => request.DryRun
+                ? SiteBuilderOperationResult.DryRun<MultilanguagePage>(Preview("name", null, "Root ml-a (copy)", "multilanguage-page"))
+                : SiteBuilderOperationResult.Success(new MultilanguagePage { Id = "ml-copy", Name = "Root ml-a (copy)", StoreId = StoreA }));
+
+        var change = (await _context.CallAsync(Author(), Tool, new { kind = "multilanguage_page_copy", multilanguage_page_id = "ml-a", dryRun }))
+            .EnsureSucceeded().Read<SiteBuilderChange>();
+
+        const string warning = "Page 'Root ml-a (copy)' places custom section types the theme does not hold (custom-stats)";
+        Assert.Equal([$"en-US: {warning}", $"fr-FR: {warning}"],
+            change.Warnings.Where(x => x.Contains("(custom-stats)", StringComparison.Ordinal)).Select(x => x[..(warning.Length + 7)]).Order(StringComparer.Ordinal));
+    }
+
+    private async Task SeedLanguageVersionsPlacingAMissingTypeAsync()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        const string content = """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""";
+        var english = _context.SeedDraft("ml-a-en", StoreA, content, multilanguagePageId: "ml-a");
+        var french = _context.SeedDraft("ml-a-fr", StoreA, content, language: "fr-FR", multilanguagePageId: "ml-a");
+        _context.MultilanguagePages
+            .Setup(x => x.GetLanguagesAsync("ml-a", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new MultilanguagePageLanguage { CultureName = "en-US", IsDefault = true, Page = english },
+                new MultilanguagePageLanguage { CultureName = "fr-FR", Page = french },
+                new MultilanguagePageLanguage { CultureName = "de-DE", Status = MultilanguagePageLanguage.Missing },
+            ]);
     }
 
     [Fact]
