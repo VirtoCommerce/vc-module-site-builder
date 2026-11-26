@@ -189,7 +189,8 @@ interface DesignerDiscard {
   checked before anything is deleted. A Discard takes no versions: it is how the designer gets past a 412, reading the
   files again afterwards.
 - Under the store's theme lock the theme drafts are deleted first and the page's last. A theme file never published
-  keeps its draft, which is its only copy. A database page never published is refused (400) and the theme drafts are
-  put back. A file page's draft is its work branch on the git flow, else its blob draft.
+  keeps its draft, which is its only copy, but for a custom section type's: its draft goes, and the type with it. A
+  database page never published is refused (400) and the theme drafts are put back. A file page's draft is its work
+  branch on the git flow, else its blob draft.
 - After the lock, one version, "Discarded unpublished changes", records the published content of the database page and
   of each theme file whose draft went, named as a Save is; nothing is recorded when no draft went.
