@@ -24,6 +24,7 @@ It replaces Page Builder ([vc-module-pagebuilder](https://github.com/VirtoCommer
 
 * **Storefront.** vc-frontend with the theme snapshot and preview protocol 2 ([VCST-6572](https://virtocommerce.atlassian.net/browse/VCST-6572)), and `"site_builder_enabled": true` in its `client-app/config/settings_data.json`. A platform whose storefront lacks them stays on the Page Builder module.
 * **Modules.** The dependencies in `module.manifest`, among them Content, XCMS and xAPI. The **Pages** module (`VirtoCommerce.Pages`) is optional: it indexes database pages, so the storefront finds them by their address.
+* **File extensions whitelist.** Site Builder saves theme drafts as `.json-draft` files. If the platform setting **Settings › Platform › Security › File extensions whitelist** lists any extension, add `.json-draft`, or every theme draft save fails.
 * **Preview.** The designer shows the storefront in a frame. Its address is the global setting `SiteBuilder.General.StoreUrl`, or else the store's secure URL, or else its URL, followed by `SiteBuilder.General.StorePreviewPath` (`/designer-preview` by default). The storefront must let the platform's origin frame it:
 
   ```http
