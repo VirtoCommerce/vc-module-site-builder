@@ -153,6 +153,85 @@ public sealed class PublishThemeToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheDryRunAndTheApprovalPreview_WarnOfALiveCustomSectionTypeWhoseFileIsGone_WithThePagesThatPlaceIt()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        var first = await DryRunAsync();
+        (await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = first.ExpectedVersions, expected_catalog_hash = first.CatalogHash },
+            Approved)).EnsureSucceeded();
+        _context.Blobs.Files.Remove(ThemeFileKey(StoreA, "custom-sections/custom-stats.json"));
+        _context.SeedThemeFile(StoreA, "templates/product.bicycles.json", ProductTemplate, draft: true);
+        var spring = _context.SeedPage("spring", StoreA, published: true, draft: false,
+            content: """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        var about = _context.SeedDraft("about", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        _context.ListPages(() => [LandingRow(spring), LandingRow(about)]);
+
+        var preview = await DryRunAsync();
+        var held = await _context.CallAsync(Publisher(), Tool,
+            new { store_id = StoreA, expected_versions = preview.ExpectedVersions, expected_catalog_hash = preview.CatalogHash });
+
+        const string removed = "Section type 'Stats' (custom-stats) will be removed: it is live now, but its file is no longer in the theme, so this " +
+            "publication leaves it out. 2 pages place it and will show nothing in its place: 'Page about' (/about) and 'Page spring' (/spring).";
+        Assert.Contains(removed, preview.Warnings);
+        Assert.Contains(preview.Changes, x => x.Field == "default/custom-sections/custom-stats.json" && x.From?.ToString() == "published" && x.To?.ToString() == "removed");
+        Assert.Equal(["default/templates/product.bicycles.json"], preview.ExpectedVersions.Keys);
+        Assert.Equal(McpToolCallOutcome.PendingApproval, held.Outcome);
+        Assert.Contains(removed, held.Read<ThemePublication>().Warnings);
+    }
+
+    [Fact]
+    public async Task TheDryRunWithoutDrafts_DoesNotSayNothingChanges_WhenALiveCustomSectionTypeWouldBeRemoved()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        var first = await DryRunAsync();
+        (await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = first.ExpectedVersions, expected_catalog_hash = first.CatalogHash },
+            Approved)).EnsureSucceeded();
+        _context.Blobs.Files.Remove(ThemeFileKey(StoreA, "custom-sections/custom-stats.json"));
+
+        var preview = await DryRunAsync();
+
+        Assert.Contains(preview.Warnings, x => x.StartsWith("Section type 'Stats' (custom-stats) will be removed", StringComparison.Ordinal) &&
+            x.EndsWith("No page places it.", StringComparison.Ordinal));
+        Assert.DoesNotContain(preview.Warnings, x => x.Contains("nothing customers see changes", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ACorruptSnapshot_DoesNotFailTheDryRun()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        var first = await DryRunAsync();
+        (await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = first.ExpectedVersions, expected_catalog_hash = first.CatalogHash },
+            Approved)).EnsureSucceeded();
+        var snapshot = Assert.Single(_context.Blobs.Files.Keys, x => x.StartsWith($"themes/{StoreA}/default/snapshots/", StringComparison.Ordinal) &&
+            x.EndsWith("/en-US.json", StringComparison.Ordinal));
+        _context.Blobs.Files[snapshot] = "{ not json";
+        _context.Blobs.Files.Remove(ThemeFileKey(StoreA, "custom-sections/custom-stats.json"));
+
+        var preview = await DryRunAsync();
+
+        Assert.DoesNotContain(preview.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheDryRun_DoesNotWarnOfALiveCustomSectionTypeThePublicationKeeps()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        var first = await DryRunAsync();
+        (await _context.CallAsync(Publisher(), Tool, new { store_id = StoreA, expected_versions = first.ExpectedVersions, expected_catalog_hash = first.CatalogHash },
+            Approved)).EnsureSucceeded();
+        _context.SeedThemeFile(StoreA, "templates/product.bicycles.json", ProductTemplate, draft: true);
+
+        var preview = await DryRunAsync();
+
+        Assert.DoesNotContain(preview.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
+        Assert.DoesNotContain(preview.Changes, x => x.To?.ToString() == "removed");
+    }
+
+    [Fact]
     public async Task TheDryRun_AnswersTheCatalogTheThemeIsCheckedAgainst()
     {
         var catalog = await SeedAsync();

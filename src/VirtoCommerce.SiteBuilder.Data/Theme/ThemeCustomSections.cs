@@ -1,4 +1,5 @@
 using System.Globalization;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Theme;
@@ -20,6 +21,9 @@ public static class ThemeCustomSections
 
     /// <summary>The version of the type file's shape.</summary>
     public const int Format = 1;
+
+    // the types in a snapshot, as ThemeSnapshotContent.CustomSections is written
+    private const string SnapshotProperty = "customSections";
 
     // what of a type's schema the storefront adds to the catalog, as it adds a type
     private static readonly string[] CatalogSchemaKeys = ["settings", "targetTemplates", "limit", "icon"];
@@ -43,6 +47,41 @@ public static class ThemeCustomSections
             .Where(x => x != null)
             .Distinct(StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>
+    /// The types the current publication holds, by type, as its snapshot in its default language holds them, with their names in that language;
+    /// none before the first publication.
+    /// </summary>
+    public static async Task<IDictionary<string, JObject>> GetPublishedTypesAsync(IThemeStorage storage)
+    {
+        var result = new Dictionary<string, JObject>(StringComparer.Ordinal);
+        if (await storage.GetCurrentPublicationAsync() is not { } publication ||
+            await storage.GetPublicationRecordAsync(publication) is not { } record ||
+            await storage.ReadSnapshotAsync(publication, record.DefaultLanguage) is not { } content ||
+            ParseSnapshot(content)?[SnapshotProperty] is not JObject types)
+        {
+            return result;
+        }
+
+        foreach (var type in types.Properties())
+        {
+            result[type.Name] = type.Value as JObject;
+        }
+
+        return result;
+    }
+
+    private static JObject ParseSnapshot(string content)
+    {
+        try
+        {
+            return ThemeJson.Parse(content) as JObject;
+        }
+        catch (JsonReaderException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The custom types the document places anywhere, as the type of an item.</summary>

@@ -30,7 +30,9 @@ public class ThemePublishingTools(
     IDesignerOperationService designerOperationService,
     ISiteBuilderContentQueryService contentQueryService,
     ISiteBuilderSectionScanner sectionScanner,
-    Func<UserManager<ApplicationUser>> userManagerFactory)
+    Func<UserManager<ApplicationUser>> userManagerFactory,
+    IThemeStorageFactory themeStorageFactory,
+    ICustomSectionService customSectionService)
 {
     public const string ExpectedVersionsArgument = "expected_versions";
     public const string ExpectedCatalogHashArgument = "expected_catalog_hash";
@@ -44,7 +46,8 @@ public class ThemePublishingTools(
         "types it places as their drafts hold them. First call it with dryRun: it lists the drafts with who last changed each, for a " +
         "custom section type what changes against its live version and the pages that place it, expected_versions and catalog_hash " +
         "(the storefront catalog the theme is checked against), or, when the theme cannot be published (such as with a palette below " +
-        "WCAG 2.2 AA), an error naming why. Then call it without dryRun and with those expected_versions and that catalog_hash as " +
+        "WCAG 2.2 AA), an error naming why. It also warns of a custom section type live now whose file is gone, which the publication " +
+        "removes, naming the pages that place it. Then call it without dryRun and with those expected_versions and that catalog_hash as " +
         "expected_catalog_hash: the publication waits for a second person's approval and publishes exactly the drafts that were " +
         "reviewed, against the catalog that was reviewed; if a draft or the catalog changes in between, it is refused and nothing is " +
         "published. To publish a single page use publish_page.")]
@@ -134,12 +137,40 @@ public class ThemePublishingTools(
             change.AddWarning(warning);
         }
 
+        var removed = await DescribeRemovedSectionTypesAsync(user, storeId, change, cancellationToken);
         if (change.Drafts.Count == 0)
         {
-            change.AddWarning("The theme has no drafts: the publication puts out the live files again, and nothing customers see changes.");
+            change.AddWarning(removed
+                ? "The theme has no drafts: the publication puts out the live files again."
+                : "The theme has no drafts: the publication puts out the live files again, and nothing customers see changes.");
         }
 
         return change;
+    }
+
+    // A type is published from its file, so one live now whose file is gone, deleted in storage or by restoring an older theme, is left out.
+    private async Task<bool> DescribeRemovedSectionTypesAsync(ClaimsPrincipal user, string storeId, ThemePublication change, CancellationToken cancellationToken)
+    {
+        var storage = await themeStorageFactory.OpenAsync(storeId);
+        var live = await ThemeCustomSections.GetPublishedTypesAsync(storage);
+        if (live.Count == 0)
+        {
+            return false;
+        }
+
+        var kept = (await customSectionService.ListTypesAsync(storeId, storage.ThemeName, cancellationToken)).ToHashSet(StringComparer.Ordinal);
+        var removed = live.Where(x => !kept.Contains(x.Key)).OrderBy(x => x.Key, StringComparer.Ordinal).ToList();
+        foreach (var (type, content) in removed)
+        {
+            change.AddChange($"{storage.ThemeName}/{ThemeStorage.GetCustomSectionFile(type)}", "published", "removed");
+            var name = ThemeCustomSections.GetName(content?[ThemeCustomSections.NameKey], language: null) ?? type;
+            var pages = await SectionTypePages.DescribePublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type,
+                cancellationToken);
+            change.AddWarning($"Section type '{CustomSectionText.Quote(name)}' ({type}) will be removed: it is live now, but its file is no longer in the " +
+                $"theme, so this publication leaves it out. {pages}");
+        }
+
+        return removed.Count > 0;
     }
 
     private static ThemeDraftRow ToDraftRow(SiteBuilderObjectChange draft, SectionTypePlacements placedSections) =>
