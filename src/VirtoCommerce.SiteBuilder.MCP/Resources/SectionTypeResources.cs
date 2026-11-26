@@ -125,7 +125,7 @@ public class SectionTypeResources(
         var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = store_id }, context.User, cancellationToken);
         SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{store_id}'", $"Your builder:read permission does not cover store '{store_id}'.");
         var pathInTheme = ThemeStorage.GetCustomSectionFile(type);
-        var content = ParseObject(file.Content);
+        var content = Parse(file.Content) as JsonObject;
 
         return SiteBuilderResources.Serialize(new
         {
@@ -136,19 +136,21 @@ public class SectionTypeResources(
             VersionToken = file.ETag,
             Published = !status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
             HasDraft = status.Value.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase),
-            Name = content?[ThemeCustomSections.NameKey]?.DeepClone(),
-            Schema = content?[ThemeCustomSections.SchemaKey]?.DeepClone(),
-            Template = content?[ThemeCustomSections.TemplateKey]?.DeepClone(),
-            Css = content?[ThemeCustomSections.CssKey]?.DeepClone(),
+            Name = Copy(content, ThemeCustomSections.NameKey),
+            Schema = Copy(content, ThemeCustomSections.SchemaKey),
+            Template = Copy(content, ThemeCustomSections.TemplateKey),
+            Css = Copy(content, ThemeCustomSections.CssKey),
             Content = content == null ? file.Content : null,
         });
     }
 
-    private static JsonObject ParseObject(string content)
+    private static JsonNode Copy(JsonObject content, string key) => content?[key]?.DeepClone();
+
+    private static JsonNode Parse(string content)
     {
         try
         {
-            return JsonNode.Parse(content) as JsonObject;
+            return JsonNode.Parse(content);
         }
         catch (JsonException)
         {

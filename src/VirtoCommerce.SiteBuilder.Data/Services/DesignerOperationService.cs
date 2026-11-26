@@ -87,6 +87,13 @@ public class DesignerOperationService(
             return refusedChanges.As<DesignerSaveResult>();
         }
 
+        return await CheckThemeFilesAndSaveAsync(request, group, files, themeFiles, user, cancellationToken);
+    }
+
+    private async Task<SiteBuilderOperationResult<DesignerSaveResult>> CheckThemeFilesAndSaveAsync(DesignerSaveOperationRequest request,
+        GroupedSiteBuilderPage group, IList<SiteBuilderContentFile> files, IList<DesignerSaveFile> themeFiles, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
         var themeCheck = await CheckDesignerThemeFilesAsync(request.StoreId, themeFiles, files, request.CatalogHash, cancellationToken);
         if (!themeCheck.Succeeded)
         {

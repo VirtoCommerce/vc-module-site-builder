@@ -27,15 +27,13 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     {
         // read once for all the URLs the policy checks, so that a fault of the asset provider is logged once
         _assetsBaseUrl ??= new Lazy<string>(GetAssetsBaseUrl);
-        if (_assetsBaseUrl.Value is not { } baseUrl || url.Any(char.IsControl) || url.Contains('\\') || EscapedPathPattern.IsMatch(url))
+        if (_assetsBaseUrl.Value is not { } baseUrl || HasControlOrBackslash(url) || EscapedPathPattern.IsMatch(url))
         {
             return false;
         }
 
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && string.IsNullOrEmpty(uri.UserInfo) &&
-            Uri.TryCreate(baseUrl, UriKind.Absolute, out var library) &&
-            string.Equals(uri.GetLeftPart(UriPartial.Authority), library.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase) &&
-            uri.AbsolutePath.StartsWith(library.AbsolutePath, StringComparison.Ordinal);
+        return ParseWebUrl(url) is { } uri && string.IsNullOrEmpty(uri.UserInfo) && Uri.TryCreate(baseUrl, UriKind.Absolute, out var library) &&
+            IsInLibrary(uri, library);
     }
 
     /// <summary>data:image/ is allowed too: an image runs no script and loads nothing else.</summary>
@@ -46,7 +44,7 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<Cu
     /// <param name="schemes">Besides a path starting with '/' or an anchor, such as "https:".</param>
     public virtual bool IsLink(string url, IEnumerable<string> schemes)
     {
-        if (url.Length == 0 || url.Any(char.IsControl) || url.Contains('\\'))
+        if (url.Length == 0 || HasControlOrBackslash(url))
         {
             return false;
         }
@@ -80,8 +78,14 @@ public class CustomSectionUrlPolicy(IBlobUrlResolver blobUrlResolver, ILogger<Cu
             return null;
         }
 
-        return url != null && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && url.EndsWith("/" + AssetProbe, StringComparison.Ordinal)
-            ? url[..^AssetProbe.Length]
-            : null;
+        return ParseWebUrl(url) != null && url.EndsWith("/" + AssetProbe, StringComparison.Ordinal) ? url[..^AssetProbe.Length] : null;
     }
+
+    private static bool HasControlOrBackslash(string url) => url.Any(char.IsControl) || url.Contains('\\');
+
+    private static Uri ParseWebUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" ? uri : null;
+
+    private static bool IsInLibrary(Uri uri, Uri library) =>
+        string.Equals(uri.GetLeftPart(UriPartial.Authority), library.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase) &&
+        uri.AbsolutePath.StartsWith(library.AbsolutePath, StringComparison.Ordinal);
 }

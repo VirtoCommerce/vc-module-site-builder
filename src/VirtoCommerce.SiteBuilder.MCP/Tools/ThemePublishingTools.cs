@@ -3,14 +3,12 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.MCP.Core.Models;
-using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
@@ -29,8 +27,7 @@ public class ThemePublishingTools(
     ISchemaCatalogService schemaCatalogService,
     IDesignerOperationService designerOperationService,
     ISiteBuilderContentQueryService contentQueryService,
-    ISiteBuilderSectionScanner sectionScanner,
-    Func<UserManager<ApplicationUser>> userManagerFactory,
+    SectionTypePages sectionTypePages,
     RemovedSectionTypes removedSectionTypes)
 {
     public const string ExpectedVersionsArgument = "expected_versions";
@@ -124,12 +121,7 @@ public class ThemePublishingTools(
             DryRun = true,
         };
 
-        foreach (var draft in check.Preview?.Objects ?? [])
-        {
-            change.AddChange(draft.ObjectId, "draft", "published");
-            change.ExpectedVersions[draft.ObjectId] = draft.ETag;
-            change.Drafts.Add(ToDraftRow(draft, dryRun ? await DescribeSectionTypeAsync(user, storeId, draft, change, cancellationToken) : null));
-        }
+        await AddDraftsAsync(change, check.Preview, storeId, dryRun, user, cancellationToken);
 
         foreach (var warning in check.Preview?.Warnings ?? [])
         {
@@ -151,6 +143,17 @@ public class ThemePublishingTools(
         }
 
         return change;
+    }
+
+    private async Task AddDraftsAsync(ThemePublication change, SiteBuilderChangePreview preview, string storeId, bool dryRun, ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        foreach (var draft in preview?.Objects ?? [])
+        {
+            change.AddChange(draft.ObjectId, "draft", "published");
+            change.ExpectedVersions[draft.ObjectId] = draft.ETag;
+            change.Drafts.Add(ToDraftRow(draft, dryRun ? await DescribeSectionTypeAsync(user, storeId, draft, change, cancellationToken) : null));
+        }
     }
 
     private static ThemeDraftRow ToDraftRow(SiteBuilderObjectChange draft, SectionTypePlacements placedSections) =>
@@ -200,8 +203,7 @@ public class ThemePublishingTools(
             change.AddChange($"{draft.ObjectId} {item.Field}", item.From, item.To);
         }
 
-        var (pages, coverage) = await SectionTypePages.FindPublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type,
-            cancellationToken);
+        var (pages, coverage) = await sectionTypePages.FindPublishedAndDraftsAsync(user, storeId, type, cancellationToken);
         // a type that is not live yet is shown for the first time, so none of its settings is new to a section that showed it
         var settings = live == null
             ? SectionTypeSettingChanges.None

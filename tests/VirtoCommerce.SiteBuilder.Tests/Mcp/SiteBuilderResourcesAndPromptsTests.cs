@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,11 +33,16 @@ using Permissions = VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Perm
 
 namespace VirtoCommerce.SiteBuilder.Tests.Mcp;
 
-public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
+public sealed partial class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
 {
     private const string SettingQuery = PlatformConstants.Security.Permissions.SettingQuery;
 
+    private static readonly string[] ExampleTokens = ["--vc-radius", "--vc-base-font-family", "--vc-heading-font-family"];
+
     private readonly McpTestContext _context = new();
+
+    [GeneratedRegex(@"var\((--vc-[\w-]+)(,?)")]
+    private static partial Regex TokenReference();
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
 
@@ -448,14 +454,14 @@ public sealed class SiteBuilderResourcesAndPromptsTests : IAsyncDisposable
     public void TheSectionKitsExample_IsMobileFirst_AndUsesOnlyTokensThatExist_WithFallbacks()
     {
         var css = ThemeJson.Parse(SectionKitGuide.ExampleFile)["css"]!.ToString();
-        var tokens = System.Text.RegularExpressions.Regex.Matches(css, @"var\((--vc-[\w-]+)(,?)").Select(x => (Name: x.Groups[1].Value, HasFallback: x.Groups[2].Value == ",")).ToList();
+        var tokens = TokenReference().Matches(css).Select(x => (Name: x.Groups[1].Value, HasFallback: x.Groups[2].Value == ",")).ToList();
 
         Assert.Contains("@container sb-section (min-width:", css, StringComparison.Ordinal);
         Assert.DoesNotContain("@media (min-width", css, StringComparison.Ordinal);
         Assert.Contains("@media (prefers-reduced-motion: reduce)", css, StringComparison.Ordinal);
         Assert.DoesNotMatch("left|right", css);
         Assert.NotEmpty(tokens);
-        Assert.All(tokens, x => Assert.Contains(x.Name, new[] { "--vc-radius", "--vc-base-font-family", "--vc-heading-font-family" }));
+        Assert.All(tokens, x => Assert.Contains(x.Name, ExampleTokens));
         Assert.All(tokens, x => Assert.True(x.HasFallback, x.Name));
         Assert.DoesNotContain("<h1", ThemeJson.Parse(SectionKitGuide.ExampleFile)["template"]!.ToString(), StringComparison.Ordinal);
         Assert.Contains("data-count-up=\"{{ item.value }}\">{{ item.value }}</span>", ThemeJson.Parse(SectionKitGuide.ExampleFile)["template"]!.ToString(),

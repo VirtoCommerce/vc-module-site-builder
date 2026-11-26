@@ -140,7 +140,7 @@ public class ThemeControllerTests
     {
         var limit = typeof(ThemeController).GetMethod(nameof(ThemeController.SaveCatalog))!.GetCustomAttributes(typeof(RequestSizeLimitAttribute), inherit: true);
 
-        Assert.Equal(8 * 1024 * 1024, Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata>(Assert.Single(limit)).MaxRequestBodySize);
+        Assert.Equal(8_000_000, Assert.IsType<Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata>(Assert.Single(limit), exactMatch: false).MaxRequestBodySize);
     }
 
     [Fact]

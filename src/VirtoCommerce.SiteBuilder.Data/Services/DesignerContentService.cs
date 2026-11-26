@@ -132,8 +132,9 @@ public class DesignerContentService(
         {
             var writesType = theme.Any(x => IsCustomSectionFile(SiteBuilderContentPaths.GetPathInTheme(x.Key)));
             var placed = theme.SelectMany(x => ThemeCustomSections.GetPlacedTypes(x.Value)).ToHashSet(StringComparer.Ordinal);
+            var types = writesType ? null : placed;
             stored[theme.Key] = writesType || placed.Count > 0
-                ? await customSectionService.GetTypesAsync(storeId, theme.Key, files: null, writesType ? null : placed, cancellationToken)
+                ? await customSectionService.GetTypesAsync(storeId, theme.Key, files: null, types, cancellationToken)
                 : new Dictionary<string, JToken>();
             saved[theme.Key] = ThemeCustomSections.WithFiles(stored[theme.Key], theme.Key, files);
         }
@@ -199,7 +200,7 @@ public class DesignerContentService(
 
     /// <summary>The catalog with the theme's custom section types in it; the catalog as it is for a theme whose types were not read.</summary>
     protected virtual JObject GetThemeCatalog(JObject catalog, IDictionary<string, JToken> customSections) =>
-        customSections.Count == 0 ? catalog : ThemeCustomSections.AddToCatalog(catalog, customSections);
+        catalog == null || customSections.Count == 0 ? catalog : ThemeCustomSections.AddToCatalog(catalog, customSections);
 
     private static IEnumerable<IGrouping<string, KeyValuePair<string, JToken>>> GroupByTheme(IDictionary<string, JToken> files) =>
         files.GroupBy(x => SiteBuilderContentPaths.GetThemeName(x.Key), StringComparer.OrdinalIgnoreCase);
@@ -218,7 +219,7 @@ public class DesignerContentService(
     }
 
     private static IEnumerable<string> GetPlacedTypes(string content) =>
-        content != null && content.Contains("custom-", StringComparison.Ordinal) ? ThemeCustomSections.GetPlacedTypes(TryParse(content, out var placed) ? placed : null) : [];
+        content != null && content.Contains("custom-", StringComparison.Ordinal) && TryParse(content, out var placed) ? ThemeCustomSections.GetPlacedTypes(placed) : [];
 
     private static bool IsCustomSectionFile(string file) => ThemeCustomSections.GetCustomSectionType(file) != null;
 

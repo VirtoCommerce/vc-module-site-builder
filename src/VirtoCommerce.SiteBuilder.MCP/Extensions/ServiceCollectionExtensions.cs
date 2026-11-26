@@ -15,7 +15,10 @@ public static class ServiceCollectionExtensions
         services.AddTransient<TranslationSources>();
         services.AddTransient<SiteBuilderJobUsers>();
         services.AddTransient<SiteThemeStates>();
+        services.AddTransient<SectionTypePages>();
         services.AddTransient<RemovedSectionTypes>();
+        services.AddTransient<SectionTypeFindings>();
+        services.AddTransient<ThemeDryRuns>();
         services.AddTransient<PublicationDryRuns>();
         services.AddTransient<FilePageShipping>();
         services.AddBackgroundJob<UpdateSectionsBulkJob, UpdateSectionsBulkJobPayload>(triggerable: false);

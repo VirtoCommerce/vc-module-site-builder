@@ -30,7 +30,7 @@ public class PageCreateTools(
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
-    PublicationDryRuns dryRuns)
+    SectionTypeFindings sectionTypeFindings)
 {
     public const string LandingPage = "landing_page";
     public const string LanguageVersion = "language_version";
@@ -256,7 +256,7 @@ public class PageCreateTools(
     private async Task WarnOfSectionTypesAsync(ClaimsPrincipal user, SiteBuilderChange change, string storeId, string pageName, PageDocumentEditor content,
         string prefix, CancellationToken cancellationToken)
     {
-        foreach (var finding in await dryRuns.GetAddedSectionTypeFindingsAsync(user, storeId, pageName, before: null, content, group: null, cancellationToken))
+        foreach (var finding in await sectionTypeFindings.GetAddedAsync(user, storeId, pageName, before: null, content, group: null, cancellationToken))
         {
             change.AddWarning($"{prefix}{finding.Title} {finding.Fix}");
         }

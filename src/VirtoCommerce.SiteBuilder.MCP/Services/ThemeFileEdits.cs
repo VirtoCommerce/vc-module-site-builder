@@ -113,6 +113,11 @@ public static class ThemeFileEdits
         // a dry run that changes nothing still answers what the file breaks
         var files = (changed.Count > 0 ? changed : edits).Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
         var result = await ThemeFiles.SaveAsync(designerOperationService, user, target.StoreId, target.CatalogHash, files, target.DryRun, cancellationToken);
+        AddResult(change, changed, result, target);
+    }
+
+    private static void AddResult(ThemeFileChange change, List<ThemeFileEdit> changed, SiteBuilderOperationResult<DesignerSaveResult> result, ThemeFileSaveTarget target)
+    {
         var refused = target.DryRun && result.Status == SiteBuilderOperationStatus.Invalid;
         if (refused)
         {
@@ -127,23 +132,33 @@ public static class ThemeFileEdits
 
         if (!target.DryRun)
         {
-            foreach (var version in result.Value?.ThemeFiles ?? [])
-            {
-                change.VersionTokens[version.Path] = version.ETag;
-            }
+            AddVersionTokens(change, result.Value);
         }
 
-        var warnings = target.DryRun
+        AddWarnings(change, result, target.DryRun);
+
+        if (!refused && changed.Count > 0)
+        {
+            change.NextStep = "Customers see this change only after the theme is published (publish_theme), which a second person approves.";
+        }
+    }
+
+    private static void AddVersionTokens(ThemeFileChange change, DesignerSaveResult saved)
+    {
+        foreach (var version in saved?.ThemeFiles ?? [])
+        {
+            change.VersionTokens[version.Path] = version.ETag;
+        }
+    }
+
+    private static void AddWarnings(ThemeFileChange change, SiteBuilderOperationResult<DesignerSaveResult> result, bool dryRun)
+    {
+        var warnings = dryRun
             ? result.Preview?.Warnings
             : result.Value?.ThemeFiles.SelectMany(x => x.Warnings.Select(warning => $"{GetPathInTheme(x.Path)}: {warning}"));
         foreach (var warning in warnings ?? [])
         {
             change.AddWarning(warning);
-        }
-
-        if (!refused && changed.Count > 0)
-        {
-            change.NextStep = "Customers see this change only after the theme is published (publish_theme), which a second person approves.";
         }
     }
 
@@ -162,10 +177,15 @@ public static class ThemeFileEdits
 
     // A readable diff leaves out what it cannot show, so whether the content changed is decided on the JSON itself. A file that is not
     // there is read as the diff reads it, empty: an edit that leaves it empty, such as the palette of the other scheme, does not create it.
-    private static bool IsSameContent(string path, string before, string after) =>
-        before == null
-            ? Compare(path, before, after).Count == 0
-            : Parse(before) is { } from && Parse(after) is { } to ? JsonNode.DeepEquals(from, to) : string.Equals(before, after, StringComparison.Ordinal);
+    private static bool IsSameContent(string path, string before, string after)
+    {
+        if (before == null)
+        {
+            return Compare(path, before, after).Count == 0;
+        }
+
+        return Parse(before) is { } from && Parse(after) is { } to ? JsonNode.DeepEquals(from, to) : string.Equals(before, after, StringComparison.Ordinal);
+    }
 
     public static IList<PageDocumentChange> Compare(string path, string before, string after)
     {
@@ -267,7 +287,7 @@ public static class ThemeFileEdits
         var from = fromNode as JsonObject ?? [];
         var to = toNode as JsonObject ?? [];
         // settings that are not a list on either side are compared as a value
-        var lists = GetSettings(from) is null or JsonArray && GetSettings(to) is null or JsonArray;
+        var lists = HasSettingsList(from) && HasSettingsList(to);
         var fromSettings = lists ? TakeSettings(from) : null;
         var toSettings = lists ? TakeSettings(to) : null;
         var fromTexts = SectionTypeTexts.ToDictionary(x => x, x => Take(from, x));
@@ -275,27 +295,21 @@ public static class ThemeFileEdits
 
         var changes = CompareValues(Flatten(from), Flatten(to));
         changes.AddRange(CompareSettings(fromSettings, toSettings));
-        foreach (var text in SectionTypeTexts)
-        {
-            if (CompareText(text, fromTexts[text], toTexts[text]) is { } change)
-            {
-                changes.Add(change);
-            }
-        }
+        changes.AddRange(SectionTypeTexts.Select(x => CompareText(x, fromTexts[x], toTexts[x])).Where(x => x != null));
 
         return changes;
     }
 
-    private static JsonNode GetSettings(JsonObject type) => (type[ThemeCustomSections.SchemaKey] as JsonObject)?["settings"];
+    private static bool HasSettingsList(JsonObject type) => (type[ThemeCustomSections.SchemaKey] as JsonObject)?["settings"] is null or JsonArray;
 
     private static JsonArray TakeSettings(JsonObject type)
     {
         if (type[ThemeCustomSections.SchemaKey] is not JsonObject schema)
         {
-            return null;
+            return [];
         }
 
-        var settings = schema["settings"] as JsonArray;
+        var settings = schema["settings"] as JsonArray ?? [];
         schema.Remove("settings");
         if (schema.Count == 0)
         {
@@ -364,24 +378,16 @@ public static class ThemeFileEdits
 
         var from = (before ?? string.Empty).Split('\n');
         var to = (after ?? string.Empty).Split('\n');
-        var start = 0;
-        while (start < from.Length && start < to.Length && from[start] == to[start])
-        {
-            start++;
-        }
-
-        var end = 0;
-        while (end < from.Length - start && end < to.Length - start && from[^(end + 1)] == to[^(end + 1)])
-        {
-            end++;
-        }
-
+        var start = CountSameLines(from, to);
+        var end = CountSameLines(from.Skip(start).Reverse(), to.Skip(start).Reverse());
         var last = Math.Max(start + 1, to.Length - end);
         var lines = last > start + 1 ? $"lines {start + 1}-{last}" : $"line {start + 1}";
 
         return new($"{field} {lines}", before == null ? null : Shorten(string.Join('\n', from[start..^end])),
             after == null ? null : Shorten(string.Join('\n', to[start..^end])));
     }
+
+    private static int CountSameLines(IEnumerable<string> from, IEnumerable<string> to) => from.Zip(to).TakeWhile(x => x.First == x.Second).Count();
 
     private static string Shorten(string text) =>
         text.Length > MaxTextChange ? $"{text[..MaxTextChange]}… ({text.Length - MaxTextChange} more characters)" : text;

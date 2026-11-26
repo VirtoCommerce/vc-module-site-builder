@@ -1,14 +1,12 @@
 using System.Security.Claims;
 using Microsoft.Extensions.Logging;
-using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
-using VirtoCommerce.SiteBuilder.Core.Theme;
-using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
+using static VirtoCommerce.SiteBuilder.MCP.Services.PublishChecks;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
@@ -16,73 +14,10 @@ public class PublicationDryRuns(
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
     IFilePageOperationService filePageOperationService,
-    IThemeOperationService themeOperationService,
     ISiteBuilderContentQueryService contentQueryService,
-    ISchemaCatalogService schemaCatalogService,
-    ICustomSectionService customSectionService,
-    IGroupedPageContentService pageContentService,
-    RemovedSectionTypes removedSectionTypes,
+    SectionTypeFindings sectionTypeFindings,
     ILogger<PublicationDryRuns> logger)
 {
-    private const string ContrastMarker = "contrast";
-    private const string SectionTypeMissing = "section-type-missing";
-    private const string SectionTypeUnpublished = "section-type-unpublished";
-
-    public async Task CheckThemeAsync(ClaimsPrincipal user, string storeId, PublishReadiness readiness, CancellationToken cancellationToken)
-    {
-        var catalogHash = await schemaCatalogService.GetCurrentHashAsync(storeId, cancellationToken);
-        if (catalogHash == null)
-        {
-            readiness.Findings.Add(Blocker("schema-catalog-missing", "The storefront has not sent its schema catalog, so the theme cannot be checked or published.",
-                $"Store '{storeId}' has no current schema catalog.", "Open the store once in the designer: its preview sends the catalog. Then check again.", "catalog"));
-            return;
-        }
-
-        var check = await themeOperationService.PublishAsync(new ThemePublishOperationRequest { StoreId = storeId, CatalogHash = catalogHash, DryRun = true },
-            user, cancellationToken);
-        EnsureAllowed(check, $"Your builder:read permission does not cover store '{storeId}'.");
-
-        if (!check.Succeeded)
-        {
-            AddThemeRefusals(check, readiness);
-            return;
-        }
-
-        AddThemeDryRun(check, storeId, await removedSectionTypes.FindAsync(user, storeId, cancellationToken), readiness);
-    }
-
-    private static void AddThemeDryRun(SiteBuilderOperationResult check, string storeId, IList<RemovedSectionType> removed, PublishReadiness readiness)
-    {
-        foreach (var draft in check.Preview?.Objects ?? [])
-        {
-            readiness.Parts.Add(PublishPart.FromPreview(draft));
-        }
-
-        foreach (var type in removed)
-        {
-            readiness.Parts.Add(new PublishPart
-            {
-                ObjectType = ChangePreview.ThemeFile,
-                ObjectId = type.Path,
-                Changes = [new PartChange("status", RemovedSectionType.PublishedStatus, RemovedSectionType.RemovedStatus)],
-            });
-            readiness.Findings.Add(Warning("section-type-removed", type.Warning, $"Store '{storeId}': {type.Path} is live, but the theme no longer holds it.",
-                "To keep it, create it again with create_section_type before publishing; otherwise remove its sections from the pages that place it.", "theme"));
-        }
-
-        foreach (var warning in check.Preview?.Warnings ?? [])
-        {
-            readiness.Findings.Add(Warning("theme-warning", warning, "The dry run of the theme's publication.", "Review it before publishing; it does not stop the publication.", "theme"));
-        }
-
-        if (readiness.Parts.Count == 0)
-        {
-            readiness.Findings.Add(Info("nothing-to-publish", "The theme has no drafts: a publication would put out the live files again.",
-                $"Store '{storeId}' has no theme drafts.", "Nothing to do; edit_theme_draft, edit_template, edit_template_rules, create_section_type and " +
-                "change_section_type make drafts.", "theme"));
-        }
-    }
-
     public async Task<bool> CheckPageAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, bool unpublish, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
@@ -196,142 +131,13 @@ public class PublicationDryRuns(
         }
     }
 
-    // The storefront renders a custom section type only from the published theme: a page published with one the theme holds only as a
-    // draft, or not at all, shows nothing in its place.
     public async Task CheckSectionTypesAsync(ClaimsPrincipal user, string storeId, string pageName, string content, PublishReadiness readiness,
         GroupedSiteBuilderPage group, CancellationToken cancellationToken)
     {
-        foreach (var finding in await GetSectionTypeFindingsAsync(user, storeId, pageName, content, group, cancellationToken))
+        foreach (var finding in await sectionTypeFindings.GetAsync(user, storeId, pageName, content, group, cancellationToken))
         {
             readiness.Findings.Add(finding);
         }
-    }
-
-    /// <summary>The section type findings of a page's draft, as <see cref="CheckSectionTypesAsync"/> adds them.</summary>
-    public async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, CancellationToken cancellationToken)
-    {
-        string content;
-        try
-        {
-            content = (await pageContentService.LoadGroupContentAsync(group, draft: true, cancellationToken)).Content;
-        }
-        catch (KeyNotFoundException)
-        {
-            return [];
-        }
-
-        return await GetSectionTypeFindingsAsync(user, group.StoreId, group.Name, content, group, cancellationToken);
-    }
-
-    /// <summary>The section type findings of a page stored as a file, as <see cref="CheckFilePageAsync"/> adds them.</summary>
-    public async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, FilePage page, CancellationToken cancellationToken)
-    {
-        var draft = await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken);
-
-        return await GetSectionTypeFindingsAsync(user, page.StoreId, page.PageId, draft, group: null, cancellationToken);
-    }
-
-    /// <summary>
-    /// The findings of the custom section types an edit adds to a page that the theme does not hold, or holds only as a draft: told as the
-    /// section is added, since the page is published all the same.
-    /// </summary>
-    public async Task<IList<McpFinding>> GetAddedSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, PageDocumentEditor before,
-        PageDocumentEditor after, GroupedSiteBuilderPage group, CancellationToken cancellationToken)
-    {
-        var added = GetPlacedTypes(after);
-        added.ExceptWith(GetPlacedTypes(before));
-
-        return (await GetSectionTypeFindingsAsync(user, storeId, pageName, added, group, cancellationToken))
-            .Where(x => x.Id is SectionTypeMissing or SectionTypeUnpublished)
-            .ToList();
-    }
-
-    private Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, string content,
-        GroupedSiteBuilderPage group, CancellationToken cancellationToken) =>
-        GetSectionTypeFindingsAsync(user, storeId, pageName, GetPlacedTypes(PageDocumentEditor.Read(content)), group, cancellationToken);
-
-    private static HashSet<string> GetPlacedTypes(PageDocumentEditor document) =>
-        (document?.Sections ?? [])
-            .Select(SiteBuilderPageItems.GetItemType)
-            .Where(x => x != null && ThemeStorage.IsCustomSectionType(x))
-            .ToHashSet(StringComparer.Ordinal);
-
-    private async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, HashSet<string> placed,
-        GroupedSiteBuilderPage group, CancellationToken cancellationToken)
-    {
-        var findings = new List<McpFinding>();
-        if (placed.Count == 0)
-        {
-            return findings;
-        }
-
-        var types = (await customSectionService.ListTypesAsync(storeId, themeName: null, cancellationToken)).ToHashSet(StringComparer.Ordinal);
-        var missing = placed.Where(x => !types.Contains(x)).Order(StringComparer.Ordinal).ToList();
-        if (missing.Count > 0)
-        {
-            findings.Add(Warning(SectionTypeMissing, $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme does not hold " +
-                $"({string.Join(", ", missing)}): it can still be published, but the storefront shows nothing in their place.",
-                $"Store '{storeId}': {string.Join(", ", missing.Select(ThemeStorage.GetCustomSectionFile))} do not exist.",
-                "Create them with create_section_type and publish the theme, or remove those sections from the page.", "theme", group));
-        }
-
-        var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = storeId }, user, cancellationToken);
-        SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{storeId}'", $"Your builder:read permission does not cover store '{storeId}'.");
-        var drafts = placed
-            .Where(x => types.Contains(x) && status.Value.NewDrafts.Contains(ThemeStorage.GetCustomSectionFile(x), StringComparer.OrdinalIgnoreCase))
-            .Order(StringComparer.Ordinal)
-            .ToList();
-        if (drafts.Count > 0)
-        {
-            findings.Add(Warning(SectionTypeUnpublished, $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme holds only as a draft " +
-                $"({string.Join(", ", drafts)}): it can still be published, but the storefront shows nothing in their place until the theme is published.",
-                $"Store '{storeId}': {string.Join(", ", drafts.Select(ThemeStorage.GetCustomSectionFile))} have no published version.",
-                "Publish the theme first (publish_theme, which a second person approves), then the page.", "theme", group));
-        }
-
-        // a published type with a draft: the page shows its published version, which may not read settings the page now sets
-        var changed = placed
-            .Where(x => types.Contains(x) && !drafts.Contains(x) && status.Value.Drafts.Contains(ThemeStorage.GetCustomSectionFile(x), StringComparer.OrdinalIgnoreCase))
-            .Order(StringComparer.Ordinal)
-            .ToList();
-        if (changed.Count > 0)
-        {
-            findings.Add(Warning("section-type-changed", $"Page '{CustomSectionText.Quote(pageName)}' places custom section types with unpublished changes in the theme " +
-                $"({string.Join(", ", changed)}): the storefront shows their published version, without what the draft changes or adds, until the theme " +
-                "is published.",
-                $"Store '{storeId}': {string.Join(", ", changed.Select(ThemeStorage.GetCustomSectionFile))} have a draft.",
-                "Publish the theme first (publish_theme, which a second person approves), then the page, when the page relies on those changes.", "theme", group));
-        }
-
-        return findings;
-    }
-
-    private static void EnsureAllowed(SiteBuilderOperationResult result, string forbidden)
-    {
-        if (result.Status == SiteBuilderOperationStatus.Forbidden)
-        {
-            throw new McpForbiddenException(forbidden);
-        }
-    }
-
-    private static void AddThemeRefusals(SiteBuilderOperationResult check, PublishReadiness readiness)
-    {
-        var errors = check.Errors?.Count > 0 ? check.Errors : [check.Error ?? check.Status.ToString()];
-        foreach (var error in errors)
-        {
-            readiness.Findings.Add(ThemeRefusal(error));
-        }
-    }
-
-    private static McpFinding ThemeRefusal(string error)
-    {
-        if (error.Contains(ContrastMarker, StringComparison.OrdinalIgnoreCase))
-        {
-            return Blocker("palette-contrast", "A color pair of the palette is below the WCAG 2.2 AA contrast, so the theme cannot be published.", error,
-                "Fix the palette with edit_theme_draft (part palette): regenerate it or change the failing colors.", "contrast");
-        }
-
-        return Blocker("theme-refused", "The theme's publication would be refused.", error, "Fix the draft it names, then check again.", "validation");
     }
 
     private static McpFinding NoDraft(GroupedSiteBuilderPage group) =>
@@ -369,26 +175,4 @@ public class PublicationDryRuns(
         return Blocker("page-refused", $"The publication of page '{page.PageId}' would be refused.", details ?? check.Status.ToString(),
             "Fix the page with edit_page_draft or in the designer, then check again.", "validation");
     }
-
-    public static McpFinding Blocker(string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group = null) =>
-        Finding(McpFindingSeverities.Critical, id, title, evidence, fix, category, group);
-
-    public static McpFinding Warning(string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group = null) =>
-        Finding(McpFindingSeverities.Warning, id, title, evidence, fix, category, group);
-
-    public static McpFinding Info(string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group = null) =>
-        Finding(McpFindingSeverities.Info, id, title, evidence, fix, category, group);
-
-    private static McpFinding Finding(string severity, string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group) => new()
-    {
-        Id = id,
-        Severity = severity,
-        Title = title,
-        Evidence = evidence,
-        Fix = fix,
-        Category = category,
-        ObjectType = group == null ? null : ChangePreview.Page,
-        ObjectId = group?.Id,
-        ObjectName = group?.Name,
-    };
 }

@@ -118,18 +118,12 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
                 $"{ThemePaletteTokensValidator.MaxTokenLength} characters.", nameof(catalogJson));
         }
 
-        // a custom type's section is the theme's, which the module reads from the theme in its place
-        if (ModuleConstants.SchemaKinds.All
-                .SelectMany(kind => ((catalog[kind] as JObject)?.Properties() ?? [])
-                    .Where(x => kind != ModuleConstants.SchemaKinds.Sections || x.Value is not JObject section || !ThemeCustomSections.IsCustom(section)))
-                .FirstOrDefault(x => x.Name.Length > MaxLabelLength || x.Value is JObject schema && !HasShortLabels(schema)) is { } labeled)
+        if (FindLongLabeledSchema(catalog) is { } labeled)
         {
             throw new ArgumentException($"The catalog's schema \"{labeled.Name}\" has a key, a name or a label longer than {MaxLabelLength} characters.", nameof(catalogJson));
         }
 
-        // the rest of the module takes such a section for a type of the theme
-        if ((catalog[ModuleConstants.SchemaKinds.Sections] as JObject)?.Properties()
-            .FirstOrDefault(x => x.Name.StartsWith(ThemeStorage.CustomSectionTypePrefix, StringComparison.Ordinal) && !ThemeCustomSections.IsCustom((JObject)x.Value)) is { } section)
+        if (FindUnmarkedCustomSection(catalog) is { } section)
         {
             throw new ArgumentException($"The catalog's section \"{section.Name}\" starts with {ThemeStorage.CustomSectionTypePrefix}, which names the theme's " +
                 "own types, and is not marked custom.", nameof(catalogJson));
@@ -137,6 +131,18 @@ public class SchemaCatalogService(IThemeStorageFactory themeStorageFactory) : IS
 
         return catalog;
     }
+
+    // a custom type's section is the theme's, which the module reads from the theme in its place
+    private static JProperty FindLongLabeledSchema(JObject catalog) =>
+        ModuleConstants.SchemaKinds.All
+            .SelectMany(kind => ((catalog[kind] as JObject)?.Properties() ?? [])
+                .Where(x => kind != ModuleConstants.SchemaKinds.Sections || x.Value is not JObject section || !ThemeCustomSections.IsCustom(section)))
+            .FirstOrDefault(x => x.Name.Length > MaxLabelLength || x.Value is JObject schema && !HasShortLabels(schema));
+
+    // the rest of the module takes such a section for a type of the theme
+    private static JProperty FindUnmarkedCustomSection(JObject catalog) =>
+        (catalog[ModuleConstants.SchemaKinds.Sections] as JObject)?.Properties()
+            .FirstOrDefault(x => x.Name.StartsWith(ThemeStorage.CustomSectionTypePrefix, StringComparison.Ordinal) && !ThemeCustomSections.IsCustom((JObject)x.Value));
 
     private static bool IsPaletteTokens(JToken tokens) =>
         tokens is null || tokens.Type == JTokenType.Null ||

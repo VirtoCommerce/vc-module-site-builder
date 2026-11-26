@@ -38,7 +38,7 @@ public sealed class SectionTypeToolsTests : IAsyncDisposable
 
     private static McpTestUser Designer() => McpTestUser.Create("designer").WithPermissions(Permissions.Read, Permissions.Update, Permissions.Theme);
 
-    private Task SeedAsync() => _context.SeedThemeAsync(StoreA, StorefrontKit);
+    private Task<string> SeedAsync() => _context.SeedThemeAsync(StoreA, StorefrontKit);
 
     private Task<McpToolCallResult> CallAsync(string tool, McpTestUser user = null, string template = Template, string css = Css, object[] settings = null,
         string type = Type, string storeId = StoreA, string versionToken = null, bool dryRun = false)

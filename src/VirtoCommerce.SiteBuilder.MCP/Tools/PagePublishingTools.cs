@@ -27,7 +27,7 @@ public class PagePublishingTools(
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
     FilePageShipping filePageShipping,
-    PublicationDryRuns dryRuns)
+    SectionTypeFindings sectionTypeFindings)
 {
     private const string SettingsKeyPrefix = "settings:";
 
@@ -88,7 +88,7 @@ public class PagePublishingTools(
                     new FilePageShipCall(store_id, page_id, Publish: true, rebase, draft_owner, expected_versions, dryRun), cancellationToken);
                 if (dryRun)
                 {
-                    WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(context.User, FilePages.Parse(store_id, page_id), cancellationToken));
+                    WarnOf(change, await sectionTypeFindings.GetAsync(context.User, FilePages.Parse(store_id, page_id), cancellationToken));
                 }
 
                 return change;
@@ -217,7 +217,7 @@ public class PagePublishingTools(
 
         if (publish && dryRun)
         {
-            WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken));
+            WarnOf(change, await sectionTypeFindings.GetAsync(user, group, cancellationToken));
         }
 
         return change;
@@ -230,7 +230,7 @@ public class PagePublishingTools(
     {
         foreach (var group in languageVersions)
         {
-            WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken), $"{group.CultureName}: ");
+            WarnOf(change, await sectionTypeFindings.GetAsync(user, group, cancellationToken), $"{group.CultureName}: ");
         }
     }
 
@@ -278,17 +278,22 @@ public class PagePublishingTools(
         if (dryRun)
         {
             await WarnOfSkippedVersionsAsync(user, change, preview?.Objects ?? [], cancellationToken);
-            var groups = new List<GroupedSiteBuilderPage>();
-            foreach (var id in preview?.Objects.Select(y => y.ObjectId).Where(y => y != null).Distinct() ?? [])
-            {
-                if (await groupedPageService.GetByIdAsync(id) is { } group)
-                {
-                    groups.Add(group);
-                }
-            }
-
-            await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
+            await WarnOfSectionTypesAsync(user, change, await GetLanguageVersionsAsync(preview), cancellationToken);
         }
+    }
+
+    private async Task<IList<GroupedSiteBuilderPage>> GetLanguageVersionsAsync(SiteBuilderChangePreview preview)
+    {
+        var groups = new List<GroupedSiteBuilderPage>();
+        foreach (var id in preview?.Objects.Select(y => y.ObjectId).Where(y => y != null).Distinct() ?? [])
+        {
+            if (await groupedPageService.GetByIdAsync(id) is { } group)
+            {
+                groups.Add(group);
+            }
+        }
+
+        return groups;
     }
 
     private static string DescribeSkipped(MultilanguagePageBatchSkip skipped) => skipped.Reason switch

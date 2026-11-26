@@ -19,16 +19,18 @@ public class CustomSectionValidator(
     CustomSectionTemplateValidator templateValidator,
     CustomSectionCssValidator cssValidator,
     CustomSectionUrlPolicy urlPolicy,
-    IOptions<ThemeSnapshotOptions> options,
+    IOptions<ThemeSnapshotOptions> themeSnapshotOptions,
     ILogger<CustomSectionValidator> logger) : ICustomSectionValidator
 {
     /// <summary>UTF-8 bytes, for the template and the CSS each.</summary>
-    public const int MaxPartSize = 64 * 1024;
+    public const int MaxPartSize = 64 * BytesPerKilobyte;
 
     /// <summary>Of a theme: the snapshot carries every type to every page, and a save reads each of them.</summary>
     public const int MaxTypes = 256;
 
     public const int MaxNameLength = 256;
+
+    private const int BytesPerKilobyte = 1024;
 
     private const string HeaderType = "header";
     private const string ParagraphType = "paragraph";
@@ -143,7 +145,7 @@ public class CustomSectionValidator(
         result.MaxCssDepth = CustomSectionCssValidator.MaxDepth;
         result.MaxAtRuleDepth = CustomSectionCssValidator.MaxAtRuleDepth;
         result.MaxPartSize = MaxPartSize;
-        result.MaxTotalSize = options.Value.CustomSectionsMaxSize;
+        result.MaxTotalSize = themeSnapshotOptions.Value.CustomSectionsMaxSize;
         result.MaxTypes = MaxTypes;
 
         return result;
@@ -205,7 +207,7 @@ public class CustomSectionValidator(
     protected virtual string GetSizeError(IDictionary<string, JToken> types)
     {
         var size = GetSize(types);
-        var maxSize = options.Value.CustomSectionsMaxSize;
+        var maxSize = themeSnapshotOptions.Value.CustomSectionsMaxSize;
         if (size <= maxSize)
         {
             return null;
@@ -262,6 +264,21 @@ public class CustomSectionValidator(
             check.AddError("'schema.settings' is not a list of settings");
         }
 
+        ValidateTargetTemplates(check, schema);
+
+        if (schema["limit"] is { } limit && limit is not JValue { Value: >= 1L })
+        {
+            check.AddError("'schema.limit' is not a whole number from 1");
+        }
+
+        if (schema["icon"] is { } icon && icon.Type != JTokenType.String)
+        {
+            check.AddError("'schema.icon' is not a text");
+        }
+    }
+
+    protected virtual void ValidateTargetTemplates(CustomSectionCheck check, JObject schema)
+    {
         if (schema["targetTemplates"] is { } targets && !(targets is JArray list && list.All(x => x is JValue { Type: JTokenType.String } key && !string.IsNullOrWhiteSpace((string)key))))
         {
             check.AddError("'schema.targetTemplates' is not a list of template names");
@@ -274,16 +291,6 @@ public class CustomSectionValidator(
                 check.AddWarning($"'schema.targetTemplates' names '{Quote(key)}', which is no template key of the storefront's catalog, so no template offers " +
                     "the type: the schemas resource lists the catalog's templates");
             }
-        }
-
-        if (schema["limit"] is { } limit && limit is not JValue { Value: >= 1L })
-        {
-            check.AddError("'schema.limit' is not a whole number from 1");
-        }
-
-        if (schema["icon"] is { } icon && icon.Type != JTokenType.String)
-        {
-            check.AddError("'schema.icon' is not a text");
         }
     }
 
@@ -314,6 +321,37 @@ public class CustomSectionValidator(
         var id = ThemeJson.GetString(field, "id");
         var type = ThemeJson.GetString(field, "type");
         var setting = DescribeSetting(parent, id, index);
+        ValidateFieldKeys(check, field, setting);
+
+        if (GetTypeError(type, parent, setting) is { } typeError)
+        {
+            check.AddError(typeError);
+            return null;
+        }
+
+        if (LabelFieldTypes.Contains(type))
+        {
+            ValidateSettingKeys(check, field, type, setting);
+            return null;
+        }
+
+        if (GetIdError(id, setting, declared) is { } idError)
+        {
+            check.AddError(idError);
+            return null;
+        }
+
+        ValidateSettingKeys(check, field, type, setting);
+
+        var element = type is ListType or ObjectType ? ReadElement(check, field, id, type, setting) : null;
+        var isLink = IsLink(type, field);
+        var options = type == SelectType ? ReadOptions(field) : null;
+
+        return new CustomSectionSetting(id, type, isLink, element, options);
+    }
+
+    protected virtual void ValidateFieldKeys(CustomSectionCheck check, JObject field, string setting)
+    {
         foreach (var key in field.Properties().Select(x => x.Name).Where(x => !FieldKeys.Contains(x)))
         {
             check.AddError($"{setting} has a key a custom section's setting does not take, '{Quote(key)}'");
@@ -324,57 +362,39 @@ public class CustomSectionValidator(
         {
             check.AddError($"{setting} has {(key == "info" ? "an" : "a")} {key} that is not a text");
         }
+    }
 
-        var isGroup = type is ListType or ObjectType;
+    protected virtual string GetTypeError(string type, string parent, string setting)
+    {
         if (type == null || !FieldTypes.Contains(type))
         {
-            check.AddError($"{setting} has a type a custom section does not take, '{Quote(type)}'");
-            return null;
+            return $"{setting} has a type a custom section does not take, '{Quote(type)}'";
         }
 
-        if (isGroup && parent != null)
-        {
-            check.AddError($"{setting} is a {type} inside '{parent}', one level deeper than a custom section's settings go");
-            return null;
-        }
+        return type is ListType or ObjectType && parent != null
+            ? $"{setting} is a {type} inside '{parent}', one level deeper than a custom section's settings go"
+            : null;
+    }
 
-        if (LabelFieldTypes.Contains(type))
-        {
-            ValidateSettingKeys(check, field, type, setting);
-            return null;
-        }
-
+    protected virtual string GetIdError(string id, string setting, IDictionary<string, CustomSectionSetting> declared)
+    {
         if (id == null || !SettingIdPattern.IsMatch(id))
         {
-            check.AddError($"{setting} has no id of letters, digits and '_' that starts with a letter");
-            return null;
+            return $"{setting} has no id of letters, digits and '_' that starts with a letter";
         }
 
         // the designer writes a value under the setting's id, next to the section's own keys
         if (SiteBuilderPageItems.ItemKeys.Contains(id, StringComparer.Ordinal))
         {
-            check.AddError($"{setting} has the id of a key a section holds itself: {JoinOr(SiteBuilderPageItems.ItemKeys)}");
-            return null;
+            return $"{setting} has the id of a key a section holds itself: {JoinOr(SiteBuilderPageItems.ItemKeys)}";
         }
 
-        if (declared.ContainsKey(id))
-        {
-            check.AddError($"{setting} has the id of another setting");
-            return null;
-        }
-
-        ValidateSettingKeys(check, field, type, setting);
-
-        var element = isGroup ? ReadElement(check, field, id, type, setting) : null;
-        var isLink = IsLink(type, field);
-
-        var options = type == SelectType
-            ? (field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).OfType<JValue>()
-                .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture)).ToList()
-            : null;
-
-        return new CustomSectionSetting(id, type, isLink, element, options);
+        return declared.ContainsKey(id) ? $"{setting} has the id of another setting" : null;
     }
+
+    private static List<string> ReadOptions(JObject field) =>
+        (field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).OfType<JValue>()
+            .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture)).ToList();
 
     protected virtual void ValidateSettingKeys(CustomSectionCheck check, JObject field, string type, string setting)
     {
@@ -383,7 +403,7 @@ public class CustomSectionValidator(
             check.AddError($"{setting} is translatable, which only a string or a text is");
         }
 
-        if (field[FormatKey] is { } format && !(type == StringType && format is JValue { Type: JTokenType.String } url && (string)url == UrlFormat))
+        if (field[FormatKey] != null && !IsLink(type, field))
         {
             check.AddError($"{setting} has a format other than the \"url\" of a string that holds a link");
         }
@@ -393,6 +413,18 @@ public class CustomSectionValidator(
             check.AddError($"{setting} is multiple, and a custom section's setting holds one value");
         }
 
+        ValidateOptions(check, field, type, setting);
+
+        if (type is not (ListType or ObjectType) && field["element"] != null)
+        {
+            check.AddError($"{setting} has an element, which only a list or an object has");
+        }
+
+        ValidateDefault(check, field, type, setting);
+    }
+
+    protected virtual void ValidateOptions(CustomSectionCheck check, JObject field, string type, string setting)
+    {
         if (type == SelectType)
         {
             if (field["options"] is not JArray { Count: > 0 } options || !options.All(IsSettingOption))
@@ -408,12 +440,10 @@ public class CustomSectionValidator(
         {
             check.AddError($"{setting} has options, which only a select has");
         }
+    }
 
-        if (type is not (ListType or ObjectType) && field["element"] != null)
-        {
-            check.AddError($"{setting} has an element, which only a list or an object has");
-        }
-
+    protected virtual void ValidateDefault(CustomSectionCheck check, JObject field, string type, string setting)
+    {
         if (field["default"] is { Type: not JTokenType.Null } value && GetDefaultError(check, type, field, value) is { } error)
         {
             check.AddError($"{setting} has a default {error}");
@@ -429,39 +459,62 @@ public class CustomSectionValidator(
             return null;
         }
 
-        switch (type)
+        return type switch
         {
-            case ListType:
-                var elements = GetElements(field);
-                return value is JArray rows && rows.All(x => x is JObject)
-                    ? rows.Select((row, i) => GetRowError(check, elements, (JObject)row) is { } error ? string.Create(CultureInfo.InvariantCulture, $"whose row {i + 1} holds {error}") : null)
-                        .FirstOrDefault(x => x != null)
-                    : "that is not a list of rows";
-            case ObjectType:
-                return value is JObject row ? (GetRowError(check, GetElements(field), row) is { } rowError ? $"that holds {rowError}" : null) : "that is not an object of its fields";
-            case NumberType or SliderType:
-                return GetNumberError(field, value);
-            case CheckboxType:
-                return value.Type == JTokenType.Boolean ? null : "that is not true or false";
-            case ColorTokenType:
-                return check.Kit?.PaletteTokens is not { Count: > 0 } tokens || value is JValue { Type: JTokenType.String } token && tokens.Contains((string)token)
-                    ? null
-                    : "that is not one of the palette's tokens";
-            case HeaderType or ParagraphType:
-                return $"that a {type} does not take: it holds no value";
+            ListType => GetListError(check, field, value),
+            ObjectType => GetObjectError(check, field, value),
+            HeaderType or ParagraphType => $"that a {type} does not take: it holds no value",
+            _ => GetValueError(check, type, field, value),
+        };
+    }
+
+    private string GetListError(CustomSectionCheck check, JObject field, JToken value)
+    {
+        var elements = GetElements(field);
+
+        return value is JArray rows && rows.All(x => x is JObject)
+            ? rows.Select((row, i) => GetRowError(check, elements, (JObject)row) is { } error ? string.Create(CultureInfo.InvariantCulture, $"whose row {i + 1} holds {error}") : null)
+                .FirstOrDefault(x => x != null)
+            : "that is not a list of rows";
+    }
+
+    private string GetObjectError(CustomSectionCheck check, JObject field, JToken value)
+    {
+        if (value is not JObject row)
+        {
+            return "that is not an object of its fields";
         }
 
-        if (type == SelectType)
-        {
-            if (!check.SelectOptions.TryGetValue(field, out var options))
-            {
-                options = new HashSet<JToken>((field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).Where(x => x != null) ?? [], JToken.EqualityComparer);
-                check.SelectOptions[field] = options;
-            }
+        return GetRowError(check, GetElements(field), row) is { } error ? $"that holds {error}" : null;
+    }
 
-            return options.Contains(value) ? null : "that is not one of its options";
+    private string GetValueError(CustomSectionCheck check, string type, JObject field, JToken value) => type switch
+    {
+        NumberType or SliderType => GetNumberError(field, value),
+        CheckboxType => value.Type == JTokenType.Boolean ? null : "that is not true or false",
+        ColorTokenType => GetColorTokenError(check, value),
+        SelectType => GetOptionError(check, field, value),
+        _ => GetTextError(type, field, value),
+    };
+
+    private static string GetColorTokenError(CustomSectionCheck check, JToken value) =>
+        check.Kit?.PaletteTokens is not { Count: > 0 } tokens || value is JValue { Type: JTokenType.String } token && tokens.Contains((string)token)
+            ? null
+            : "that is not one of the palette's tokens";
+
+    private static string GetOptionError(CustomSectionCheck check, JObject field, JToken value)
+    {
+        if (!check.SelectOptions.TryGetValue(field, out var options))
+        {
+            options = new HashSet<JToken>((field["options"] as JArray)?.OfType<JObject>().Select(x => x["value"]).Where(x => x != null) ?? [], JToken.EqualityComparer);
+            check.SelectOptions[field] = options;
         }
 
+        return options.Contains(value) ? null : "that is not one of its options";
+    }
+
+    private string GetTextError(string type, JObject field, JToken value)
+    {
         // a translatable value is a text per language
         var isTranslatable = IsSet(field, "translatable");
         List<string> texts = value switch
@@ -475,6 +528,11 @@ public class CustomSectionValidator(
             return isTranslatable ? "that is not a text, or a text per language" : "that is not a text";
         }
 
+        return GetTextFormatError(type, field, texts);
+    }
+
+    private string GetTextFormatError(string type, JObject field, List<string> texts)
+    {
         if (IsLink(type, field) && texts.Exists(x => x.Length > 0 && !urlPolicy.IsLink(x, CustomSectionTemplateValidator.LinkSchemes)))
         {
             return $"that is not a path starting with a single '/', an anchor such as #reviews, or an {JoinOr(CustomSectionTemplateValidator.LinkSchemes)} URL";
@@ -515,9 +573,12 @@ public class CustomSectionValidator(
             return "that is not a number";
         }
 
-        return GetNumber(field["min"]) is { } min && number < min ? "that is less than its min"
-            : GetNumber(field["max"]) is { } max && number > max ? "that is more than its max"
-            : null;
+        if (GetNumber(field["min"]) is { } min && number < min)
+        {
+            return "that is less than its min";
+        }
+
+        return GetNumber(field["max"]) is { } max && number > max ? "that is more than its max" : null;
     }
 
     // a big integer as the storefront reads it: a double
@@ -586,5 +647,5 @@ public class CustomSectionValidator(
         _ => $"setting '{parent}.{id}'",
     };
 
-    private static string FormatSize(long size) => string.Create(CultureInfo.InvariantCulture, $"{size / 1024.0:0.#} KB");
+    private static string FormatSize(long size) => string.Create(CultureInfo.InvariantCulture, $"{(double)size / BytesPerKilobyte:0.#} KB");
 }

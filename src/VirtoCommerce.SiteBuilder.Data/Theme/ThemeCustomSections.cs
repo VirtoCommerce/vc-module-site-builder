@@ -58,13 +58,12 @@ public static class ThemeCustomSections
         var result = new Dictionary<string, JObject>(StringComparer.Ordinal);
         if (await storage.GetCurrentPublicationAsync() is not { } publication ||
             await storage.GetPublicationRecordAsync(publication) is not { } record ||
-            await storage.ReadSnapshotAsync(publication, record.DefaultLanguage) is not { } content ||
-            ParseSnapshot(content)?[SnapshotProperty] is not JObject types)
+            await storage.ReadSnapshotAsync(publication, record.DefaultLanguage) is not { } content)
         {
             return result;
         }
 
-        foreach (var type in types.Properties())
+        foreach (var type in GetSnapshotTypes(content).Properties())
         {
             result[type.Name] = type.Value as JObject;
         }
@@ -72,15 +71,15 @@ public static class ThemeCustomSections
         return result;
     }
 
-    private static JObject ParseSnapshot(string content)
+    private static JObject GetSnapshotTypes(string content)
     {
         try
         {
-            return ThemeJson.Parse(content) as JObject;
+            return (ThemeJson.Parse(content) as JObject)?[SnapshotProperty] as JObject ?? new JObject();
         }
         catch (JsonReaderException)
         {
-            return null;
+            return new JObject();
         }
     }
 
@@ -166,15 +165,10 @@ public static class ThemeCustomSections
 
     /// <summary>
     /// The catalog with the theme's types in its sections, as the storefront adds them, in place of the custom types the storefront's preview saw:
-    /// a type just written is in no catalog yet, and an older catalog may hold a type the theme no longer has. Null for no catalog.
+    /// a type just written is in no catalog yet, and an older catalog may hold a type the theme no longer has.
     /// </summary>
     public static JObject AddToCatalog(JObject catalog, IDictionary<string, JToken> types)
     {
-        if (catalog == null)
-        {
-            return null;
-        }
-
         var result = (JObject)catalog.DeepClone();
         if (result[ModuleConstants.SchemaKinds.Sections] is not JObject sections)
         {
@@ -189,9 +183,9 @@ public static class ThemeCustomSections
 
         foreach (var (type, content) in types.Where(x => ThemeStorage.IsCustomSectionType(x.Key)))
         {
-            if (GetCatalogSchema(content) is { } schema)
+            if (content is JObject file && file[SchemaKey] is JObject schema)
             {
-                sections[type] = schema;
+                sections[type] = GetCatalogSchema(file, schema);
             }
         }
 
@@ -210,13 +204,8 @@ public static class ThemeCustomSections
 
     private static JObject GetSchema(JObject catalog, string kind, string type) => (catalog?[kind] as JObject)?[type] as JObject;
 
-    private static JObject GetCatalogSchema(JToken content)
+    private static JObject GetCatalogSchema(JObject type, JObject schema)
     {
-        if (content is not JObject type || type[SchemaKey] is not JObject schema)
-        {
-            return null;
-        }
-
         var result = new JObject();
         if (type[NameKey] is { } name)
         {

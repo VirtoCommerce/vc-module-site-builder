@@ -28,16 +28,16 @@ public sealed record SectionTypeSettingChanges(IList<NewSettingRow> Added, IList
             before.Keys.Where(x => !after.ContainsKey(x)).ToList());
     }
 
-    /// <summary>The schema of a stored type, or <c>null</c> when it has none or is not JSON.</summary>
+    /// <summary>The schema of a stored type, empty when it has none or is not JSON.</summary>
     public static JsonObject ReadSchema(string content)
     {
         try
         {
-            return (JsonNode.Parse(content ?? "") as JsonObject)?[ThemeCustomSections.SchemaKey] as JsonObject;
+            return (JsonNode.Parse(content ?? "") as JsonObject)?[ThemeCustomSections.SchemaKey] as JsonObject ?? new JsonObject();
         }
         catch (JsonException)
         {
-            return null;
+            return new JsonObject();
         }
     }
 
@@ -65,7 +65,9 @@ public sealed record SectionTypeSettingChanges(IList<NewSettingRow> Added, IList
         JsonArray rows => $"its default, {rows.Count} rows",
         JsonValue text when text.TryGetValue<string>(out var str) => string.IsNullOrEmpty(str)
             ? "nothing: its default is empty"
-            : $"its default '{(str.Length > MaxDefaultLength ? str[..MaxDefaultLength] + "…" : str)}'",
+            : $"its default '{Shorten(str)}'",
         _ => $"its default {value.ToJsonString()}",
     };
+
+    private static string Shorten(string text) => text.Length > MaxDefaultLength ? text[..MaxDefaultLength] + "…" : text;
 }

@@ -249,190 +249,123 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     /// <returns>The error of a token no browser reads as written, of a block without its pair or nested too deep; <c>null</c> for none.</returns>
     protected virtual string GetCssStructureError(IList<CssTokenizer.Token> tokens)
     {
-        var blocks = new Stack<(CssTokenizer.TokenKind Closer, bool AtRule)>();
-        var atRules = 0;
-        var rules = 0;
-        var inAtRulePrelude = false;
+        var blocks = new CssBlockReader();
         foreach (var token in tokens)
         {
-            // inside a function, a '(' or a '[', a ';' or '{' is part of it: it ends no at-rule's prelude and opens no rule
-            var ruleLevel = blocks.Count == rules;
-            switch (token.Kind)
+            if (blocks.Read(token) is { } error)
             {
-                case CssTokenizer.TokenKind.BadString:
-                    return "the CSS has a string that a line break cuts off";
-                case CssTokenizer.TokenKind.BadUrl:
-                    return "the CSS has a url( whose URL a quote, a parenthesis or a space breaks: quote the URL";
-                case CssTokenizer.TokenKind.AtKeyword:
-                    inAtRulePrelude = true;
-                    break;
-                case CssTokenizer.TokenKind.Semicolon when ruleLevel:
-                    inAtRulePrelude = false;
-                    break;
-                case CssTokenizer.TokenKind.OpenCurly when ruleLevel:
-                    blocks.Push((CssTokenizer.TokenKind.CloseCurly, inAtRulePrelude));
-                    rules++;
-                    atRules += inAtRulePrelude ? 1 : 0;
-                    inAtRulePrelude = false;
-                    break;
-                case CssTokenizer.TokenKind.OpenCurly:
-                    blocks.Push((CssTokenizer.TokenKind.CloseCurly, false));
-                    break;
-                case CssTokenizer.TokenKind.OpenParen or CssTokenizer.TokenKind.Function:
-                    blocks.Push((CssTokenizer.TokenKind.CloseParen, false));
-                    break;
-                case CssTokenizer.TokenKind.OpenSquare:
-                    blocks.Push((CssTokenizer.TokenKind.CloseSquare, false));
-                    break;
-                case CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.CloseParen or CssTokenizer.TokenKind.CloseSquare:
-                    if (blocks.Count == 0 || blocks.Peek().Closer != token.Kind)
-                    {
-                        return $"the CSS has a '{token.Value}' without its pair";
-                    }
-
-                    atRules -= blocks.Pop().AtRule ? 1 : 0;
-                    if (ruleLevel)
-                    {
-                        rules--;
-                        inAtRulePrelude = false;
-                    }
-
-                    break;
+                return error;
             }
 
-            if (blocks.Count > MaxDepth)
+            if (blocks.Depth > MaxDepth)
             {
                 return string.Create(CultureInfo.InvariantCulture, $"the CSS nests blocks deeper than {MaxDepth}");
             }
 
-            if (atRules > MaxAtRuleDepth)
+            if (blocks.AtRuleDepth > MaxAtRuleDepth)
             {
                 return string.Create(CultureInfo.InvariantCulture, $"the CSS nests at-rules deeper than {MaxAtRuleDepth}");
             }
         }
 
-        return blocks.Count == 0 ? null : $"the CSS has a '{GetOpener(blocks.Peek().Closer)}' without its pair";
+        return blocks.Unclosed is { } closer ? $"the CSS has a '{GetOpener(closer)}' without its pair" : null;
     }
 
     /// <summary>The at-rules, the URLs, and the declarations that run script or take the section out of the page, custom properties included.</summary>
     protected virtual void ValidateCssTokens(CustomSectionCheck check, IList<CssTokenizer.Token> tokens)
     {
         var findings = new CssFindings();
-        var blocks = new Stack<CssTokenizer.Token>();
-        var imageFunctions = new Stack<string>();
-        // whether each open rule block is for one direction, as :dir(rtl) { } is
-        var directionRules = new Stack<bool>();
-        var preludeNamesDirection = false;
-        // a declaration starts the CSS or a block, or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
-        var atDeclarationStart = true;
-        var prelude = new List<CssTokenizer.Token>();
-        // what opened each block: an at-rule's name, a keyframe, or a style rule
-        var openers = new Stack<string>();
-        // the shorthands with a late value of each open block's declarations that no later one has set a part of
-        var lateShorthands = new Stack<List<LateShorthand>>();
+        var state = new CssTokenState();
         var colorSettings = (check.Settings?.Values ?? []).Where(x => x.Type == CustomSectionFields.ColorTokenType)
             .Select(x => "--setting-" + x.Id.Replace('_', '-'))
             .ToHashSet(StringComparer.Ordinal);
         for (var i = 0; i < tokens.Count; i++)
         {
-            var token = tokens[i];
-            var block = blocks.Count > 0 ? blocks.Peek() : default;
-            // only rule blocks are open: inside a function, a '(' or a '[', a ';', '{' or '}' is part of a prelude or a value, as a browser reads it
-            var ruleLevel = blocks.Count == openers.Count;
-            switch (token.Kind)
+            var ruleLevel = state.RuleLevel;
+            ValidateCssToken(check, tokens, i, state, colorSettings, findings);
+            if (ruleLevel && tokens[i].Kind == CssTokenizer.TokenKind.OpenCurly)
             {
-                case CssTokenizer.TokenKind.Function when string.Equals(token.Value, "dir", StringComparison.OrdinalIgnoreCase):
-                    preludeNamesDirection = true;
-                    break;
-                case CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly when ruleLevel:
-                    preludeNamesDirection = false;
-                    break;
-                case CssTokenizer.TokenKind.AtKeyword:
-                    ValidateCssAtRule(check, tokens, i, findings);
-                    break;
-                case CssTokenizer.TokenKind.Url:
-                    AddCssUrlError(token.Value, findings);
-                    break;
-                case CssTokenizer.TokenKind.String when IsImageArgument(blocks):
-                    AddCssUrlError(token.Value, findings);
-                    break;
-                case CssTokenizer.TokenKind.Function when RefusedFunctions.TryGetValue(token.Value, out var refused):
-                    findings.Errors.Add($"the CSS has {token.Value.ToLowerInvariant()}(), which {refused}");
-                    break;
-                case CssTokenizer.TokenKind.Function when IsLateValueFunction(token.Value) && imageFunctions.Count > 0:
-                    findings.Errors.Add($"the CSS has {token.Value.ToLowerInvariant()}() inside {imageFunctions.Peek()}(), whose URL is then not known on save");
-                    break;
-                case CssTokenizer.TokenKind.Ident when blocks.Count == 0 && atDeclarationStart && ReadDeclarationValue(tokens, i) != null:
-                    // a browser that reads no declaration directly in @scope drops it
-                    findings.Errors.Add($"the CSS has the declaration '{token.Value}' outside any rule: write it in :scope {{ }}");
-                    break;
-                case CssTokenizer.TokenKind.Ident when block.Kind == CssTokenizer.TokenKind.OpenCurly && atDeclarationStart:
-                    ValidateCssDeclaration(tokens, i, findings, inDirectionRule: directionRules.Count > 0 && directionRules.Peek());
-                    ValidateCssShorthandParts(tokens, i, lateShorthands.Peek(), findings);
-                    ValidateCssFocusRing(tokens, i, colorSettings, findings);
-                    break;
+                OpenCssRule(state, findings);
             }
 
-            if (token.Kind != CssTokenizer.TokenKind.Whitespace)
-            {
-                atDeclarationStart = ruleLevel && token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly;
-            }
-
-            if (ruleLevel && token.Kind == CssTokenizer.TokenKind.OpenCurly)
-            {
-                directionRules.Push((directionRules.Count > 0 && directionRules.Peek()) || preludeNamesDirection);
-                preludeNamesDirection = false;
-                ValidateCssSelector(prelude, findings);
-                var opener = GetBlockOpener(prelude, openers);
-                if (GetCssBlockError(opener, openers) is { } blockError)
-                {
-                    findings.Errors.Add(blockError);
-                }
-
-                openers.Push(opener);
-                lateShorthands.Push([]);
-            }
-
-            if (ruleLevel && token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.Semicolon)
-            {
-                prelude.Clear();
-            }
-            else
-            {
-                prelude.Add(token);
-            }
-
-            if (token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.OpenParen or CssTokenizer.TokenKind.OpenSquare or
-                CssTokenizer.TokenKind.Function)
-            {
-                blocks.Push(token);
-                if (token.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(token.Value))
-                {
-                    imageFunctions.Push(token.Value.ToLowerInvariant());
-                }
-            }
-            else if (token.Kind is CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.CloseParen or CssTokenizer.TokenKind.CloseSquare)
-            {
-                var closed = blocks.Pop();
-                if (closed.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(closed.Value))
-                {
-                    imageFunctions.Pop();
-                }
-
-                if (ruleLevel && token.Kind == CssTokenizer.TokenKind.CloseCurly)
-                {
-                    directionRules.Pop();
-                    openers.Pop();
-                    lateShorthands.Pop();
-                    // the declarations after a nested rule are a block of their own
-                    if (lateShorthands.Count > 0)
-                    {
-                        lateShorthands.Peek().Clear();
-                    }
-                }
-            }
+            state.Advance(tokens[i], ruleLevel);
         }
 
+        ReportCssFindings(check, tokens, findings);
+    }
+
+    private void ValidateCssToken(CustomSectionCheck check, IList<CssTokenizer.Token> tokens, int index, CssTokenState state, IReadOnlySet<string> colorSettings,
+        CssFindings findings)
+    {
+        var token = tokens[index];
+        switch (token.Kind)
+        {
+            case CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly when state.RuleLevel:
+                state.PreludeNamesDirection = false;
+                break;
+            case CssTokenizer.TokenKind.AtKeyword:
+                ValidateCssAtRule(check, tokens, index, findings);
+                break;
+            case CssTokenizer.TokenKind.Url:
+                AddCssUrlError(token.Value, findings);
+                break;
+            case CssTokenizer.TokenKind.String when IsImageArgument(state.Blocks):
+                AddCssUrlError(token.Value, findings);
+                break;
+            case CssTokenizer.TokenKind.Function:
+                ValidateCssFunction(token, state, findings);
+                break;
+            case CssTokenizer.TokenKind.Ident when state.AtDeclarationStart:
+                ValidateCssDeclarationStart(tokens, index, state, colorSettings, findings);
+                break;
+        }
+    }
+
+    private static void ValidateCssFunction(CssTokenizer.Token function, CssTokenState state, CssFindings findings)
+    {
+        if (string.Equals(function.Value, "dir", StringComparison.OrdinalIgnoreCase))
+        {
+            state.PreludeNamesDirection = true;
+        }
+        else if (RefusedFunctions.TryGetValue(function.Value, out var refused))
+        {
+            findings.Errors.Add($"the CSS has {function.Value.ToLowerInvariant()}(), which {refused}");
+        }
+        else if (IsLateValueFunction(function.Value) && state.OpenImageFunctions.Count > 0)
+        {
+            findings.Errors.Add($"the CSS has {function.Value.ToLowerInvariant()}() inside {state.OpenImageFunctions.Peek()}(), whose URL is then not known on save");
+        }
+    }
+
+    private void ValidateCssDeclarationStart(IList<CssTokenizer.Token> tokens, int index, CssTokenState state, IReadOnlySet<string> colorSettings, CssFindings findings)
+    {
+        if (state.Blocks.Count == 0 && TryReadDeclarationValue(tokens, index, out _))
+        {
+            // a browser that reads no declaration directly in @scope drops it
+            findings.Errors.Add($"the CSS has the declaration '{tokens[index].Value}' outside any rule: write it in :scope {{ }}");
+        }
+        else if (state.Blocks.TryPeek(out var block) && block.Kind == CssTokenizer.TokenKind.OpenCurly)
+        {
+            ValidateCssDeclaration(tokens, index, findings, inDirectionRule: state.InDirectionRule);
+            ValidateCssShorthandParts(tokens, index, state.LateShorthands.Peek(), findings);
+            ValidateCssFocusRing(tokens, index, colorSettings, findings);
+        }
+    }
+
+    private void OpenCssRule(CssTokenState state, CssFindings findings)
+    {
+        ValidateCssSelector(state.Prelude, findings);
+        var opener = GetBlockOpener(state.Prelude, state.Openers);
+        if (GetCssBlockError(opener, state.Openers) is { } blockError)
+        {
+            findings.Errors.Add(blockError);
+        }
+
+        state.OpenRule(opener);
+    }
+
+    private void ReportCssFindings(CustomSectionCheck check, IList<CssTokenizer.Token> tokens, CssFindings findings)
+    {
         foreach (var error in findings.Errors.Distinct(StringComparer.Ordinal))
         {
             check.AddError(error);
@@ -529,7 +462,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     /// <param name="inDirectionRule">In a rule for one direction, where a side of the page is meant.</param>
     protected virtual void ValidateCssDeclaration(IList<CssTokenizer.Token> tokens, int index, CssFindings findings, bool inDirectionRule)
     {
-        if (ReadDeclarationValue(tokens, index) is not { } value)
+        if (!TryReadDeclarationValue(tokens, index, out var value))
         {
             return;
         }
@@ -552,18 +485,23 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         }
         else if (string.Equals(name, "position", StringComparison.OrdinalIgnoreCase))
         {
-            if (value.Exists(x => x.Kind == CssTokenizer.TokenKind.Ident && string.Equals(x.Value, "fixed", StringComparison.OrdinalIgnoreCase)))
-            {
-                findings.Errors.Add("the CSS has position: fixed, which puts the section over the page");
-            }
-            else if (value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && IsLateValueFunction(x.Value)) is { Value: { } function })
-            {
-                findings.Errors.Add($"the CSS sets position with {function.ToLowerInvariant()}(), which could make it fixed");
-            }
-            else if (!PositionValues.Contains(GetKeyword(value), StringComparer.OrdinalIgnoreCase))
-            {
-                findings.Errors.Add($"the CSS sets position to '{Quote(WriteCss(value))}', and a custom section's position is {JoinOr(PositionValues)}");
-            }
+            ValidateCssPosition(value, findings);
+        }
+    }
+
+    private static void ValidateCssPosition(List<CssTokenizer.Token> value, CssFindings findings)
+    {
+        if (value.Exists(x => IsIdent(x, "fixed")))
+        {
+            findings.Errors.Add("the CSS has position: fixed, which puts the section over the page");
+        }
+        else if (value.Find(x => x.Kind == CssTokenizer.TokenKind.Function && IsLateValueFunction(x.Value)) is { Value: { } function })
+        {
+            findings.Errors.Add($"the CSS sets position with {function.ToLowerInvariant()}(), which could make it fixed");
+        }
+        else if (!PositionValues.Contains(GetKeyword(value), StringComparer.OrdinalIgnoreCase))
+        {
+            findings.Errors.Add($"the CSS sets position to '{Quote(WriteCss(value))}', and a custom section's position is {JoinOr(PositionValues)}");
         }
     }
 
@@ -574,42 +512,55 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     /// <param name="colorSettings">The variables of the type's color-token settings, such as --setting-tone.</param>
     protected virtual void ValidateCssFocusRing(IList<CssTokenizer.Token> tokens, int index, IReadOnlySet<string> colorSettings, CssFindings findings)
     {
-        if (ReadDeclarationValue(tokens, index) is not { } value)
+        if (!TryReadDeclarationValue(tokens, index, out var value))
         {
             return;
         }
 
-        var name = tokens[index].Value.ToLowerInvariant();
-        // a function's arguments, such as the 0 of hsl(0 100% 50%), set no part of the ring: GetFocusRingFunction judges the function
-        var own = GetOwnTokens(value);
-        var keyword = GetKeyword(value);
         if (IsFocusRingVariable(tokens[index].Value, colorSettings))
         {
             findings.Errors.Add($"the CSS sets {tokens[index].Value}, a variable the focus ring may read, which could hide where the keyboard is on the page");
         }
-        else if (RemovesFocusRing(name, own))
+        else if (GetFocusRingValueError(tokens[index].Value.ToLowerInvariant(), value, colorSettings) is { } error)
         {
-            findings.Errors.Add($"the CSS sets {name} to none or 0, which hides where the keyboard is on the page");
-        }
-        else if (name is "outline" or "outline-color" && own.Exists(IsTransparent))
-        {
-            findings.Errors.Add($"the CSS sets {name} to transparent, which hides where the keyboard is on the page");
-        }
-        else if (keyword != null && IsHidingKeyword(name, keyword))
-        {
-            findings.Errors.Add($"the CSS sets {name} to {keyword.ToLowerInvariant()}, which could hide where the keyboard is on the page");
-        }
-        else if (GetFocusRingFunction(name, value, colorSettings) is { } function)
-        {
-            findings.Errors.Add($"the CSS sets {name} with {function.ToLowerInvariant()}(), which could hide where the keyboard is on the page");
-        }
-        else if (name == "outline" && keyword?.ToLowerInvariant() is not ("revert" or "revert-layer") &&
-            !own.Exists(x => x.Kind == CssTokenizer.TokenKind.Ident && OutlineStyles.Contains(x.Value)))
-        {
-            findings.Errors.Add("the CSS sets outline without a style, which the shorthand then sets to none, hiding where the keyboard is on the page: " +
-                "write one, such as solid");
+            findings.Errors.Add(error);
         }
     }
+
+    private static string GetFocusRingValueError(string name, List<CssTokenizer.Token> value, IReadOnlySet<string> colorSettings)
+    {
+        // a function's arguments, such as the 0 of hsl(0 100% 50%), set no part of the ring: GetFocusRingFunction judges the function
+        var own = GetOwnTokens(value);
+        var keyword = GetKeyword(value);
+        if (RemovesFocusRing(name, own))
+        {
+            return $"the CSS sets {name} to none or 0, which hides where the keyboard is on the page";
+        }
+
+        if (name is "outline" or "outline-color" && own.Exists(IsTransparent))
+        {
+            return $"the CSS sets {name} to transparent, which hides where the keyboard is on the page";
+        }
+
+        if (keyword != null && IsHidingKeyword(name, keyword))
+        {
+            return $"the CSS sets {name} to {keyword.ToLowerInvariant()}, which could hide where the keyboard is on the page";
+        }
+
+        if (GetFocusRingFunction(name, value, colorSettings) is { } function)
+        {
+            return $"the CSS sets {name} with {function.ToLowerInvariant()}(), which could hide where the keyboard is on the page";
+        }
+
+        return IsOutlineWithoutStyle(name, keyword, own)
+            ? "the CSS sets outline without a style, which the shorthand then sets to none, hiding where the keyboard is on the page: " +
+                "write one, such as solid"
+            : null;
+    }
+
+    private static bool IsOutlineWithoutStyle(string name, string keyword, List<CssTokenizer.Token> own) =>
+        name == "outline" && keyword?.ToLowerInvariant() is not ("revert" or "revert-layer") &&
+        !own.Exists(x => x.Kind == CssTokenizer.TokenKind.Ident && OutlineStyles.Contains(x.Value));
 
     /// <summary>
     /// A browser keeps a shorthand whose value holds var() as written, and its parts read empty until the page applies it. The storefront
@@ -619,7 +570,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     /// <param name="earlier">The block's shorthands with a late value that no later declaration has set a part of; a shorthand with one is added.</param>
     protected virtual void ValidateCssShorthandParts(IList<CssTokenizer.Token> tokens, int index, List<LateShorthand> earlier, CssFindings findings)
     {
-        if (ReadDeclarationValue(tokens, index) is not { } value)
+        if (!TryReadDeclarationValue(tokens, index, out var value))
         {
             return;
         }
@@ -657,25 +608,19 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { name, unprefixed };
     }
 
-    private static bool IsImportant(List<CssTokenizer.Token> value)
-    {
-        var tokens = value.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList();
-        return tokens.Count >= 2 && tokens[^2] is { Kind: CssTokenizer.TokenKind.Delim, Value: "!" } &&
-            tokens[^1] is { Kind: CssTokenizer.TokenKind.Ident } important && string.Equals(important.Value, "important", StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool IsImportant(List<CssTokenizer.Token> value) =>
+        value.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList() is [.., var bang, var important] && IsImportantFlag(bang, important);
 
     /// <returns>The one keyword a value is, !important aside; <c>null</c> for any other value.</returns>
-    private static string GetKeyword(List<CssTokenizer.Token> value)
+    private static string GetKeyword(List<CssTokenizer.Token> value) => value.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList() switch
     {
-        var tokens = value.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList();
-        if (tokens.Count == 3 && tokens[1] is { Kind: CssTokenizer.TokenKind.Delim, Value: "!" } &&
-            tokens[2] is { Kind: CssTokenizer.TokenKind.Ident } important && string.Equals(important.Value, "important", StringComparison.OrdinalIgnoreCase))
-        {
-            tokens.RemoveRange(1, 2);
-        }
+        [{ Kind: CssTokenizer.TokenKind.Ident } keyword] => keyword.Value,
+        [{ Kind: CssTokenizer.TokenKind.Ident } keyword, var bang, var important] when IsImportantFlag(bang, important) => keyword.Value,
+        _ => null,
+    };
 
-        return tokens is [{ Kind: CssTokenizer.TokenKind.Ident } keyword] ? keyword.Value : null;
-    }
+    private static bool IsImportantFlag(CssTokenizer.Token bang, CssTokenizer.Token important) =>
+        bang is { Kind: CssTokenizer.TokenKind.Delim, Value: "!" } && IsIdent(important, "important");
 
     protected virtual void AddColorWarning(CustomSectionCheck check, CssFindings findings)
     {
@@ -709,14 +654,20 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
 
         var side = value.Find(x => x.Kind == CssTokenizer.TokenKind.Ident && x.Value.ToLowerInvariant() is "left" or "right").Value?.ToLowerInvariant();
 
-        return side == null ? null : ($"{property}: {side}", $"{property}: {(side == "left" ? logicalValues.Left : logicalValues.Right)}");
+        if (side == null)
+        {
+            return null;
+        }
+
+        var logicalSide = side == "left" ? logicalValues.Left : logicalValues.Right;
+        return ($"{property}: {side}", $"{property}: {logicalSide}");
     }
 
     // a mask takes only the alpha of its colors, so black and transparent there are no colors of the design
     private static bool HasLiteralColor(string name, List<CssTokenizer.Token> value)
     {
         var property = name.ToLowerInvariant();
-        if ((property.StartsWith("-webkit-", StringComparison.Ordinal) ? property[8..] : property).StartsWith("mask", StringComparison.Ordinal))
+        if (property.StartsWith("mask", StringComparison.Ordinal) || property.StartsWith("-webkit-mask", StringComparison.Ordinal))
         {
             return false;
         }
@@ -724,15 +675,7 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         var takesNamedColors = !property.StartsWith("--", StringComparison.Ordinal) && ColorPropertyPattern.IsMatch(property);
         for (var i = 0; i < value.Count; i++)
         {
-            var token = value[i];
-            var isLiteral = token.Kind switch
-            {
-                CssTokenizer.TokenKind.Hash => true,
-                CssTokenizer.TokenKind.Function => ColorFunctions.Contains(token.Value) && !IsPaletteRelativeColor(value, i),
-                CssTokenizer.TokenKind.Ident => takesNamedColors && NamedColors.Contains(token.Value),
-                _ => false,
-            };
-            if (isLiteral)
+            if (IsLiteralColor(value, i, takesNamedColors))
             {
                 return true;
             }
@@ -741,21 +684,33 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         return false;
     }
 
+    private static bool IsLiteralColor(List<CssTokenizer.Token> value, int index, bool takesNamedColors)
+    {
+        var token = value[index];
+        return token.Kind switch
+        {
+            CssTokenizer.TokenKind.Hash => true,
+            CssTokenizer.TokenKind.Function => ColorFunctions.Contains(token.Value) && !IsPaletteRelativeColor(value, index),
+            CssTokenizer.TokenKind.Ident => takesNamedColors && NamedColors.Contains(token.Value),
+            _ => false,
+        };
+    }
+
     // a relative color from the palette, rgb(from var(--color-primary-500) r g b / 0.25), changes with it
     private static bool IsPaletteRelativeColor(List<CssTokenizer.Token> value, int function)
     {
         var arguments = value.Skip(function + 1).Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).Take(3).ToList();
-        if (arguments.Count < 2 || arguments[0].Kind != CssTokenizer.TokenKind.Ident || !string.Equals(arguments[0].Value, "from", StringComparison.OrdinalIgnoreCase))
+        if (arguments is not [var from, var origin, ..] || !IsIdent(from, "from"))
         {
             return false;
         }
 
-        return arguments[1] switch
+        return origin switch
         {
-            { Kind: CssTokenizer.TokenKind.Ident } origin => origin.Value.ToLowerInvariant() is "currentcolor" or "transparent",
-            { Kind: CssTokenizer.TokenKind.Function } origin when string.Equals(origin.Value, "var", StringComparison.OrdinalIgnoreCase) =>
-                arguments.Count > 2 && arguments[2].Kind == CssTokenizer.TokenKind.Ident &&
-                (arguments[2].Value.StartsWith("--color-", StringComparison.Ordinal) || arguments[2].Value.StartsWith("--setting-", StringComparison.Ordinal)),
+            { Kind: CssTokenizer.TokenKind.Ident } => origin.Value.ToLowerInvariant() is "currentcolor" or "transparent",
+            { Kind: CssTokenizer.TokenKind.Function } when string.Equals(origin.Value, "var", StringComparison.OrdinalIgnoreCase) =>
+                arguments is [_, _, { Kind: CssTokenizer.TokenKind.Ident } variable, ..] &&
+                (variable.Value.StartsWith("--color-", StringComparison.Ordinal) || variable.Value.StartsWith("--setting-", StringComparison.Ordinal)),
             _ => false,
         };
     }
@@ -836,11 +791,18 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         _ => null,
     };
 
-    private static bool IsColorVariable(List<CssTokenizer.Token> value, int function, IReadOnlySet<string> colorSettings) =>
-        string.Equals(value[function].Value, "var", StringComparison.OrdinalIgnoreCase) &&
-        value.Skip(function + 1).Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).Take(2).ToList() is
-            [{ Kind: CssTokenizer.TokenKind.Ident } variable, { Kind: CssTokenizer.TokenKind.CloseParen }] &&
-        IsPaletteVariable(variable.Value, colorSettings);
+    private static bool IsColorVariable(List<CssTokenizer.Token> value, int function, IReadOnlySet<string> colorSettings)
+    {
+        if (!string.Equals(value[function].Value, "var", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var arguments = value.Skip(function + 1).Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).Take(2).ToList();
+
+        return arguments is [{ Kind: CssTokenizer.TokenKind.Ident } variable, { Kind: CssTokenizer.TokenKind.CloseParen }, ..] &&
+            IsPaletteVariable(variable.Value, colorSettings);
+    }
 
     // the theme sets each --color-… variable to a color of its palette, and the storefront a color-token setting's to one of them, and the
     // type's CSS sets neither; any other variable, a number setting's included, may hold anything
@@ -851,11 +813,12 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     private static bool IsFocusRingVariable(string name, IReadOnlySet<string> colorSettings) =>
         name.StartsWith("--vc-focus-ring-", StringComparison.Ordinal) || IsPaletteVariable(name, colorSettings);
 
-    private static bool IsNone(CssTokenizer.Token token) =>
-        token.Kind == CssTokenizer.TokenKind.Ident && string.Equals(token.Value, "none", StringComparison.OrdinalIgnoreCase);
+    private static bool IsIdent(CssTokenizer.Token token, string name) =>
+        token.Kind == CssTokenizer.TokenKind.Ident && string.Equals(token.Value, name, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsTransparent(CssTokenizer.Token token) =>
-        token.Kind == CssTokenizer.TokenKind.Ident && string.Equals(token.Value, "transparent", StringComparison.OrdinalIgnoreCase);
+    private static bool IsNone(CssTokenizer.Token token) => IsIdent(token, "none");
+
+    private static bool IsTransparent(CssTokenizer.Token token) => IsIdent(token, "transparent");
 
     private static bool IsZero(CssTokenizer.Token token)
     {
@@ -872,51 +835,55 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
     private static bool HasReducedMotionQuery(IList<CssTokenizer.Token> tokens)
     {
         var meaningful = tokens.Where(x => x.Kind != CssTokenizer.TokenKind.Whitespace).ToList();
+        var following = meaningful.Skip(1);
 
-        return meaningful.Zip(meaningful.Skip(1), meaningful.Skip(2)).Any(x =>
-            x.First.Kind == CssTokenizer.TokenKind.Ident && string.Equals(x.First.Value, "prefers-reduced-motion", StringComparison.OrdinalIgnoreCase) &&
-            x.Second.Kind == CssTokenizer.TokenKind.Colon &&
-            x.Third.Kind == CssTokenizer.TokenKind.Ident && ReducedMotionValues.Contains(x.Third.Value));
+        return meaningful.Zip(following, following.Skip(1)).Any(x => IsReducedMotionFeature(x.First, x.Second, x.Third));
     }
+
+    private static bool IsReducedMotionFeature(CssTokenizer.Token name, CssTokenizer.Token colon, CssTokenizer.Token value) =>
+        IsIdent(name, "prefers-reduced-motion") && colon.Kind == CssTokenizer.TokenKind.Colon &&
+        value.Kind == CssTokenizer.TokenKind.Ident && ReducedMotionValues.Contains(value.Value);
 
     /// <summary>
     /// A declaration is a name and a colon whose value ends at a ';' or a '}'; a name, a colon and a block of its own is a nested rule, such as
     /// a:hover { }.
     /// </summary>
-    /// <returns>The value; <c>null</c> for no declaration.</returns>
-    private static List<CssTokenizer.Token> ReadDeclarationValue(IList<CssTokenizer.Token> tokens, int index)
+    /// <returns><c>false</c> for no declaration.</returns>
+    private static bool TryReadDeclarationValue(IList<CssTokenizer.Token> tokens, int index, out List<CssTokenizer.Token> value)
     {
+        value = null;
         var colon = index + 1;
         while (colon < tokens.Count && tokens[colon].Kind == CssTokenizer.TokenKind.Whitespace)
         {
             colon++;
         }
 
-        if (colon >= tokens.Count || tokens[colon].Kind != CssTokenizer.TokenKind.Colon)
-        {
-            return null;
-        }
+        return colon < tokens.Count && tokens[colon].Kind == CssTokenizer.TokenKind.Colon && TryReadValue(tokens, colon + 1, out value);
+    }
 
-        var value = new List<CssTokenizer.Token>();
+    private static bool TryReadValue(IList<CssTokenizer.Token> tokens, int start, out List<CssTokenizer.Token> value)
+    {
+        value = [];
         var depth = 0;
-        for (var i = colon + 1; i < tokens.Count; i++)
+        for (var i = start; i < tokens.Count; i++)
         {
             var token = tokens[i];
             if (depth == 0 && token.Kind is CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly)
             {
-                break;
+                return true;
             }
 
             if (depth == 0 && token.Kind == CssTokenizer.TokenKind.OpenCurly)
             {
-                return null;
+                value = null;
+                return false;
             }
 
             depth += GetDepthChange(token);
             value.Add(token);
         }
 
-        return value;
+        return true;
     }
 
     private static int GetDepthChange(CssTokenizer.Token token) => token.Kind switch
@@ -947,5 +914,179 @@ public class CustomSectionCssValidator(CustomSectionUrlPolicy urlPolicy)
         public List<string> ColorProperties { get; } = [];
 
         public bool Animates { get; set; }
+    }
+
+    private sealed class CssBlockReader
+    {
+        private readonly Stack<(CssTokenizer.TokenKind Closer, bool AtRule)> _blocks = new();
+        private int _rules;
+        private bool _inAtRulePrelude;
+
+        public int Depth => _blocks.Count;
+
+        public int AtRuleDepth { get; private set; }
+
+        public CssTokenizer.TokenKind? Unclosed => _blocks.Count == 0 ? null : _blocks.Peek().Closer;
+
+        public string Read(CssTokenizer.Token token)
+        {
+            // inside a function, a '(' or a '[', a ';' or '{' is part of it: it ends no at-rule's prelude and opens no rule
+            var ruleLevel = _blocks.Count == _rules;
+            switch (token.Kind)
+            {
+                case CssTokenizer.TokenKind.BadString:
+                    return "the CSS has a string that a line break cuts off";
+                case CssTokenizer.TokenKind.BadUrl:
+                    return "the CSS has a url( whose URL a quote, a parenthesis or a space breaks: quote the URL";
+                case CssTokenizer.TokenKind.AtKeyword:
+                    _inAtRulePrelude = true;
+                    break;
+                case CssTokenizer.TokenKind.Semicolon when ruleLevel:
+                    _inAtRulePrelude = false;
+                    break;
+                case CssTokenizer.TokenKind.OpenCurly when ruleLevel:
+                    OpenRule();
+                    break;
+                case CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.OpenParen or CssTokenizer.TokenKind.Function or CssTokenizer.TokenKind.OpenSquare:
+                    _blocks.Push((GetCloser(token.Kind), false));
+                    break;
+                case CssTokenizer.TokenKind.CloseCurly or CssTokenizer.TokenKind.CloseParen or CssTokenizer.TokenKind.CloseSquare:
+                    return Close(token, ruleLevel);
+            }
+
+            return null;
+        }
+
+        private void OpenRule()
+        {
+            _blocks.Push((CssTokenizer.TokenKind.CloseCurly, _inAtRulePrelude));
+            _rules++;
+            AtRuleDepth += _inAtRulePrelude ? 1 : 0;
+            _inAtRulePrelude = false;
+        }
+
+        private string Close(CssTokenizer.Token token, bool ruleLevel)
+        {
+            if (_blocks.Count == 0 || _blocks.Peek().Closer != token.Kind)
+            {
+                return $"the CSS has a '{token.Value}' without its pair";
+            }
+
+            AtRuleDepth -= _blocks.Pop().AtRule ? 1 : 0;
+            if (ruleLevel)
+            {
+                _rules--;
+                _inAtRulePrelude = false;
+            }
+
+            return null;
+        }
+
+        private static CssTokenizer.TokenKind GetCloser(CssTokenizer.TokenKind opener) => opener switch
+        {
+            CssTokenizer.TokenKind.OpenCurly => CssTokenizer.TokenKind.CloseCurly,
+            CssTokenizer.TokenKind.OpenSquare => CssTokenizer.TokenKind.CloseSquare,
+            _ => CssTokenizer.TokenKind.CloseParen,
+        };
+    }
+
+    private sealed class CssTokenState
+    {
+        // whether each open rule block is for one direction, as :dir(rtl) { } is
+        private readonly Stack<bool> _directionRules = new();
+
+        public Stack<CssTokenizer.Token> Blocks { get; } = new();
+
+        public Stack<string> OpenImageFunctions { get; } = new();
+
+        public bool PreludeNamesDirection { get; set; }
+
+        // a declaration starts the CSS or a block, or follows a ';' or a nested rule; an ident anywhere else is part of a value or a selector
+        public bool AtDeclarationStart { get; private set; } = true;
+
+        public List<CssTokenizer.Token> Prelude { get; } = [];
+
+        // what opened each block: an at-rule's name, a keyframe, or a style rule
+        public Stack<string> Openers { get; } = new();
+
+        // the shorthands with a late value of each open block's declarations that no later one has set a part of
+        public Stack<List<LateShorthand>> LateShorthands { get; } = new();
+
+        // only rule blocks are open: inside a function, a '(' or a '[', a ';', '{' or '}' is part of a prelude or a value, as a browser reads it
+        public bool RuleLevel => Blocks.Count == Openers.Count;
+
+        public bool InDirectionRule => _directionRules.Count > 0 && _directionRules.Peek();
+
+        public void OpenRule(string opener)
+        {
+            _directionRules.Push(InDirectionRule || PreludeNamesDirection);
+            PreludeNamesDirection = false;
+            Openers.Push(opener);
+            LateShorthands.Push([]);
+        }
+
+        public void Advance(CssTokenizer.Token token, bool ruleLevel)
+        {
+            var endsPrelude = ruleLevel && token.Kind is CssTokenizer.TokenKind.OpenCurly or CssTokenizer.TokenKind.Semicolon or CssTokenizer.TokenKind.CloseCurly;
+            if (token.Kind != CssTokenizer.TokenKind.Whitespace)
+            {
+                AtDeclarationStart = endsPrelude;
+            }
+
+            if (endsPrelude)
+            {
+                Prelude.Clear();
+            }
+            else
+            {
+                Prelude.Add(token);
+            }
+
+            switch (GetDepthChange(token))
+            {
+                case > 0:
+                    OpenBlock(token);
+                    break;
+                case < 0:
+                    CloseBlock(token, ruleLevel);
+                    break;
+            }
+        }
+
+        private void OpenBlock(CssTokenizer.Token token)
+        {
+            Blocks.Push(token);
+            if (IsImageFunction(token))
+            {
+                OpenImageFunctions.Push(token.Value.ToLowerInvariant());
+            }
+        }
+
+        private void CloseBlock(CssTokenizer.Token token, bool ruleLevel)
+        {
+            if (IsImageFunction(Blocks.Pop()))
+            {
+                OpenImageFunctions.Pop();
+            }
+
+            if (ruleLevel && token.Kind == CssTokenizer.TokenKind.CloseCurly)
+            {
+                CloseRule();
+            }
+        }
+
+        private void CloseRule()
+        {
+            _directionRules.Pop();
+            Openers.Pop();
+            LateShorthands.Pop();
+            // the declarations after a nested rule are a block of their own
+            if (LateShorthands.Count > 0)
+            {
+                LateShorthands.Peek().Clear();
+            }
+        }
+
+        private static bool IsImageFunction(CssTokenizer.Token token) => token.Kind == CssTokenizer.TokenKind.Function && ImageFunctions.Contains(token.Value);
     }
 }

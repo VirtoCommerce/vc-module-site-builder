@@ -20,7 +20,7 @@ public class CustomSectionService(IThemeStorageFactory themeStorageFactory, IThe
         {
             cancellationToken.ThrowIfCancellationRequested();
             var file = await themeDraftService.ReadAsync(storeId, $"{themeName}/{ThemeStorage.GetCustomSectionFile(type)}", cancellationToken);
-            if (Parse(file.Content) is { } content)
+            if (TryParse(file.Content, out var content))
             {
                 result[type] = content;
             }
@@ -29,20 +29,22 @@ public class CustomSectionService(IThemeStorageFactory themeStorageFactory, IThe
         return files == null ? result : ThemeCustomSections.WithFiles(result, themeName, files);
     }
 
-    private static JToken Parse(string content)
+    private static bool TryParse(string content, out JToken document)
     {
+        document = null;
         if (string.IsNullOrWhiteSpace(content))
         {
-            return null;
+            return false;
         }
 
         try
         {
-            return ThemeJson.Parse(content);
+            document = ThemeJson.Parse(content);
+            return true;
         }
         catch (JsonReaderException)
         {
-            return null;
+            return false;
         }
     }
 }

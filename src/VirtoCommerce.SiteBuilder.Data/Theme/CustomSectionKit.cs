@@ -147,7 +147,7 @@ public static class CustomSectionKit
 
         var written = name.Replace("-", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
 
-        return written != name.ToLowerInvariant() && (IsDenied(written) || LinkAttributes.Contains(written) || ImageAttributes.Contains(written));
+        return !string.Equals(written, name, StringComparison.OrdinalIgnoreCase) && (IsDenied(written) || LinkAttributes.Contains(written) || ImageAttributes.Contains(written));
     }
 
     private static bool IsDenied(string name) =>
@@ -162,43 +162,52 @@ public static class CustomSectionKit
 
     public static StorefrontKit Read(JObject catalog)
     {
-        var paletteTokens = (catalog?[PaletteTokensKey] as JObject)?.Properties()
-            .Where(x => x.Name is "light" or "dark")
-            .SelectMany(x => (x.Value as JArray)?.OfType<JValue>().Where(v => v.Type == JTokenType.String).Select(v => (string)v) ?? [])
-            .ToFrozenSet(StringComparer.Ordinal);
+        var paletteTokens = ReadPaletteTokens(catalog);
         var templateKeys = (catalog?[TemplatesKey] as JObject)?.Properties().Select(x => x.Name).ToFrozenSet(StringComparer.Ordinal);
         if (catalog?[KitKey] is not JObject kit)
         {
             return new StorefrontKit(catalog != null, Tags: null, Behaviors: null, Icons: null) { PaletteTokens = paletteTokens, TemplateKeys = templateKeys };
         }
 
-        var tags = ReadEntries(kit["tags"], TagPrefix, x => ReadFields(x["attributes"]));
-        // a stored catalog may name a behavior its upload would refuse now
-        var behaviors = ReadEntries(kit["behaviors"], string.Empty,
-                x => new KitBehavior(x["value"] is JObject value ? ReadField(value) : null, ReadFields(x["options"]),
-                    x["repeatsChildren"] is JValue { Type: JTokenType.Boolean } repeats && (bool)repeats)
-                {
-                    TextAttributes = (x[TextAttributesKey] as JArray)?.OfType<JValue>().Where(v => v.Type == JTokenType.String).Select(v => (string)v)
-                        .ToFrozenSet(StringComparer.Ordinal),
-                })
+        var tags = ReadEntries<IReadOnlyDictionary<string, KitField>>(kit["tags"], TagPrefix, x => ReadFields(x["attributes"]));
+
+        return new StorefrontKit(true, tags, ReadBehaviors(kit["behaviors"]), ReadNames(kit[IconsKey]))
+        {
+            PaletteTokens = paletteTokens, TemplateKeys = templateKeys, SideEffectTags = ReadSideEffectTags(kit["tags"]), TagCosts = ReadTagCosts(kit["tags"]),
+            Masks = ReadNames(kit[MasksKey]),
+        };
+    }
+
+    private static FrozenSet<string> ReadPaletteTokens(JObject catalog) =>
+        (catalog?[PaletteTokensKey] as JObject)?.Properties()
+            .Where(x => x.Name is "light" or "dark")
+            .SelectMany(x => ReadNames(x.Value) ?? [])
+            .ToFrozenSet(StringComparer.Ordinal);
+
+    // a stored catalog may name a behavior its upload would refuse now
+    private static Dictionary<string, KitBehavior> ReadBehaviors(JToken behaviors) =>
+        ReadEntries(behaviors, string.Empty, ReadBehavior)
             .Where(x => !IsReservedBehavior(x.Key))
             .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
-        var sideEffectTags = (kit["tags"] as JObject)?.Properties()
+
+    private static KitBehavior ReadBehavior(JObject behavior) =>
+        new(behavior["value"] is JObject value ? ReadField(value) : null, ReadFields(behavior["options"]),
+            behavior["repeatsChildren"] is JValue { Type: JTokenType.Boolean } repeats && (bool)repeats)
+        {
+            TextAttributes = ReadNames(behavior[TextAttributesKey]),
+        };
+
+    private static FrozenSet<string> ReadSideEffectTags(JToken tags) =>
+        (tags as JObject)?.Properties()
             .Where(x => x.Value is JObject tag && tag[HasSideEffectsKey] is JValue { Type: JTokenType.Boolean } sideEffects && (bool)sideEffects)
             .Select(x => x.Name)
             .ToFrozenSet(StringComparer.Ordinal);
 
-        // a stored catalog may hold a cost its upload would refuse now: it counts as none
-        var tagCosts = (kit["tags"] as JObject)?.Properties()
+    // a stored catalog may hold a cost its upload would refuse now: it counts as none
+    private static FrozenDictionary<string, int> ReadTagCosts(JToken tags) =>
+        (tags as JObject)?.Properties()
             .Where(x => x.Value is JObject tag && tag[CostKey] is JValue { Type: JTokenType.Integer, Value: >= 1L and <= (long)RenderBudget })
             .ToFrozenDictionary(x => x.Name, x => (int)(long)((JValue)x.Value[CostKey]).Value, StringComparer.Ordinal);
-
-        return new StorefrontKit(true, tags, behaviors, ReadNames(kit[IconsKey]))
-        {
-            PaletteTokens = paletteTokens, TemplateKeys = templateKeys, SideEffectTags = sideEffectTags, TagCosts = tagCosts,
-            Masks = ReadNames(kit[MasksKey]),
-        };
-    }
 
     private static FrozenSet<string> ReadNames(JToken names) =>
         (names as JArray)?.OfType<JValue>().Where(x => x.Type == JTokenType.String).Select(x => (string)x).ToFrozenSet(StringComparer.Ordinal);
@@ -206,7 +215,7 @@ public static class CustomSectionKit
     /// <returns>What is wrong with the kit's shape, naming where; <c>null</c> for a kit that is right or for none.</returns>
     public static string GetShapeError(JToken kit)
     {
-        if (kit is null || kit.Type == JTokenType.Null)
+        if (IsNone(kit))
         {
             return null;
         }
@@ -234,7 +243,7 @@ public static class CustomSectionKit
 
     private static string GetDesignError(JToken design)
     {
-        if (design is null || design.Type == JTokenType.Null)
+        if (IsNone(design))
         {
             return null;
         }
@@ -249,17 +258,13 @@ public static class CustomSectionKit
             return $"has a design with a key it does not have, '{unknown.Name}'";
         }
 
-        var isRight = IsTextOrNone(facts["containerMaxWidth"]) && IsTextOrNone(facts["containerName"]) &&
-            IsMapOrNone(facts["breakpoints"], IsDesignText) &&
-            IsMapOrNone(facts["tokens"], x => x is JObject token && token.Properties().All(p => DesignTokenKeys.Contains(p.Name) && IsDesignText(p.Value)));
-
-        return isRight ? null : string.Create(CultureInfo.InvariantCulture, $"has a design whose breakpoints, containerMaxWidth, tokens or containerName are " +
+        return IsDesign(facts) ? null : string.Create(CultureInfo.InvariantCulture, $"has a design whose breakpoints, containerMaxWidth, tokens or containerName are " +
             $"not texts as the storefront sends them, at most {MaxDesignEntries} entries each of at most {MaxDesignTextLength} characters");
     }
 
     private static string GetNamesError(JToken names, string key)
     {
-        if (names is null || names.Type == JTokenType.Null)
+        if (IsNone(names))
         {
             return null;
         }
@@ -274,12 +279,21 @@ public static class CustomSectionKit
         return null;
     }
 
-    private static bool IsTextOrNone(JToken token) => token is null || token.Type == JTokenType.Null || IsDesignText(token);
+    private static bool IsDesign(JObject facts) =>
+        IsTextOrNone(facts["containerMaxWidth"]) && IsTextOrNone(facts["containerName"]) &&
+        IsMapOrNone(facts["breakpoints"], IsDesignText) && IsMapOrNone(facts["tokens"], IsDesignToken);
+
+    private static bool IsDesignToken(JToken value) =>
+        value is JObject token && token.Properties().All(p => DesignTokenKeys.Contains(p.Name) && IsDesignText(p.Value));
+
+    private static bool IsNone(JToken token) => token is null || token.Type == JTokenType.Null;
+
+    private static bool IsTextOrNone(JToken token) => IsNone(token) || IsDesignText(token);
 
     private static bool IsDesignText(JToken token) => token is JValue { Type: JTokenType.String } text && ((string)text).Length <= MaxDesignTextLength;
 
     private static bool IsMapOrNone(JToken token, Func<JToken, bool> isValue) =>
-        token is null || token.Type == JTokenType.Null ||
+        IsNone(token) ||
         (token is JObject map && map.Count <= MaxDesignEntries && map.Properties().All(x => x.Name.Length <= MaxDesignTextLength && isValue(x.Value)));
 
     private static string GetNameLengthError(string name) =>
@@ -288,7 +302,7 @@ public static class CustomSectionKit
     /// <param name="getEntryError">With the entry's name.</param>
     private static string GetEntriesError(JToken entries, string name, int max, Func<string, string> getNameError, Func<string, JObject, string> getEntryError)
     {
-        if (entries is null || entries.Type == JTokenType.Null)
+        if (IsNone(entries))
         {
             return null;
         }
@@ -317,17 +331,40 @@ public static class CustomSectionKit
 
     private static string GetTagError(JObject tag) =>
         GetKeysError(tag, TagKeys)
-        ?? (tag[CostKey] is null or { Type: JTokenType.Null } or JValue { Type: JTokenType.Integer, Value: >= 1L and <= (long)RenderBudget } ? null
-            : string.Create(CultureInfo.InvariantCulture, $"has a cost that is not a whole number from 1 to {RenderBudget}"))
+        ?? GetCostError(tag[CostKey])
         ?? (tag[HasSideEffectsKey] is null or { Type: JTokenType.Null or JTokenType.Boolean } ? null : "has a hasSideEffects that is not true or false")
-        ?? ((tag["attributes"] as JObject)?.Count > MaxFields ? string.Create(CultureInfo.InvariantCulture, $"has more than {MaxFields} attributes") : null)
-        ?? GetFieldsError(tag["attributes"], "attribute",
-            x => IsDeniedAttribute(x) ? "no kit tag takes" : IsReservedDataAttribute(x) ? "the storefront writes itself" : null);
+        ?? GetAttributesError(tag["attributes"]);
 
-    private static string GetBehaviorNameError(string name) =>
-        !NamePattern.IsMatch(name) ? "is not lowercase words joined by '-'"
-        : IsReservedBehavior(name) ? "is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do"
-        : null;
+    private static string GetCostError(JToken cost) => cost switch
+    {
+        null or { Type: JTokenType.Null } or JValue { Type: JTokenType.Integer, Value: >= 1L and <= (long)RenderBudget } => null,
+        _ => string.Create(CultureInfo.InvariantCulture, $"has a cost that is not a whole number from 1 to {RenderBudget}"),
+    };
+
+    private static string GetAttributesError(JToken attributes) =>
+        (attributes as JObject)?.Count > MaxFields
+            ? string.Create(CultureInfo.InvariantCulture, $"has more than {MaxFields} attributes")
+            : GetFieldsError(attributes, "attribute", GetAttributeNameError);
+
+    private static string GetAttributeNameError(string name)
+    {
+        if (IsDeniedAttribute(name))
+        {
+            return "no kit tag takes";
+        }
+
+        return IsReservedDataAttribute(name) ? "the storefront writes itself" : null;
+    }
+
+    private static string GetBehaviorNameError(string name)
+    {
+        if (!NamePattern.IsMatch(name))
+        {
+            return "is not lowercase words joined by '-'";
+        }
+
+        return IsReservedBehavior(name) ? "is the name of a binding, or is sb or pb, or starts with sb- or pb-, as the storefront's own attributes do" : null;
+    }
 
     private static string GetKeysError(JObject entry, IReadOnlySet<string> keys)
     {
@@ -358,36 +395,46 @@ public static class CustomSectionKit
             return $"has a value that {valueError}";
         }
 
+        return GetFieldCountError(behavior)
+            ?? GetWritesError(behavior["writes"])
+            ?? (behavior["repeatsChildren"] is { Type: not (JTokenType.Null or JTokenType.Boolean) } ? "has a repeatsChildren that is not true or false" : null)
+            ?? GetTextAttributesError(name, behavior)
+            ?? GetFieldsError(behavior["options"], "option", _ => null);
+    }
+
+    private static string GetFieldCountError(JObject behavior)
+    {
         if ((behavior["options"] as JObject)?.Count + (behavior["value"] is { Type: not JTokenType.Null } ? 1 : 0) > MaxFields)
         {
             return string.Create(CultureInfo.InvariantCulture, $"has more than {MaxFields} fields, its options and its value together");
         }
 
-        if (behavior["writes"] is { Type: not JTokenType.Null } writes &&
-            !(writes is JArray list && list.Count <= MaxWrites && list.All(x => x is JValue { Type: JTokenType.String } write && ((string)write).Length <= MaxWriteLength)))
-        {
-            return string.Create(CultureInfo.InvariantCulture, $"has writes that are not a list of at most {MaxWrites} names, each of at most {MaxWriteLength} characters");
-        }
+        return null;
+    }
 
-        if (behavior["repeatsChildren"] is { Type: not (JTokenType.Null or JTokenType.Boolean) })
-        {
-            return "has a repeatsChildren that is not true or false";
-        }
+    private static string GetWritesError(JToken writes) => writes switch
+    {
+        null or { Type: JTokenType.Null } => null,
+        JArray list when list.Count <= MaxWrites && list.All(x => x is JValue { Type: JTokenType.String } write && ((string)write).Length <= MaxWriteLength) => null,
+        _ => string.Create(CultureInfo.InvariantCulture, $"has writes that are not a list of at most {MaxWrites} names, each of at most {MaxWriteLength} characters"),
+    };
 
-        // the storefront leaves out the template's text in an element with one, so it is the behavior's own attribute or an option's
+    // the storefront leaves out the template's text in an element with one, so it is the behavior's own attribute or an option's
+    private static string GetTextAttributesError(string name, JObject behavior)
+    {
         var ownAttributes = ((behavior["options"] as JObject)?.Properties().Select(x => $"{DataPrefix}{name}-{x.Name}") ?? []).Prepend(DataPrefix + name).ToList();
-        if (behavior[TextAttributesKey] is { Type: not JTokenType.Null } textAttributes &&
-            !(textAttributes is JArray attributes && attributes.All(x => x is JValue { Type: JTokenType.String } attribute && ownAttributes.Contains((string)attribute, StringComparer.Ordinal))))
-        {
-            return "has textAttributes that are not a list of its own data-{name} attribute and its options'";
-        }
 
-        return GetFieldsError(behavior["options"], "option", _ => null);
+        return behavior[TextAttributesKey] switch
+        {
+            null or { Type: JTokenType.Null } => null,
+            JArray attributes when attributes.All(x => x is JValue { Type: JTokenType.String } attribute && ownAttributes.Contains((string)attribute, StringComparer.Ordinal)) => null,
+            _ => "has textAttributes that are not a list of its own data-{name} attribute and its options'",
+        };
     }
 
     private static string GetFieldsError(JToken fields, string name, Func<string, string> getNameError)
     {
-        if (fields is null || fields.Type == JTokenType.Null)
+        if (IsNone(fields))
         {
             return null;
         }
@@ -427,49 +474,71 @@ public static class CustomSectionKit
             return "has no type of string, number, boolean, select, date or link";
         }
 
-        if (field["options"] is JArray { Count: > MaxOptions })
+        return GetOptionsError(field["options"])
+            ?? GetOptionsFromError(field, (string)type)
+            ?? GetRangeError(field)
+            ?? GetDescriptionError(field);
+    }
+
+    private static string GetOptionsError(JToken options)
+    {
+        if (options is JArray { Count: > MaxOptions })
         {
             return string.Create(CultureInfo.InvariantCulture, $"has more than {MaxOptions} options");
         }
 
-        if ((field["options"] as JArray)?.OfType<JObject>().SelectMany(x => x.Properties()).FirstOrDefault(x => !OptionKeys.Contains(x.Name)) is { } unknownKey)
+        if ((options as JArray)?.OfType<JObject>().SelectMany(x => x.Properties()).FirstOrDefault(x => !OptionKeys.Contains(x.Name)) is { } unknownKey)
         {
             return $"has an option with a key it does not take, '{unknownKey.Name}'";
         }
 
-        if (field["options"] is { Type: not JTokenType.Null } options && !(options is JArray list && list.All(IsOption)))
+        if (options is { Type: not JTokenType.Null } && !(options is JArray list && list.All(IsOption)))
         {
             return string.Create(CultureInfo.InvariantCulture, $"has options that are not a list of values, or of {{ value, label }}, each text of at most {MaxOptionLength} characters");
         }
 
+        return null;
+    }
+
+    private static string GetOptionsFromError(JObject field, string type)
+    {
         if (field["optionsFrom"] is { Type: not JTokenType.Null } optionsFrom &&
-            !((string)type == SelectType && optionsFrom is JValue { Type: JTokenType.String } source && (string)source is IconsKey or MasksKey))
+            !(type == SelectType && optionsFrom is JValue { Type: JTokenType.String } source && (string)source is IconsKey or MasksKey))
         {
             return $"has an optionsFrom other than \"{IconsKey}\" or \"{MasksKey}\" of a select";
         }
 
         // no literal could be one of its values
-        if ((string)type == SelectType && field["options"] is null or { Type: JTokenType.Null } && field["optionsFrom"] is null or { Type: JTokenType.Null })
+        if (type == SelectType && IsNone(field["options"]) && IsNone(field["optionsFrom"]))
         {
             return "is a select with neither options nor optionsFrom";
         }
 
-        if (field["min"] is { Type: not JTokenType.Null } min && GetNumber(min) == null ||
-            field["max"] is { Type: not JTokenType.Null } max && GetNumber(max) == null)
-        {
-            return "has a min or a max that is not a number within range";
-        }
-
-        return GetDescriptionError(field);
+        return null;
     }
 
+    private static string GetRangeError(JObject field) =>
+        IsNumberOrNone(field["min"]) && IsNumberOrNone(field["max"]) ? null : "has a min or a max that is not a number within range";
+
+    private static bool IsNumberOrNone(JToken token) => IsNone(token) || GetNumber(token) != null;
+
     private static bool IsOption(JToken option) =>
-        GetOptionValue(option) is { } value && Convert.ToString(value.Value, CultureInfo.InvariantCulture).Length <= MaxOptionLength &&
-        (option is not JObject item || item["label"] is null or { Type: JTokenType.Null } || item["label"] is JValue { Type: JTokenType.String } label && ((string)label).Length <= MaxOptionLength);
+        GetOptionValue(option) is { } value && value.Length <= MaxOptionLength && IsOptionLabel((option as JObject)?["label"]);
+
+    private static bool IsOptionLabel(JToken label) => label switch
+    {
+        null or { Type: JTokenType.Null } => true,
+        JValue { Type: JTokenType.String } text => ((string)text).Length <= MaxOptionLength,
+        _ => false,
+    };
 
     // a value, or an object with its value and its label
-    private static JValue GetOptionValue(JToken option) =>
-        (option is JObject item ? item["value"] : option) as JValue is { Type: JTokenType.String or JTokenType.Integer or JTokenType.Float } value ? value : null;
+    private static string GetOptionValue(JToken option)
+    {
+        var value = option is JObject item ? item["value"] : option;
+
+        return value is JValue { Type: JTokenType.String or JTokenType.Integer or JTokenType.Float } literal ? Convert.ToString(literal.Value, CultureInfo.InvariantCulture) : null;
+    }
 
     private static Dictionary<string, T> ReadEntries<T>(JToken entries, string prefix, Func<JObject, T> read) =>
         (entries as JObject)?.Properties()
@@ -477,7 +546,7 @@ public static class CustomSectionKit
             .ToDictionary(x => x.Name, x => read((JObject)x.Value), StringComparer.Ordinal)
         ?? new Dictionary<string, T>(StringComparer.Ordinal);
 
-    private static IReadOnlyDictionary<string, KitField> ReadFields(JToken fields) =>
+    private static Dictionary<string, KitField> ReadFields(JToken fields) =>
         (fields as JObject)?.Properties()
             .Where(x => x.Value is JObject)
             .ToDictionary(x => x.Name, x => ReadField((JObject)x.Value), StringComparer.Ordinal)
@@ -488,7 +557,6 @@ public static class CustomSectionKit
         (field["options"] as JArray)?
             .Select(GetOptionValue)
             .Where(x => x != null)
-            .Select(x => Convert.ToString(x.Value, CultureInfo.InvariantCulture))
             .ToList(),
         GetNumber(field["min"]),
         GetNumber(field["max"]),

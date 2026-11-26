@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -12,9 +11,9 @@ using Newtonsoft.Json.Linq;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.Platform.Core.Common;
-using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
@@ -37,9 +36,8 @@ public class DraftTools(
     ISiteBuilderContentQueryService contentQueryService,
     IContentPermissionService contentPermissionService,
     IFilePageOperationService filePageOperationService,
-    ISiteBuilderSectionScanner sectionScanner,
+    SectionTypePages sectionTypePages,
     IStoreService storeService,
-    Func<UserManager<ApplicationUser>> userManagerFactory,
     ILogger<DraftTools> logger)
 {
     public const string PageKind = "page";
@@ -135,17 +133,7 @@ public class DraftTools(
         var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = storeId }, context.User, cancellationToken);
         SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{storeId}'", $"Your builder:read permission does not cover store '{storeId}'.");
 
-        if (!status.Value.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
-        {
-            throw new McpException($"'{path}' has no unpublished changes, so there is nothing to discard. The files with drafts: " +
-                $"{(status.Value.Drafts.Count == 0 ? "none" : string.Join(", ", status.Value.Drafts))}.");
-        }
-
-        var newType = status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase) ? ThemeCustomSections.GetCustomSectionType(pathInTheme) : null;
-        if (newType == null && status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
-        {
-            throw new McpException($"'{path}' was never published, so its draft is all there is and is not discarded. Change it with the design tools instead.");
-        }
+        var newType = GetNewTypeToDiscard(status.Value, path, pathInTheme);
 
         var change = new SiteBuilderChange
         {
@@ -199,23 +187,41 @@ public class DraftTools(
         return change;
     }
 
+    private static string GetNewTypeToDiscard(ThemeStatus status, string path, string pathInTheme)
+    {
+        if (!status.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new McpException($"'{path}' has no unpublished changes, so there is nothing to discard. The files with drafts: " +
+                $"{(status.Drafts.Count == 0 ? "none" : string.Join(", ", status.Drafts))}.");
+        }
+
+        var newType = status.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase) ? ThemeCustomSections.GetCustomSectionType(pathInTheme) : null;
+        if (newType == null && status.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new McpException($"'{path}' was never published, so its draft is all there is and is not discarded. Change it with the design tools instead.");
+        }
+
+        return newType;
+    }
+
     private async Task<string> DescribeLostTypeAsync(ClaimsPrincipal user, string storeId, string path, string type, CancellationToken cancellationToken)
     {
         var draft = await ThemeFiles.ReadAsync(designerOperationService, user, storeId, path, cancellationToken);
         var language = (await storeService.GetNoCloneAsync(storeId))?.DefaultLanguage;
-        var name = ThemeCustomSections.GetName(ReadType(draft.Content)?[ThemeCustomSections.NameKey], language) ?? type;
-        var pages = await SectionTypePages.DescribePublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type,
-            cancellationToken);
+        var name = ReadName(draft.Content, language) ?? type;
+        var pages = await sectionTypePages.DescribePublishedAndDraftsAsync(user, storeId, type, cancellationToken);
 
         return $"Section type '{CustomSectionText.Quote(name)}' ({type}) is deleted for good: an AI agent created it for this store, it was never " +
             $"published, and its draft is its only copy, so it cannot be restored. {pages}";
     }
 
-    private static JObject ReadType(string content)
+    private static string ReadName(string content, string language)
     {
         try
         {
-            return string.IsNullOrWhiteSpace(content) ? null : ThemeJson.Parse(content) as JObject;
+            return string.IsNullOrWhiteSpace(content)
+                ? null
+                : ThemeCustomSections.GetName((ThemeJson.Parse(content) as JObject)?[ThemeCustomSections.NameKey], language);
         }
         catch (JsonReaderException)
         {

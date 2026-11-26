@@ -47,14 +47,17 @@ public class ThemeSnapshotContent : ICloneable
         var result = (ThemeSnapshotContent)MemberwiseClone();
 
         result.Rules = Rules?.CloneTyped();
-        result.Templates = Templates?.ToDictionary(x => x.Key, x => (JObject)x.Value?.DeepClone());
+        result.Templates = CloneObjects(Templates);
         result.Header = (JObject)Header?.DeepClone();
         result.Footer = (JObject)Footer?.DeepClone();
         result.Brand = Brand?.CloneTyped();
         result.Palette = Palette?.CloneTyped();
-        result.CustomSections = CustomSections?.ToDictionary(x => x.Key, x => (JObject)x.Value?.DeepClone());
+        result.CustomSections = CloneObjects(CustomSections);
         result.Menus = Menus?.ToList();
 
         return result;
     }
+
+    private static Dictionary<string, JObject> CloneObjects(IDictionary<string, JObject> objects) =>
+        objects?.ToDictionary(x => x.Key, x => (JObject)x.Value?.DeepClone());
 }

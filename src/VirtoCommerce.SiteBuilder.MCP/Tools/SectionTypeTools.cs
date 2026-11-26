@@ -1,15 +1,13 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
-using VirtoCommerce.Platform.Core.Security;
-using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Theme;
@@ -26,8 +24,7 @@ public class SectionTypeTools(
     IDesignerOperationService designerOperationService,
     IThemeStorageFactory themeStorageFactory,
     ISchemaCatalogService schemaCatalogService,
-    ISiteBuilderSectionScanner sectionScanner,
-    Func<UserManager<ApplicationUser>> userManagerFactory)
+    SectionTypePages sectionTypePages)
 {
     private const string CreateAction = "create_section_type";
     private const string ChangeAction = "change_section_type";
@@ -40,6 +37,8 @@ public class SectionTypeTools(
     private const string CssDescription = "The CSS, which reaches only the type's sections; :scope is the section's root. Omit it for none.";
     private const string DryRunDescription = "true to check the type and return its errors, its warnings and what it would change, without saving it.";
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = CreateAction, ReadOnly = false, Destructive = false, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -67,6 +66,8 @@ public class SectionTypeTools(
         CancellationToken cancellationToken = default) =>
         SaveAsync(context.User, new SectionTypeRequest(store_id, type, name, schema, template, css, VersionToken: null, Create: true), dryRun, cancellationToken);
 
+    [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+        Justification = "Each parameter is an argument of the MCP tool's input schema.")]
     [McpServerTool(Name = ChangeAction, ReadOnly = false, Destructive = true, Idempotent = false)]
     [McpPermission(Read)]
     [Authorize(Update)]
@@ -104,13 +105,7 @@ public class SectionTypeTools(
 
         await authorizationService.EnsureStoreAllowedAsync(user, storeId);
 
-        var key = request.Type?.Trim();
-        if (string.IsNullOrEmpty(key) || !ThemeStorage.IsCustomSectionType(key))
-        {
-            throw new McpException($"type is not a custom section type, which {ThemeCustomSections.DescribeType()}, " +
-                "for example 'custom-stats-band'.");
-        }
-
+        var key = GetSectionType(request);
         if (request.Name == null || request.Schema == null || request.Template == null)
         {
             throw new McpException("Pass name, schema and template: the call saves the whole type.");
@@ -119,6 +114,52 @@ public class SectionTypeTools(
         var resource = $"site-builder://stores/{storeId}/custom-sections/{key}";
         var path = await ThemeFiles.GetPathAsync(themeStorageFactory, storeId, ThemeStorage.GetCustomSectionFile(key));
         var current = await ThemeFiles.ReadAsync(designerOperationService, user, storeId, path, cancellationToken);
+        EnsureCanSave(request, current, key, path, resource);
+
+        var content = GetContent(request);
+        var change = new ThemeFileChange
+        {
+            Action = request.Create ? CreateAction : ChangeAction,
+            ObjectType = "section-type",
+            ObjectId = path,
+            ObjectName = $"Section type '{key}'",
+            StoreId = storeId,
+        };
+
+        var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, storeId, cancellationToken);
+        await ThemeFileEdits.SaveAsync(change, designerOperationService, user,
+            new ThemeFileSaveTarget(storeId, catalogHash, dryRun, Theme, $"Read it again at {resource} and repeat the change on that version."),
+            [new ThemeFileEdit(path, current, content)], cancellationToken);
+
+        if (change.Errors != null)
+        {
+            return change;
+        }
+
+        if (!request.Create)
+        {
+            change.PlacedSections = await DescribePlacementsAsync(user, storeId, key, current.Content, request.Schema, cancellationToken);
+        }
+
+        change.NextStep = GetNextStep(change, request.Create, key, path, dryRun);
+
+        return change;
+    }
+
+    private static string GetSectionType(SectionTypeRequest request)
+    {
+        var key = request.Type?.Trim();
+        if (string.IsNullOrEmpty(key) || !ThemeStorage.IsCustomSectionType(key))
+        {
+            throw new McpException($"type is not a custom section type, which {ThemeCustomSections.DescribeType()}, " +
+                "for example 'custom-stats-band'.");
+        }
+
+        return key;
+    }
+
+    private static void EnsureCanSave(SectionTypeRequest request, ThemeFileContent current, string key, string path, string resource)
+    {
         if (request.Create && current.Content != null)
         {
             throw new McpException($"The theme has the custom section type '{key}' already, so nothing was saved. Change it with change_section_type " +
@@ -141,56 +182,32 @@ public class SectionTypeTools(
         {
             throw new McpException($"Section type '{key}' changed since you read it, so nothing was saved. Read it again at {resource} and make the change on that version.");
         }
+    }
 
-        var content = new JsonObject
-        {
-            [ThemeCustomSections.FormatKey] = ThemeCustomSections.Format,
-            [ThemeCustomSections.NameKey] = request.Name.DeepClone(),
-            [ThemeCustomSections.SchemaKey] = request.Schema.DeepClone(),
-            [ThemeCustomSections.TemplateKey] = request.Template,
-            [ThemeCustomSections.CssKey] = request.Css ?? string.Empty,
-        }.ToJsonString(PageDocumentEditor.WriteOptions);
+    private static string GetContent(SectionTypeRequest request) => new JsonObject
+    {
+        [ThemeCustomSections.FormatKey] = ThemeCustomSections.Format,
+        [ThemeCustomSections.NameKey] = request.Name.DeepClone(),
+        [ThemeCustomSections.SchemaKey] = request.Schema.DeepClone(),
+        [ThemeCustomSections.TemplateKey] = request.Template,
+        [ThemeCustomSections.CssKey] = request.Css ?? string.Empty,
+    }.ToJsonString(PageDocumentEditor.WriteOptions);
 
-        var change = new ThemeFileChange
-        {
-            Action = request.Create ? CreateAction : ChangeAction,
-            ObjectType = "section-type",
-            ObjectId = path,
-            ObjectName = $"Section type '{key}'",
-            StoreId = storeId,
-        };
-
-        var catalogHash = await ThemeFiles.RequireCatalogHashAsync(schemaCatalogService, storeId, cancellationToken);
-        await ThemeFileEdits.SaveAsync(change, designerOperationService, user,
-            new ThemeFileSaveTarget(storeId, catalogHash, dryRun, Theme, $"Read it again at {resource} and repeat the change on that version."),
-            [new ThemeFileEdit(path, current, content)], cancellationToken);
-
-        if (change.Errors != null)
-        {
-            return change;
-        }
-
+    private static string GetNextStep(ThemeFileChange change, bool create, string key, string path, bool dryRun)
+    {
         var steps = new List<string>();
         if (dryRun && change.Changes.Count > 0)
         {
             steps.Add($"Call {change.Action} again without dryRun to save the type.");
         }
 
-        if (request.Create)
+        if (create)
         {
             steps.Add($"Place it with edit_page_draft (add_section, type '{key}', with its settings).");
         }
-        else
+        else if (GetPlacedSectionsStep(change.PlacedSections) is { } placedSectionsStep)
         {
-            change.PlacedSections = await DescribePlacementsAsync(user, storeId, key, current.Content, request.Schema, cancellationToken);
-            if (change.PlacedSections?.NewSettings.Count > 0 && change.PlacedSections.Pages.Count > 0)
-            {
-                steps.Add("The sections placed before show the new settings' defaults (placed_sections): set them per page with edit_page_draft " +
-                    "(set_section_settings), or on every placement with update_sections_bulk" +
-                    (change.PlacedSections.Pages.Any(x => x.SharedComponentIds.Count > 0)
-                        ? "; those of a placed Shared Component (shared_component_ids) on the component, with change_shared_component."
-                        : "."));
-            }
+            steps.Add(placedSectionsStep);
         }
 
         if (change.NextStep != null)
@@ -203,9 +220,21 @@ public class SectionTypeTools(
             steps.Add($"To change the type again, pass version_tokens['{path}'] of this answer as version_token.");
         }
 
-        change.NextStep = steps.Count > 0 ? string.Join(' ', steps) : null;
+        return steps.Count > 0 ? string.Join(' ', steps) : null;
+    }
 
-        return change;
+    private static string GetPlacedSectionsStep(SectionTypePlacements placedSections)
+    {
+        if (!(placedSections?.NewSettings.Count > 0 && placedSections.Pages.Count > 0))
+        {
+            return null;
+        }
+
+        return "The sections placed before show the new settings' defaults (placed_sections): set them per page with edit_page_draft " +
+            "(set_section_settings), or on every placement with update_sections_bulk" +
+            (placedSections.Pages.Any(x => x.SharedComponentIds.Count > 0)
+                ? "; those of a placed Shared Component (shared_component_ids) on the component, with change_shared_component."
+                : ".");
     }
 
     private async Task<SectionTypePlacements> DescribePlacementsAsync(ClaimsPrincipal user, string storeId, string type, string currentContent, JsonObject schema,
@@ -217,8 +246,7 @@ public class SectionTypeTools(
             return null;
         }
 
-        var (pages, coverage) = await SectionTypePages.FindAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type, published: false,
-            cancellationToken);
+        var (pages, coverage) = await sectionTypePages.FindAsync(user, storeId, type, published: false, cancellationToken);
 
         return settings.ToPlacements(pages, coverage);
     }

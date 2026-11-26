@@ -150,7 +150,7 @@ public static class CustomSectionCssSelector
             CssTokenizer.TokenKind.Ident when IsDocumentType(token) => Document,
             CssTokenizer.TokenKind.Function => $"has '{token.Value}(' outside a pseudo-class",
             CssTokenizer.TokenKind.OpenParen => "has a '(' outside a pseudo-class",
-            CssTokenizer.TokenKind.CloseParen => _groups.TryPop(out _) ? null : "has a ')' without its pair",
+            CssTokenizer.TokenKind.CloseParen => CloseGroup(),
             _ => null,
         };
 
@@ -169,55 +169,59 @@ public static class CustomSectionCssSelector
             }
 
             var token = next < tokens.Count ? tokens[next] : default;
-            if (token.Kind == CssTokenizer.TokenKind.Ident)
-            {
-                _index = next;
-                if (string.Equals(token.Value, RootPseudo, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Document;
-                }
-
-                return string.Equals(token.Value, ScopePseudo, StringComparison.OrdinalIgnoreCase) ? Anchor() : null;
-            }
-
-            if (token.Kind != CssTokenizer.TokenKind.Function)
+            if (token.Kind is not (CssTokenizer.TokenKind.Ident or CssTokenizer.TokenKind.Function))
             {
                 return null;
             }
 
             _index = next;
-            var pseudo = prefix + token.Value.ToLowerInvariant();
-            if (string.Equals(token.Value, HasPseudo, StringComparison.OrdinalIgnoreCase))
+            return token.Kind == CssTokenizer.TokenKind.Ident ? ReadPseudoName(token.Value) : ReadPseudoFunction(prefix, token.Value);
+        }
+
+        private string ReadPseudoName(string name)
+        {
+            if (string.Equals(name, RootPseudo, StringComparison.OrdinalIgnoreCase))
             {
-                _groups.Push(new Group(pseudo + "()", isHas: true));
+                return Document;
+            }
+
+            return string.Equals(name, ScopePseudo, StringComparison.OrdinalIgnoreCase) ? Anchor() : null;
+        }
+
+        private string ReadPseudoFunction(string prefix, string name)
+        {
+            var pseudo = prefix + name.ToLowerInvariant();
+            var isHas = string.Equals(name, HasPseudo, StringComparison.OrdinalIgnoreCase);
+            if (isHas || CompoundArgumentPseudos.Contains(name))
+            {
+                _groups.Push(new Group(pseudo + "()", isHas));
                 return null;
             }
 
-            if (CompoundArgumentPseudos.Contains(token.Value))
+            if (NthChildPseudos.Contains(name) && FindNthOf() is { } of)
             {
-                _groups.Push(new Group(pseudo + "()", isHas: false));
-                return null;
+                return ReadNthOf(pseudo, of);
             }
 
-            if (NthChildPseudos.Contains(token.Value) && FindNthOf() is { } of)
-            {
-                // the root's siblings are outside the section
-                if (_anchored && _inFirstCompound)
-                {
-                    return $"{Outside}{pseudo}(… of …) on :scope or & counts the section's siblings";
-                }
-
-                _groups.Push(new Group(pseudo + "(… of …)", isHas: false));
-                _index = of + 1 < tokens.Count && tokens[of + 1].Kind == CssTokenizer.TokenKind.Whitespace ? of + 1 : of;
-                return null;
-            }
-
-            if (PlainArgumentPseudos.Contains(token.Value))
+            if (PlainArgumentPseudos.Contains(name))
             {
                 return SkipArgument() ? null : "has a '(' without its pair";
             }
 
             return $"{Outside}{pseudo}() is not a {(prefix == "::" ? "pseudo-element" : "pseudo-class")} the storefront takes";
+        }
+
+        private string ReadNthOf(string pseudo, int of)
+        {
+            // the root's siblings are outside the section
+            if (_anchored && _inFirstCompound)
+            {
+                return $"{Outside}{pseudo}(… of …) on :scope or & counts the section's siblings";
+            }
+
+            _groups.Push(new Group(pseudo + "(… of …)", isHas: false));
+            _index = of + 1 < tokens.Count && tokens[of + 1].Kind == CssTokenizer.TokenKind.Whitespace ? of + 1 : of;
+            return null;
         }
 
         /// <returns>The index of the of in :nth-child(An+B of S); <c>null</c> for none.</returns>
@@ -278,6 +282,8 @@ public static class CustomSectionCssSelector
 
             return group.AtStart && combinator is "+" or "~" ? $"{Outside}a selector in :has() starts with no + or ~" : null;
         }
+
+        private string CloseGroup() => _groups.TryPop(out _) ? null : "has a ')' without its pair";
 
         private string Anchor()
         {

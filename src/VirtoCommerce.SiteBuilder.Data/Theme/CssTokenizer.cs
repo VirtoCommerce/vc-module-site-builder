@@ -10,7 +10,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Theme;
 public static class CssTokenizer
 {
     private const char Replacement = '�';
-    private const int MaxCodePoint = 0x10FFFF;
+    private const int MaxEscapeHexDigits = 6;
 
     public enum TokenKind
     {
@@ -63,97 +63,75 @@ public static class CssTokenizer
 
     private sealed class Reader(string text)
     {
+        private static readonly Dictionary<char, TokenKind> Punctuation = new()
+        {
+            ['('] = TokenKind.OpenParen,
+            [')'] = TokenKind.CloseParen,
+            ['['] = TokenKind.OpenSquare,
+            [']'] = TokenKind.CloseSquare,
+            ['{'] = TokenKind.OpenCurly,
+            ['}'] = TokenKind.CloseCurly,
+            [','] = TokenKind.Comma,
+            [':'] = TokenKind.Colon,
+            [';'] = TokenKind.Semicolon,
+        };
+
         private int _position;
 
         public Token? ReadToken()
         {
             SkipComments();
-            if (_position >= text.Length)
+            if (IsAtEnd(0))
             {
                 return null;
             }
 
-            var current = text[_position++];
-            switch (current)
+            var current = text[_position];
+            if (IsWhitespace(current))
             {
-                case '\n' or '\t' or ' ':
-                    while (IsWhitespace(Peek(0)))
-                    {
-                        _position++;
-                    }
-
-                    return new Token(TokenKind.Whitespace, " ");
-                case '"' or '\'':
-                    return ReadString(current);
-                case '#':
-                    if (IsIdentCodePoint(Peek(0)) || IsValidEscape(Peek(0), Peek(1)))
-                    {
-                        return new Token(TokenKind.Hash, ReadIdentSequence());
-                    }
-
-                    return Delim(current);
-                case '(':
-                    return new Token(TokenKind.OpenParen, "(");
-                case ')':
-                    return new Token(TokenKind.CloseParen, ")");
-                case '[':
-                    return new Token(TokenKind.OpenSquare, "[");
-                case ']':
-                    return new Token(TokenKind.CloseSquare, "]");
-                case '{':
-                    return new Token(TokenKind.OpenCurly, "{");
-                case '}':
-                    return new Token(TokenKind.CloseCurly, "}");
-                case ',':
-                    return new Token(TokenKind.Comma, ",");
-                case ':':
-                    return new Token(TokenKind.Colon, ":");
-                case ';':
-                    return new Token(TokenKind.Semicolon, ";");
-                case '+' or '.':
-                    _position--;
-                    return StartsNumber(0) ? ReadNumeric() : Delim(text[_position++]);
-                case '-':
-                    _position--;
-                    if (StartsNumber(0))
-                    {
-                        return ReadNumeric();
-                    }
-
-                    if (Peek(1) == '-' && Peek(2) == '>')
-                    {
-                        _position += 3;
-                        return new Token(TokenKind.Cdc, "-->");
-                    }
-
-                    if (StartsIdentSequence(0))
-                    {
-                        return ReadIdentLike();
-                    }
-
-                    return Delim(text[_position++]);
-                case '<':
-                    if (Peek(0) == '!' && Peek(1) == '-' && Peek(2) == '-')
-                    {
-                        _position += 3;
-                        return new Token(TokenKind.Cdo, "<!--");
-                    }
-
-                    return Delim(current);
-                case '@':
-                    return StartsIdentSequence(0) ? new Token(TokenKind.AtKeyword, ReadIdentSequence()) : Delim(current);
-                case '\\':
-                    _position--;
-                    return IsValidEscape(Peek(0), Peek(1)) ? ReadIdentLike() : Delim(text[_position++]);
-                default:
-                    _position--;
-                    if (char.IsAsciiDigit(current))
-                    {
-                        return ReadNumeric();
-                    }
-
-                    return IsIdentStart(current) ? ReadIdentLike() : Delim(text[_position++]);
+                SkipWhitespace();
+                return new Token(TokenKind.Whitespace, " ");
             }
+
+            if (current is '"' or '\'')
+            {
+                _position++;
+                return ReadString(current);
+            }
+
+            if (Punctuation.TryGetValue(current, out var kind))
+            {
+                _position++;
+                return new Token(kind, current.ToString());
+            }
+
+            if (TryConsume("<!--"))
+            {
+                return new Token(TokenKind.Cdo, "<!--");
+            }
+
+            return TryConsume("-->") ? new Token(TokenKind.Cdc, "-->") : ReadNameNumberOrDelim();
+        }
+
+        private Token ReadNameNumberOrDelim()
+        {
+            if (StartsNumber(0))
+            {
+                return ReadNumeric();
+            }
+
+            if (StartsIdentSequence(0))
+            {
+                return ReadIdentLike();
+            }
+
+            var current = text[_position++];
+            if (current == '#' && (IsIdentCodePoint(Peek(0)) || StartsEscape(0)))
+            {
+                return new Token(TokenKind.Hash, ReadIdentSequence());
+            }
+
+            return current == '@' && StartsIdentSequence(0) ? new Token(TokenKind.AtKeyword, ReadIdentSequence()) : Delim(current);
         }
 
         private static Token Delim(char value) => new(TokenKind.Delim, value.ToString());
@@ -162,12 +140,24 @@ public static class CssTokenizer
 
         private bool IsAtEnd(int offset) => _position + offset >= text.Length;
 
+        private bool TryConsume(string sequence)
+        {
+            if (!text.AsSpan(_position).StartsWith(sequence, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            _position += sequence.Length;
+            return true;
+        }
+
         private void SkipComments()
         {
-            while (Peek(0) == '/' && Peek(1) == '*')
+            while (TryConsume("/*"))
             {
-                var end = text.IndexOf("*/", _position + 2, StringComparison.Ordinal);
-                _position = end < 0 ? text.Length : end + 2;
+                var end = text.IndexOf("*/", _position, StringComparison.Ordinal);
+                _position = end < 0 ? text.Length : end;
+                TryConsume("*/");
             }
         }
 
@@ -241,13 +231,8 @@ public static class CssTokenizer
         {
             var value = new StringBuilder();
             SkipWhitespace();
-            while (true)
+            while (!IsAtEnd(0))
             {
-                if (IsAtEnd(0))
-                {
-                    return new Token(TokenKind.Url, value.ToString());
-                }
-
                 var current = text[_position++];
                 if (current == ')')
                 {
@@ -256,35 +241,50 @@ public static class CssTokenizer
 
                 if (IsWhitespace(current))
                 {
-                    SkipWhitespace();
-                    if (IsAtEnd(0) || Peek(0) == ')')
-                    {
-                        _position = Math.Min(_position + 1, text.Length);
-                        return new Token(TokenKind.Url, value.ToString());
-                    }
-
-                    return ReadBadUrl(value);
+                    return ReadUrlEnd(value);
                 }
 
-                if (current is '"' or '\'' or '(' || IsNonPrintable(current))
+                if (!TryReadUrlCodePoint(current, value))
                 {
                     return ReadBadUrl(value);
-                }
-
-                if (current == '\\')
-                {
-                    if (!IsValidEscape(current, Peek(0)))
-                    {
-                        return ReadBadUrl(value);
-                    }
-
-                    value.Append(ReadEscape());
-                }
-                else
-                {
-                    value.Append(current);
                 }
             }
+
+            return new Token(TokenKind.Url, value.ToString());
+        }
+
+        private Token ReadUrlEnd(StringBuilder value)
+        {
+            SkipWhitespace();
+            if (IsAtEnd(0) || Peek(0) == ')')
+            {
+                _position = Math.Min(_position + 1, text.Length);
+                return new Token(TokenKind.Url, value.ToString());
+            }
+
+            return ReadBadUrl(value);
+        }
+
+        private bool TryReadUrlCodePoint(char current, StringBuilder value)
+        {
+            if (current is '"' or '\'' or '(' || IsNonPrintable(current))
+            {
+                return false;
+            }
+
+            if (current != '\\')
+            {
+                value.Append(current);
+                return true;
+            }
+
+            if (!IsValidEscape(current, Peek(0)))
+            {
+                return false;
+            }
+
+            value.Append(ReadEscape());
+            return true;
         }
 
         // 4.3.14: the rest of a bad URL up to its ')', whose escapes do not close it
@@ -309,26 +309,7 @@ public static class CssTokenizer
 
         private Token ReadNumeric()
         {
-            var start = _position;
-            if (Peek(0) is '+' or '-')
-            {
-                _position++;
-            }
-
-            SkipDigits();
-            if (Peek(0) == '.' && char.IsAsciiDigit(Peek(1)))
-            {
-                _position++;
-                SkipDigits();
-            }
-
-            if (Peek(0) is 'e' or 'E' && (char.IsAsciiDigit(Peek(1)) || (Peek(1) is '+' or '-' && char.IsAsciiDigit(Peek(2)))))
-            {
-                _position += 2;
-                SkipDigits();
-            }
-
-            var number = text[start.._position];
+            var number = ReadNumber();
             if (StartsIdentSequence(0))
             {
                 return new Token(TokenKind.Dimension, number + ReadIdentSequence());
@@ -341,6 +322,27 @@ public static class CssTokenizer
             }
 
             return new Token(TokenKind.Number, number);
+        }
+
+        private string ReadNumber()
+        {
+            var start = _position;
+            SkipSign();
+            SkipDigits();
+            if (Peek(0) == '.' && char.IsAsciiDigit(Peek(1)))
+            {
+                _position++;
+                SkipDigits();
+            }
+
+            if (Peek(0) is 'e' or 'E' && StartsInteger(1))
+            {
+                _position++;
+                SkipSign();
+                SkipDigits();
+            }
+
+            return text[start.._position];
         }
 
         private string ReadIdentSequence()
@@ -382,7 +384,7 @@ public static class CssTokenizer
             }
 
             var start = _position;
-            while (_position - start < 6 && char.IsAsciiHexDigit(Peek(0)))
+            while (_position - start < MaxEscapeHexDigits && char.IsAsciiHexDigit(Peek(0)))
             {
                 _position++;
             }
@@ -393,22 +395,31 @@ public static class CssTokenizer
                 _position++;
             }
 
-            return codePoint is 0 or > MaxCodePoint or (>= 0xD800 and <= 0xDFFF) ? Replacement.ToString() : char.ConvertFromUtf32(codePoint);
+            return codePoint == 0 || !Rune.IsValid(codePoint) ? Replacement.ToString() : char.ConvertFromUtf32(codePoint);
         }
 
-        private bool StartsNumber(int offset) => Peek(offset) switch
-        {
-            '+' or '-' => char.IsAsciiDigit(Peek(offset + 1)) || (Peek(offset + 1) == '.' && char.IsAsciiDigit(Peek(offset + 2))),
-            '.' => char.IsAsciiDigit(Peek(offset + 1)),
-            var digit => char.IsAsciiDigit(digit),
-        };
+        private bool StartsNumber(int offset) => Peek(offset) is '+' or '-' ? StartsUnsignedNumber(offset + 1) : StartsUnsignedNumber(offset);
+
+        private bool StartsUnsignedNumber(int offset) => Peek(offset) == '.' ? char.IsAsciiDigit(Peek(offset + 1)) : char.IsAsciiDigit(Peek(offset));
+
+        private bool StartsInteger(int offset) => Peek(offset) is '+' or '-' ? char.IsAsciiDigit(Peek(offset + 1)) : char.IsAsciiDigit(Peek(offset));
 
         private bool StartsIdentSequence(int offset) => Peek(offset) switch
         {
-            '-' => IsIdentStart(Peek(offset + 1)) || Peek(offset + 1) == '-' || IsValidEscape(Peek(offset + 1), Peek(offset + 2)),
-            '\\' => IsValidEscape(Peek(offset), Peek(offset + 1)),
+            '-' => IsIdentStart(Peek(offset + 1)) || Peek(offset + 1) == '-' || StartsEscape(offset + 1),
+            '\\' => StartsEscape(offset),
             var first => IsIdentStart(first),
         };
+
+        private bool StartsEscape(int offset) => IsValidEscape(Peek(offset), Peek(offset + 1));
+
+        private void SkipSign()
+        {
+            if (Peek(0) is '+' or '-')
+            {
+                _position++;
+            }
+        }
 
         private void SkipWhitespace()
         {
@@ -434,6 +445,7 @@ public static class CssTokenizer
 
         private static bool IsValidEscape(char first, char second) => first == '\\' && second != '\n' && second != '\0';
 
-        private static bool IsNonPrintable(char value) => value is <= '\u0008' or '\u000B' or (>= '\u000E' and <= '\u001F') or '\u007F';
+        private static bool IsNonPrintable(char value) =>
+            value is '\u000B' or '\u007F' || char.IsBetween(value, '\u0000', '\u0008') || char.IsBetween(value, '\u000E', '\u001F');
     }
 }

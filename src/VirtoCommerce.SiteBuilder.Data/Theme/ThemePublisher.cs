@@ -238,7 +238,8 @@ public class ThemePublisher(
     /// <summary>Also sanitizes the HTML of the files, see <see cref="GuardThemeSource"/>.</summary>
     protected virtual IList<string> ValidateThemeSource(ThemeSource source, JObject catalog, bool includeDrafts)
     {
-        var errors = GuardThemeSource(source, ThemeCustomSections.AddToCatalog(catalog, source.CustomSections))
+        var themeCatalog = catalog == null ? null : ThemeCustomSections.AddToCatalog(catalog, source.CustomSections);
+        var errors = GuardThemeSource(source, themeCatalog)
             .Concat(themeValidator.Validate(source, catalog));
 
         // A palette is refused when it is published: a live palette that fails stays live whatever else is published, and a first

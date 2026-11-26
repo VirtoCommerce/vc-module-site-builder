@@ -33,6 +33,7 @@ public class PublishReadinessTools(
     IGroupedPageContentService pageContentService,
     IMultilanguagePageService multilanguagePageService,
     PublicationDryRuns dryRuns,
+    ThemeDryRuns themeDryRuns,
     ISiteBuilderPageListService pageListService,
     IContentHistory contentHistory,
     ILogger<PublishReadinessTools> logger)
@@ -122,7 +123,7 @@ public class PublishReadinessTools(
             NextStep = "publish_theme with dryRun, then again with its expected_versions; a second person approves the publication.",
         };
 
-        await dryRuns.CheckThemeAsync(user, storeId, readiness, cancellationToken);
+        await themeDryRuns.CheckAsync(user, storeId, readiness, cancellationToken);
 
         return readiness;
     }
@@ -251,7 +252,7 @@ public class PublishReadinessTools(
         }
         catch (GitContentException ex)
         {
-            readiness.Findings.Add(PublicationDryRuns.Info("history-unavailable", $"Who changed page '{CustomSectionText.Quote(group.Name)}' since its publication could not be read.",
+            readiness.Findings.Add(PublishChecks.Info("history-unavailable", $"Who changed page '{CustomSectionText.Quote(group.Name)}' since its publication could not be read.",
                 GitContentFailures.Describe(logger, ex), "The draft's last author is listed; check the history in the designer.", "history", group));
             return [];
         }
@@ -333,19 +334,19 @@ public static class PageAudience
         var findings = new List<McpFinding>();
         if (!group.Visibility)
         {
-            findings.Add(PublicationDryRuns.Warning("page-hidden", $"Page '{CustomSectionText.Quote(group.Name)}' is hidden, so customers do not see it once published.",
+            findings.Add(PublishChecks.Warning("page-hidden", $"Page '{CustomSectionText.Quote(group.Name)}' is hidden, so customers do not see it once published.",
                 "visibility is off.", "Turn visibility on with change_page_settings (visible true), if customers should see it.", "audience", group));
         }
 
         if (group.EndDate < now)
         {
-            findings.Add(PublicationDryRuns.Warning("page-ended", $"The end date of page '{CustomSectionText.Quote(group.Name)}' has passed, so customers do not see it once published.",
+            findings.Add(PublishChecks.Warning("page-ended", $"The end date of page '{CustomSectionText.Quote(group.Name)}' has passed, so customers do not see it once published.",
                 $"End date {Format(group.EndDate, null)} UTC, now {Format(now, null)} UTC.", "Move or clear the end date with change_page_settings.", "audience", group));
         }
 
         if (group.StartDate > now)
         {
-            findings.Add(PublicationDryRuns.Info("page-scheduled", $"Page '{CustomSectionText.Quote(group.Name)}' is shown only from its start date.",
+            findings.Add(PublishChecks.Info("page-scheduled", $"Page '{CustomSectionText.Quote(group.Name)}' is shown only from its start date.",
                 $"Start date {Format(group.StartDate, null)} UTC.", "Nothing to do, unless it should be shown at once (change_page_settings).", "audience", group));
         }
 

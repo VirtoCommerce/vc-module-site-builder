@@ -32,7 +32,7 @@ public class PageDraftTools(
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
     ISiteBuilderContentQueryService contentQueryService,
-    PublicationDryRuns dryRuns,
+    SectionTypeFindings sectionTypeFindings,
     ILogger<PageDraftTools> logger)
 {
     private const int MaxOperations = 100;
@@ -224,7 +224,7 @@ public class PageDraftTools(
 
     private async Task<IEnumerable<string>> GetSectionTypeWarningsAsync(ClaimsPrincipal user, string storeId, string pageName, PageDocumentEditor before,
         PageDocumentEditor after, GroupedSiteBuilderPage group, CancellationToken cancellationToken) =>
-        (await dryRuns.GetAddedSectionTypeFindingsAsync(user, storeId, pageName, before, after, group, cancellationToken)).Select(x => $"{x.Title} {x.Fix}");
+        (await sectionTypeFindings.GetAddedAsync(user, storeId, pageName, before, after, group, cancellationToken)).Select(x => $"{x.Title} {x.Fix}");
 
     private static void AddPublishedWarning(PageDraftEdit preview, GroupedSiteBuilderPage group)
     {

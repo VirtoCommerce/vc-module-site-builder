@@ -19,7 +19,7 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
     {
         var errors = source.InvalidFiles.Select(x => $"{x}: not valid JSON").ToList();
         // a type the theme holds is one the storefront renders, whether or not its preview has seen it
-        var themeCatalog = ThemeCustomSections.AddToCatalog(catalog, source.CustomSections);
+        var themeCatalog = catalog == null ? null : ThemeCustomSections.AddToCatalog(catalog, source.CustomSections);
 
         foreach (var (key, document) in source.Templates)
         {

@@ -488,7 +488,8 @@ public class CustomSectionSaveTests
     {
         var catalog = await SaveCatalogAsync();
         var padding = $"/* {new string('x', 60 * 1024)} */";
-        foreach (var type in new[] { "custom-a", "custom-b", "custom-c", "custom-d" })
+        var types = new[] { "custom-a", "custom-b", "custom-c", "custom-d" };
+        foreach (var type in types)
         {
             _live.Files[Theme($"default/custom-sections/{type}.json-draft")] = HeroWith(css: padding);
         }
@@ -500,7 +501,7 @@ public class CustomSectionSaveTests
 
         Assert.StartsWith("custom-sections: the custom section types are ", Assert.Single(result.Errors));
         Assert.Equal(0, validator.Checked);
-        Assert.Equal(new[] { "a", "b", "c", "d" }.Select(x => Theme($"default/custom-sections/custom-{x}.json-draft")),
+        Assert.Equal(types.Select(x => Theme($"default/custom-sections/{x}.json-draft")),
             _live.Read.Where(x => x.Contains("/custom-sections/", System.StringComparison.Ordinal)).Order(System.StringComparer.Ordinal));
     }
 

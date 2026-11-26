@@ -28,8 +28,11 @@ public class ThemeController(
     IValidator<ThemePaletteGenerationRequest> paletteGenerationRequestValidator,
     IValidator<ThemePaletteCheckRequest> paletteCheckRequestValidator) : Controller
 {
+    private const int BytesInMegabyte = 1_000_000;
+    private const int MaxCatalogMegabytes = 8;
+
     /// <summary>Of a catalog upload, in bytes: anyone who may save a page uploads one, and every save and publication reads it.</summary>
-    public const int MaxCatalogSize = 8 * 1024 * 1024;
+    public const int MaxCatalogSize = MaxCatalogMegabytes * BytesInMegabyte;
 
     [HttpPost("theme/publish")]
     [Authorize(ModuleConstants.Security.Permissions.Publish)]
@@ -76,7 +79,7 @@ public class ThemeController(
         }
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
         {
-            return BadRequest(new { error = string.Create(CultureInfo.InvariantCulture, $"The catalog is larger than {MaxCatalogSize / 1024 / 1024} MB.") });
+            return BadRequest(new { error = string.Create(CultureInfo.InvariantCulture, $"The catalog is larger than {MaxCatalogMegabytes} MB.") });
         }
 
         try
