@@ -241,6 +241,7 @@ function select(sel: Selection) {
 <!-- Not scoped: a child component renders the rows. -->
 <style lang="scss">
 .pd-tree {
+  container: pd-tree / inline-size;
   display: flex;
   flex-direction: column;
   padding: 8px;
@@ -478,7 +479,7 @@ function select(sel: Selection) {
       color: var(--warning-800);
     }
 
-    // The label gives way before the section's name does in a narrow tree; the title and the hidden hint keep the whole text.
+    // The label gives way before the section's name does; the title and the hidden hint keep the whole text.
     &--with-icon {
       display: inline-flex;
       flex: 0 1 auto;
@@ -494,6 +495,18 @@ function select(sel: Selection) {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  // The narrowest tree leaves a section's name too little room beside the label, so the badge keeps only its icon.
+  // The query takes the content box: the designer's 260 px panel leaves about 228 px, its 300 px one about 268 px.
+  @container pd-tree (max-width: 250px) {
+    &__badge--with-icon {
+      flex: none;
+    }
+
+    &__badge-label {
+      display: none;
+    }
   }
 
   &__row--bottom {

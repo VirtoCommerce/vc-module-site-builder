@@ -60,7 +60,11 @@
           size="s"
           class="pd-tree__icon"
         />
-        <span class="pd-tree__name">{{ sectionName(section) }}</span>
+        <span
+          class="pd-tree__name"
+          :title="sectionName(section)"
+          >{{ sectionName(section) }}</span
+        >
         <span
           v-if="gapOf(section)"
           class="pd-tree__badge pd-tree__badge--with-icon"
@@ -68,12 +72,10 @@
           :title="gapHint(section)"
         >
           <VcIcon
-            icon="lucide-triangle-alert"
+            :icon="GAP_BADGES[gapOf(section)!].icon"
             size="xs"
           />
-          <span class="pd-tree__badge-label">{{
-            $t(gapOf(section) === "missing" ? "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_MISSING" : "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_UNPUBLISHED")
-          }}</span>
+          <span class="pd-tree__badge-label">{{ $t(GAP_BADGES[gapOf(section)!].label) }}</span>
           <span class="tw-sr-only">{{ gapHint(section) }}</span>
         </span>
         <span
@@ -196,6 +198,7 @@ import type { Item, Selection } from "../types";
 import type { Designer } from "../useDesigner";
 import { iconOf, itemTitle } from "../schema";
 import { isComponentRef } from "../document";
+import type { CustomSectionGap } from "../customSections";
 
 const props = defineProps<{
   designer: Designer;
@@ -213,6 +216,11 @@ const sectionName = (section: Item) =>
   isComponentRef(section)
     ? (props.designer.components.get(section.componentRef)?.name ?? t("SITE_BUILDER.DESIGNER.SHARED_COMPONENT"))
     : itemTitle(section, props.designer.sectionSchema(section.type), props.designer.languages.value.default);
+// A narrow tree shows only the icon, so each gap has its own.
+const GAP_BADGES: Record<CustomSectionGap, { icon: string; label: string }> = {
+  missing: { icon: "lucide-circle-x", label: "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_MISSING" },
+  unpublished: { icon: "lucide-clock", label: "SITE_BUILDER.DESIGNER.CUSTOM_SECTION_UNPUBLISHED" },
+};
 // The storefront shows nothing for such a section, while the preview shows a draft's type.
 const gapOf = (section: Item) => (isComponentRef(section) ? undefined : props.designer.sectionGap(section.type));
 const gapHint = (section: Item) =>
