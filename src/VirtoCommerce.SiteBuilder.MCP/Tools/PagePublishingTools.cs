@@ -217,27 +217,28 @@ public class PagePublishingTools(
 
         if (publish && dryRun)
         {
-            await WarnOfSectionTypesAsync(user, change, [group], cancellationToken);
+            WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken));
         }
 
         return change;
     }
 
     // The dry run says what get_publish_readiness would: a custom section type the page places that the published theme lacks or holds older.
-    private async Task WarnOfSectionTypesAsync(ClaimsPrincipal user, SiteBuilderChange change, IEnumerable<GroupedSiteBuilderPage> groups,
+    // Language versions share their page's name, so each warning names its language, as the other warnings of a version do.
+    private async Task WarnOfSectionTypesAsync(ClaimsPrincipal user, SiteBuilderChange change, IEnumerable<GroupedSiteBuilderPage> languageVersions,
         CancellationToken cancellationToken)
     {
-        foreach (var group in groups)
+        foreach (var group in languageVersions)
         {
-            WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken));
+            WarnOf(change, await dryRuns.GetSectionTypeFindingsAsync(user, group, cancellationToken), $"{group.CultureName}: ");
         }
     }
 
-    private static void WarnOf(SiteBuilderChange change, IEnumerable<McpFinding> findings)
+    private static void WarnOf(SiteBuilderChange change, IEnumerable<McpFinding> findings, string prefix = null)
     {
         foreach (var finding in findings)
         {
-            change.AddWarning($"{finding.Title} {finding.Fix}");
+            change.AddWarning($"{prefix}{finding.Title} {finding.Fix}");
         }
     }
 
