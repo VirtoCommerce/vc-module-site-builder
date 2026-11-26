@@ -128,7 +128,7 @@ The agent works as the signed-in user and sees only the tools that user's permis
 | `builder:create` | `create_page`; with `builder:update`, `convert_page_to_multilanguage` |
 | `builder:publish` | `publish_page`, `unpublish_page` and `publish_theme`, as requests for approval |
 | `builder:templates` | With `builder:update`: `edit_template` and `edit_template_rules` |
-| `builder:theme` | With `builder:update`: `edit_theme_draft` |
+| `builder:theme` | With `builder:update`: `edit_theme_draft`, `create_section_type` and `change_section_type` |
 | `builder:shared-components:read`, `:create`, `:update` | `search_shared_components`; with it, `create_shared_component` and `change_shared_component` |
 | `platform:asset:read` | `search_assets` |
 | `platform:setting:read` | The store settings and user groups resources |
@@ -160,12 +160,14 @@ The agent works as the signed-in user and sees only the tools that user's permis
 | Content | `reset_language_overrides` | Language versions take the values of the Multilanguage Page again | `builder:update` | Approval bound to the reviewed versions; none with `unpublished_only` when no version is published |
 | Content | `publish_page`, `unpublish_page` | Publish a draft, or take a page off the storefront; in git the requester's own draft branch is shipped | `builder:publish` | Approval bound to the reviewed versions (of a database page: its draft and its settings) and, in git, the draft owner |
 | Content | `restore_version` | A saved version of a page or of theme files becomes the draft | `builder:update` and the part's permission | Confirmation, expected versions |
-| Content | `discard_draft` | Drop the draft of a page or of a theme file | `builder:update` and the part's permission | Confirmation, expected versions |
+| Content | `discard_draft` | Drop the draft of a page or of a theme file; a custom section type never published is removed | `builder:update` and the part's permission | Confirmation, expected versions |
 | Bulk | `set_translations` | Translations of many pages, bound to the source version | `builder:update` | Background job, dry run |
 | Bulk | `update_sections_bulk` | One change of a section on every page of a filter; the pages are fixed when the job is queued | `builder:update` | Background job, dry run |
 | Design | `edit_template` | Create a template as a copy, edit its sections and layout; the main section stays, and only sections the designer offers for the template go in | `builder:update`, `builder:templates` | Dry run, version token |
 | Design | `edit_template_rules` | Add, change, reorder, enable or disable rules; a rule points to an existing template only | `builder:update`, `builder:templates` | Dry run, version token |
 | Design | `edit_theme_draft` | Header, footer, brand, and a palette generated from brand colors with a contrast check | `builder:update`, `builder:theme` | Dry run, version token |
+| Design | `create_section_type` | A custom section type: an HTML template, its CSS and its settings, which pages then place like any section | `builder:update`, `builder:theme` | Dry run with the errors and warnings |
+| Design | `change_section_type` | Replace a custom section type; every page that places it changes with it | `builder:update`, `builder:theme` | Dry run with the errors and warnings, version token |
 | Design | `publish_theme` | Publish every theme draft; refused when the palette, the header icons or a section's own colors fall below WCAG 2.2 AA contrast | `builder:publish` | Approval bound to the reviewed drafts |
 | Shared Components | `create_shared_component` | A new component, not placed anywhere yet | `builder:shared-components:create` | Dry run |
 | Shared Components | `change_shared_component` | New content or name; the content changes everywhere the component is placed | `builder:shared-components:update` | Approval bound to the reviewed content when the content changes |
@@ -183,13 +185,17 @@ MCP clients show the prompts as slash commands, for example `/mcp__virto__weekly
 | `translate_site` | Content author | Missing and outdated translations of a language, created and translated once you agree |
 | `review_template_rules` | Site designer | Which template each kind of page gets, rules that never fire or point nowhere |
 | `rebrand_site` | Site designer | Palette from a brand color, logos, header and footer, up to the theme's publication check |
+| `design_custom_section` | Site designer | From a description to a custom section type, placed on a page and checked for publication |
 | `review_theme_release` | Site designer | Every draft the theme's publication would take, who changed it, and what blocks it |
 | `review_site_change` | Approver | What a requested change would do, who made it, and what to check before approving |
 
 | Resource | What it holds | Permission |
 | --- | --- | --- |
-| `site-builder://stores/{store_id}/schemas` | Section, block, object and template types the storefront sent; not available until the storefront has sent its catalog | `builder:read` |
+| `site-builder://stores/{store_id}/schemas` | Section, block, object and template types the storefront sent, and the theme's custom section types; not available until the storefront has sent its catalog | `builder:read` |
 | `site-builder://stores/{store_id}/schemas/{kind}/{key}` | One schema with its settings | `builder:read` |
+| `site-builder://stores/{store_id}/section-kit` | What a custom section type may hold: elements, bindings, setting types, CSS rules, palette tokens, the storefront's kit tags and behaviors, its guide and design tokens, the design rules, and an example | `builder:read` |
+| `site-builder://stores/{store_id}/section-kit/icons` | The storefront's icon names, which a kit attribute with `optionsFrom: "icons"` takes | `builder:read` |
+| `site-builder://stores/{store_id}/custom-sections/{type}` | A custom section type as its draft holds it, else as it is live, with its version token | `builder:read` |
 | `site-builder://template-rule-conditions` | The conditions a template rule can use, and the shape of their values | `builder:read` |
 | `site-builder://stores/{store_id}/settings` | Languages, time zone and publication flow (git or blob) of a store | `builder:read`, `platform:setting:read` |
 | `site-builder://user-groups` | User groups a page's audience can name, paged | `builder:read`, `platform:setting:read` |

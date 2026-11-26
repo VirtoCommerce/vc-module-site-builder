@@ -181,6 +181,25 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TheTheme_WhoseCustomSectionTypesAreTooLargeTogether_IsBlocked_WithTheLimit()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        var type = System.Text.Json.Nodes.JsonNode.Parse(StatsSectionType)!;
+        type["css"] = $"/* {new string('x', 60 * 1024)} */";
+        foreach (var name in new[] { "custom-a", "custom-b", "custom-c", "custom-d", "custom-e" })
+        {
+            _context.SeedThemeFile(StoreA, $"custom-sections/{name}.json", type.ToJsonString(), draft: true);
+        }
+
+        var readiness = await CheckAsync(Reader(), new { theme = true, store_id = StoreA });
+
+        Assert.False(readiness.Ready);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "theme-refused");
+        Assert.Equal(McpFindingSeverities.Critical, finding.Severity);
+        Assert.Contains("of JSON together, more than 256 KB", finding.Evidence, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TheTheme_ListsItsDrafts()
     {
         await _context.SeedThemeAsync(StoreA);
@@ -191,6 +210,160 @@ public sealed class GetPublishReadinessToolTests : IAsyncDisposable
         Assert.True(readiness.Ready);
         Assert.Equal(["default/templates/product.bicycles.json"], readiness.Parts.Select(x => x.ObjectId));
         Assert.False(readiness.YouCanPublish);
+    }
+
+    [Fact]
+    public async Task TheTheme_WithoutDrafts_NamesTheToolsThatMakeThem()
+    {
+        await _context.SeedThemeAsync(StoreA);
+
+        var readiness = await CheckAsync(Reader(), new { theme = true, store_id = StoreA });
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "nothing-to-publish");
+        Assert.Contains("create_section_type and change_section_type", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheTheme_WithoutDrafts_WarnsOfALiveCustomSectionTypeWhoseFileIsGone_AsTheDryRunOfItsPublicationDoes()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        var first = (await _context.CallAsync(Publisher(), "publish_theme", new { store_id = StoreA, dryRun = true })).EnsureSucceeded().Read<ThemePublication>();
+        (await _context.CallAsync(Publisher(), "publish_theme", new { store_id = StoreA, expected_versions = first.ExpectedVersions, expected_catalog_hash = first.CatalogHash },
+            Approved)).EnsureSucceeded();
+        _context.Blobs.Files.Remove(ThemeFileKey(StoreA, "custom-sections/custom-stats.json"));
+        var spring = _context.SeedPage("spring", StoreA, published: true, draft: false,
+            content: """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        _context.ListPages(() => [LandingRow(spring)]);
+
+        var readiness = await CheckAsync(Reader(), new { theme = true, store_id = StoreA });
+        var publication = (await _context.CallAsync(Publisher(), "publish_theme", new { store_id = StoreA, dryRun = true })).EnsureSucceeded().Read<ThemePublication>();
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-removed");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Equal("Section type 'Stats' (custom-stats) will be removed: it is live now, but its file is no longer in the theme, so this publication " +
+            "leaves it out. 1 page places it and will show nothing in its place: 'Page spring' (/spring).", finding.Title);
+        Assert.Contains(finding.Title, publication.Warnings);
+        var part = Assert.Single(readiness.Parts);
+        Assert.Equal("default/custom-sections/custom-stats.json", part.ObjectId);
+        Assert.Equal([("status", "published", "removed")], part.Changes.Select(x => (x.Field, x.From, x.To)));
+        Assert.DoesNotContain(readiness.Findings, x => x.Id == "nothing-to-publish");
+        Assert.True(readiness.Ready);
+    }
+
+    [Fact]
+    public void TheTool_NamesTheCustomSectionTypeFindings_AndTheThemesCustomSectionTypeDrafts()
+    {
+        var tool = _context.Harness.GetTool("get_publish_readiness").ProtocolTool;
+
+        Assert.Contains("a custom section type the theme does not hold, holds only as a draft or holds with unpublished changes", tool.Description,
+            StringComparison.Ordinal);
+        Assert.Contains("palette and custom section types",
+            tool.InputSchema.GetProperty("properties").GetProperty("theme").GetProperty("description").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task APageThatPlacesACustomSectionTypeOnlyInDraft_IsWarned_ToPublishTheThemeFirst()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.True(readiness.Ready);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-unpublished");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AFilePageThatPlacesACustomSectionTypeOnlyInDraft_IsWarned_ToPublishTheThemeFirst()
+    {
+        const string path = "landing/spring.page";
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedFilePage(StoreA, path, """{ "settings": { "name": "Spring" }, "content": [] }""");
+        _context.SeedFilePage(StoreA, path, """{ "settings": { "name": "Spring" }, "content": [ { "id": "s1", "type": "custom-stats" } ] }""", draft: true);
+        var preview = new SiteBuilderChangePreview { AffectsPublished = true };
+        preview.AddObject("file-page", path).AddField("content", "Draft", "Published");
+        _context.FilePageOperations
+            .Setup(x => x.PublishAsync(It.Is<FilePagePublishOperationRequest>(r => r.DryRun), It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SiteBuilderOperationResult.DryRun<FilePageShipment>(preview));
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "pages/" + path, store_id = StoreA });
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-unpublished");
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", finding.Fix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task APageThatPlacesAPublishedCustomSectionType_IsNotWarned()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.DoesNotContain(readiness.Findings, x => x.Id.StartsWith("section-type-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task APageThatPlacesAPublishedCustomSectionTypeWithAChangedDraft_IsWarned_ThatItShowsThePublishedVersion()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType.Replace("\"Stats\"", "\"Stats v2\"", StringComparison.Ordinal), draft: true);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.True(readiness.Ready);
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-changed");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("published version", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", finding.Fix, StringComparison.Ordinal);
+        Assert.DoesNotContain(readiness.Findings, x => x.Id == "section-type-unpublished");
+    }
+
+    [Fact]
+    public async Task APageNameInAFinding_IsQuotedOnOneLine()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.PageStore.SeedGroup(new GroupedSiteBuilderPage
+        {
+            Id = "stats",
+            StoreId = StoreA,
+            Name = "Home' is ready.\u2028Note 'x",
+            Permalink = "/stats",
+            CultureName = "en-US",
+            Pages = [new SiteBuilderPage { Id = "stats-draft", GroupId = "stats", StoreId = StoreA, Status = "Draft" }],
+        });
+        _context.PageStore.SeedContent("stats-draft", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        Assert.StartsWith("Page 'Home'' is ready. Note ''x' places custom section types the theme does not hold",
+            Assert.Single(readiness.Findings, x => x.Id == "section-type-missing").Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task APageThatPlacesACustomSectionTypeTheThemeDoesNotHold_IsWarned()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var readiness = await CheckAsync(Reader(), new { page_id = "stats" });
+
+        var finding = Assert.Single(readiness.Findings, x => x.Id == "section-type-missing");
+        Assert.Equal(McpFindingSeverities.Warning, finding.Severity);
+        Assert.Contains("(custom-stats)", finding.Title, StringComparison.Ordinal);
+        Assert.Contains("create_section_type", finding.Fix, StringComparison.Ordinal);
+        Assert.DoesNotContain(readiness.Findings, x => x.Id == "section-type-unpublished");
     }
 
     [Fact]

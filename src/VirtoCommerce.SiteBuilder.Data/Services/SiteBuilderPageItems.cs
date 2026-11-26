@@ -13,6 +13,9 @@ public static partial class SiteBuilderPageItems
     public const string BlocksKey = "blocks";
     public const string GroupKey = "__group";
 
+    /// <summary>The keys of an item's own structure; its fields are the other keys.</summary>
+    public static IReadOnlyList<string> ItemKeys { get; } = [IdKey, TypeKey, HiddenKey, BlocksKey, GroupKey];
+
     private const string IdCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private const int IdSuffixLength = 8;
 

@@ -8,7 +8,7 @@ namespace VirtoCommerce.SiteBuilder.Tests;
 
 public class ThemeValidatorTests
 {
-    private readonly ThemeValidator _validator = new();
+    private readonly ThemeValidator _validator = new ThemeValidator();
 
     [Fact]
     public void Validate_TypeMissingFromCatalog_ReturnsErrors()
@@ -115,6 +115,66 @@ public class ThemeValidatorTests
             "templates/product.json: 'ref1' places a shared component, which only a page can hold",
             "sections/footer-group.json: 'ref1' places a shared component, which only a page can hold",
         ], _validator.Validate(WithSharedComponent(), catalog));
+    }
+
+    [Fact]
+    public void Validate_CustomSectionInAHeaderOrFooterGroup_ReturnsErrors_ButNotOnAFirstPublicationWithoutCatalog()
+    {
+        // The storefront renders only a group's own sections, so the custom one would not show.
+        var catalog = JObject.Parse("""{ "sections": { "site-header": {}, "product-info": {} } }""");
+        var source = Source(
+            templates: new() { ["product"] = JObject.Parse("""{ "content": [ { "id": "s0", "type": "product-info" }, { "id": "s1", "type": "custom-hero" } ] }""") },
+            header: JObject.Parse("""{ "content": [ { "id": "h", "type": "site-header" }, { "id": "promo", "type": "custom-hero" } ] }"""),
+            footer: JObject.Parse("""{ "content": [ { "id": "news", "type": "custom-hero" } ] }"""));
+        source.CustomSections["custom-hero"] = JObject.Parse("""
+            { "format": 1, "name": "Hero", "schema": { "settings": [] }, "template": "<section></section>", "css": "" }
+            """);
+        string[] errors =
+        [
+            "sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold",
+            "sections/footer-group.json: 'news' places a custom section, which only a page or a template can hold",
+        ];
+
+        Assert.Equal(errors, _validator.Validate(source, catalog));
+        Assert.Empty(_validator.Validate(source, null));
+    }
+
+    [Fact]
+    public void Validate_CustomSectionAsABlockInAHeaderOrFooterGroup_ReturnsErrors_ButNotOnAFirstPublicationWithoutCatalog()
+    {
+        var catalog = JObject.Parse("""{ "sections": { "site-header": {}, "site-footer": {} }, "blocks": { "column": {} } }""");
+        var source = Source(
+            header: JObject.Parse("""{ "content": [ { "id": "h", "type": "site-header", "blocks": [ { "id": "promo", "type": "custom-hero" } ] } ] }"""),
+            footer: JObject.Parse("""
+                { "content": [ { "id": "f", "type": "site-footer", "blocks": [ { "id": "c", "type": "column", "blocks": [ { "id": "news", "type": "custom-news" } ] } ] } ] }
+                """));
+        source.CustomSections["custom-hero"] = JObject.Parse("""
+            { "format": 1, "name": "Hero", "schema": { "settings": [] }, "template": "<section></section>", "css": "" }
+            """);
+        source.CustomSections["custom-news"] = source.CustomSections["custom-hero"];
+        string[] errors =
+        [
+            "sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold",
+            "sections/footer-group.json: 'news' places a custom section, which only a page or a template can hold",
+        ];
+
+        Assert.Equal(errors, _validator.Validate(source, catalog));
+        Assert.Empty(_validator.Validate(source, null));
+    }
+
+    [Fact]
+    public void Validate_BlockOfTheCatalogNamedLikeACustomType_IsAccepted()
+    {
+        var catalog = JObject.Parse("""{ "sections": { "site-footer": {} }, "blocks": { "custom-links": {} } }""");
+        var source = Source(footer: JObject.Parse("""{ "content": [ { "id": "f", "type": "site-footer", "blocks": [ { "id": "b1", "type": "custom-links" } ] } ] }"""));
+
+        Assert.Empty(_validator.Validate(source, catalog));
+
+        source.CustomSections["custom-links"] = JObject.Parse("""
+            { "format": 1, "name": "Links", "schema": { "settings": [] }, "template": "<section></section>", "css": "" }
+            """);
+
+        Assert.Empty(_validator.Validate(source, catalog));
     }
 
     [Fact]

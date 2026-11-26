@@ -71,6 +71,7 @@
         <SectionTree
           v-show="mode === 'sections'"
           :designer="designer"
+          :custom-sections-notice="customSectionsNotice"
           @hover="(id) => bridge.send({ type: 'hover', sectionId: id })"
           @preview-section="previewSection"
           @paste="pasteFromClipboard"
@@ -646,6 +647,10 @@ import {
   templateKeys,
   findFilePage,
   findTemplate,
+  findLiveTemplate,
+  customSectionTypes,
+  findCustomSection,
+  findLiveCustomSection,
   loadThemeFile,
   ApiError,
   type CatalogContext,
@@ -666,12 +671,12 @@ import {
   type HistoryFile,
   type HistoryStatus,
   type HistoryVersion,
-  type ThemePart,
 } from "../designer/history";
 import { publishActions, themeErrors, themePublishButton } from "../designer/themePublication";
 import { CatalogPendingError } from "../designer/designerSave";
 import type { Field, Item, PageDocument, SectionGroup, Selection } from "../designer/types";
 import { draftTemplates, savedTemplatesReader } from "../designer/templateDrafts";
+import { customSectionTypeOf, keptCustomSections, namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
 import TemplateSwitcher from "../designer/components/TemplateSwitcher.vue";
 import EntityPicker from "../designer/components/EntityPicker.vue";
 import RulesPanel from "../designer/components/RulesPanel.vue";
@@ -685,7 +690,7 @@ import { useThemeLook } from "../designer/useThemeLook";
 import { usePreviewUser } from "../designer/usePreviewUser";
 import { LOOK_FILES } from "../designer/themeLook";
 import { PERMISSIONS, refusedParts } from "../designer/permissions";
-import { discardOptions, type DiscardOption } from "../designer/discard";
+import { discardOptions, removedSectionTypes, type DiscardOption, type DiscardThemePart } from "../designer/discard";
 import DiscardDialog from "../designer/components/DiscardDialog.vue";
 
 defineBlade({
@@ -693,7 +698,7 @@ defineBlade({
   url: "/site-builder-designer",
 });
 
-const { t } = useI18n({ useScope: "global" });
+const { t, locale } = useI18n({ useScope: "global" });
 const { id: bladeId, param, query, onBeforeClose, openBlade } = useBlade();
 const { showConfirmation } = usePopup();
 const designer = useDesigner();
@@ -792,7 +797,7 @@ const device = ref<(typeof devices)[number]["id"]>("desktop");
 
 const frame = ref<HTMLIFrameElement>();
 const url = ref<string>();
-const storefront = ref<{ url?: string; previewPath: string }>();
+const storefront = ref<{ url?: string; previewPath: string; assetsBaseUrl?: string }>();
 const storefrontChecked = ref(false);
 const openFailed = ref(false);
 
@@ -852,11 +857,14 @@ function draft(groups = designer.groupsPreview.value): DraftMessage {
     templates: draftedTemplates(templateKey),
     groups,
     look: look.draft.value,
+    customSections: savedCustomSections.value,
+    assetsBaseUrl: storefront.value?.assetsBaseUrl,
     capabilities: designer.handshake.value?.capabilities ?? [],
   });
 }
 
 const savedTemplates = shallowRef<Record<string, PageDocument>>();
+const savedCustomSections = shallowRef<Record<string, CustomSectionType>>();
 
 const colorScheme = ref<ColorScheme>("light");
 
@@ -870,36 +878,38 @@ const previewAs = usePreviewUser({
 const bridge = usePreviewBridge({
   frame,
   url,
-  onLoaded: (loaded) => {
+  onLoaded: (loaded, newDocument) => {
     // A new document reports what its rules picked again.
-    reported.value = undefined;
+    if (newDocument) reported.value = undefined;
     designer.handshake.value = {
-      hash: loaded.hash,
       capabilities: loaded.capabilities,
       conditions: loaded.conditions,
       builtInTemplates: loaded.builtInTemplates,
       paletteTokens: loaded.paletteTokens,
     };
+    const sections = namedSections(keptCustomSections(loaded.catalog.sections), locale.value, designer.languages.value.default ?? "");
     designer.schemas.value = {
       ...loaded.catalog,
-      sections: { [PAGE_CONTENT]: { name: t("SITE_BUILDER.DESIGNER.TEMPLATES.PAGE_CONTENT"), icon: "lucide-file-text", targetTemplates: ["page", "page-template"] }, ...loaded.catalog.sections },
+      sections: { [PAGE_CONTENT]: { name: t("SITE_BUILDER.DESIGNER.TEMPLATES.PAGE_CONTENT"), icon: "lucide-file-text", targetTemplates: ["page", "page-template"] }, ...sections },
     };
   },
   // Saves, publications and agents check the theme against the catalog of the storefront previewed.
   prepare: async (loaded) => {
-    await Promise.all([
+    const [hash] = await Promise.all([
       designer.storeId.value ? ensureCatalog(designer.storeId.value, loaded.catalog, { has: hasCatalog, upload: uploadCatalog }) : undefined,
       previewAs.refresh(),
     ]);
+    // A later `loaded` has a catalog of its own.
+    if (bridge.loaded.value === loaded && designer.handshake.value) designer.handshake.value = { ...designer.handshake.value, hash };
   },
-  // A reloaded frame has lost everything.
-  handshake: () =>
+  // A reloaded frame has lost everything; one whose catalog changed is still where the user scrolled it.
+  handshake: (newDocument) =>
     handshakeMessages({
       auth: previewAs.message(),
       inspector: !versionView && inspector.value,
       colorScheme: colorScheme.value,
       draft: versionView?.draft ?? draft(),
-      render: versionView?.render ?? render({ scroll: true }),
+      render: versionView?.render ?? render({ scroll: newDocument }),
     }),
   onSelect: (event) => {
     if (designer.isLocked(event.sectionId)) return refuseLocked();
@@ -1423,7 +1433,9 @@ async function reopen() {
 }
 
 async function checkAssistantSave() {
-  if (!(await designer.pageChangedOnServer().catch(() => false))) return;
+  // The assistant may also have created a custom section type, which the picker offers once the theme status shows it.
+  const [changed] = await Promise.all([designer.pageChangedOnServer().catch(() => false), designer.refreshThemeStatus()]);
+  if (!changed) return;
   notifyPagesChanged();
   if (designer.dirty.value) notification.warning(t("SITE_BUILDER.DESIGNER.ASSISTANT_CHANGED"));
   else await reopen().catch(() => undefined);
@@ -1475,13 +1487,16 @@ async function restoreSiteVersion(version: HistoryVersion, items: string[]) {
   }
 }
 
-// A draft never published is the only copy, so only drafts with a published version can be thrown away.
+// A draft never published is the only copy, so only drafts with a published version can be thrown away, but for a custom
+// section type's: discarding it deletes the type, which the dialog says.
 const discardChoices = computed(() =>
   discardOptions({
     page: designer.discardable.value.page,
     theme: designer.discardable.value.theme,
     template: designer.themeFileOpen.value,
     hasAccess,
+    sectionName: (type) => designer.sectionSchema(type)?.name,
+    neverPublished: (designer.themeStatus.value?.newDrafts ?? []).map(customSectionTypeOf).filter((x) => x !== undefined),
   }),
 );
 const hasDraft = computed(() => discardChoices.value.some((x) => x.allowed));
@@ -1496,12 +1511,13 @@ async function discardChanges() {
   else if (await showConfirmation(t("SITE_BUILDER.DESIGNER.CONFIRM_DISCARD_UNSAVED"))) await discardDrafts({ page: false, theme: [] });
 }
 
-async function discardDrafts(choice: { page: boolean; theme: ThemePart[] }) {
+async function discardDrafts(choice: { page: boolean; theme: DiscardThemePart[] }) {
   discarding.value = undefined;
   const drafts = choice.page || choice.theme.length > 0;
+  const removedTypes = removedSectionTypes(discardChoices.value, choice.theme).map((x) => x.part);
   let failed = false;
   try {
-    if (drafts) await designer.discardDrafts(choice);
+    if (drafts && (await designer.discardDrafts(choice))) readSavedCustomSections.forget(removedTypes);
     if (choice.page) notifyPagesChanged();
   } catch {
     failed = true;
@@ -1794,23 +1810,53 @@ const themeName = ref<string>();
 const templateKeyList = ref<string[]>([]);
 const templateKeysNotice = ref<string>();
 const readSavedTemplates = savedTemplatesReader();
-let templatesRead = 0;
+const readSavedCustomSections = savedCustomSectionsReader();
+const customSectionsNotice = ref<string>();
+let themeFilesRead = 0;
+// The preview reads the published theme from the snapshot it started with, so a publication reloads it.
+watch(
+  () => [designer.storeId.value, designer.themeStatus.value] as const,
+  ([storeId, status], [storeBefore, statusBefore]) => {
+    if (storeId === storeBefore && statusBefore && status?.publication !== statusBefore.publication) reloadPreview();
+  },
+);
 watch([() => designer.themeStatus.value, themeName], async ([status, theme]) => {
-  const request = ++templatesRead;
+  const request = ++themeFilesRead;
   const storeId = designer.storeId.value;
   if (!status || !theme || !storeId) {
     savedTemplates.value = undefined;
+    savedCustomSections.value = undefined;
+    customSectionsNotice.value = undefined;
     return;
   }
-  try {
-    const templates = await readSavedTemplates(`${storeId}/${theme}`, status, {
-      keys: () => templateKeys(storeId, theme),
-      read: async (key) => (await findTemplate({ storeId, theme, type: "themes", path: templatePath(theme, key) })).doc,
-    });
-    if (request === templatesRead) savedTemplates.value = templates;
-  } catch {
-    // A failed read keeps the templates read before.
-  }
+  const scope = `${storeId}/${theme}`;
+  // A failed read keeps the files read before.
+  await Promise.all([
+    designer.shared.value
+      ? undefined
+      : readSavedTemplates(scope, status, {
+          keys: () => templateKeys(storeId, theme),
+          read: async (key) => (await findTemplate({ storeId, theme, type: "themes", path: templatePath(theme, key) })).doc,
+          live: (key) => findLiveTemplate(storeId, templatePath(theme, key)),
+        })
+          .then((templates) => {
+            if (request === themeFilesRead) savedTemplates.value = templates;
+          })
+          .catch(() => undefined),
+    readSavedCustomSections(scope, status, {
+      keys: () => customSectionTypes(storeId, theme),
+      read: (type) => findCustomSection(storeId, theme, type),
+      live: (type) => findLiveCustomSection(storeId, theme, type),
+    })
+      .then((types) => {
+        if (request !== themeFilesRead) return;
+        savedCustomSections.value = types;
+        customSectionsNotice.value = undefined;
+      })
+      .catch((e) => {
+        if (request === themeFilesRead && e instanceof ApiError && e.status === 403) customSectionsNotice.value = t("SITE_BUILDER.DESIGNER.CUSTOM_SECTIONS_LIST_FORBIDDEN");
+      }),
+  ]);
 });
 const catalog = ref<CatalogContext>();
 watchEffect(() => {

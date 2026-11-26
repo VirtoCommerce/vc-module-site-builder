@@ -152,9 +152,9 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_ThemeFileWithTypeTheCatalogLacks_ReturnsBadRequestWithErrorsAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Builder().SaveTemplates("s1", "default", HeaderGroup("site-header", "carousel"), draft: true, catalogHash: Catalog);
+        var result = await Builder().SaveTemplates("s1", "default", HeaderGroup("site-header", "carousel"), draft: true, catalogHash: catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result));
         Assert.Contains("'carousel'", (string)body["errors"]!.Single());
@@ -177,7 +177,7 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_ThemeFilesFitCatalog_SavesDrafts()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var files = new SiteBuilderController.SaveFilesModel
         {
             Files = JsonConvert.SerializeObject(new object[]
@@ -188,7 +188,7 @@ public class SiteBuilderControllerThemeFilesTests
             }),
         };
 
-        Assert.IsType<OkObjectResult>(await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: Catalog));
+        Assert.IsType<OkObjectResult>(await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: catalog));
 
         Assert.True(_live.Files.ContainsKey(Theme($"{Path}-draft")));
         Assert.True(_live.Files.ContainsKey(Theme("default/templates/product.json-draft")));
@@ -198,7 +198,7 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_TemplatePlacingSharedComponent_ReturnsBadRequest()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var files = new SiteBuilderController.SaveFilesModel
         {
             Files = JsonConvert.SerializeObject(new[]
@@ -207,9 +207,34 @@ public class SiteBuilderControllerThemeFilesTests
             }),
         };
 
-        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: Catalog);
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: catalog);
 
         Assert.Contains("shared component", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result))["errors"]!.Single());
+    }
+
+    [Fact]
+    public async Task SaveTemplates_CustomSectionTypeThatBreaksARule_ReturnsBadRequestWithErrorsAndWritesNothing()
+    {
+        const string path = "default/custom-sections/custom-hero.json";
+        var files = new SiteBuilderController.SaveFilesModel
+        {
+            Files = JsonConvert.SerializeObject(new[]
+            {
+                new
+                {
+                    path,
+                    type = "themes",
+                    content = new { format = 1, name = "Hero", schema = new { settings = Array.Empty<object>() }, template = "<section onclick=\"go()\"></section>", css = "" },
+                },
+            }),
+        };
+
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true);
+
+        var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result));
+        Assert.Equal("custom-sections/custom-hero.json: <section> at line 1 has an attribute a custom section cannot use, 'onclick': it runs script",
+            (string)body["errors"]!.Single());
+        Assert.False(_live.Files.ContainsKey(Theme($"{path}-draft")));
     }
 
     [Fact]
@@ -455,6 +480,34 @@ public class SiteBuilderControllerThemeFilesTests
         Assert.False(_live.Files.ContainsKey(DraftFile(contentType, path)));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DiscardDraftOperation_ThemeFileNotInTheStoresTheme_IsInvalidAndKeepsTheDraft(bool dryRun)
+    {
+        const string draft = "default/custom-sections/custom-promo.json-draft";
+        var history = new RecordingContentHistory();
+        _live.Files[Theme(draft)] = "draft";
+
+        var result = await DiscardOperations(history).DiscardDraftAsync(DiscardRequest("themes", "custom-sections/custom-promo.json", dryRun), Alice, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("custom-sections/custom-promo.json", result.Error);
+        Assert.Equal("draft", _live.Files[Theme(draft)]);
+        Assert.Empty(history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardDraft_ThemeFileNotInTheStoresTheme_ReturnsBadRequestAndKeepsTheDraft()
+    {
+        const string draft = "default/custom-sections/custom-promo.json-draft";
+        _live.Files[Theme(draft)] = "draft";
+
+        Assert.IsType<BadRequestObjectResult>(await Builder().DiscardDraft("s1", "custom-sections/custom-promo.json", "themes"));
+
+        Assert.Equal("draft", _live.Files[Theme(draft)]);
+    }
+
     private static ClaimsPrincipal Alice => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
 
     private static string DraftFile(string contentType, string path) => contentType == "themes" ? Theme($"{path}-draft") : Page($"{path}-draft");
@@ -505,7 +558,7 @@ public class SiteBuilderControllerThemeFilesTests
     [Fact]
     public async Task SaveTemplates_ThemeFileNamedAgainFromTheRoot_ReturnsNamingErrorAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var files = new SiteBuilderController.SaveFilesModel
         {
             Files = JsonConvert.SerializeObject(new[]
@@ -515,7 +568,7 @@ public class SiteBuilderControllerThemeFilesTests
             }),
         };
 
-        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: Catalog);
+        var result = await Builder().SaveTemplates("s1", "default", files, draft: true, catalogHash: catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result));
         Assert.Equal(DesignerThemeFiles.NamingError, (string)body["error"]);
@@ -531,6 +584,32 @@ public class SiteBuilderControllerThemeFilesTests
 
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Empty(_live.Files);
+    }
+
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/x/bar.json")]
+    [InlineData("default/sections/x.json")]
+    public async Task SaveTemplates_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndWritesNothing(string path)
+    {
+        var history = new RecordingContentHistory();
+
+        var result = await Builder(history: history).SaveTemplates("s1", "default", ThemeFile(path), draft: true);
+
+        Assert.Contains($"\"{path}\"", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result))["error"]);
+        Assert.Empty(_live.Files);
+        Assert.Empty(history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardDraft_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestAndKeepsTheDraft()
+    {
+        const string draft = "default/agent-test.json-draft";
+        _live.Files[Theme(draft)] = "{}";
+
+        Assert.IsType<BadRequestObjectResult>(await Builder().DiscardDraft("s1", "default/agent-test.json", "themes", "default"));
+
+        Assert.Equal("{}", _live.Files[Theme(draft)]);
     }
 
     private Task<string> SaveCatalogAsync() =>
@@ -553,12 +632,12 @@ public class SiteBuilderControllerThemeFilesTests
         Files = JsonConvert.SerializeObject(new[] { new { path, type = "themes", content = new { content = Array.Empty<object>() } } }),
     };
 
-
     private SiteBuilderController Builder(IAuthorizationService authorization = null, IEventPublisher eventPublisher = null, IContentHistory history = null)
     {
         var options = Options.Create(new GitContentOptions { Enabled = true, Organization = "acme", Token = "t0ken", BaseBranch = "main" });
-        var themePublisher = new ThemePublisher(_themeStorageFactory, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themeStorageFactory),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
+        var themePublisher = new ThemePublisher(_themeStorageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themeStorageFactory),
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), GitHubConnections.CreatePolicy(options, new FakeSettingsManager(true), _ownership), null, null, new FakeGitContentProvisioner());
         var controller = TestServices.CreateSiteBuilderController(
             storeService: _live.StoreService,
@@ -585,7 +664,7 @@ public class SiteBuilderControllerThemeFilesTests
                 requestValidator: RequestValidators.Content("s1"),
                 designerContentService: TestServices.Designer(history ?? new NoContentHistory(), filePageDrafts,
                     new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance), null, eventPublisher ?? _live, themePublisher,
-                    new SchemaCatalogService(_themeStorageFactory)),
+                    new SchemaCatalogService(_themeStorageFactory), _themeStorageFactory),
                 themeDraftService: new ThemeDraftService(_themeStorageFactory, _lock, eventPublisher ?? _live, NullLogger<ThemeDraftService>.Instance)),
             contentPermissionService: TestServices.Permissions(authorization ?? new FakeAuthorizationService(true)),
             filePageDraftService: filePageDrafts,

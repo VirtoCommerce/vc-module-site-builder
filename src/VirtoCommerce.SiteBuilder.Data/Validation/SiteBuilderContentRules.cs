@@ -1,5 +1,6 @@
 using FluentValidation;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 
 namespace VirtoCommerce.SiteBuilder.Data.Validation;
 
@@ -39,6 +40,42 @@ public static class SiteBuilderContentRules
                 return false;
             })
             .WithMessage($"{{{EnvelopeError}}}");
+
+    /// <summary>
+    /// A theme file is read and written in the theme folder its path starts with, and only the store's theme is published: a path in
+    /// another folder is refused rather than written or deleted where nothing reads it. The folder is compared as blob storage and git name it:
+    /// in another case it is another folder.
+    /// </summary>
+    /// <param name="getThemeFiles">The paths, with the theme folder, of the theme files the value names.</param>
+    public static IRuleBuilderOptionsConditions<T, TProperty> InTheStoresTheme<T, TProperty>(this IRuleBuilder<T, TProperty> rule,
+        IThemeStorageFactory themeStorageFactory, Func<TProperty, IEnumerable<string>> getThemeFiles)
+        where T : SiteBuilderStoreRequest =>
+        rule.CustomAsync(async (value, context, _) =>
+        {
+            var paths = value == null ? [] : getThemeFiles(value).ToList();
+            if (paths.Count == 0)
+            {
+                return;
+            }
+
+            var themeName = await themeStorageFactory.GetThemeNameAsync(context.InstanceToValidate.StoreId);
+            foreach (var path in paths.Where(x => !string.Equals(SiteBuilderContentPaths.GetThemeName(x), themeName, StringComparison.Ordinal)))
+            {
+                context.AddFailure($"\"{path}\" is not in the store's theme folder \"{themeName}\".");
+            }
+        });
+
+    /// <summary>Once the store's theme folder is known (after <see cref="InTheStoresTheme"/>), the file must be a theme file the builder saves.</summary>
+    /// <param name="getThemeFiles">The paths, with the theme folder, of the theme files the value names.</param>
+    public static IRuleBuilderOptionsConditions<T, TProperty> SavedByTheBuilder<T, TProperty>(this IRuleBuilder<T, TProperty> rule,
+        Func<TProperty, IEnumerable<string>> getThemeFiles) =>
+        rule.Custom((value, context) =>
+        {
+            foreach (var path in (value == null ? [] : getThemeFiles(value)).Where(x => !SiteBuilderContentPaths.CanSaveThemeFile(x)))
+            {
+                context.AddFailure(SiteBuilderContentPaths.GetNotSavedError(path));
+            }
+        });
 
     public static IRuleBuilderOptions<T, string> ReadVersion<T>(this IRuleBuilder<T, string> rule, bool trim = false) =>
         rule

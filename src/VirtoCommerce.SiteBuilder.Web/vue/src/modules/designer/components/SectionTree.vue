@@ -180,6 +180,7 @@
       v-if="addingTo"
       :designer="designer"
       :group="addingTo === 'page' ? undefined : addingTo"
+      :notice="customSectionsNotice"
       @preview="(type) => emit('preview-section', type)"
       @close="addingTo = null"
     />
@@ -196,7 +197,7 @@ import { humanize, iconOf } from "../schema";
 import AddSection from "./AddSection.vue";
 import SectionRows from "./SectionRows.vue";
 
-const props = defineProps<{ designer: Designer }>();
+const props = defineProps<{ designer: Designer; customSectionsNotice?: string }>();
 const emit = defineEmits<{
   hover: [sectionId: string | null];
   "preview-section": [type: string | null];
@@ -240,6 +241,7 @@ function select(sel: Selection) {
 <!-- Not scoped: a child component renders the rows. -->
 <style lang="scss">
 .pd-tree {
+  container: pd-tree / inline-size;
   display: flex;
   flex-direction: column;
   padding: 8px;
@@ -470,6 +472,40 @@ function select(sel: Selection) {
     &--missing {
       background: var(--danger-50);
       color: var(--danger-700);
+    }
+
+    &--warning {
+      background: var(--warning-50);
+      color: var(--warning-800);
+    }
+
+    // The label gives way before the section's name does; the title and the hidden hint keep the whole text.
+    &--with-icon {
+      display: inline-flex;
+      flex: 0 1 auto;
+      align-items: center;
+      gap: 3px;
+      min-width: 0;
+      max-width: 45%;
+    }
+  }
+
+  &__badge-label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  // The narrowest tree leaves a section's name too little room beside the label, so the badge keeps only its icon.
+  // The query takes the content box: the designer's 260 px panel leaves about 228 px, its 300 px one about 268 px.
+  @container pd-tree (max-width: 250px) {
+    &__badge--with-icon {
+      flex: none;
+    }
+
+    &__badge-label {
+      display: none;
     }
   }
 

@@ -18,23 +18,46 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
     public const string SettingsDataFile = "config/settings_data.json";
     public const string PaletteFile = "config/palette.json";
     public const string DarkPaletteFile = "config/palette.dark.json";
+    public const string CustomSectionsFolder = "custom-sections";
     public const string SnapshotsFolder = "snapshots";
     public const string CurrentPublicationFile = SnapshotsFolder + "/current.json";
     public const string PublicationRecordFileName = "publication.json";
     public const string CatalogsFolder = "catalogs";
     public const string CurrentCatalogFile = CatalogsFolder + "/current.json";
+    public const int CustomSectionTypeMaxLength = 64;
+    public const string CustomSectionTypePrefix = "custom-";
+    public const string CustomSectionTypePattern = $"^{CustomSectionTypeName}$";
 
+    private const string CustomSectionTypeName = $"{CustomSectionTypePrefix}[a-z0-9]+(?:-[a-z0-9]+)*";
     private const string FolderType = "folder";
     private const string JsonExtension = ".json";
 
-    private static readonly Regex TemplateKeyPattern = new("^(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex TemplateKeyPattern = new("\\A(product|category|page)(\\.[a-z0-9]+(?:-[a-z0-9]+)*)?\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+    // .NET's $ also matches before a final line feed
+    private static readonly Regex CustomSectionTypeRegex = new($"\\A{CustomSectionTypeName}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
         ContractResolver = new DefaultContractResolver { NamingStrategy = new CamelCaseNamingStrategy() },
     };
 
+    /// <summary>
+    /// The theme's files other than its templates and custom section types. With those, they are all the status lists and a publication reads,
+    /// so <see cref="IsThemeFile"/> is the whole set the builder saves: a publisher that reads another file names it here.
+    /// </summary>
+    public static IReadOnlyList<string> PartFiles { get; } =
+        [TemplateRulesFile, HeaderGroupFile, FooterGroupFile, BrandFile, SettingsDataFile, PaletteFile, DarkPaletteFile];
+
     public string ThemeName { get; } = themeName;
+
+    /// <summary>
+    /// A file the theme's status lists and a publication reads, by the name they list it under: a part, a template or a custom section type,
+    /// valid or not; only such a file is saved, restored or discarded by the builder.
+    /// </summary>
+    /// <param name="file">The path relative to the theme folder.</param>
+    public static bool IsThemeFile(string file) =>
+        file != null && (PartFiles.Contains(file, StringComparer.Ordinal) || IsTemplateFile(file) || IsCustomSectionFile(file));
 
     public static string GetLockResource(string storeId) => $"SiteBuilder:Theme:{storeId}";
 
@@ -58,6 +81,15 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
 
         return IsTemplateKey(key) ? key : null;
     }
+
+    public static bool IsCustomSectionType(string type) =>
+        type.Length <= CustomSectionTypeMaxLength && CustomSectionTypeRegex.IsMatch(type);
+
+    public static string GetCustomSectionFile(string type) => $"{CustomSectionsFolder}/{type}{JsonExtension}";
+
+    /// <summary>The file name without .json, valid type or not; null for a file that is not JSON.</summary>
+    public static string GetCustomSectionType(string fileName) =>
+        fileName.EndsWith(JsonExtension, StringComparison.OrdinalIgnoreCase) ? fileName[..^JsonExtension.Length] : null;
 
     public virtual string GetPath(string file) => $"{ThemeName}/{file}";
 
@@ -225,6 +257,20 @@ public class ThemeStorage(IBlobContentStorageProvider provider, IPublishingServi
         {
             return null;
         }
+    }
+
+    private static bool IsTemplateFile(string file) =>
+        GetFileName(file, TemplatesFolder) is { } fileName && GetTemplateKey(fileName) is { } key && GetTemplateFile(key) == file;
+
+    private static bool IsCustomSectionFile(string file) =>
+        GetFileName(file, CustomSectionsFolder) is { } fileName && GetCustomSectionType(fileName) is { } type && GetCustomSectionFile(type) == file;
+
+    /// <summary>The name of a file right in the folder, as the folder's listing gives it; null for a file anywhere else.</summary>
+    private static string GetFileName(string file, string folder)
+    {
+        var prefix = folder + "/";
+
+        return file.StartsWith(prefix, StringComparison.Ordinal) && file.IndexOf('/', prefix.Length) < 0 ? file[prefix.Length..] : null;
     }
 
     private static int? GetPublication(ThemePublicationPointer pointer) => pointer?.Publication > 0 ? pointer.Publication : null;

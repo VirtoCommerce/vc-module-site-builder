@@ -13,7 +13,7 @@ public class ThemeSnapshotBuilderTests
 {
     private static readonly DateTime Published = new(2026, 11, 3, 10, 0, 0, DateTimeKind.Utc);
 
-    private readonly ThemeSnapshotBuilder _builder = new();
+    private readonly ThemeSnapshotBuilder _builder = TestServices.ThemeSnapshotBuilder(assetsUrl: null);
 
     [Fact]
     public void Build_RulesWithoutIds_AssignsIdsConditionsAndTheDefaultRulesOfAPageTypeWithoutRules()
@@ -145,6 +145,16 @@ public class ThemeSnapshotBuilderTests
         Assert.Equal("de-DE", snapshot.Value<string>("cultureName"));
         Assert.Equal("abc12345", snapshot.Value<string>("catalogHash"));
         Assert.Equal("default", snapshot.Value<string>("theme"));
+    }
+
+    [Fact]
+    public void Build_NamesTheAssetLibrarysAddress_WhichTheCustomSectionsImagesStartWith()
+    {
+        var snapshot = JObject.Parse(TestServices.ThemeSnapshotBuilder().Build(Source(), null, null, [], "en-US", 1, Published).Files["en-US"]);
+        var withoutLibrary = JObject.Parse(_builder.Build(Source(), null, null, [], "en-US", 1, Published).Files["en-US"]);
+
+        Assert.Equal(TestServices.AssetsUrl, snapshot.Value<string>("assetsBaseUrl"));
+        Assert.False(withoutLibrary.ContainsKey("assetsBaseUrl"));
     }
 
     [Fact]

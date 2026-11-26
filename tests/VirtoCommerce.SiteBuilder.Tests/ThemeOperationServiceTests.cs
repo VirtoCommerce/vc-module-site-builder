@@ -45,6 +45,7 @@ public class ThemeOperationServiceTests
     private readonly InProcessDistributedLock _lock = new();
     private readonly FakeStoreService _stores = new(new Store { Id = StoreId, DefaultLanguage = "en-US", Languages = ["en-US"], DynamicProperties = [] });
     private readonly ThemeStorageFactory _themes;
+    private string _catalog;
 
     public ThemeOperationServiceTests()
     {
@@ -313,7 +314,7 @@ public class ThemeOperationServiceTests
         await SeedThemeAsync();
         _storage.Files[Theme(Palette + "-draft")] = FailingPalette;
 
-        var result = await Controller().Publish(StoreId, Catalog, Ct);
+        var result = await Controller().Publish(StoreId, _catalog, Ct);
 
         var error = $"config/palette.json: {FailingPair}";
         Assert.Equal($$"""{"error":"The theme is not valid: {{error}}","errors":["{{error}}"]}""",
@@ -325,7 +326,7 @@ public class ThemeOperationServiceTests
     {
         await SeedThemeAsync();
 
-        var result = await Controller().Publish(StoreId, Catalog, Ct);
+        var result = await Controller().Publish(StoreId, _catalog, Ct);
 
         Assert.Equal("""{"publication":1}""", PlatformJson.SerializeBody(result));
     }
@@ -359,7 +360,7 @@ public class ThemeOperationServiceTests
             catalog["paletteTokens"] = JObject.Parse(paletteTokens);
         }
 
-        await new SchemaCatalogService(_themes).SaveAsync(StoreId, catalog.ToString(), Ct);
+        _catalog = await new SchemaCatalogService(_themes).SaveAsync(StoreId, catalog.ToString(), Ct);
         _storage.Files[Theme(Product + "-draft")] = Template("product-info");
     }
 
@@ -375,17 +376,18 @@ public class ThemeOperationServiceTests
     private async Task<string> VersionOfAsync(string path) =>
         (await new ThemeDraftService(_themes, _lock, _storage, NullLogger<ThemeDraftService>.Instance).ReadAsync(StoreId, path, Ct)).ETag;
 
-    private static ThemePublishOperationRequest DryRun() => new() { StoreId = StoreId, CatalogHash = Catalog, DryRun = true };
+    private ThemePublishOperationRequest DryRun() => new() { StoreId = StoreId, CatalogHash = _catalog, DryRun = true };
 
-    private static ThemePublishOperationRequest Publish(IDictionary<string, string> expectedVersions = null) =>
-        new() { StoreId = StoreId, CatalogHash = Catalog, ExpectedVersions = expectedVersions };
+    private ThemePublishOperationRequest Publish(IDictionary<string, string> expectedVersions = null) =>
+        new() { StoreId = StoreId, CatalogHash = _catalog, ExpectedVersions = expectedVersions };
 
     private ThemeOperationService Service(FakeAuthorizationService authorization = null, IContentHistory history = null) =>
         TestServices.ThemeOperations(authorization ?? new FakeAuthorizationService(true), Publisher(), history, StoreId);
 
     private ThemePublisher Publisher() =>
-        new(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_themes), _lock, _storage, new NoContentHistory(),
-            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
+        new(_themes, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, new SchemaCatalogService(_themes), _lock, _storage, new NoContentHistory(),
+            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
     private ThemeController Controller() =>
         new(Service(), new SchemaCatalogService(_themes), new ThemePaletteService(), new FakeAuthorizationService(true), RequestValidators.Stores(StoreId),

@@ -5141,6 +5141,7 @@ export interface DesignerSaveResult {
 export interface DesignerStorefront {
     url?: string | undefined;
     previewPath?: string | undefined;
+    assetsBaseUrl?: string | undefined;
 }
 
 export interface DynamicObjectProperty {
@@ -5678,11 +5679,13 @@ export interface ThemeFileContent {
     content?: string | undefined;
     path?: string | undefined;
     eTag?: string | undefined;
+    warnings?: string[] | undefined;
 }
 
 export interface ThemeFileVersion {
     path?: string | undefined;
     eTag?: string | undefined;
+    warnings?: string[] | undefined;
 }
 
 export interface ThemePalette {

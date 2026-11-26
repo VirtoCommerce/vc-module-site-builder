@@ -6,4 +6,6 @@ public class ThemeFileVersion
     public string Path { get; set; }
 
     public string ETag { get; set; }
+
+    public IList<string> Warnings { get; set; } = [];
 }

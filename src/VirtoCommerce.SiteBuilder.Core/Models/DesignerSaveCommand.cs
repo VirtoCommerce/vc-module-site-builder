@@ -1,3 +1,5 @@
+using Newtonsoft.Json.Linq;
+
 namespace VirtoCommerce.SiteBuilder.Core.Models;
 
 public class DesignerSaveCommand
@@ -22,4 +24,10 @@ public class DesignerSaveCommand
 
     /// <summary>The section schema catalog the designer previewed; without it the content is checked without a schema.</summary>
     public string CatalogHash { get; set; }
+
+    /// <summary>
+    /// The custom section types the caller's check of <see cref="ThemeFiles"/> read, as <see cref="ThemeFilesValidationResult.CustomSections"/>
+    /// holds them; <c>null</c> reads them again.
+    /// </summary>
+    public IDictionary<string, IDictionary<string, JToken>> CustomSections { get; set; }
 }

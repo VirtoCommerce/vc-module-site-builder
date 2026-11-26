@@ -37,7 +37,8 @@ public class ThemePublisher(
     IOptions<ThemeSnapshotOptions> options,
     ILogger<ThemePublisher> logger,
     ISiteBuilderContentGuard contentGuard,
-    IThemePaletteService themePaletteService) : IThemePublisher
+    IThemePaletteService themePaletteService,
+    ICustomSectionValidator customSectionValidator) : IThemePublisher
 {
     private const string PaletteTokensKey = "paletteTokens";
 
@@ -47,16 +48,8 @@ public class ThemePublisher(
     private const double TextContrastRatio = 4.5;
     private const int RatioDecimals = 2;
 
-    private static readonly Dictionary<string, Action<ThemeSource, JToken>> ThemeParts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [ThemeStorage.TemplateRulesFile] = (source, content) => source.Rules = content,
-        [ThemeStorage.HeaderGroupFile] = (source, content) => source.Header = content,
-        [ThemeStorage.FooterGroupFile] = (source, content) => source.Footer = content,
-        [ThemeStorage.BrandFile] = (source, content) => source.Brand = content,
-        [ThemeStorage.SettingsDataFile] = (source, content) => source.SettingsData = content,
-        [ThemeStorage.PaletteFile] = (source, content) => source.Palette = content,
-        [ThemeStorage.DarkPaletteFile] = (source, content) => source.PaletteDark = content,
-    };
+    private static readonly Dictionary<string, Action<ThemeSource, JToken>> ThemeParts =
+        ThemeStorage.PartFiles.ToDictionary(x => x, GetPartSetter, StringComparer.OrdinalIgnoreCase);
 
     public virtual Task<int> PublishAsync(string storeId, string catalogHash, ClaimsPrincipal user, CancellationToken cancellationToken = default)
     {
@@ -87,7 +80,7 @@ public class ThemePublisher(
         var source = await GetThemeSourceAsync(storage, includeDrafts: true);
         var result = AbstractTypeFactory<ThemePublicationPreview>.TryCreateInstance();
         result.Drafts = GetDraftVersions(storeId, storage, source);
-        var errors = ValidateThemeSource(source, catalog, includeDrafts: true);
+        var errors = ValidateThemeSource(source, catalog, includeDrafts: true).Concat(ValidateCustomSections(source, catalog)).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -148,6 +141,19 @@ public class ThemePublisher(
             AddThemeFile(source, file, content);
         }
 
+        // the validator counts the source's custom types in place of the catalog's, so a type a file places is read as the theme holds it
+        var placed = files.Values.SelectMany(ThemeCustomSections.GetPlacedTypes).Where(x => !source.CustomSections.ContainsKey(x)).ToHashSet(StringComparer.Ordinal);
+        if (placed.Count > 0)
+        {
+            var storage = await themeStorageFactory.OpenAsync(storeId);
+            // only the folder's own types are read, so what the files name costs no read of a type the theme does not hold
+            foreach (var file in (await GetCustomSectionTypesAsync(storage)).Where(placed.Contains).Select(ThemeStorage.GetCustomSectionFile))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AddThemeFile(source, file, await ReadThemeFileAsync(storage, source, file, includeDrafts: true));
+            }
+        }
+
         var errors = themeValidator.Validate(source, catalog);
         if (errors.Count > 0)
         {
@@ -168,7 +174,15 @@ public class ThemePublisher(
         // before the drafts are sanitized: a version is of the draft as it is stored
         CheckDraftVersions(expectedVersions, GetDraftVersions(storeId, storage, source));
         var validationCatalog = catalogHash == null ? null : catalog;
-        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts);
+        if (catalogHash == null)
+        {
+            LeaveOutFailingCustomSections(storeId, source, catalog);
+        }
+
+        // a first publication has left out what fails, so a second pass, whose verdict could differ, would only fail it
+        IList<string> customSectionErrors = catalogHash == null ? [] : ValidateCustomSections(source, catalog);
+
+        var errors = ValidateThemeSource(source, validationCatalog, includeDrafts).Concat(customSectionErrors).ToList();
         if (errors.Count > 0)
         {
             throw new ThemeValidationException([.. errors]);
@@ -224,13 +238,67 @@ public class ThemePublisher(
     /// <summary>Also sanitizes the HTML of the files, see <see cref="GuardThemeSource"/>.</summary>
     protected virtual IList<string> ValidateThemeSource(ThemeSource source, JObject catalog, bool includeDrafts)
     {
-        var errors = GuardThemeSource(source, catalog).Concat(themeValidator.Validate(source, catalog));
+        var themeCatalog = catalog == null ? null : ThemeCustomSections.AddToCatalog(catalog, source.CustomSections);
+        var errors = GuardThemeSource(source, themeCatalog)
+            .Concat(themeValidator.Validate(source, catalog));
 
         // A palette is refused when it is published: a live palette that fails stays live whatever else is published, and a first
         // publication puts the live files out as they are.
         return (includeDrafts && HasPaletteDraft(source) ? errors.Concat(ValidatePalette(source, catalog)) : errors)
             .Concat(includeDrafts ? ValidateSectionColors(source) : [])
             .ToList();
+    }
+
+    /// <summary>Each type's own rules, and their size together.</summary>
+    protected virtual IList<string> ValidateCustomSections(ThemeSource source, JObject catalog) =>
+        ThemeCustomSections.GetErrors(customSectionValidator.ValidateTypes(source.CustomSections, source.CustomSections.Keys, catalog)).ToList();
+
+    /// <summary>
+    /// A first publication puts the live files out as they are, and a failure keeps the store's storefront from any theme: a custom section
+    /// type that is not JSON, fails against the current catalog or the content guard, or uses the kit when there is none, is left out, as a
+    /// shared component is, and so are the largest types until the rest fit the size and the count the snapshot carries.
+    /// </summary>
+    protected virtual void LeaveOutFailingCustomSections(string storeId, ThemeSource source, JObject catalog)
+    {
+        foreach (var file in source.InvalidFiles.Where(x => ThemeCustomSections.GetCustomSectionType(x) != null).ToList())
+        {
+            source.InvalidFiles.Remove(file);
+            logger.LogWarning("The first theme publication of store {StoreId} leaves out the custom section type of {File}: not valid JSON", storeId, file);
+        }
+
+        var types = source.CustomSections.Keys.ToList();
+        var results = customSectionValidator.ValidateTypes(source.CustomSections, types, catalog).ToLookup(x => x.File, StringComparer.Ordinal);
+        foreach (var type in types)
+        {
+            var file = ThemeStorage.GetCustomSectionFile(type);
+            var errors = results[file].SelectMany(x => x.Errors)
+                .Concat(contentGuard.GuardThemeFile(file, source.CustomSections[type], catalog).Errors)
+                .ToList();
+            if (errors.Count > 0)
+            {
+                LeaveOut(type, string.Join("; ", errors));
+            }
+        }
+
+        // the types together are as large as the sum of each, so each is measured once
+        var sizes = source.CustomSections
+            .Select(x => (Type: x.Key, Size: customSectionValidator.GetSize(new Dictionary<string, JToken> { [x.Key] = x.Value })))
+            .OrderByDescending(x => x.Size)
+            .ThenBy(x => x.Type, StringComparer.Ordinal)
+            .ToList();
+        var size = sizes.Sum(x => x.Size);
+        var rules = customSectionValidator.GetRules();
+        for (var i = 0; i < sizes.Count && (size > rules.MaxTotalSize || sizes.Count - i > rules.MaxTypes); i++)
+        {
+            LeaveOut(sizes[i].Type, size > rules.MaxTotalSize ? "the types together are too large" : "the theme holds too many types");
+            size -= sizes[i].Size;
+        }
+
+        void LeaveOut(string type, string reason)
+        {
+            source.CustomSections.Remove(type);
+            logger.LogWarning("The first theme publication of store {StoreId} leaves out the custom section type {Type}: {Reason}", storeId, type, reason);
+        }
     }
 
     /// <summary>
@@ -415,6 +483,11 @@ public class ThemePublisher(
             files[ThemeStorage.GetTemplateFile(key)] = document;
         }
 
+        foreach (var (type, content) in source.CustomSections)
+        {
+            files[ThemeStorage.GetCustomSectionFile(type)] = content;
+        }
+
         var errors = new List<string>();
         foreach (var (file, content) in files.Where(x => x.Value != null))
         {
@@ -459,9 +532,26 @@ public class ThemePublisher(
     protected virtual async Task<IList<string>> GetThemeFilesAsync(IThemeStorage storage)
     {
         var templateKeys = await GetTemplateKeysAsync(storage);
+        var customSectionTypes = await GetCustomSectionTypesAsync(storage);
 
-        return ThemeParts.Keys.Concat(templateKeys.Select(ThemeStorage.GetTemplateFile)).ToList();
+        return ThemeStorage.PartFiles
+            .Concat(templateKeys.Select(ThemeStorage.GetTemplateFile))
+            .Concat(customSectionTypes.Select(ThemeStorage.GetCustomSectionFile))
+            .ToList();
     }
+
+    // a part the source has no place for fails at the first use of the publisher, not by leaving the part out of every publication
+    private static Action<ThemeSource, JToken> GetPartSetter(string file) => file switch
+    {
+        ThemeStorage.TemplateRulesFile => (source, content) => source.Rules = content,
+        ThemeStorage.HeaderGroupFile => (source, content) => source.Header = content,
+        ThemeStorage.FooterGroupFile => (source, content) => source.Footer = content,
+        ThemeStorage.BrandFile => (source, content) => source.Brand = content,
+        ThemeStorage.SettingsDataFile => (source, content) => source.SettingsData = content,
+        ThemeStorage.PaletteFile => (source, content) => source.Palette = content,
+        ThemeStorage.DarkPaletteFile => (source, content) => source.PaletteDark = content,
+        _ => throw new InvalidOperationException($"The theme part '{file}' has no place in the theme source."),
+    };
 
     protected virtual void AddThemeFile(ThemeSource source, string file, JToken content)
     {
@@ -472,6 +562,10 @@ public class ThemePublisher(
         else if (content != null && GetTemplateKey(file) is { } key)
         {
             source.Templates[key] = content;
+        }
+        else if (content != null && ThemeCustomSections.GetCustomSectionType(file) is { } type)
+        {
+            source.CustomSections[type] = content;
         }
     }
 
@@ -534,6 +628,8 @@ public class ThemePublisher(
             return null;
         }
     }
+
+    protected virtual Task<IList<string>> GetCustomSectionTypesAsync(IThemeStorage storage) => ThemeCustomSections.ListTypesAsync(storage);
 
     protected virtual async Task<IList<string>> GetTemplateKeysAsync(IThemeStorage storage)
     {

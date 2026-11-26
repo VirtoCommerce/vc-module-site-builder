@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Validation;
@@ -7,6 +8,22 @@ namespace VirtoCommerce.SiteBuilder.Tests
 {
     public class SiteBuilderContentPathsTests
     {
+        [Theory]
+        [InlineData("abcdefgh", true)]
+        [InlineData("abcdefgh\n", false)]
+        public void CatalogHash_EndingInALineFeed_IsNotOne(string hash, bool expected) => Assert.Equal(expected, SiteBuilderContentPaths.IsCatalogHash(hash));
+
+        [Theory]
+        [InlineData("save-0001", true)]
+        [InlineData("save-0001\n", false)]
+        public void SaveId_EndingInALineFeed_IsNotOne(string saveId, bool expected) => Assert.Equal(expected, SiteBuilderContentPaths.IsSaveId(saveId));
+
+        [Theory]
+        [InlineData("abcdefghijklmnopqrstuvwxyz0", true)]
+        [InlineData("abcdefghijklmnopqrstuvwxyz0\n", false)]
+        public void HistoryVersionId_EndingInALineFeed_IsNotOne(string versionId, bool expected) =>
+            Assert.Equal(expected, SiteBuilderContentPaths.IsHistoryVersionId(versionId));
+
         [Theory]
         [InlineData("pages")]
         [InlineData("blogs")]
@@ -66,7 +83,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         [InlineData("pages", "about-us.html-draft", false)]
         [InlineData("themes", "default/layout.liquid", false)]
         [InlineData("assets", "x.page", false)]
-        [InlineData("themes", "default/content/templates/product.json", true)]
+        [InlineData("themes", "default/content/templates/product.json", false)]
         [InlineData("themes", "/default/config/settings_data.json", true)]
         [InlineData("themes", "default/config/builder_settings.json", false)]
         [InlineData("themes", "default/config/settings_schema.json", false)]
@@ -83,11 +100,12 @@ namespace VirtoCommerce.SiteBuilder.Tests
         [InlineData("themes", "default/snapshots/3/en-US.json", false)]
         [InlineData("themes", "default/catalogs/abc12345.json", false)]
         [InlineData("themes", "default/catalogs/current.json", false)]
-        public void OnlyTheFilesTheDesignerWrites_AreWritable(string type, string path, bool expected)
+        public async Task OnlyTheFilesTheDesignerWrites_AreWritable(string type, string path, bool expected)
         {
             var file = new SiteBuilderContentFile { ContentType = type, Path = path, Content = JToken.Parse("{\"settings\":{\"type\":\"settings\"},\"content\":[]}") };
+            var request = new SiteBuilderContentRequest { StoreId = "s1", Files = [file] };
 
-            Assert.Equal(expected, new SiteBuilderContentFileValidator().Validate(file).IsValid);
+            Assert.Equal(expected, (await RequestValidators.Content("s1").ValidateAsync(request, TestContext.Current.CancellationToken)).IsValid);
         }
     }
 }

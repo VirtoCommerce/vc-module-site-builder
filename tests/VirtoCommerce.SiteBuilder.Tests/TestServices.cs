@@ -4,7 +4,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using VirtoCommerce.AssetsModule.Core.Assets;
 using VirtoCommerce.ContentModule.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.History;
@@ -28,7 +30,24 @@ internal static class TestServices
 {
     public static SiteBuilderContentGuard ContentGuard { get; } = new(new SiteBuilderHtmlSanitizer());
 
+    public const string AssetsUrl = "https://cdn.example/assets/";
+
     public static ContentPermissionService Permissions(IAuthorizationService authorizationService) => new(authorizationService);
+
+    /// <param name="assetsUrl">The asset library's public address; <c>null</c> for a library that gives none.</param>
+    public static CustomSectionValidator CustomSectionValidator(string assetsUrl = AssetsUrl, ThemeSnapshotOptions options = null,
+        CustomSectionCssValidator cssValidator = null)
+    {
+        var urlPolicy = CustomSectionUrlPolicy(assetsUrl);
+
+        return new CustomSectionValidator(new CustomSectionTemplateValidator(urlPolicy), cssValidator ?? new CustomSectionCssValidator(urlPolicy), urlPolicy,
+            Options.Create(options ?? new ThemeSnapshotOptions()), NullLogger<CustomSectionValidator>.Instance);
+    }
+
+    public static CustomSectionUrlPolicy CustomSectionUrlPolicy(string assetsUrl = AssetsUrl) =>
+        new(new AssetUrls(assetsUrl), NullLogger<CustomSectionUrlPolicy>.Instance);
+
+    public static ThemeSnapshotBuilder ThemeSnapshotBuilder(string assetsUrl = AssetsUrl) => new(CustomSectionUrlPolicy(assetsUrl));
 
     public static FilePageDraftService FilePageDrafts(
         IOptions<GitContentOptions> options,
@@ -56,7 +75,10 @@ internal static class TestServices
         Fakes.FakeGroupedPageService pages = null,
         IEventPublisher events = null,
         IThemePublisher themePublisher = null,
-        ISchemaCatalogService catalogs = null)
+        ISchemaCatalogService catalogs = null,
+        IThemeStorageFactory themes = null,
+        ICustomSectionValidator customSectionValidator = null,
+        ICustomSectionService customSectionService = null)
     {
         var contentGuard = ContentGuard;
         var contentWriter = pages == null
@@ -65,7 +87,8 @@ internal static class TestServices
                 catalogs ?? new NoSchemaCatalogs());
 
         return new DesignerContentService(themeDrafts, themePublisher, pages == null ? null : new Fakes.FakeSiteBuilderPageService(pages),
-            pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs());
+            pages, pages, contentWriter, filePageDrafts, contentHistory, contentGuard, catalogs ?? new NoSchemaCatalogs(),
+            customSectionService ?? new CustomSectionService(themes, themeDrafts), customSectionValidator ?? CustomSectionValidator());
     }
 
     public static DesignerOperationService DesignerOperations(
@@ -170,7 +193,7 @@ internal static class TestServices
         var contentQueries = new SiteBuilderContentQueryService(authorizationService, requestValidator, pathResolver, blobContentStorageProviderFactory,
             publishingService, themeStorageFactory, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions, gitContentHistory);
         var previews = new SiteBuilderPreviewQueryService(authorizationService, requestValidator, storeService, settingsManager, groupedPageService,
-            contentQueries, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions);
+            contentQueries, gitContentPolicy, gitContentRepository, gitHubConnectionService, gitContentOptions, CustomSectionUrlPolicy());
         var publishStatuses = new SiteBuilderPublishStatusQueryService(authorizationService, requestValidator, groupedPageService, publishingService,
             gitContentPolicy, gitContentRepository, gitContentPublisher, gitLivePageService, gitHubConnectionService, gitContentOptions);
 
@@ -189,6 +212,13 @@ internal static class TestServices
         public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
+
+        public Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default) => Task.FromResult<string>(null);
+    }
+
+    private sealed class AssetUrls(string publicUrl) : IBlobUrlResolver
+    {
+        public string GetAbsoluteUrl(string blobKey) => publicUrl == null ? null : publicUrl + blobKey.TrimStart('/');
     }
 
     /// <summary>A store whose current catalog is the one given, and which has no other.</summary>
@@ -196,7 +226,11 @@ internal static class TestServices
     {
         public Task<string> SaveAsync(string storeId, string catalogJson, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        private readonly string _hash = catalog == null ? null : Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(catalog)));
+
         public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default) =>
-            Task.FromResult(string.IsNullOrEmpty(hash) ? catalog : null);
+            Task.FromResult(string.IsNullOrEmpty(hash) || hash == _hash ? catalog : null);
+
+        public Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default) => Task.FromResult(_hash);
     }
 }

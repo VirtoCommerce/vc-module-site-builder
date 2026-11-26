@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.Platform.Core.Common;
 
@@ -196,6 +197,10 @@ public class ContentHistoryOperationService(
         catch (InvalidDataException ex)
         {
             return SiteBuilderOperationResult.Invalid(ex.Message).As<ContentSaveResult>();
+        }
+        catch (ThemeValidationException ex)
+        {
+            return SiteBuilderOperationResult.Invalid(ex.Message, ex.Errors).As<ContentSaveResult>();
         }
     }
 

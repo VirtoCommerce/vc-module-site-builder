@@ -1,7 +1,8 @@
 # Theme snapshot
 
 The storefront gets the published theme of a store in one anonymous GraphQL request: the snapshot. It holds the
-template rules, every template, the header and footer groups, the brand and the palette, with texts in one language.
+template rules, every template, the header and footer groups, the brand, the palette, the theme's custom section types
+and the address of the store's asset library, with texts in one language.
 The storefront does not read theme files from `/cms-content`.
 
 The first read of a store publishes a first snapshot from the theme's live files; when they fail the shape check, there
@@ -17,6 +18,7 @@ store's `DefaultThemeName` property, `default` when it is empty. Paths below are
 | `templates/{key}.json` | a template document, one per template key |
 | `config/template_rules.json` | the template rules |
 | `sections/header-group.json`, `sections/footer-group.json` | the header and footer groups |
+| `custom-sections/{type}.json` | a [custom section](custom-sections.md) type, one per type |
 | `config/brand.json` | the logos and the favicon |
 | `config/palette.json`, `config/palette.dark.json` | the light and the dark palette |
 | `config/settings_data.json` | the theme settings; see [Theme settings](#theme-settings) |
@@ -27,6 +29,8 @@ store's `DefaultThemeName` property, `default` when it is empty. Paths below are
 
 Every file except the snapshots and the catalogs has a draft next to it, `{file}-draft`. Only a publication writes
 `snapshots/` and only a catalog upload writes `catalogs/`: a save or a restore naming either is refused with 400.
+The status and a publication read no file the table does not list, so a save, a discard or a restore naming one is
+refused with 400 as well.
 The designer and the agents write drafts only:
 the builder's save refuses a live write of a theme file (`draft=false`) with 400.
 The designer saves the page and the theme files it changed in one request, all or nothing
@@ -253,6 +257,13 @@ interface ThemeSnapshot {
   footer?: SectionGroup;
   brand: Brand;
   palette?: Palette;
+  /** the theme's custom section types, by type, their name and defaults in the snapshot's language; see [Custom sections](custom-sections.md) */
+  customSections?: Record<string, CustomSectionType>;
+  /**
+   * the public address of the store's asset library, as the server reads it when it publishes; a custom section's image
+   * starts with it, and the storefront shows no other. Left out when the library gives none
+   */
+  assetsBaseUrl?: string;
   /** the names held by `menu` settings of the header and footer */
   menus: string[];
 }
@@ -282,7 +293,8 @@ interface SectionGroup {
 }
 ```
 
-The storefront renders only section types it registered and passes a section only the settings its schema declares.
+The storefront renders only section types it registered, and the custom section types of the snapshot, and passes a
+section only the settings its schema declares.
 A snapshot never holds a shared component (`componentRef`): shared components are page content. A publication refuses a
 theme file that places one; the first publication, from the live files, leaves it out. The header group holds
 `site-header` and the announcement bar, the footer group holds `site-footer`; neither has a logo setting of its own:
@@ -417,9 +429,9 @@ else of its language part (`de` for `de-AT`), else of a culture of the same lang
 default language, else the first text of the dictionary; culture names are compared ignoring case. A snapshot never
 holds one.
 
-Only templates and the header and footer groups keep texts per language. A section or block the designer puts into a
-page's own sections or a shared component (a paste, Save as shared component, Detach) has each dictionary in it
-replaced by the text of the language being edited, picked as the publication picks it.
+Only templates, the header and footer groups and the custom section types keep texts per language. A section or block
+the designer puts into a page's own sections or a shared component (a paste, Save as shared component, Detach) has
+each dictionary in it replaced by the text of the language being edited, picked as the publication picks it.
 
 ### Brand
 
@@ -517,7 +529,9 @@ A token the generator has no rule for is left out and keeps the preset's color.
 ## Section schema catalog
 
 The catalog is the storefront's section, block, template and palette schemas, the `loaded` data of the
-[preview protocol](preview-protocol.md#handshake), named by its `hash`.
+[preview protocol](preview-protocol.md#handshake), named by its hash: the SHA-256 of its JSON text as uploaded, in
+lowercase hex, whatever the catalog's own `hash` says. The same text always has the same name, and no other text can
+take it.
 
 - The designer uploads the catalog of the storefront it previews when the server does not have that hash. Uploading
   takes `builder:update`, the designer's own permission, so an editor of templates or a publisher is not blocked by a
@@ -528,9 +542,12 @@ The catalog is the storefront's section, block, template and palette schemas, th
   places no shared component, and every value of a field with a closed set of values is one of them) and answers 400
   `{ error, errors }` when one does not fit or the hash is unknown; each error names the file, the item and the field.
   A publication records the hash in the snapshot; one that names none is refused. A designer Save with theme files
-  that names none is refused (400 `{ error }`); `api/site-builder/save` that names none is not
-  checked. The first publication, from the live files, names none and checks the shape only; it finds the menus
-  through the store's current catalog, when there is one.
+  that names none is refused (400 `{ error }`); `api/site-builder/save` that names none is not checked against a
+  catalog: it checks only what can run script, the [custom section types](custom-sections.md#validation) it writes,
+  which may then use no kit tag or behavior, and that a header or footer group places none. The first publication, from
+  the live files, names none and checks the shape only, but for the custom section types: it checks them against the
+  store's current catalog and leaves out those that fail. It finds the menus through the store's current catalog, when
+  there is one.
 - The fields with a closed set of values, checked in sections and blocks and in the rows of their `list` and `object`
   fields: a `color-token` holds a token of the catalog's `paletteTokens` (light or dark; not checked when the catalog
   has none), a `select` one of its `options` values, each of them when it is `multiple` (one with a `request` has
@@ -564,12 +581,12 @@ All take `storeId` and check the store as the other Site Builder endpoints do.
 | Method and route | Permission | Returns |
 |---|---|---|
 | `POST api/site-builder/theme/publish?storeId&catalogHash` | `builder:publish` | `{ publication }`; 400 `{ error, errors }` when it names no catalog or the theme does not fit it |
-| `GET api/site-builder/theme/status?storeId` | `builder:read` | `{ publication, drafts, newDrafts }`: the current publication, left out before the first, the theme files with a draft by their path in the theme (`templates/product.json`, `config/template_rules.json`), and those of them with no live file, which a Discard keeps |
-| `POST api/site-builder/save?storeId&theme&draft&catalogHash`, the files as the body | `builder:update`; `builder:templates` or `builder:theme` by theme file | 200; 400 `{ error, errors }` when a theme file does not fit the catalog it names; 400 `{ error }` for a live theme write, for a file under `snapshots/` or `catalogs/`, or for a file in `config/` other than `settings_data.json`, `template_rules.json`, `brand.json`, `palette.json` and `palette.dark.json`; a live write of a page needs `builder:publish` |
+| `GET api/site-builder/theme/status?storeId` | `builder:read` | `{ publication, drafts, newDrafts }`: the current publication, left out before the first, the theme files with a draft by their path in the theme (`templates/product.json`, `config/template_rules.json`), and those of them with no live file, which a Discard keeps, but for a custom section type's, which it removes |
+| `POST api/site-builder/save?storeId&theme&draft&catalogHash`, the files as the body | `builder:update`; `builder:templates` or `builder:theme` by theme file | 200; 400 `{ error, errors }` when a theme file does not fit the catalog it names; 400 `{ error }` for a live theme write, for a theme file outside the store's theme folder, for a file under `snapshots/` or `catalogs/`, or for any other file the [table](#theme-files) does not list; a live write of a page needs `builder:publish` |
 | `GET api/site-builder/designer/theme-file?storeId&path` | `builder:read` | `{ path, content?, eTag }`: a theme file as the designer edits it and its version, see [Save](history-api.md#save) |
 | `POST api/site-builder/designer/save?storeId&catalogHash` | see [Save](history-api.md#save) | the designer's Save: the page and the theme files as drafts, all or nothing, one version; 400 when theme files go without `catalogHash`; 412 when one was saved by someone else since it was read |
 | `POST api/site-builder/designer/discard?storeId` | see [Discard](history-api.md#discard) | the designer's Discard: the drafts of the page and the theme files go, all or nothing, one version |
-| `PUT api/site-builder/catalog?storeId`, the catalog as the body | `builder:update` | `{ hash }`; 400 when it has no valid `hash` |
+| `PUT api/site-builder/catalog?storeId`, the catalog as the body | `builder:update` | `{ hash }`, the SHA-256 of the body's UTF-8 text in lowercase hex, which names the catalog stored as sent; 400 when it is larger than 8 MB, or breaks a rule of its shape, such as `paletteTokens` other than `light` and `dark` lists of at most 1,000 token names, or a schema's name or label of more than 256 characters |
 | `GET api/site-builder/catalog?storeId&hash` | `builder:read` | the catalog with that hash, the current one without it; 404 when there is none |
 | `POST api/site-builder/theme/palette?storeId`, `{ primary, secondary?, tokens: { light, dark } }` as the body | `builder:theme` | `{ light, dark, failures }`: the generated palettes and the pairs they still fail (none so far); 400 when a color is not `#rrggbb`/`#rgb` or no light tokens are named |
 | `POST api/site-builder/theme/palette/check?storeId`, `{ palette: { light, dark? }, tokens: { light, dark } }` as the body | `builder:theme` | `{ failures, unchecked }`: the pairs the palette fails and how many pairs could not be checked; 400 without a palette or tokens |

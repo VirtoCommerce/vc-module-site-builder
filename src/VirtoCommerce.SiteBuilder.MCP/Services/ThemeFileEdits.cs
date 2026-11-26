@@ -33,6 +33,49 @@ public sealed class ThemeFileChange : McpChangePreview
 
     [JsonPropertyName("contrast_failures")]
     public IList<ContrastFailureRow> ContrastFailures { get; set; }
+
+    // Only on a dry run: what refuses the change.
+    [JsonPropertyName("errors")]
+    public IList<string> Errors { get; set; }
+
+    // What to do once the change is saved, such as publishing the theme.
+    [JsonPropertyName("next_step")]
+    public string NextStep { get; set; }
+
+    // A section type's settings added or removed, and the pages whose sections of the type they reach.
+    [JsonPropertyName("placed_sections")]
+    public SectionTypePlacements PlacedSections { get; set; }
+}
+
+public sealed class SectionTypePlacements
+{
+    [JsonPropertyName("new_settings")]
+    public IList<NewSettingRow> NewSettings { get; init; } = [];
+
+    [JsonPropertyName("removed_settings")]
+    public IList<string> RemovedSettings { get; init; } = [];
+
+    [JsonPropertyName("pages")]
+    public IList<PlacingPageRow> Pages { get; init; } = [];
+
+    [JsonPropertyName("coverage")]
+    public string Coverage { get; init; }
+
+    [JsonPropertyName("note")]
+    public string Note { get; init; }
+}
+
+public sealed record NewSettingRow([property: JsonPropertyName("id")] string Id, [property: JsonPropertyName("placed_sections_show")] string PlacedSectionsShow);
+
+// sections counts only the page's own: edit_page_draft cannot set those of a placed Shared Component.
+public sealed record PlacingPageRow([property: JsonPropertyName("page_id")] string PageId, [property: JsonPropertyName("language")] string Language,
+    [property: JsonPropertyName("name")] string Name, [property: JsonPropertyName("permalink")] string Permalink,
+    [property: JsonPropertyName("sections")] int Sections, [property: JsonPropertyName("shared_component_ids")] IList<string> SharedComponentIds)
+{
+    // publish_theme's dry run only: whether the page's published version or its draft places the type
+    [JsonPropertyName("version")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string Version { get; init; }
 }
 
 public sealed record ThemeFileEdit(string Path, ThemeFileContent Current, string Content);
@@ -41,7 +84,13 @@ public sealed record ThemeFileSaveTarget(string StoreId, string CatalogHash, boo
 
 public static class ThemeFileEdits
 {
-    // The diff is of the content as stored: on a dry run, the sanitized content the save would write.
+    private const int MaxTextChange = 400;
+
+    // A custom section type's texts, compared by the lines that changed.
+    private static readonly string[] SectionTypeTexts = [ThemeCustomSections.TemplateKey, ThemeCustomSections.CssKey];
+
+    // The diff is of the content as stored: on a dry run, the sanitized content the save would write. A dry run the save refuses
+    // answers the errors in the change, with the diff of the content sent.
     public static async Task SaveAsync(ThemeFileChange change, IDesignerOperationService designerOperationService, ClaimsPrincipal user,
         ThemeFileSaveTarget target, IList<ThemeFileEdit> edits, CancellationToken cancellationToken)
     {
@@ -51,28 +100,66 @@ public static class ThemeFileEdits
             change.VersionTokens[edit.Path] = edit.Current.ETag;
         }
 
-        var changed = edits.Where(x => Compare(x.Path, x.Current.Content, x.Content).Count > 0).ToList();
+        var changed = edits.Where(x => !IsSameContent(x.Path, x.Current.Content, x.Content)).ToList();
         if (changed.Count == 0)
         {
             change.AddWarning("The call changes nothing, so nothing was saved.");
-            return;
+            if (!target.DryRun)
+            {
+                return;
+            }
         }
 
-        var files = changed.Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
+        // a dry run that changes nothing still answers what the file breaks
+        var files = (changed.Count > 0 ? changed : edits).Select(x => new DesignerSaveFile { Path = x.Path, Content = x.Content, ETag = x.Current.ETag }).ToList();
         var result = await ThemeFiles.SaveAsync(designerOperationService, user, target.StoreId, target.CatalogHash, files, target.DryRun, cancellationToken);
-        ThemeFiles.EnsureSaved(result, change.ObjectName ?? change.ObjectId, target.Permission, target.StoreId, target.ReadAgain);
+        AddResult(change, changed, result, target);
+    }
+
+    private static void AddResult(ThemeFileChange change, List<ThemeFileEdit> changed, SiteBuilderOperationResult<DesignerSaveResult> result, ThemeFileSaveTarget target)
+    {
+        var refused = target.DryRun && result.Status == SiteBuilderOperationStatus.Invalid;
+        if (refused)
+        {
+            change.Errors = result.Errors?.Count > 0 ? [.. result.Errors] : [result.Error];
+        }
+        else
+        {
+            ThemeFiles.EnsureSaved(result, change.ObjectName ?? change.ObjectId, target.Permission, target.StoreId, target.ReadAgain);
+        }
 
         AddChanges(change, changed, result, target.DryRun);
 
         if (!target.DryRun)
         {
-            foreach (var version in result.Value?.ThemeFiles ?? [])
-            {
-                change.VersionTokens[version.Path] = version.ETag;
-            }
+            AddVersionTokens(change, result.Value);
         }
 
-        change.AddWarning("Customers see this change only after the theme is published (publish_theme), which a second person approves.");
+        AddWarnings(change, result, target.DryRun);
+
+        if (!refused && changed.Count > 0)
+        {
+            change.NextStep = "Customers see this change only after the theme is published (publish_theme), which a second person approves.";
+        }
+    }
+
+    private static void AddVersionTokens(ThemeFileChange change, DesignerSaveResult saved)
+    {
+        foreach (var version in saved?.ThemeFiles ?? [])
+        {
+            change.VersionTokens[version.Path] = version.ETag;
+        }
+    }
+
+    private static void AddWarnings(ThemeFileChange change, SiteBuilderOperationResult<DesignerSaveResult> result, bool dryRun)
+    {
+        var warnings = dryRun
+            ? result.Preview?.Warnings
+            : result.Value?.ThemeFiles.SelectMany(x => x.Warnings.Select(warning => $"{GetPathInTheme(x.Path)}: {warning}"));
+        foreach (var warning in warnings ?? [])
+        {
+            change.AddWarning(warning);
+        }
     }
 
     private static void AddChanges(ThemeFileChange change, List<ThemeFileEdit> changed, SiteBuilderOperationResult<DesignerSaveResult> result, bool dryRun)
@@ -88,12 +175,29 @@ public static class ThemeFileEdits
         }
     }
 
+    // A readable diff leaves out what it cannot show, so whether the content changed is decided on the JSON itself. A file that is not
+    // there is read as the diff reads it, empty: an edit that leaves it empty, such as the palette of the other scheme, does not create it.
+    private static bool IsSameContent(string path, string before, string after)
+    {
+        if (before == null)
+        {
+            return Compare(path, before, after).Count == 0;
+        }
+
+        return Parse(before) is { } from && Parse(after) is { } to ? JsonNode.DeepEquals(from, to) : string.Equals(before, after, StringComparison.Ordinal);
+    }
+
     public static IList<PageDocumentChange> Compare(string path, string before, string after)
     {
         var file = GetPathInTheme(path);
         if (file.Equals(ThemeStorage.TemplateRulesFile, StringComparison.OrdinalIgnoreCase))
         {
             return CompareRules(before, after);
+        }
+
+        if (ThemeCustomSections.GetCustomSectionType(file) != null)
+        {
+            return CompareSectionType(before, after);
         }
 
         PageDocumentKind? kind = null;
@@ -170,10 +274,128 @@ public static class ThemeFileEdits
         return changes;
     }
 
-    private static List<PageDocumentChange> CompareValues(string before, string after)
+    // Its settings one by one, by their id, and its template and CSS by the lines that changed, so a small edit stays small.
+    private static List<PageDocumentChange> CompareSectionType(string before, string after)
     {
-        var from = Flatten(Parse(before));
-        var to = Flatten(Parse(after));
+        var fromNode = Parse(before);
+        var toNode = Parse(after);
+        if (fromNode is not (null or JsonObject) || toNode is not (null or JsonObject))
+        {
+            return CompareValues(before, after);
+        }
+
+        var from = fromNode as JsonObject ?? [];
+        var to = toNode as JsonObject ?? [];
+        // settings that are not a list on either side are compared as a value
+        var lists = HasSettingsList(from) && HasSettingsList(to);
+        var fromSettings = lists ? TakeSettings(from) : null;
+        var toSettings = lists ? TakeSettings(to) : null;
+        var fromTexts = SectionTypeTexts.ToDictionary(x => x, x => Take(from, x));
+        var toTexts = SectionTypeTexts.ToDictionary(x => x, x => Take(to, x));
+
+        var changes = CompareValues(Flatten(from), Flatten(to));
+        changes.AddRange(CompareSettings(fromSettings, toSettings));
+        changes.AddRange(SectionTypeTexts.Select(x => CompareText(x, fromTexts[x], toTexts[x])).Where(x => x != null));
+
+        return changes;
+    }
+
+    private static bool HasSettingsList(JsonObject type) => (type[ThemeCustomSections.SchemaKey] as JsonObject)?["settings"] is null or JsonArray;
+
+    private static JsonArray TakeSettings(JsonObject type)
+    {
+        if (type[ThemeCustomSections.SchemaKey] is not JsonObject schema)
+        {
+            return [];
+        }
+
+        var settings = schema["settings"] as JsonArray ?? [];
+        schema.Remove("settings");
+        if (schema.Count == 0)
+        {
+            type.Remove("schema");
+        }
+
+        return settings;
+    }
+
+    private static string Take(JsonObject type, string key)
+    {
+        var value = type[key] == null ? null : GetString(type[key]) ?? type[key].ToJsonString(PageDocumentEditor.WriteOptions);
+        type.Remove(key);
+
+        return value;
+    }
+
+    // A setting without an id, such as a header, is known by its place.
+    private static List<PageDocumentChange> CompareSettings(JsonArray before, JsonArray after)
+    {
+        var from = IndexSettings(before);
+        var to = IndexSettings(after);
+        var changes = new List<PageDocumentChange>();
+        foreach (var key in from.Select(x => x.Key).Union(to.Select(x => x.Key)))
+        {
+            var oldValue = from.FirstOrDefault(x => x.Key == key).Value?.ToJsonString(PageDocumentEditor.WriteOptions);
+            var newValue = to.FirstOrDefault(x => x.Key == key).Value?.ToJsonString(PageDocumentEditor.WriteOptions);
+            if (oldValue != newValue)
+            {
+                changes.Add(new($"schema.settings.{key}", oldValue, newValue));
+            }
+        }
+
+        var kept = from.Select(x => x.Key).Where(x => to.Any(y => y.Key == x)).ToList();
+        var reordered = to.Select(x => x.Key).Where(kept.Contains).ToList();
+        if (!kept.SequenceEqual(reordered))
+        {
+            changes.Add(new("order of schema.settings", string.Join(", ", kept), string.Join(", ", reordered)));
+        }
+
+        return changes;
+    }
+
+    private static List<KeyValuePair<string, JsonNode>> IndexSettings(JsonArray settings)
+    {
+        var result = new List<KeyValuePair<string, JsonNode>>();
+        for (var i = 0; i < (settings?.Count ?? 0); i++)
+        {
+            var key = settings[i] is JsonObject field && GetString(field["id"]) is { Length: > 0 } id ? id : $"#{i + 1}";
+            if (result.All(x => x.Key != key))
+            {
+                result.Add(KeyValuePair.Create(key, settings[i]));
+            }
+        }
+
+        return result;
+    }
+
+    // The lines from the first to the last that differ; a new text is all of its lines.
+    private static PageDocumentChange CompareText(string field, string before, string after)
+    {
+        if ((before ?? string.Empty) == (after ?? string.Empty))
+        {
+            return null;
+        }
+
+        var from = (before ?? string.Empty).Split('\n');
+        var to = (after ?? string.Empty).Split('\n');
+        var start = CountSameLines(from, to);
+        var end = CountSameLines(from.Skip(start).Reverse(), to.Skip(start).Reverse());
+        var last = Math.Max(start + 1, to.Length - end);
+        var lines = last > start + 1 ? $"lines {start + 1}-{last}" : $"line {start + 1}";
+
+        return new($"{field} {lines}", before == null ? null : Shorten(string.Join('\n', from[start..^end])),
+            after == null ? null : Shorten(string.Join('\n', to[start..^end])));
+    }
+
+    private static int CountSameLines(IEnumerable<string> from, IEnumerable<string> to) => from.Zip(to).TakeWhile(x => x.First == x.Second).Count();
+
+    private static string Shorten(string text) =>
+        text.Length > MaxTextChange ? $"{text[..MaxTextChange]}… ({text.Length - MaxTextChange} more characters)" : text;
+
+    private static List<PageDocumentChange> CompareValues(string before, string after) => CompareValues(Flatten(Parse(before)), Flatten(Parse(after)));
+
+    private static List<PageDocumentChange> CompareValues(Dictionary<string, string> from, Dictionary<string, string> to)
+    {
         var changes = new List<PageDocumentChange>();
         foreach (var key in from.Keys.Concat(to.Keys.Where(x => !from.ContainsKey(x))))
         {

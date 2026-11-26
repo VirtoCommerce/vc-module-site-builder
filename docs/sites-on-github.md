@@ -38,6 +38,8 @@ restored into staging must not create or archive repositories in production's or
 
 1. Open **Sites → GitHub** in the admin (the GitHub button on the Sites panel). A site's **History** panel points there
    while the platform has no connection.
+   It is in Admin Shell (`/apps/admin-shell/`), not the classic admin: **Sites** in the menu, then the **History**
+   widget, which reads **Set up history** until the platform is connected.
 2. Enter the GitHub organization for this environment's sites (create one on GitHub first if needed) and select
    **Create GitHub App**. It takes the *Update settings* permission, since it connects the whole platform.
 3. GitHub opens in a new tab with the App ready to create — private, with Administration, Contents and Pull requests

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
+import { VcButton } from "@vc-shell/framework/ui";
 import DiscardDialog from "../../src/modules/designer/components/DiscardDialog.vue";
 import { discardOptions } from "../../src/modules/designer/discard";
 import { PERMISSIONS } from "../../src/modules/designer/permissions";
@@ -75,5 +76,64 @@ describe("DiscardDialog", () => {
     expect(unsaved.text()).toContain("Your unsaved changes are discarded too.");
     await discardButton(unsaved).trigger("click");
     expect(unsaved.emitted("discard")).toEqual([[{ page: false, theme: [] }]]);
+  });
+
+  describe("a custom section type's draft", () => {
+    const mountCustom = () =>
+      mount(DiscardDialog, {
+        props: {
+          options: discardOptions({
+            page: true,
+            theme: ["custom-numbers", "custom-hero"],
+            template: false,
+            hasAccess: only(PERMISSIONS.update, PERMISSIONS.theme),
+            sectionName: (type) => ({ "custom-numbers": "Roastery in numbers", "custom-hero": "Coffee hero" })[type],
+            neverPublished: ["custom-numbers"],
+          }),
+          template: false,
+          unsaved: false,
+        },
+      });
+    const warning = (wrapper: VueWrapper) => wrapper.find(".pd-discard__removal");
+
+    it("is offered unticked by the type's name, saying when it was never published", () => {
+      const wrapper = mountCustom();
+
+      expect(wrapper.findAll("label.pd-discard__option").map((x) => x.text())).toEqual([
+        "Page",
+        'Section type "Roastery in numbers" (never published)',
+        'Section type "Coffee hero"',
+      ]);
+      expect(box(wrapper, 'Section type "Coffee hero"').checked).toBe(false);
+      expect(warning(wrapper).exists()).toBe(false);
+    });
+
+    it("warns, once one never published is ticked, that discarding deletes the type for good", async () => {
+      const wrapper = mountCustom();
+
+      await option(wrapper, 'Section type "Coffee hero"').find("input").trigger("change");
+      expect(warning(wrapper).exists()).toBe(false);
+
+      await option(wrapper, 'Section type "Roastery in numbers" (never published)').find("input").trigger("change");
+      expect(warning(wrapper).text()).toContain('Delete the section type "Roastery in numbers"?');
+      expect(warning(wrapper).text()).toContain("It was never published and there is no other copy, so it cannot be restored.");
+      expect(warning(wrapper).text()).toContain("Pages that place it will show nothing in its place.");
+      const confirm = wrapper.findAll("button").find((x) => x.text() === "Discard and delete")!;
+      await confirm.trigger("click");
+
+      expect(wrapper.emitted("discard")).toEqual([[{ page: true, theme: ["custom-numbers", "custom-hero"] }]]);
+    });
+
+    it("confirms a delete that cannot be undone with a danger button, and a discard alone with the usual one", async () => {
+      const wrapper = mountCustom();
+      const confirmVariant = () => wrapper.findAllComponents(VcButton).at(-1)!.props("variant");
+      expect(confirmVariant()).toBe("primary");
+
+      await option(wrapper, 'Section type "Roastery in numbers" (never published)').find("input").trigger("change");
+      expect(confirmVariant()).toBe("danger");
+
+      await option(wrapper, 'Section type "Roastery in numbers" (never published)').find("input").trigger("change");
+      expect(confirmVariant()).toBe("primary");
+    });
   });
 });

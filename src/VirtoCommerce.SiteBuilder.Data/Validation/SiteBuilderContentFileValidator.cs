@@ -38,7 +38,7 @@ public class SiteBuilderContentFileValidator : AbstractValidator<SiteBuilderCont
                 .WithMessage("\"{PropertyValue}\" is not a theme JSON file.")
                 .Must(SiteBuilderContentPaths.IsInsideAThemeFolder)
                 .WithMessage("\"{PropertyValue}\" is not inside a theme folder.")
-                .Must(SiteBuilderContentPaths.CanSaveThemeFile)
+                .Must(SiteBuilderContentPaths.IsNotDeployedConfig)
                 .WithMessage("\"{PropertyValue}\" is in the theme's config folder, which is deployed with the theme: the builder saves only the theme settings, template rules, brand and palette there.");
         });
     }

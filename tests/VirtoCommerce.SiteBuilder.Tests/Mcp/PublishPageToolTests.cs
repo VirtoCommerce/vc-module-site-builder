@@ -73,6 +73,86 @@ public sealed class PublishPageToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ADryRun_WarnsOfACustomSectionTypeTheThemeHoldsOnlyAsADraft()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", new { page_id = "stats", dryRun = true })).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(review.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("only as a draft", warning, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheApprovalPreview_SaysThePageIsPublished_ButASectionOfACustomSectionTypeTheThemeLacksShowsNothing()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var held = await _context.CallAsync(Publisher(), "publish_page", await _context.ReviewAsync(Publisher(), "publish_page", new() { ["page_id"] = "stats" }));
+
+        Assert.Equal(McpToolCallOutcome.PendingApproval, held.Outcome);
+        var warning = Assert.Single(held.Read<SiteBuilderChange>().Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("places custom section types the theme does not hold (custom-stats): it can still be published, but the storefront shows " +
+            "nothing in their place.", warning, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADryRunOfLanguageVersions_WarnsOfACustomSectionTypeTheThemeHoldsOnlyAsADraft(bool allLanguages)
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        SeedMultilanguagePage();
+        SetUpPublishAll([("ml-fr", "v-fr")], []);
+        _pages.SeedContent("ml-fr-draft", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Notre année" } ] }""");
+        var arguments = new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["dryRun"] = true };
+        arguments[allLanguages ? "all_languages" : "languages"] = allLanguages ? true : new[] { "fr-FR" };
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", arguments)).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(review.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("only as a draft", warning, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADryRunOfLanguageVersions_NamesTheLanguageOfEachSectionTypeWarning(bool allLanguages)
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        SeedMultilanguagePage();
+        _pages.ChangeGroup("ml-fr", x => x.CultureName = "fr-FR");
+        SetUpPublishAll([("ml-en", "v-en"), ("ml-fr", "v-fr")], []);
+        _pages.SeedContent("ml-en-draft", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+        _pages.SeedContent("ml-fr-draft", """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Notre année" } ] }""");
+        var arguments = new Dictionary<string, object> { ["multilanguage_page_id"] = "ml", ["dryRun"] = true };
+        arguments[allLanguages ? "all_languages" : "languages"] = allLanguages ? true : new[] { "en-US", "fr-FR" };
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", arguments)).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        const string warning = "places custom section types the theme holds only as a draft (custom-stats)";
+        Assert.Equal([$"en-US: Page 'Page ml-en' {warning}", $"fr-FR: Page 'Page ml-fr' {warning}"],
+            review.Warnings.Where(x => x.Contains("(custom-stats)", StringComparison.Ordinal)).Select(x => x[..x.IndexOf(':', 6)]).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ADryRunOfAPageWithoutCustomSectionTypes_HasNoSectionTypeWarning()
+    {
+        await _context.SeedThemeAsync(StoreA);
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", new { page_id = "new", dryRun = true })).EnsureSucceeded().Read<SiteBuilderChange>();
+
+        Assert.DoesNotContain(review.Warnings, x => x.Contains("custom section type", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task APublishOfTheReviewedDraft_WaitsForApproval_AndPublishesNothing()
     {
         var call = await _context.ReviewAsync(Publisher(), "publish_page", Page("new"));

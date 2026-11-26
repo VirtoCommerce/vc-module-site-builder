@@ -496,6 +496,17 @@ public sealed class PageDocumentEditorTests
         Assert.Equal("section hero-banner 'hero': title", Assert.Single(changes).Field);
     }
 
+    [Fact]
+    public void AChange_OfASectionsGroup_IsListed()
+    {
+        var before = PageDocumentEditor.Read("""{ "settings": {}, "content": [ { "id": "hd", "type": "hero-banner", "__group": "header" } ] }""")!;
+        var after = PageDocumentEditor.Read("""{ "settings": {}, "content": [ { "id": "hd", "type": "hero-banner", "__group": "footer" } ] }""")!;
+
+        var changes = PageDocumentChanges.Compare(before, after);
+
+        Assert.Equal([new PageDocumentChange("section hero-banner 'hd': __group", "header", "footer")], changes);
+    }
+
     private async Task<PageDocumentEditor> EditAsync(params PageEditOperation[] operations)
     {
         var editor = PageDocumentEditor.Read(Document)!;

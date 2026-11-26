@@ -33,6 +33,13 @@ public class ThemeSnapshotContent : ICloneable
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public ThemePalette Palette { get; set; }
 
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public IDictionary<string, JObject> CustomSections { get; set; }
+
+    /// <summary>The public address of the store's asset library, which an image of a custom section starts with; left out when it gives none.</summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public string AssetsBaseUrl { get; set; }
+
     public IList<string> Menus { get; set; }
 
     public virtual object Clone()
@@ -40,13 +47,17 @@ public class ThemeSnapshotContent : ICloneable
         var result = (ThemeSnapshotContent)MemberwiseClone();
 
         result.Rules = Rules?.CloneTyped();
-        result.Templates = Templates?.ToDictionary(x => x.Key, x => (JObject)x.Value?.DeepClone());
+        result.Templates = CloneObjects(Templates);
         result.Header = (JObject)Header?.DeepClone();
         result.Footer = (JObject)Footer?.DeepClone();
         result.Brand = Brand?.CloneTyped();
         result.Palette = Palette?.CloneTyped();
+        result.CustomSections = CloneObjects(CustomSections);
         result.Menus = Menus?.ToList();
 
         return result;
     }
+
+    private static Dictionary<string, JObject> CloneObjects(IDictionary<string, JObject> objects) =>
+        objects?.ToDictionary(x => x.Key, x => (JObject)x.Value?.DeepClone());
 }

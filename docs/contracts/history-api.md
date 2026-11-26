@@ -63,8 +63,8 @@ a page of that store, or `theme:{path}`, a theme file outside `snapshots/`; it m
 Restore writes the items as of the version as their drafts, in one save under the theme lock, all or nothing, and
 records it as one version, "Restored {the first 7 characters of the versionId}". It names at most one page, and needs
 `builder:templates` for templates and the rules, and `builder:theme` for the other
-theme files. A theme item must be a file the builder saves: not under `catalogs/`, and in `config/` only the builder's
-own files. The order of the checks: the store (403), the items (400), the permission of every item (403), the page
+theme files. A theme item must be a file the builder saves: one of the [theme files](theme-snapshot.md#theme-files) other
+than the snapshots and the catalogs. The order of the checks: the store (403), the items (400), the permission of every item (403), the page
 (404, or 403 for another store's), the items as of the version (404), and the page's shared components as a save
 checks them (403 without `builder:shared-components:read`, 400). Restore takes no versions: it replaces the items as
 they are now, and the designer reads them again. The editor then publishes as usual. To preview a version, the designer reads the page and the theme files
@@ -101,7 +101,7 @@ interface ContentVersion {
 
 | Status | When |
 |---|---|
-| 400 | `item` is missing or malformed, or names a path outside the theme or under `snapshots/`; a `versionId` that is not a version id; a `cursor` the list did not return; a restore naming two pages, or a theme file the builder does not save |
+| 400 | `item` is missing or malformed, or names a path outside the theme or under `snapshots/`; a `versionId` that is not a version id; a `cursor` the list did not return; a restore naming two pages, a theme file the builder does not save, or one outside the store's theme folder |
 | 403 | no permission, or no access to the store or the page, or the page is another store's |
 | 404 | the page does not exist, the version does not exist, or the item did not exist as of the version |
 | 409 `{ error }` | the store's repository belongs to another store |
@@ -113,7 +113,8 @@ Restore and `GET` of a version take the `versionId` the list returned.
 The designer discards what it shows in one request ([Discard](#discard)). A database page's unpublished changes alone
 are discarded with `POST api/site-builder-pages/grouped/{groupId}/discard` (`builder:update`; 400 for a page never
 published), which records the published content as one version, "Discarded unpublished changes". A theme file's draft
-alone is discarded with `POST api/site-builder/discard-draft`, recorded the same way.
+alone is discarded with `POST api/site-builder/discard-draft`, recorded the same way; its path is checked as the
+designer's Discard checks it (400 outside the store's theme folder or for a file the builder does not save).
 
 ## Save
 
@@ -140,7 +141,7 @@ interface DesignerSave {
   page's version format over the store, the path and the content; a file that does not exist has a version of its own,
   so creating a file is checked as well. A theme publication moves the bytes live unchanged, and keeps the version.
 - Everything is checked before anything is written: the store and each part's permission (403), the database page
-  (404, or 403 for another store's), the paths and the JSON (400), the page's envelope and shared components as `grouped/{groupId}/content` checks them (400; 403 without
+  (404, or 403 for another store's), the paths, each a [theme file](theme-snapshot.md#theme-files) the builder saves in the store's theme folder, and the JSON (400), the page's envelope and shared components as `grouped/{groupId}/content` checks them (400; 403 without
   `builder:shared-components:read`), its version (428 without one; 412 when the page was saved since it was read), each
   theme file's version (428 without one, 400 when it is not one the server gives), and the theme files against the
   catalog named: their section and block types and the values of fields with a closed set of values, a `color-token`'s
@@ -179,7 +180,7 @@ is published is current again.
 interface DesignerDiscard {
   /** a database page by its group, or a page kept as a file */
   page?: { groupId: string } | { path: string; type: "pages" | "blogs" };
-  /** the theme files, by their path with the theme folder */
+  /** the theme files, by their path with the store's theme folder */
   themeFiles?: string[];
 }
 ```
@@ -188,7 +189,8 @@ interface DesignerDiscard {
   checked before anything is deleted. A Discard takes no versions: it is how the designer gets past a 412, reading the
   files again afterwards.
 - Under the store's theme lock the theme drafts are deleted first and the page's last. A theme file never published
-  keeps its draft, which is its only copy. A database page never published is refused (400) and the theme drafts are
-  put back. A file page's draft is its work branch on the git flow, else its blob draft.
+  keeps its draft, which is its only copy, but for a custom section type's: its draft goes, and the type with it. A
+  database page never published is refused (400) and the theme drafts are put back. A file page's draft is its work
+  branch on the git flow, else its blob draft.
 - After the lock, one version, "Discarded unpublished changes", records the published content of the database page and
   of each theme file whose draft went, named as a Save is; nothing is recorded when no draft went.

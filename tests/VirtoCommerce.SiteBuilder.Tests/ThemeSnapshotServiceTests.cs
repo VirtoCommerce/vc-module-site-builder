@@ -94,14 +94,15 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     public async Task PublishAsync_Published_WritesThePointerAndTheRecordInTheirStorageFormat()
     {
         _storage.Files[Theme(Product + "-draft")] = Template("product-info");
-        await _catalogs.SaveAsync(StoreId, """{ "hash": "abc12345", "sections": { "product-info": {} } }""", Ct);
+        const string catalogJson = """{ "hash": "abc12345", "sections": { "product-info": {} } }""";
+        var catalog = await _catalogs.SaveAsync(StoreId, catalogJson, Ct);
 
-        await _publisher.PublishAsync(StoreId, "abc12345", null, Ct);
+        await _publisher.PublishAsync(StoreId, catalog, null, Ct);
 
         Assert.Equal("""{"publication":1}""", _storage.Files[Theme(Pointer)]);
         Assert.Equal("""{"defaultLanguage":"en-US"}""", _storage.Files[Theme(Record(1))]);
-        Assert.Equal("""{"hash":"abc12345"}""", _storage.Files[Theme("default/catalogs/current.json")]);
-        Assert.Equal("""{"hash":"abc12345","sections":{"product-info":{}}}""", _storage.Files[Theme("default/catalogs/abc12345.json")]);
+        Assert.Equal($$"""{"hash":"{{catalog}}"}""", _storage.Files[Theme("default/catalogs/current.json")]);
+        Assert.Equal(catalogJson, _storage.Files[Theme($"default/catalogs/{catalog}.json")]);
     }
 
     [Fact]
@@ -231,6 +232,39 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
         Assert.Equal(1, (await publisher.GetStatusAsync(StoreId, Ct)).Publication);
     }
 
+    [Theory]
+    [InlineData("config/template_rules.json")]
+    [InlineData("sections/header-group.json")]
+    [InlineData("sections/footer-group.json")]
+    [InlineData("config/brand.json")]
+    [InlineData("config/settings_data.json")]
+    [InlineData("config/palette.json")]
+    [InlineData("config/palette.dark.json")]
+    [InlineData("templates/product.json")]
+    [InlineData("templates/page.landing-2.json")]
+    [InlineData("custom-sections/custom-promo.json")]
+    [InlineData("custom-sections/Bad_Name.json")]
+    [InlineData("agent-test.json")]
+    [InlineData("x/bar.json")]
+    [InlineData("sections/x.json")]
+    [InlineData("content/templates/product.json")]
+    [InlineData("templates/x/product.json")]
+    [InlineData("templates/Product.json")]
+    [InlineData("templates/product.JSON")]
+    [InlineData("templates/not-a-key.json")]
+    [InlineData("Templates/product.json")]
+    [InlineData("custom-sections/a/custom-x.json")]
+    [InlineData("Config/brand.json")]
+    [InlineData("config/settings_schema.json")]
+    public async Task GetStatusAsync_ListsADraftExactlyWhenTheSaveTakesItsPath(string file)
+    {
+        _storage.Files[Theme($"default/{file}-draft")] = "{}";
+
+        var status = await _publisher.GetStatusAsync(StoreId, Ct);
+
+        Assert.Equal(status.Drafts.Contains(file, StringComparer.Ordinal), SiteBuilderContentPaths.CanSaveThemeFile($"default/{file}"));
+    }
+
     [Fact]
     public async Task PublishAsync_LockLost_KeepsPreviousPublicationAndDraftsAndRecordsNothing()
     {
@@ -344,11 +378,11 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     [Fact]
     public async Task PublishAsync_CatalogRefusesDraft_WritesNothing()
     {
-        await _catalogs.SaveAsync(StoreId, """{ "hash": "abc12345", "sections": { "product-info": {} }, "blocks": {}, "shared": {} }""", Ct);
+        var catalog = await _catalogs.SaveAsync(StoreId, """{ "hash": "abc12345", "sections": { "product-info": {} }, "blocks": {}, "shared": {} }""", Ct);
         _storage.Files[Theme(Product + "-draft")] = Template("product-info", "carousel");
         _storage.Written.Clear();
 
-        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, "abc12345", null, Ct));
+        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Contains("'carousel'", failure.Errors.Single());
         Assert.Empty(_storage.Written);
@@ -358,7 +392,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     [Fact]
     public async Task PublishAsync_DraftWithValueTheCatalogLacks_ThrowsAndWritesNothing()
     {
-        await _catalogs.SaveAsync(StoreId, """
+        var catalog = await _catalogs.SaveAsync(StoreId, """
             {
               "hash": "abc12345",
               "sections": { "product-info": { "settings": [ { "id": "background", "type": "color-token" } ] } },
@@ -368,7 +402,7 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
         _storage.Files[Theme(Product + "-draft")] = """{ "content": [ { "id": "s0", "type": "product-info", "background": "#ff0000" } ] }""";
         _storage.Written.Clear();
 
-        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, "abc12345", null, Ct));
+        var failure = await Assert.ThrowsAsync<ThemeValidationException>(() => _publisher.PublishAsync(StoreId, catalog, null, Ct));
 
         Assert.Equal("templates/product.json: 's0' has a value in 'background' the storefront does not have, '#ff0000'", failure.Errors.Single());
         Assert.Empty(_storage.Written);
@@ -722,8 +756,9 @@ public sealed class ThemeSnapshotServiceTests : IDisposable
     }
 
     private ThemePublisher Publisher(IContentHistory history) =>
-        new(_storageFactory, new ThemeSnapshotBuilder(), new ThemeValidator(), _stores, _catalogs, _lock, _storage, history,
-            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
+        new(_storageFactory, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _stores, _catalogs, _lock, _storage, history,
+            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
     private TestThemeSnapshotService Snapshots(TestPlatformMemoryCache cache) =>
         new(_stores, _storageFactory, _publisher, cache, Options.Create(new ThemeSnapshotOptions()));

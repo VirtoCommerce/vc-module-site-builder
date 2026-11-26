@@ -5,6 +5,7 @@ import {
   alternateKey,
   alternateName,
   entityUrl,
+  isOffered,
   isTemplateKey,
   mainSectionState,
   pageTypeOf,
@@ -70,6 +71,18 @@ test("the descriptor is picked by the opened template's key", () => {
   assert.equal(templateEntry(own, "category").key, "category");
   assert.equal(templateEntry(own, "page").key, "page-template");
   assert.equal(templateEntry(own).key, "page");
+});
+
+test("a template with a list is offered the sections it lists and the custom types that do not name other templates", () => {
+  const { key, entry } = templateEntry(schemas, "product");
+
+  assert.equal(isOffered(key, entry, "product-info", {}), true);
+  assert.equal(isOffered(key, entry, "announcement-bar", {}), false);
+  assert.equal(isOffered(key, entry, "custom-hero", { custom: true }), true);
+  assert.equal(isOffered(key, entry, "custom-hero", { custom: true, targetTemplates: [key] }), true);
+  assert.equal(isOffered(key, entry, "custom-hero", { custom: true, targetTemplates: ["page"] }), false);
+  assert.equal(isOffered("page", {}, "custom-hero", { custom: true, targetTemplates: [key] }), false);
+  assert.equal(isOffered("page", {}, "announcement-bar", {}), true);
 });
 
 test("a new template starts from the default, else the storefront's built-in one, never as a legacy array", () => {

@@ -88,6 +88,19 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AnEditThatAddsASectionOfACustomSectionTypeTheThemeLacks_WarnsThatThePageIsPublishedWithoutIt()
+    {
+        await _context.SeedThemeAsync(StoreA);
+
+        var edit = (await _context.CallAsync(Editor(), "edit_page_draft",
+            new { page_id = PageId, store_id = StoreA, version_token = FilePages.VersionOf(Published), operations = new[] { new { op = "add_section", type = "custom-stats" } } }))
+            .EnsureSucceeded().Read<PageDraftEdit>();
+
+        var warning = Assert.Single(edit.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("it can still be published, but the storefront shows nothing in their place", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ADryRunEdit_WritesNothing()
     {
         var edit = (await _context.CallAsync(Editor(), "edit_page_draft",
@@ -157,6 +170,22 @@ public sealed class FilePageToolsTests : IAsyncDisposable
         Assert.Contains(result.Read<SiteBuilderChange>().Changes, x => x.Field == "status" && x.To?.ToString() == "Published");
         Assert.Equal(FilePages.VersionOf(Published), ((IDictionary<string, string>)call["expected_versions"])[PageId]);
         VerifyPublished(Times.Never());
+    }
+
+    [Fact]
+    public async Task APublishDryRun_WarnsOfACustomSectionTypeTheThemeHoldsOnlyAsADraft()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        _context.SeedFilePage(StoreA, Path, """{ "settings": { "name": "Spring" }, "content": [ { "id": "s1", "type": "custom-stats" } ] }""", draft: true);
+        SetUpPublish(new FilePageShipment { State = GitPublishState.Merged });
+
+        var review = (await _context.CallAsync(Publisher(), "publish_page", new Dictionary<string, object>(FilePage()) { ["dryRun"] = true }))
+            .EnsureSucceeded().Read<SiteBuilderChange>();
+
+        var warning = Assert.Single(review.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("only as a draft", warning, StringComparison.Ordinal);
+        Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -36,9 +36,15 @@ Designer to preview: `{ source: "builder", type, ...payload }`. Preview to desig
 1. The designer loads the iframe.
 2. On every iframe `load` the designer sends `connect`.
 3. The storefront answers `loaded` once its schemas are ready. It also sends `loaded` unasked when it starts, in case
-   `connect` came before its listener.
-4. On every `loaded` the designer uploads the catalog when the server does not have its `hash`, then sends `auth`,
-   `inspector`, `colorScheme`, `draft` and `render`, in that order: after a reload the frame has lost them all.
+   `connect` came before its listener, and again whenever what the catalog carries of the custom section types or the
+   kit changes: a type added or removed by a `draft`, a type's name, settings, target templates, limit or icon, or a
+   kit tag or a behavior registered late.
+4. On every `loaded` the designer uploads the catalog when the server does not have it, then sends `auth`,
+   `inspector`, `colorScheme`, `draft` and `render`, in that order: after a reload the frame has lost them all. The
+   server names a catalog by the SHA-256 of the JSON text uploaded, which the designer computes too and names in its
+   saves and publications; the catalog's own `hash` only tells the designer that it changed. The designer uploads it
+   without the sections marked `custom`, which the server reads from the theme, so a storefront uploads one text
+   whatever its draft holds.
 5. The storefront shows the page after the first `render`; until then the frame stays blank. Until told otherwise
    it is anonymous, light, with the inspector off: no outlines, clicks blocked.
 
@@ -100,6 +106,11 @@ interface Catalog {
   settingsSchema?: { settings_schema?: { name: string; icon?: string; settings: Field[] }[] };
   /** the token names a palette has, from the storefront's built-in presets */
   paletteTokens: { light: string[]; dark: string[] };
+  /**
+   * the kit tags, behaviors, icon names, design facts and guide a custom section type may use: see
+   * [Custom sections](custom-sections.md#catalog)
+   */
+  kit?: Kit;
 }
 ```
 
@@ -122,7 +133,11 @@ as it will once the theme is published. Each `draft` replaces the previous one e
 templates. Each is the template as last saved, its draft, else its live file; the open template is as the designer
 has it, saved or not, and is in `render` too. The designer leaves `templates` out while no template has a saved draft
 (the snapshot then holds them as they are live, and `render` carries the open one) and for a storefront without the
-`templates` capability.
+`templates` capability. It sends `customSections` whenever the theme has a custom section type, with a saved draft or
+not, since the snapshot holds the types in one language and the designer takes a type's name and defaults from the
+catalog; a type whose file it cannot read, or that is not JSON, is left out, as the first publication leaves out a type
+that is not JSON. It leaves `customSections` out for a theme with none, and until it has listed the theme's types: the
+preview then shows the published ones.
 
 ```ts
 interface Draft {
@@ -134,9 +149,19 @@ interface Draft {
     footer?: SectionGroup;
     brand?: Brand;
     palette?: Palette | null;
+    /** every custom section type of the theme as last saved, its draft else its live file; replaces the published ones */
+    customSections?: Record<string, CustomSectionType>;
+    /**
+     * the asset library's public base, as the snapshot's `assetsBaseUrl` holds it; the storefront takes it only while its
+     * published snapshot has none, so a store never published shows custom section images in the designer
+     */
+    assetsBaseUrl?: string;
   };
 }
 ```
+
+The designer reads the base from `GET /api/site-builder/designer/storefront`, whose answer it already reads for the
+storefront's address, and sends it in every draft once it is known.
 
 The types are those of the [theme snapshot](theme-snapshot.md#snapshot), except that translatable values may be
 dictionaries: the storefront shows the current language. A menu the draft names and the published snapshot does not
@@ -214,7 +239,7 @@ designer sends.
 
 | Type | Data | When |
 |---|---|---|
-| `loaded` | see [Handshake](#handshake) | in answer to `connect`, and once unasked |
+| `loaded` | see [Handshake](#handshake) | in answer to `connect`, once unasked, and when the catalog's custom section types or kit change |
 | `select` | `{ sectionId: string, blockId?: string }` | the visitor clicked a section or a block while the inspector is on |
 | `hover` | `{ sectionId: string \| null }` | the pointer entered or left a section |
 | `edit` | `{ itemId: string, path: (string \| number)[], value: string, cultureName?: string }` | a text edited in place changed |

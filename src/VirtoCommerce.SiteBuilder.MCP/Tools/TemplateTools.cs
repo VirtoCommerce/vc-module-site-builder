@@ -144,7 +144,9 @@ public class TemplateTools(
         "template to start from; then give it pages with edit_template_rules. The template's main section (product-info, " +
         "category-listing, page-content) cannot be removed or hidden. Customers see the change only when the theme is published " +
         "(publish_theme). Returns the changes section by section, the new version token and the sections. Call it with dryRun " +
-        "first to show the change.")]
+        "first to show the change: the answer lists the errors that refuse the edit, such as a section of a custom section type the " +
+        "theme does not hold (create it with create_section_type first; one the theme holds as a draft is published with the " +
+        "template), the warnings and the changes.")]
     public async Task<ThemeFileChange> EditTemplate(
         RequestContext<CallToolRequestParams> context,
         [Description("Store id.")] string store_id,
@@ -153,7 +155,7 @@ public class TemplateTools(
         [Description("When the template is created: the template of the same page type to copy, for example 'product'.")] string copy_of = null,
         [Description("The changes of sections and blocks, applied in order, as in edit_page_draft. set_page_settings sets the template's settings.")] PageEditOperation[] operations = null,
         [Description("Page templates only: 'full' (the site's header and footer), 'minimal' (the logo only) or 'blank' (nothing around the page).")] string layout = null,
-        [Description("true to check the edit and return what it would change, without saving it.")] bool dryRun = false,
+        [Description("true to check the edit and return its errors, its warnings and what it would change, without saving it.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
         await EnsureStoreAsync(context.User, store_id);

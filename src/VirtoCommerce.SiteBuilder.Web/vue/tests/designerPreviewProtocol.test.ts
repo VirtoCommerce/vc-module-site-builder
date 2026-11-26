@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createPreviewChannel } from "../src/modules/designer/preview";
 import {
@@ -16,7 +17,6 @@ import {
   selectionFrom,
   storefrontPath,
   storefrontRoute,
-  type Catalog,
   type ColorScheme,
   type DesignerMessage,
   type Loaded,
@@ -287,6 +287,14 @@ test("the draft carries the brand and the palette the Theme tab has, whatever th
   assert.deepEqual(draftMessage({ look: {}, capabilities: [] }), { type: "draft", theme: {} });
 });
 
+test("the draft carries the theme's custom section types, whatever the storefront renders of the templates and groups", () => {
+  const customSections = {
+    "custom-hero": { format: 1 as const, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [] }, template: "<section></section>", css: "" },
+  };
+  assert.deepEqual(draftMessage({ customSections, capabilities: [] }), { type: "draft", theme: { customSections } });
+  assert.deepEqual(draftMessage({ capabilities: ["templates", "groups"] }), { type: "draft", theme: {} });
+});
+
 test("after loaded: who the preview renders as, the inspector, light or dark, the draft, the render", () => {
   const draft = draftMessage({ capabilities: [] });
   const render = renderMessage({ preview: { template: doc([]), sharedComponentBoundaries: [] }, cultureName: "en-US" });
@@ -345,11 +353,15 @@ test("a page type without rules of its own: the storefront's id names one of its
 });
 
 const catalog = (parseLoaded(loadedData()) as Loaded).catalog;
+const text = JSON.stringify(catalog);
+const sha = createHash("sha256").update(text, "utf8").digest("hex");
 
 function fakeServer(has: (hash: string) => boolean | Error, upload: () => void | Error = () => undefined) {
   const calls: string[] = [];
+  const sent: string[] = [];
   return {
     calls,
+    sent,
     api: {
       has: async (storeId: string, hash: string) => {
         calls.push(`GET ${storeId} ${hash}`);
@@ -357,8 +369,9 @@ function fakeServer(has: (hash: string) => boolean | Error, upload: () => void |
         if (result instanceof Error) throw result;
         return result;
       },
-      upload: async (storeId: string, sent: Catalog) => {
-        calls.push(`PUT ${storeId} ${sent.hash}`);
+      upload: async (storeId: string, body: string) => {
+        calls.push(`PUT ${storeId}`);
+        sent.push(body);
         const result = upload();
         if (result instanceof Error) throw result;
       },
@@ -368,49 +381,68 @@ function fakeServer(has: (hash: string) => boolean | Error, upload: () => void |
 const status = (code: number) => Object.assign(new Error(String(code)), { status: code });
 
 test("a catalog the server has is not uploaded, and not asked about again", async () => {
-  const known = new Map<string, Set<string>>();
+  const known = new Map<string, Map<string, string>>();
   const server = fakeServer(() => true);
-  await ensureCatalog("b2b", catalog, server.api, known);
-  await ensureCatalog("b2b", catalog, server.api, known);
-  assert.deepEqual(server.calls, ["GET b2b 0badc0de"]);
+  assert.equal(await ensureCatalog("b2b", catalog, server.api, known), sha);
+  assert.equal(await ensureCatalog("b2b", catalog, server.api, known), sha);
+  assert.deepEqual(server.calls, [`GET b2b ${sha}`]);
 });
 
-test("a catalog the server lacks is uploaded with its hash, once per store", async () => {
-  const known = new Map<string, Set<string>>();
-  let sent: Catalog | undefined;
+test("a catalog the server lacks is uploaded as the text its SHA-256 names, once per store", async () => {
+  const known = new Map<string, Map<string, string>>();
   const server = fakeServer(() => false);
-  const api = { ...server.api, upload: async (storeId: string, value: Catalog) => ((sent = value), server.api.upload(storeId, value)) };
-  await ensureCatalog("b2b", catalog, api, known);
-  await ensureCatalog("b2b", catalog, api, known);
-  await ensureCatalog("b2c", catalog, api, known);
-  assert.deepEqual(server.calls, ["GET b2b 0badc0de", "PUT b2b 0badc0de", "GET b2c 0badc0de", "PUT b2c 0badc0de"]);
-  assert.equal(sent?.hash, "0badc0de");
-  assert.equal("protocol" in (sent ?? {}), false);
+  const hashes = [
+    await ensureCatalog("b2b", catalog, server.api, known),
+    await ensureCatalog("b2b", catalog, server.api, known),
+    await ensureCatalog("b2c", catalog, server.api, known),
+  ];
+  assert.deepEqual(hashes, [sha, sha, sha]);
+  assert.deepEqual(server.calls, [`GET b2b ${sha}`, "PUT b2b", `GET b2c ${sha}`, "PUT b2c"]);
+  assert.deepEqual(server.sent, [text, text]);
+  assert.equal(JSON.parse(text).hash, "0badc0de");
+  assert.equal("protocol" in JSON.parse(text), false);
 });
 
-test("a failed upload is logged and tried again; an editor who may not upload it skips it quietly", async () => {
-  const known = new Map<string, Set<string>>();
+test("a catalog is uploaded without the custom types the draft adds, so the same storefront names the same catalog", async () => {
+  const withTypes = { ...catalog, sections: { ...catalog.sections, "custom-hero": { name: "Hero", custom: true, settings: [] } } };
+  const server = fakeServer(() => false);
+  assert.equal(await ensureCatalog("b2b", withTypes, server.api, new Map()), sha);
+  assert.deepEqual(server.sent, [text]);
+});
+
+test("a storefront hash already known answers its catalog's hash without hashing the catalog again", async () => {
+  const known = new Map([["b2b", new Map([["0badc0de", "f".repeat(64)]])]]);
+  const server = fakeServer(() => false);
+  assert.equal(await ensureCatalog("b2b", catalog, server.api, known), "f".repeat(64));
+  assert.deepEqual(server.calls, []);
+});
+
+test("a failed upload is logged and tried again; an editor who may not upload it skips it quietly; both still get the hash", async () => {
+  const known = new Map<string, Map<string, string>>();
   const failing = fakeServer(() => false, () => status(500));
+  const hashes: string[] = [];
   const logged = await warnings(async () => {
-    await ensureCatalog("b2b", catalog, failing.api, known);
-    await ensureCatalog("b2b", catalog, failing.api, known);
+    hashes.push(await ensureCatalog("b2b", catalog, failing.api, known));
+    hashes.push(await ensureCatalog("b2b", catalog, failing.api, known));
   });
   assert.equal(logged.length, 2);
-  assert.deepEqual(failing.calls, ["GET b2b 0badc0de", "PUT b2b 0badc0de", "GET b2b 0badc0de", "PUT b2b 0badc0de"]);
+  assert.deepEqual(failing.calls, [`GET b2b ${sha}`, "PUT b2b", `GET b2b ${sha}`, "PUT b2b"]);
 
   const forbidden = fakeServer(() => false, () => status(403));
   const quiet = await warnings(async () => {
-    await ensureCatalog("b2c", catalog, forbidden.api, known);
-    await ensureCatalog("b2c", catalog, forbidden.api, known);
+    hashes.push(await ensureCatalog("b2c", catalog, forbidden.api, known));
+    hashes.push(await ensureCatalog("b2c", catalog, forbidden.api, known));
   });
   assert.equal(quiet.length, 0);
-  assert.deepEqual(forbidden.calls, ["GET b2c 0badc0de", "PUT b2c 0badc0de"]);
+  assert.deepEqual(forbidden.calls, [`GET b2c ${sha}`, "PUT b2c"]);
+  assert.deepEqual(hashes, [sha, sha, sha, sha]);
 });
 
 function channel(options: { prepare?: () => Promise<void>; colorScheme?: () => ColorScheme } = {}) {
   const posted: DesignerMessage[] = [];
   const log: string[] = [];
   const events: unknown[] = [];
+  const newDocuments: boolean[] = [];
   const draft = draftMessage({ capabilities: [] });
   const render = renderMessage({ preview: { template: doc([]), sharedComponentBoundaries: [] }, cultureName: "en-US" });
   const created = createPreviewChannel({
@@ -423,14 +455,17 @@ function channel(options: { prepare?: () => Promise<void>; colorScheme?: () => C
       log.push("catalog");
       await options.prepare?.();
     },
-    handshake: () => handshakeMessages({ inspector: false, colorScheme: options.colorScheme?.() ?? "light", draft, render }),
+    handshake: (newDocument) => {
+      newDocuments.push(newDocument);
+      return handshakeMessages({ inspector: false, colorScheme: options.colorScheme?.() ?? "light", draft, render });
+    },
     onSelect: (event) => events.push(["select", event]),
     onHover: (id) => events.push(["hover", id]),
     onEdit: (edit) => events.push(["edit", edit]),
     onResolved: (resolved) => events.push(["resolved", resolved]),
     onAuthRenew: (userId) => events.push(["authRenew", userId]),
   });
-  return { ...created, posted, log, events };
+  return { ...created, posted, log, events, newDocuments };
 }
 
 test("a frame load connects with protocol 2", () => {
@@ -447,6 +482,38 @@ test("on loaded: the schemas, the catalog, then auth, inspector, colorScheme, dr
   assert.equal(preview.connected.value, true);
   preview.send({ type: "hover", sectionId: "s1" });
   assert.deepEqual(preview.posted.at(-1), { type: "hover", sectionId: "s1" });
+});
+
+test("a loaded again, once the draft changed the storefront's custom types, brings the new catalog and the whole handshake again", async () => {
+  const preview = channel();
+  await preview.receive(fromPreview(loadedData()));
+  preview.log.length = 0;
+  preview.posted.length = 0;
+  const sections = { ...loadedData().sections, "custom-hero": { name: "Hero", custom: true, settings: [] } };
+
+  await preview.receive(fromPreview(loadedData({ hash: "5eedc0de", sections })));
+
+  assert.deepEqual(preview.log, ["loaded 5eedc0de", "catalog", "post auth", "post inspector", "post colorScheme", "post draft", "post render"]);
+  assert.equal(preview.connected.value, true);
+});
+
+test("a loaded with no frame load since the last handshake is the same document's; a frame load brings a new one", async () => {
+  const preview = channel();
+  await preview.receive(fromPreview(loadedData()));
+  await preview.receive(fromPreview(loadedData({ hash: "5eedc0de" })));
+  preview.frameLoaded();
+  await preview.receive(fromPreview(loadedData()));
+  assert.deepEqual(preview.newDocuments, [true, false, true]);
+});
+
+test("a new document whose handshake a newer loaded dropped is still new to the handshake that goes", async () => {
+  const releases: (() => void)[] = [];
+  const preview = channel({ prepare: () => new Promise<void>((resolve) => releases.push(resolve)) });
+  const dropped = preview.receive(fromPreview(loadedData()));
+  const answered = preview.receive(fromPreview(loadedData()));
+  releases.forEach((release) => release());
+  await Promise.all([dropped, answered]);
+  assert.deepEqual(preview.newDocuments, [true]);
 });
 
 test("nothing but the handshake goes out before it: it carries the state as it is when it goes", async () => {

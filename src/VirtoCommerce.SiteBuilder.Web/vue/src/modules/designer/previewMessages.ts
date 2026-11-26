@@ -4,6 +4,7 @@ import { isRecord, isText, isTextList } from "./json";
 import { rulesOf, type TemplateRules } from "./rules";
 import { PAGE_TYPES, type PageType } from "./templates";
 import type { Brand, Palette } from "./themeLook";
+import type { CustomSectionType } from "./customSections";
 
 export const PREVIEW_PROTOCOL = 2;
 
@@ -24,7 +25,8 @@ export interface PaletteTokens {
 export type Catalog = Schemas & { hash: string; paletteTokens: PaletteTokens; [key: string]: unknown };
 
 export interface Handshake {
-  hash: string;
+  /** The name the server stores the previewed catalog under, which saves and publications send; unset until `ensureCatalog` has it. */
+  hash?: string;
   capabilities: string[];
   conditions: ConditionDescriptor[];
   builtInTemplates: string[];
@@ -32,6 +34,8 @@ export interface Handshake {
 }
 
 export interface Loaded extends Handshake {
+  /** The storefront's own hash of its catalog. */
+  hash: string;
   catalog: Catalog;
 }
 
@@ -50,6 +54,9 @@ export interface ThemeDraft {
   brand?: Brand;
   /** null: the theme has no palette, so the storefront's preset shows. */
   palette?: Palette | null;
+  customSections?: Record<string, CustomSectionType>;
+  /** The asset library's base, which the storefront takes while its published snapshot has none. */
+  assetsBaseUrl?: string;
 }
 
 export interface DraftMessage {
@@ -265,6 +272,8 @@ export interface DraftInput {
   groups?: Partial<Record<SectionGroup, Item[]>>;
   templates?: Record<string, PageDocument>;
   look?: { brand?: Brand; palette?: Palette | null };
+  customSections?: Record<string, CustomSectionType>;
+  assetsBaseUrl?: string;
   capabilities: string[];
 }
 
@@ -280,6 +289,8 @@ export function draftMessage(input: DraftInput): DraftMessage {
       ...(groups?.footer ? { footer: { content: groups.footer } } : {}),
       ...(input.look?.brand ? { brand: input.look.brand } : {}),
       ...(input.look?.palette !== undefined ? { palette: input.look.palette } : {}),
+      ...(input.customSections ? { customSections: input.customSections } : {}),
+      ...(input.assetsBaseUrl ? { assetsBaseUrl: input.assetsBaseUrl } : {}),
     },
   };
 }
@@ -322,22 +333,36 @@ export function rulesPick(resolved: Resolved, rules: TemplateRules | undefined):
 
 export interface CatalogApi {
   has(storeId: string, hash: string): Promise<boolean>;
-  upload(storeId: string, catalog: Catalog): Promise<void>;
+  upload(storeId: string, catalog: string): Promise<void>;
 }
 
-const knownCatalogs = new Map<string, Set<string>>();
+/** Of each store, the storefront's hash of a catalog and the server's name for it. */
+const knownCatalogs = new Map<string, Map<string, string>>();
 
-/** The server checks the theme against this catalog. A failed upload is retried on the next `loaded`. */
-export async function ensureCatalog(storeId: string, catalog: Catalog, api: CatalogApi, known = knownCatalogs): Promise<void> {
-  const hashes = known.get(storeId) ?? new Set<string>();
+async function sha256(text: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+  return Array.from(digest, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * The server checks the theme against this catalog, under the SHA-256 of the text uploaded, which this answers. A failed upload is
+ * retried on the next `loaded`.
+ */
+export async function ensureCatalog(storeId: string, catalog: Catalog, api: CatalogApi, known = knownCatalogs): Promise<string> {
+  const hashes = known.get(storeId) ?? new Map<string, string>();
   known.set(storeId, hashes);
-  if (hashes.has(catalog.hash)) return;
+  const knownHash = hashes.get(catalog.hash);
+  if (knownHash) return knownHash;
+  // the server reads a custom type from the theme, so one storefront uploads one text whatever types the preview's draft holds
+  const text = JSON.stringify({ ...catalog, sections: Object.fromEntries(Object.entries(catalog.sections).filter(([, schema]) => !schema.custom)) });
+  const hash = await sha256(text);
   try {
-    if (!(await api.has(storeId, catalog.hash))) await api.upload(storeId, catalog);
-    hashes.add(catalog.hash);
+    if (!(await api.has(storeId, hash))) await api.upload(storeId, text);
+    hashes.set(catalog.hash, hash);
   } catch (e) {
     // An editor without the update permission leaves the upload to one who has it.
-    if ((e as { status?: unknown } | undefined)?.status === 403) hashes.add(catalog.hash);
+    if ((e as { status?: unknown } | undefined)?.status === 403) hashes.set(catalog.hash, hash);
     else console.warn("[site-builder] The storefront's schema catalog was not uploaded; it is tried again when the preview reloads", e);
   }
+  return hash;
 }

@@ -381,6 +381,8 @@ internal sealed class McpTestContext : IAsyncDisposable
             .AddSingleton<IThemeStorageFactory>(ThemeStorage)
             .AddSingleton<ISchemaCatalogService>(new SchemaCatalogService(ThemeStorage))
             .AddSingleton<IThemePaletteService>(new ThemePaletteService())
+            .AddSingleton<ICustomSectionValidator>(TestServices.CustomSectionValidator())
+            .AddSingleton<ICustomSectionService>(new CustomSectionService(ThemeStorage, GetDesigner().Themes))
             .AddSingleton(Previews.Object)
             .AddSingleton<IThemeOperationService>(provider => new ThemeOperationService(provider.GetRequiredService<IAuthorizationService>(),
                 RequestValidators.Stores(StoreA, StoreB, StoreC), CreateThemePublisher(), SavedVersions))
@@ -444,7 +446,7 @@ internal sealed class McpTestContext : IAsyncDisposable
             var filePages = TestServices.FilePageDrafts(Options.Create(new GitContentOptions()), connection: null, policy: new FakeGitContentPolicy(enabled: false),
                 storeService: Stores, pathResolver: Blobs, blobs: Blobs, publishing: Blobs, events: Blobs);
             _designer = (TestServices.Designer(SavedVersions, filePageDrafts: filePages, themeDrafts: themes, pages: PageStore, themePublisher: CreateThemePublisher(),
-                catalogs: new SchemaCatalogService(ThemeStorage)), themes);
+                catalogs: new SchemaCatalogService(ThemeStorage), themes: ThemeStorage), themes);
         }
 
         return _designer;
@@ -455,10 +457,11 @@ internal sealed class McpTestContext : IAsyncDisposable
     public ThemeStorageFactory ThemeStorage => _themeStorage ??= new ThemeStorageFactory(Stores, Blobs, Blobs, Blobs);
 
     private ThemePublisher CreateThemePublisher() =>
-        new(ThemeStorage, new ThemeSnapshotBuilder(), new ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
-            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService());
+        new(ThemeStorage, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), Stores, new SchemaCatalogService(ThemeStorage), Lock, Blobs, new NoContentHistory(),
+            Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, TestServices.ContentGuard, new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
-    public Task SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null)
+    public Task<string> SeedCatalogAsync(string storeId, string[] sections, string paletteTokens = null, string kit = null)
     {
         var catalog = new Newtonsoft.Json.Linq.JObject
         {
@@ -470,6 +473,11 @@ internal sealed class McpTestContext : IAsyncDisposable
             catalog["paletteTokens"] = Newtonsoft.Json.Linq.JObject.Parse(paletteTokens);
         }
 
+        if (kit != null)
+        {
+            catalog["kit"] = Newtonsoft.Json.Linq.JObject.Parse(kit);
+        }
+
         return new SchemaCatalogService(ThemeStorage).SaveAsync(storeId, catalog.ToString(), Xunit.TestContext.Current.CancellationToken);
     }
 
@@ -478,15 +486,49 @@ internal sealed class McpTestContext : IAsyncDisposable
     public static readonly string[] ThemeSections =
         ["product-info", "product-reviews", "category-listing", "page-content", "site-header", "site-footer", "announcement-bar", "text"];
 
-    public async Task SeedThemeAsync(string storeId)
+    // Part of the storefront's own kit: what a custom section's template may use besides HTML.
+    public const string StorefrontKit = """
+        {
+          "tags": {
+            "vc-button": { "description": "A button; with to, a link that looks like one.", "attributes": { "label": { "type": "string" }, "to": { "type": "link" } } }
+          },
+          "behaviors": {
+            "inview": {
+              "description": "Sets data-visible while the element is on screen.",
+              "options": { "threshold": { "type": "number", "min": 0, "max": 1 }, "once": { "type": "boolean" } },
+              "writes": ["data-visible"]
+            },
+            "count-up": {
+              "description": "The text counts up to the number when the element first shows.",
+              "value": { "type": "number" },
+              "options": { "duration": { "type": "number", "min": 0, "max": 5000 }, "decimals": { "type": "number", "min": 0, "max": 4 } },
+              "writes": ["text"]
+            }
+          }
+        }
+        """;
+
+    public const string StatsSectionType = """
+        {
+          "format": 1,
+          "name": "Stats",
+          "schema": { "settings": [ { "id": "title", "type": "string", "translatable": true } ] },
+          "template": "<section><h2>{{ settings.title }}</h2></section>",
+          "css": ""
+        }
+        """;
+
+    public async Task<string> SeedThemeAsync(string storeId, string kit = null)
     {
         var tokens = new Newtonsoft.Json.Linq.JObject
         {
             ["light"] = new Newtonsoft.Json.Linq.JArray(StorefrontPaletteTokens.Light),
             ["dark"] = new Newtonsoft.Json.Linq.JArray(StorefrontPaletteTokens.Dark),
         };
-        await SeedCatalogAsync(storeId, ThemeSections, tokens.ToString());
+        var catalog = await SeedCatalogAsync(storeId, ThemeSections, tokens.ToString(), kit);
         SeedThemeFile(storeId, "templates/product.json", ProductTemplate);
+
+        return catalog;
     }
 
     public void SeedThemeFile(string storeId, string pathInTheme, string content, bool draft = false) =>
@@ -525,8 +567,8 @@ internal sealed class McpTestContext : IAsyncDisposable
         public Task<SiteBuilderOperationResult<ContentSaveResult>> DiscardAsync(DesignerDiscardOperationRequest request, ClaimsPrincipal user,
             CancellationToken cancellationToken = default) => inner.DiscardAsync(request, user, cancellationToken);
 
-        public Task<SiteBuilderOperationResult> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files, bool draft, string catalogHash,
-            CancellationToken cancellationToken = default) => inner.ValidateThemeFilesAsync(storeId, files, draft, catalogHash, cancellationToken);
+        public Task<SiteBuilderOperationResult<ThemeFilesValidationResult>> ValidateThemeFilesAsync(string storeId, IList<SiteBuilderContentFile> files,
+            bool draft, string catalogHash, CancellationToken cancellationToken = default) => inner.ValidateThemeFilesAsync(storeId, files, draft, catalogHash, cancellationToken);
     }
 
     private UserManager<ApplicationUser> CreateUserManager()

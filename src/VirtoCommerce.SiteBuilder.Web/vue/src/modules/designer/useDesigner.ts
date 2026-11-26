@@ -7,11 +7,12 @@ import { fromDocument, isComponentRef, resolveRefs } from "./document";
 import type { ClipboardItem } from "./clipboard";
 import * as api from "./api";
 import { GROUPS, groupItems, groupOf, pageOnly, withGroups } from "./groups";
-import { THEME_FILES, THEME_PARTS, groupPath, type HistoryFile, type ThemePart } from "./history";
+import { THEME_FILES, THEME_PARTS, groupPath, type HistoryFile } from "./history";
 import {
   MAIN_SECTIONS,
   PAGE_CONTENT,
   hidingLosesMain,
+  isOffered,
   keptMainSection,
   mainSectionState,
   pageTypeOf,
@@ -24,6 +25,8 @@ import { moveItem } from "./rules";
 import type { Capability, Handshake } from "./previewMessages";
 import { hasThemeDraft, isNewThemeDraft, templateStatus, type ThemeStatus } from "./themePublication";
 import { CatalogPendingError, type DesignerDiscardPage, type DesignerSaveFile, type DesignerSavePage } from "./designerSave";
+import { customSectionGap, customSectionPath, draftedCustomSectionTypes, isCustomSectionPart } from "./customSections";
+import type { DiscardThemePart } from "./discard";
 
 const EMPTY_SCHEMAS: Schemas = { sections: {}, blocks: {}, shared: {}, objects: {} };
 export interface PageRow {
@@ -110,7 +113,7 @@ export function useDesigner() {
 
   const languages = ref<{ all: string[]; default?: string }>({ all: [] });
   const language = ref<string>();
-  const translates = (section?: Item) => !shared.value && (!!templateKey.value || !!section?.__group);
+  const translates = (section?: Partial<Item>) => !shared.value && (!!templateKey.value || !!section?.__group);
   function translating(section?: Item, edited = language.value): Translating | undefined {
     const defaultLanguage = languages.value.default;
     return translates(section) && edited && defaultLanguage ? { language: edited, defaultLanguage, languages: languages.value.all } : undefined;
@@ -122,7 +125,7 @@ export function useDesigner() {
   }
 
   /** A page's sections and shared components keep one text, so a dictionary becomes the edited language's text. */
-  function settled(item: Item, section: Item = item): Item {
+  function settled<T extends Partial<Item>>(item: T, section: Partial<Item> = item): T {
     return translates(section) ? item : inEditedLanguage(item);
   }
 
@@ -152,11 +155,12 @@ export function useDesigner() {
         !schema.static &&
         !schema.groups?.length &&
         (type !== PAGE_CONTENT || pageContent) &&
-        (entry.sections ? entry.sections.includes(type) : !schema.targetTemplates?.length || schema.targetTemplates.includes(key)),
+        isOffered(key, entry, type, schema),
     );
   });
 
-  const groupSectionTypes = (group: SectionGroup) => addableSections((_, schema) => !!schema.groups?.includes(group));
+  // The storefront renders a group's own sections there, so a save refuses a custom type in one.
+  const groupSectionTypes = (group: SectionGroup) => addableSections((_, schema) => !schema.custom && !!schema.groups?.includes(group));
 
   const pageEnd = () => {
     const footer = doc.value.content.findIndex((x) => groupOf(x) === "footer");
@@ -245,7 +249,7 @@ export function useDesigner() {
   }
 
   function addSection(type: string, group?: SectionGroup) {
-    const section: Item = { ...newItem(type, "section", schemas.value), ...(group ? { __group: group } : {}) };
+    const section = settled({ ...newItem(type, "section", schemas.value), ...(group ? { __group: group } : {}) });
     const content = [...doc.value.content];
     content.splice(group ? groupEnd(group) : pageEnd(), 0, section);
     setContent(content);
@@ -583,26 +587,33 @@ export function useDesigner() {
   }
 
   const themeStatus = ref<ThemeStatus>();
+  const sectionGap = (type: string) =>
+    customSectionGap(type, { sections: schemas.value === EMPTY_SCHEMAS ? undefined : schemas.value.sections, status: themeStatus.value });
   const themeFileOpen = computed(() => file.value?.type === "themes");
-  const discardable = computed<{ page: boolean; theme: ThemePart[] }>(() => ({
+  // A custom section type never published goes too: discarding it is how a type an agent made is deleted.
+  const discardable = computed<{ page: boolean; theme: DiscardThemePart[] }>(() => ({
     page: !!status.value.hasChanges && (themeFileOpen.value ? !isNewThemeDraft(themeStatus.value, file.value!.theme, file.value!.path) : !!status.value.published),
     theme:
       theme.value && !shared.value
-        ? THEME_PARTS.filter((part) => {
-            const path = THEME_FILES[part](theme.value!);
-            return hasThemeDraft(themeStatus.value, theme.value!, path) && !isNewThemeDraft(themeStatus.value, theme.value!, path);
-          })
+        ? [
+            ...THEME_PARTS.filter((part) => {
+              const path = THEME_FILES[part](theme.value!);
+              return hasThemeDraft(themeStatus.value, theme.value!, path) && !isNewThemeDraft(themeStatus.value, theme.value!, path);
+            }),
+            ...draftedCustomSectionTypes(themeStatus.value),
+          ]
         : [],
   }));
 
   async function refreshThemeStatus() {
-    if (!storeId.value || shared.value) return;
+    if (!storeId.value) return;
     themeStatus.value = await api.themeStatus(storeId.value).catch(() => themeStatus.value);
   }
 
   async function refreshStatus() {
     const page = file.value;
-    if (!groupId.value && !page) return;
+    // A shared component has no state of its own, but its preview takes the drafted custom section types from the theme's.
+    if (!groupId.value && !page) return refreshThemeStatus();
     // A state that cannot be read stays as last read, and the publish actions wait for one.
     const known = () => status.value;
     const ownStatus = () => {
@@ -613,21 +624,27 @@ export function useDesigner() {
     status.value = own ?? templateStatus(themeStatus.value, page!.theme, page!.path);
   }
 
-  async function discardDrafts(choice: { page: boolean; theme: ThemePart[] }) {
-    if (busy.value || !storeId.value) return;
+  /** Whether a discard was sent. */
+  async function discardDrafts(choice: { page: boolean; theme: DiscardThemePart[] }): Promise<boolean> {
+    if (busy.value || !storeId.value) return false;
     const page = file.value;
     const themeName = theme.value;
-    const files = themeName ? discardable.value.theme.filter((part) => choice.theme.includes(part)).map((part) => THEME_FILES[part](themeName)) : [];
+    const files = themeName
+      ? discardable.value.theme
+          .filter((part) => choice.theme.includes(part))
+          .map((part) => (isCustomSectionPart(part) ? customSectionPath(themeName, part) : THEME_FILES[part](themeName)))
+      : [];
     let pagePart: DesignerDiscardPage | undefined;
     if (choice.page && discardable.value.page) {
       if (groupId.value) pagePart = { groupId: groupId.value };
       else if (page && themeFileOpen.value) files.push(page.path);
       else if (page) pagePart = { path: page.path, type: page.type };
     }
-    if (!pagePart && !files.length) return;
+    if (!pagePart && !files.length) return false;
     busy.value = "restoring";
     try {
       await api.discardDesigner(storeId.value, { page: pagePart, themeFiles: files });
+      return true;
     } finally {
       busy.value = undefined;
     }
@@ -649,7 +666,7 @@ export function useDesigner() {
     const versions: Record<string, string> = {};
     const saved = await api.saveDesigner(storeId.value!, { page, themeFiles: files }, handshake.value?.hash);
     if (groupId.value) eTag.value = saved.eTag ?? eTag.value;
-    for (const x of saved.themeFiles ?? []) versions[x.path] = x.eTag;
+    for (const x of saved.themeFiles ?? []) if (x.path && x.eTag) versions[x.path] = x.eTag;
     for (const path of Object.keys(themeETags.value)) if (versions[path]) themeETags.value[path] = versions[path];
     return versions;
   }
@@ -780,6 +797,7 @@ export function useDesigner() {
     languages,
     language,
     translating,
+    settled,
     mainSection,
     mainItem,
     isMainKept,
@@ -789,6 +807,7 @@ export function useDesigner() {
     templateIsNew,
     extraPageFields,
     sectionSchema,
+    sectionGap,
     blockSchema,
     sectionTypes,
     pageRows,

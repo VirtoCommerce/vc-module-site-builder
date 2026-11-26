@@ -203,7 +203,7 @@ public class BlobPublishTests
         var connection = GitHubConnections.CreateService(options.Value);
         var policy = new FakeGitContentPolicy(enabled: false);
         var drafts = TestServices.FilePageDrafts(options, connection, policy, null, null, new FakeGitContentProvisioner(), live.StoreService, live, live, publishing, live);
-        var validator = new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(live.StoreService), new SiteBuilderContentFileValidator());
+        var validator = RequestValidators.Content(live.StoreService);
 
         return TestServices.FilePageOperations(new FakeAuthorizationService(true), validator, options, connection, policy, gitContentRepository: null,
             filePageDraftService: drafts, publishingService: publishing);
@@ -229,13 +229,13 @@ public class BlobPublishTests
             settingsManager: null,
             authorizationService: new FakeAuthorizationService(allowed),
             distributedLock: new InProcessDistributedLock(),
-            requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = "vccom" })), new SiteBuilderContentFileValidator()),
+            requestValidator: RequestValidators.Content(new FakeStoreService(new Store { Id = "vccom" })),
             contentHistory: new NoContentHistory(),
             themeDraftService: null,
             designerOperationService: TestServices.DesignerOperations(
                 authorizationService: new FakeAuthorizationService(allowed),
                 contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
-                requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = "vccom" })), new SiteBuilderContentFileValidator()),
+                requestValidator: RequestValidators.Content(new FakeStoreService(new Store { Id = "vccom" })),
                 designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null)),
             contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(allowed)),
             filePageDraftService: filePageDrafts,

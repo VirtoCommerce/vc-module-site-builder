@@ -179,6 +179,7 @@
           :fields="field.element ?? []"
           :values="objectOf(field)"
           :translation="translation"
+          :settle="settle"
           :context="{ ...context, item: objectOf(field), parent: context }"
           @update="(id, value) => set(field, { ...objectOf(field), [id]: value })"
         />
@@ -242,6 +243,7 @@
             v-if="openRow === `${field.id}:${index}`"
             class="pd-fields__row-body"
             :translation="translation"
+            :settle="settle"
             :fields="field.element ?? []"
             :values="rowOf(row)"
             :context="{ ...context, item: listOf(field), index, element: row, parent: context }"
@@ -351,6 +353,8 @@ const props = defineProps<{
   context: Record<string, unknown>;
   groupItem?: GroupItem;
   translation?: Translating;
+  /** Settles the defaults of a list row or an object setting as the item's own were settled when it was added. */
+  settle?: (defaults: Record<string, unknown>) => Record<string, unknown>;
 }>();
 
 type Editor = Parameters<CustomToolbarButton["action"]>[0];
@@ -482,7 +486,11 @@ function translationNote(field: Field): string | undefined {
   const others = state.languages.filter((x) => x.toLowerCase() !== at.language.toLowerCase());
   return others.length ? t("SITE_BUILDER.DESIGNER.TRANSLATION.OTHER_LANGUAGES", { languages: others.join(", ") }) : t("SITE_BUILDER.DESIGNER.TRANSLATION.SAME_EVERYWHERE");
 }
-const objectOf = (field: Field) => ({ ...valuesOf(field.element ?? []), ...((props.values[field.id!] as object) ?? {}) }) as Record<string, unknown>;
+const defaultsOf = (field: Field) => {
+  const defaults = valuesOf(field.element ?? []);
+  return props.settle ? props.settle(defaults) : defaults;
+};
+const objectOf = (field: Field) => ({ ...defaultsOf(field), ...((props.values[field.id!] as object) ?? {}) }) as Record<string, unknown>;
 const listOf = (field: Field) => (Array.isArray(props.values[field.id!]) ? (props.values[field.id!] as unknown[]) : []);
 const rowOf = (row: unknown) => (row && typeof row === "object" ? (row as Record<string, unknown>) : {});
 
@@ -498,7 +506,7 @@ function rowTitle(field: Field, row: unknown, index: number) {
 
 function addRow(field: Field) {
   const rows = listOf(field);
-  set(field, [...rows, valuesOf(field.element ?? [])]);
+  set(field, [...rows, defaultsOf(field)]);
   openRow.value = `${field.id}:${rows.length}`;
 }
 function setRow(field: Field, index: number, row: unknown) {

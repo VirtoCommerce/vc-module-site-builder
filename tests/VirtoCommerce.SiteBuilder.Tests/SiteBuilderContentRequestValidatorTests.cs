@@ -1,6 +1,9 @@
 using System.Linq;
 using System.Threading.Tasks;
+using FluentValidation;
 using Newtonsoft.Json.Linq;
+using VirtoCommerce.Platform.Core.DynamicProperties;
+using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Validation;
 using VirtoCommerce.StoreModule.Core.Model;
@@ -111,13 +114,69 @@ namespace VirtoCommerce.SiteBuilder.Tests
         {
             var storeService = new FakeStoreService(new Store { Id = Store });
 
-            await new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(storeService), new SiteBuilderContentFileValidator()).ValidateAsync(Request(paths: ["../appsettings.json"]), TestContext.Current.CancellationToken);
+            await RequestValidators.Content(storeService).ValidateAsync(Request(paths: ["../appsettings.json"]), TestContext.Current.CancellationToken);
 
             Assert.Null(storeService.LastRequestedId);
         }
 
-        private static SiteBuilderContentRequestValidator Validator() =>
-            new(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = Store })), new SiteBuilderContentFileValidator());
+        [Theory]
+        [InlineData("coffee/sections/header-group.json", true)]
+        [InlineData("default/sections/header-group.json", false)]
+        [InlineData("sections/header-group.json", false)]
+        public async Task AThemeFile_IsInTheStoresThemeFolder(string path, bool valid)
+        {
+            var store = new Store
+            {
+                Id = Store,
+                DynamicProperties = [new DynamicObjectProperty { Name = ModuleConstants.Theme.ThemeNamePropertyName, Values = [new DynamicPropertyObjectValue { Value = "coffee" }] }],
+            };
+
+            var result = await RequestValidators.Content(new FakeStoreService(store))
+                .ValidateAsync(Request(type: null, files: [File("themes", path, """{ "content": [] }""")]), TestContext.Current.CancellationToken);
+
+            Assert.Equal(valid, result.IsValid);
+            Assert.All(result.Errors, x => Assert.Contains($"\"{path}\" is not in the store's theme folder \"coffee\"", x.ErrorMessage));
+        }
+
+        [Theory]
+        [InlineData("default/agent-test.json")]
+        [InlineData("default/sections/x.json")]
+        public async Task AThemeFileTheBuilderDoesNotRead_IsInvalidNamingIt(string path)
+        {
+            var result = await Validator().ValidateAsync(Request(type: null, files: [File("themes", path, "{}")]), TestContext.Current.CancellationToken);
+
+            Assert.Contains($"\"{path}\" is not a theme file the builder saves", result.Errors.Single().ErrorMessage);
+        }
+
+        [Fact]
+        public async Task AFileTheBuilderSavesNamedWithoutTheThemeFolder_InAThemeNamedAsOneOfItsFolders_IsInvalidNamingIt()
+        {
+            const string path = "sections/header-group.json";
+            var store = new Store
+            {
+                Id = Store,
+                DynamicProperties = [new DynamicObjectProperty { Name = ModuleConstants.Theme.ThemeNamePropertyName, Values = [new DynamicPropertyObjectValue { Value = "sections" }] }],
+            };
+
+            var result = await RequestValidators.Content(new FakeStoreService(store))
+                .ValidateAsync(Request(type: null, files: [File("themes", path, """{ "content": [] }""")]), TestContext.Current.CancellationToken);
+
+            Assert.Contains($"\"{path}\" is not a theme file the builder saves", result.Errors.Single().ErrorMessage);
+        }
+
+        [Theory]
+        [InlineData("default/sections/header-group.json", true)]
+        [InlineData("coffee/sections/header-group.json", false)]
+        public async Task AThemeFile_OfAStoreWithoutATheme_IsInTheDefaultThemeFolder(string path, bool valid)
+        {
+            var result = await Validator().ValidateAsync(Request(type: null, files: [File("themes", path, """{ "content": [] }""")]), TestContext.Current.CancellationToken);
+
+            Assert.Equal(valid, result.IsValid);
+            Assert.All(result.Errors, x => Assert.Contains($"\"{path}\" is not in the store's theme folder \"default\"", x.ErrorMessage));
+        }
+
+        private static IValidator<SiteBuilderContentRequest> Validator() =>
+            RequestValidators.Content(new FakeStoreService(new Store { Id = Store }));
 
         private static SiteBuilderContentRequest Request(string storeId = Store, string type = "pages", string theme = null,
             string[] paths = null, SiteBuilderContentFile[] files = null) =>

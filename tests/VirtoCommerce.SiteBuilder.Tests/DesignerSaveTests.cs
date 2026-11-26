@@ -59,7 +59,7 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_PageAndThemeFiles_WritesThemAllAsOneCommit()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         // Saving over an existing draft: the content service raises no grouped event, so the writer announces the page.
         SeedPageDraft();
         _pages.SeedContent("p2", Published);
@@ -82,7 +82,7 @@ public class DesignerSaveTests
         var controller = Builder(history: SiteHistories.Create(github, _themes, _pages));
         controller.HttpContext.Request.Headers[ModuleConstants.Headers.SaveId] = "save-0001";
 
-        var result = await controller.SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (Rules, RulesFile)), Catalog);
+        var result = await controller.SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (Rules, RulesFile)), catalog);
 
         github.AssertDone();
         var body = PlatformJson.ParseBody(result.Result);
@@ -111,8 +111,8 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_Saved_RecordsOneVersionWithEveryPart()
     {
-        await SaveCatalogAsync();
-        await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile)), Catalog);
+        var catalog = await SaveCatalogAsync();
+        await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile)), catalog);
 
         var (storeId, record) = Assert.Single(_history.Records);
         Assert.Equal("s1", storeId);
@@ -124,11 +124,11 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_PageSavedSinceRead_ReturnsPreconditionFailedAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var stale = DatabasePage();
         stale.ETag = SiteBuilderContentVersion.Create(new GroupedSiteBuilderPage { Id = "other" }, Published);
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(stale, (Header, HeaderFile)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(stale, (Header, HeaderFile)), catalog);
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, Assert.IsType<ObjectResult>(result.Result).StatusCode);
         AssertNothingWritten();
@@ -137,12 +137,12 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_ThemeFileSavedSinceRead_ReturnsPreconditionFailedAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme(Rules)] = RulesFile;
         var request = Save(DatabasePage(), (Header, HeaderFile), (Rules, """{ "version": 2, "conditions": [ { "mine": true } ] }"""));
         _live.Files[Theme($"{Rules}-draft")] = """{ "version": 2, "conditions": [ { "theirs": true } ] }""";
 
-        var result = await Builder().SaveDesignerChanges("s1", request, Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", request, catalog);
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, Assert.IsType<ObjectResult>(result.Result).StatusCode);
         Assert.Equal("""{ "version": 2, "conditions": [ { "theirs": true } ] }""", _live.Files[Theme($"{Rules}-draft")]);
@@ -167,22 +167,22 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_ThemeFileVersionNotOneTheServerGives_ReturnsBadRequest()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var request = Save(null, (Header, HeaderFile));
         request.ThemeFiles[0].ETag = "\"v1\"";
 
-        Assert.IsType<BadRequestObjectResult>((await Builder().SaveDesignerChanges("s1", request, Catalog)).Result);
+        Assert.IsType<BadRequestObjectResult>((await Builder().SaveDesignerChanges("s1", request, catalog)).Result);
         AssertNothingWritten();
     }
 
     [Fact]
     public async Task SaveDesignerChanges_ThemeFilesAtTheirVersions_SavesThemAndReturnsTheirNewVersions()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme(Header)] = "live header";
         _live.Files[Theme($"{Rules}-draft")] = "rules draft";
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, HeaderFile), (Rules, RulesFile)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, HeaderFile), (Rules, RulesFile)), catalog);
 
         Assert.Equal(HeaderFile, _live.Files[Theme($"{Header}-draft")]);
         Assert.Equal(RulesFile, _live.Files[Theme($"{Rules}-draft")]);
@@ -192,7 +192,7 @@ public class DesignerSaveTests
         var again = await Builder().SaveDesignerChanges("s1", new DesignerSaveRequest
         {
             ThemeFiles = [new DesignerSaveFile { Path = Header, Content = "{ \"content\": [] }", ETag = versions.First().Item2 }],
-        }, Catalog);
+        }, catalog);
 
         Assert.IsType<OkObjectResult>(again.Result);
         Assert.Equal("{ \"content\": [] }", _live.Files[Theme($"{Header}-draft")]);
@@ -201,14 +201,14 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_NewThemeFile_IsSavedAtTheVersionOfAFileThatDoesNotExist()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         const string template = """{ "settings": {}, "content": [] }""";
         var absent = (string)PlatformJson.ParseBody((await Builder().GetDesignerThemeFile("s1", Template)).Result)["eTag"];
 
         var created = await Builder().SaveDesignerChanges("s1", new DesignerSaveRequest
         {
             ThemeFiles = [new DesignerSaveFile { Path = Template, Content = template, ETag = absent }],
-        }, Catalog);
+        }, catalog);
 
         Assert.IsType<OkObjectResult>(created.Result);
         Assert.Equal(template, _live.Files[Theme($"{Template}-draft")]);
@@ -216,7 +216,7 @@ public class DesignerSaveTests
         var second = await Builder().SaveDesignerChanges("s1", new DesignerSaveRequest
         {
             ThemeFiles = [new DesignerSaveFile { Path = Template, Content = """{ "settings": { "name": "Other" }, "content": [] }""", ETag = absent }],
-        }, Catalog);
+        }, catalog);
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, Assert.IsType<ObjectResult>(second.Result).StatusCode);
         Assert.Equal(template, _live.Files[Theme($"{Template}-draft")]);
@@ -225,11 +225,11 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_SameContentRetriedAfterItWasSaved_IsNotAConflict()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var request = Save(null, (Header, HeaderFile));
-        await Builder().SaveDesignerChanges("s1", request, Catalog);
+        await Builder().SaveDesignerChanges("s1", request, catalog);
 
-        var retried = await Builder().SaveDesignerChanges("s1", request, Catalog);
+        var retried = await Builder().SaveDesignerChanges("s1", request, catalog);
 
         Assert.IsType<OkObjectResult>(retried.Result);
         Assert.Equal(HeaderFile, _live.Files[Theme($"{Header}-draft")]);
@@ -287,14 +287,57 @@ public class DesignerSaveTests
         Assert.IsType<BadRequestObjectResult>((await Builder().GetDesignerThemeFile("s1", path)).Result);
     }
 
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/sections/x.json")]
+    public async Task GetDesignerThemeFile_JsonFileTheBuilderDoesNotRead_ReturnsBadRequest(string path)
+    {
+        _live.Files[Theme($"{path}-draft")] = "{}";
+
+        Assert.IsType<BadRequestObjectResult>((await Builder().GetDesignerThemeFile("s1", path)).Result);
+    }
+
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/x/bar.json")]
+    [InlineData("default/sections/x.json")]
+    [InlineData("default/content/templates/product.json")]
+    [InlineData("default/templates/x/product.json")]
+    [InlineData("default/templates/Product.json")]
+    [InlineData("default/Templates/product.json")]
+    [InlineData("default/custom-sections/a/custom-x.json")]
+    public async Task SaveDesignerChanges_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndWritesNothing(string path)
+    {
+        var catalog = await SaveCatalogAsync();
+
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, HeaderFile), (path, "{}")), catalog);
+
+        Assert.Contains($"\"{path}\"", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result))["error"]);
+        AssertNothingWritten();
+    }
+
+    [Theory]
+    [InlineData("default/agent-test.json")]
+    [InlineData("default/sections/x.json")]
+    public async Task DiscardDesignerChanges_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndKeepsItsDraft(string path)
+    {
+        _live.Files[Theme($"{path}-draft")] = "{}";
+
+        var result = await Builder().DiscardDesignerChanges("s1", Discard(null, path));
+
+        Assert.Contains($"\"{path}\"", (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result))["error"]);
+        Assert.Equal("{}", _live.Files[Theme($"{path}-draft")]);
+        Assert.Empty(_history.Records);
+    }
+
     [Fact]
     public async Task SaveDesignerChanges_PageRefusedAfterTheThemeFiles_PutsTheirDraftsBack()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.Files[Theme($"{Header}-draft")] = "saved before";
         _pages.SaveContentException = new SiteBuilderContentConflictException();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (Rules, RulesFile)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (Rules, RulesFile)), catalog);
 
         Assert.Equal(StatusCodes.Status412PreconditionFailed, Assert.IsType<ObjectResult>(result.Result).StatusCode);
         Assert.Equal("saved before", _live.Files[Theme($"{Header}-draft")]);
@@ -306,10 +349,10 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_ThemeFileDoesNotFitTheCatalog_ReturnsBadRequestAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         const string carousel = """{ "content": [ { "id": "c", "type": "carousel" } ] }""";
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, carousel), (Rules, RulesFile)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, carousel), (Rules, RulesFile)), catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result));
         Assert.Contains("'carousel'", (string)body["errors"]!.Single());
@@ -319,11 +362,11 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_SameFileInTwoThemes_ChecksEachAgainstTheCatalog()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         const string carousel = """{ "content": [ { "id": "c", "type": "carousel" } ] }""";
 
         var result = await Builder().SaveDesignerChanges("s1",
-            Save(DatabasePage(), (Header, HeaderFile), ("other/sections/header-group.json", carousel)), Catalog);
+            Save(DatabasePage(), (Header, HeaderFile), ("other/sections/header-group.json", carousel)), catalog);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         AssertNothingWritten();
@@ -334,9 +377,9 @@ public class DesignerSaveTests
     [InlineData(" {}")]
     public async Task SaveDesignerChanges_ThemeFileWithTextAfterTheDocument_ReturnsBadRequestAndWritesNothing(string tail)
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile + tail)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile + tail)), catalog);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         AssertNothingWritten();
@@ -372,9 +415,9 @@ public class DesignerSaveTests
     [InlineData("""{ "id": "a", "type": "announcement-bar", "blocks": [ { "id": "b", "type": "badge", "tone": { "color": "red" } } ] }""", "'b' has a value in 'tone.color' the storefront does not have, 'red'")]
     public async Task SaveDesignerChanges_ValueTheCatalogDoesNotHave_ReturnsBadRequestNamingTheFieldAndWritesNothing(string section, string error)
     {
-        await SaveValueCatalogAsync();
+        var catalog = await SaveValueCatalogAsync();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, $$"""{ "content": [ {{section}} ] }""")), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, $$"""{ "content": [ {{section}} ] }""")), catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result));
         Assert.Equal($"sections/header-group.json: {error}", (string)body["errors"]!.Single());
@@ -386,20 +429,20 @@ public class DesignerSaveTests
     {
         const string ends = "2026-12-31T23:59:59+02:00";
         var catalogs = new SchemaCatalogService(_themes);
-        await catalogs.SaveAsync("s1", $$"""
+        var catalog = await catalogs.SaveAsync("s1", $$"""
             { "hash": "{{Catalog}}", "sections": { "announcement-bar": { "settings": [ { "id": "ends", "type": "select", "options": [ { "value": "{{ends}}" } ] } ] } }, "blocks": {}, "shared": {} }
             """, Ct);
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, $$"""{ "content": [ { "id": "a", "type": "announcement-bar", "ends": "{{ends}}" } ] }""")), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, $$"""{ "content": [ { "id": "a", "type": "announcement-bar", "ends": "{{ends}}" } ] }""")), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Contains(ends, await catalogs.GetAsync("s1", Catalog, Ct));
+        Assert.Contains(ends, await catalogs.GetAsync("s1", catalog, Ct));
     }
 
     [Fact]
     public async Task SaveDesignerChanges_ValuesTheCatalogHas_SavesThem()
     {
-        await SaveValueCatalogAsync();
+        var catalog = await SaveValueCatalogAsync();
         const string header = """
             { "content": [
               { "id": "a", "type": "announcement-bar", "background": "color_primary_500", "height": "small",
@@ -409,7 +452,7 @@ public class DesignerSaveTests
             ] }
             """;
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, header)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, header)), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(header, _live.Files[Theme($"{Header}-draft")]);
@@ -418,9 +461,9 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_ThemeFilesFitTheCatalog_SavesThem()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, HeaderFile), (Rules, RulesFile)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Header, HeaderFile), (Rules, RulesFile)), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(HeaderFile, _live.Files[Theme($"{Header}-draft")]);
@@ -432,9 +475,9 @@ public class DesignerSaveTests
     [InlineData("header-group.json")]
     public async Task SaveDesignerChanges_PathTheBuilderDoesNotSave_ReturnsBadRequestAndWritesNothing(string path)
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (path, "{}")), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (path, "{}")), catalog);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         AssertNothingWritten();
@@ -446,16 +489,16 @@ public class DesignerSaveTests
     [InlineData(Header, Permissions.Theme)]
     public async Task SaveDesignerChanges_ThemeFile_RequiresThePermissionThatEditsIt(string part, string permission)
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var request = Save(null, (part, """{ "content": [] }"""));
         var others = new[] { Permissions.Read, Permissions.Update, Permissions.Templates, Permissions.Theme }.Where(x => x != permission).ToArray();
 
-        var refused = await Builder(new FakeAuthorizationService("s1", others)).SaveDesignerChanges("s1", request, Catalog);
+        var refused = await Builder(new FakeAuthorizationService("s1", others)).SaveDesignerChanges("s1", request, catalog);
 
         Assert.IsType<ForbidResult>(refused.Result);
         AssertNothingWritten();
 
-        var saved = await Builder(new FakeAuthorizationService("s1", Permissions.Read, permission)).SaveDesignerChanges("s1", request, Catalog);
+        var saved = await Builder(new FakeAuthorizationService("s1", Permissions.Read, permission)).SaveDesignerChanges("s1", request, catalog);
 
         Assert.IsType<OkObjectResult>(saved.Result);
     }
@@ -492,9 +535,9 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_SnapshotOrCatalog_ReturnsBadRequestAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/snapshots/current.json", "{}"), ("default/catalogs/x.json", "{}")), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/snapshots/current.json", "{}"), ("default/catalogs/x.json", "{}")), catalog);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         AssertNothingWritten();
@@ -538,11 +581,11 @@ public class DesignerSaveTests
     [InlineData("not json")]
     public async Task SaveDesignerChanges_PageOutsideItsEnvelope_ReturnsBadRequest(string content)
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var page = DatabasePage();
         page.Content = content;
 
-        Assert.IsType<BadRequestObjectResult>((await Builder().SaveDesignerChanges("s1", Save(page, (Header, HeaderFile)), Catalog)).Result);
+        Assert.IsType<BadRequestObjectResult>((await Builder().SaveDesignerChanges("s1", Save(page, (Header, HeaderFile)), catalog)).Result);
         AssertNothingWritten();
     }
 
@@ -555,11 +598,11 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_FilePageOfAStoreWithoutGit_WritesItsDraftWithTheThemeFiles()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         const string about = """{"settings":{"type":"settings","name":"About"},"content":[{"id":"a","type":"text"}]}""";
         var page = new DesignerSavePage { Path = "about.page", Type = "pages", Content = about };
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, HeaderFile)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, HeaderFile)), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(JToken.Parse(about).ToString(), JToken.Parse(_live.Files[Page("about.page-draft")]).ToString());
@@ -571,16 +614,16 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_TemplateNamedAsThePage_ReturnsBadRequest()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var page = new DesignerSavePage { Path = Template, Type = "themes", Content = """{ "content": [] }""" };
 
-        Assert.IsType<BadRequestObjectResult>((await Builder().SaveDesignerChanges("s1", Save(page), Catalog)).Result);
+        Assert.IsType<BadRequestObjectResult>((await Builder().SaveDesignerChanges("s1", Save(page), catalog)).Result);
     }
 
     [Fact]
     public async Task SaveDesignerChanges_BrandPaletteAndGroups_ArePublishedInTheSnapshot()
     {
-        await new SchemaCatalogService(_themes).SaveAsync("s1", $$"""
+        var catalog = await new SchemaCatalogService(_themes).SaveAsync("s1", $$"""
             {
               "hash": "{{Catalog}}",
               "sections": {
@@ -606,8 +649,8 @@ public class DesignerSaveTests
             ("default/config/palette.json", """{ "color_primary_500": "#f99e24" }"""),
             ("default/config/palette.dark.json", """{ "color_primary_500": "#ffbb5b" }"""),
             (Header, header),
-            ("default/sections/footer-group.json", footer)), Catalog);
-        var publication = await ThemePublisher().PublishAsync("s1", Catalog, null, Ct);
+            ("default/sections/footer-group.json", footer)), catalog);
+        var publication = await ThemePublisher().PublishAsync("s1", catalog, null, Ct);
 
         Assert.IsType<OkObjectResult>(saved.Result);
         var snapshot = JObject.Parse(_live.Files[Assert.Single(_live.Files.Keys, x => x.StartsWith(Theme($"default/snapshots/{publication}/")) && !x.EndsWith("/publication.json"))]);
@@ -772,7 +815,7 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_SecondThemeFileWriteFails_PutsTheFirstBack()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         _live.BeforeWrite = file =>
         {
             if (file == Theme($"{Rules}-draft"))
@@ -781,7 +824,7 @@ public class DesignerSaveTests
             }
         };
 
-        await Assert.ThrowsAsync<IOException>(() => Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (Rules, RulesFile)), Catalog));
+        await Assert.ThrowsAsync<IOException>(() => Builder().SaveDesignerChanges("s1", Save(DatabasePage(), (Header, HeaderFile), (Rules, RulesFile)), catalog));
 
         _live.BeforeWrite = null;
         AssertNothingWritten();
@@ -790,11 +833,11 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_PageWithScriptUrl_ReturnsBadRequestNamingThePathAndWritesNothing()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var page = DatabasePage();
         page.Content = """{"settings":{},"content":[{"id":"a","type":"text","buttons":[{"url":"\tJava\nScript:alert(1)"}]}]}""";
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, HeaderFile)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, HeaderFile)), catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result));
         Assert.Contains("page: 'content[0].buttons[0].url' holds a javascript: URL", (string)body["error"]);
@@ -804,12 +847,12 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_HtmlTheCatalogNames_IsSavedSanitizedAtTheVersionReturned()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         var page = DatabasePage();
         page.Content = """{"settings":{},"content":[{"id":"a","type":"notice","body":"<p>Hi</p><script>alert(1)</script>","plain":"<b>as typed</b>"}]}""";
         const string header = """{ "content": [ { "id": "h", "type": "notice", "note": { "en-US": "<a href=\"javascript:alert(1)\" target=\"_blank\">x</a>", "de-DE": "<p>ok</p>" } } ] }""";
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, header)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(page, (Header, header)), catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<OkObjectResult>(result.Result));
         const string savedPage = """{"settings":{},"content":[{"id":"a","type":"notice","body":"<p>Hi</p>","plain":"<b>as typed</b>"}]}""";
@@ -824,12 +867,12 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_DataUrlInALink_ReturnsBadRequestButKeepsInlineImages()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string link = """{ "content": [ { "id": "h", "type": "notice", "link": "data:text/html;base64,PHNjcmlwdD4=" } ] }""";
         const string image = """{ "content": [ { "id": "h", "type": "notice", "image": "data:image/png;base64,iVBORw0KGgo=" } ] }""";
 
-        var refused = await Builder().SaveDesignerChanges("s1", Save(null, (Header, link)), Catalog);
-        var saved = await Builder().SaveDesignerChanges("s1", Save(null, (Header, image)), Catalog);
+        var refused = await Builder().SaveDesignerChanges("s1", Save(null, (Header, link)), catalog);
+        var saved = await Builder().SaveDesignerChanges("s1", Save(null, (Header, image)), catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(refused.Result));
         Assert.Equal("sections/header-group.json: 'content[0].link' links to a data: URL", (string)body["errors"]!.Single());
@@ -846,9 +889,9 @@ public class DesignerSaveTests
     [InlineData("""[ "#fff" ]""", "not an object of token colors")]
     public async Task SaveDesignerChanges_PaletteThatIsNotColorsOfKnownTokens_ReturnsBadRequestAndWritesNothing(string palette, string error)
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), catalog);
 
         var body = PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result));
         Assert.Equal($"config/palette.json: {error}", (string)body["errors"]!.Single());
@@ -858,10 +901,10 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_PaletteOfColors_SavesIt()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string palette = """{ "color_primary_500": "#f99e24", "color_neutral_900": "hsl(210deg 10% 12% / 0.9)" }""";
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(palette, _live.Files[Theme("default/config/palette.json-draft")]);
@@ -870,10 +913,10 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_FilePage_IsSavedSanitized()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string about = """{"settings":{"type":"settings"},"content":[{"id":"a","type":"notice","body":"<p onclick=\"alert(1)\">About</p>"}]}""";
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = about }), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = about }), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal("<p>About</p>", JObject.Parse(_live.Files[Page("about.page-draft")])["content"]![0]!.Value<string>("body"));
@@ -886,7 +929,7 @@ public class DesignerSaveTests
         const string header = """{ "content": [ { "id": "h", "type": "notice", "text": { "markdown": "x", "html": "<p>x</p><svg onload=alert(1)>" } } ] }""";
 
         await TestServices.Designer(_history, themeDrafts: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), pages: _pages,
-                catalogs: new SchemaCatalogService(_themes))
+                catalogs: new SchemaCatalogService(_themes), themes: _themes)
             .RestoreAsync(new ContentRestoreCommand
             {
                 StoreId = "s1",
@@ -982,12 +1025,12 @@ public class DesignerSaveTests
     [InlineData("page", "page-content", false)]
     public async Task SaveDesignerChanges_TemplateLosingItsMainSection_ReturnsBadRequestNamingTheTemplateAndWritesNothing(string key, string main, bool removed)
     {
-        await SaveMainSectionCatalogAsync();
+        var catalog = await SaveMainSectionCatalogAsync();
         var path = $"default/templates/{key}.json";
         _live.Files[Theme(path)] = TemplateOf((main, false), ("text", false));
         var edited = removed ? TemplateOf(("text", false)) : TemplateOf((main, true), ("text", false));
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (path, edited)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (path, edited)), catalog);
 
         var error = $"templates/{key}.json: the template's main section '{main}' cannot be {(removed ? "removed" : "hidden")}";
         Assert.Equal($$"""{"error":"The theme is not valid: {{error}}","errors":["{{error}}"]}""", PlatformJson.SerializeBody(Assert.IsType<BadRequestObjectResult>(result.Result)));
@@ -997,11 +1040,11 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_TemplateDraftLosingTheMainSectionItShows_ReturnsBadRequest()
     {
-        await SaveMainSectionCatalogAsync();
+        var catalog = await SaveMainSectionCatalogAsync();
         _live.Files[Theme(Template)] = TemplateOf(("text", false));
         _live.Files[Theme($"{Template}-draft")] = TemplateOf(("product-info", false), ("text", false));
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true), ("text", false)))), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true), ("text", false)))), catalog);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Equal(TemplateOf(("product-info", false), ("text", false)), _live.Files[Theme($"{Template}-draft")]);
@@ -1010,12 +1053,12 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_TemplateKeepingItsMainSection_SavesIt()
     {
-        await SaveMainSectionCatalogAsync();
+        var catalog = await SaveMainSectionCatalogAsync();
         _live.Files[Theme(Template)] = TemplateOf(("product-info", false), ("text", false));
         // one of two main sections hidden still shows the page's product
         var edited = TemplateOf(("text", true), ("product-info", true), ("product-info", false));
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, edited)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, edited)), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(edited, _live.Files[Theme($"{Template}-draft")]);
@@ -1026,13 +1069,13 @@ public class DesignerSaveTests
     [InlineData("""{ "settings": {}, "content": [] }""")]
     public async Task SaveDesignerChanges_TemplateThatNeverHadItsMainSection_SavesItWithout(string live)
     {
-        await SaveMainSectionCatalogAsync();
+        var catalog = await SaveMainSectionCatalogAsync();
         if (live != null)
         {
             _live.Files[Theme(Template)] = live;
         }
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("text", false)))), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("text", false)))), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
     }
@@ -1040,10 +1083,10 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_TemplateWithItsMainSectionHiddenAlready_SavesIt()
     {
-        await SaveMainSectionCatalogAsync();
+        var catalog = await SaveMainSectionCatalogAsync();
         _live.Files[Theme(Template)] = TemplateOf(("product-info", true));
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true), ("text", false)))), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true), ("text", false)))), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
     }
@@ -1051,9 +1094,9 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_NewTemplateWithItsMainSectionHidden_ReturnsBadRequest()
     {
-        await SaveMainSectionCatalogAsync();
+        var catalog = await SaveMainSectionCatalogAsync();
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true)))), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, TemplateOf(("product-info", true)))), catalog);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         AssertNothingWritten();
@@ -1065,11 +1108,11 @@ public class DesignerSaveTests
     [InlineData("category", "category-listing", "product-info")]
     public async Task SaveDesignerChanges_TemplateGainingASectionTheDesignerDoesNotOfferIt_ReturnsBadRequestAndWritesNothing(string key, string main, string section)
     {
-        await SaveSectionRuleCatalogAsync();
+        var catalog = await SaveSectionRuleCatalogAsync();
         var path = $"default/templates/{key}.json";
         _live.Files[Theme(path)] = TemplateOf((main, false));
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (path, TemplateOf((main, false), (section, false)))), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (path, TemplateOf((main, false), (section, false)))), catalog);
 
         var error = $"templates/{key}.json: a {key.Split('.')[0]} template cannot hold the section 's1' of type '{section}'";
         Assert.Equal($$"""{"error":"The theme is not valid: {{error}}","errors":["{{error}}"]}""", PlatformJson.SerializeBody(Assert.IsType<BadRequestObjectResult>(result.Result)));
@@ -1079,11 +1122,11 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_TemplateKeepingASectionItHeldAlready_SavesIt()
     {
-        await SaveSectionRuleCatalogAsync();
+        var catalog = await SaveSectionRuleCatalogAsync();
         _live.Files[Theme(Template)] = TemplateOf(("product-info", false), ("features", false));
         var edited = TemplateOf(("product-info", false), ("features", false), ("text", false));
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, edited)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, (Template, edited)), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(edited, _live.Files[Theme($"{Template}-draft")]);
@@ -1120,10 +1163,10 @@ public class DesignerSaveTests
     [Fact]
     public async Task SaveDesignerChanges_PaletteThatFailsTheContrast_IsSavedAsADraft()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         const string palette = """{ "color_neutral_950": "#777777", "color_neutral_50": "#ffffff" }""";
 
-        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), Catalog);
+        var result = await Builder().SaveDesignerChanges("s1", Save(null, ("default/config/palette.json", palette)), catalog);
 
         Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(palette, _live.Files[Theme("default/config/palette.json-draft")]);
@@ -1254,8 +1297,9 @@ public class DesignerSaveTests
             """, Ct);
 
     private ThemePublisher ThemePublisher() =>
-        new(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
+        new(_themes, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
     private SiteBuilderController Builder(IAuthorizationService authorization = null, IContentHistory history = null)
     {
@@ -1286,7 +1330,7 @@ public class DesignerSaveTests
                 contentPermissionService: TestServices.Permissions(authorization),
                 requestValidator: RequestValidators.Content("s1"),
                 designerContentService: TestServices.Designer(history ?? _history, filePageDrafts, new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance), _pages, _live, ThemePublisher(),
-                    new SchemaCatalogService(_themes)),
+                    new SchemaCatalogService(_themes), _themes),
                 themeDraftService: new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance),
                 groupedPageService: _pages,
                 sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization)),

@@ -75,6 +75,32 @@ public static class SiteBuilderPrompts
             """;
     }
 
+    [McpServerPrompt(Name = "design_custom_section")]
+    [Description("Build a section type the storefront does not have, such as numbers that count up as they scroll into view, and place it on a page.")]
+    public static string DesignCustomSection(
+        [Description("What the section shows and does, for example 'our three key numbers, counting up as they scroll into view'.")] string brief = null,
+        [Description("Store id.")] string store_id = null,
+        [Description("Id of the page to place it on.")] string page_id = null)
+    {
+        return $"""
+            Help me build a custom section{(string.IsNullOrEmpty(brief) ? "" : $": \"{brief}\"")}{StoreClause(store_id)}{(string.IsNullOrEmpty(page_id) ? "" : $" for page {page_id}")}.
+            If you do not know what it should show or the store yet, ask me first.
+
+            1. Read site-builder://stores/{StoreOrPlaceholder(store_id)}/schemas: if a built-in section or one of the theme's custom types (custom true) does it already, propose that instead;
+               a custom type that comes close is changed with change_section_type, which changes every page that places it.
+            2. Read site-builder://stores/{StoreOrPlaceholder(store_id)}/section-kit for the elements, bindings, setting types, CSS rules, palette tokens, kit tags, behaviors, design rules and the example.
+            3. Propose the type, following the kit's design rules: its name, its settings (every text a customer reads as a translatable setting, colors as palette variables or color-token settings), how it looks and how it moves.
+            4. When I agree, call create_section_type with dryRun, fix every error and the warnings you can, and call it again until it answers no errors; then create it.
+            5. Place it with edit_page_draft{(string.IsNullOrEmpty(page_id) ? "" : $" on page {page_id}")} (add_section with the type and its settings), dryRun first; the same type goes on other pages with their own settings.
+            6. Call get_publish_readiness for the page: it warns while the type exists only as a draft of the theme.
+
+            Do not publish: the type goes live with the theme. When I ask, call publish_theme first and then publish_page, each with dryRun first
+            and then with its expected_versions; both wait for a second person's approval.
+
+            {ChangeRules}
+            """;
+    }
+
     [McpServerPrompt(Name = "translate_site")]
     [Description("Bring the site to a language: find the missing and outdated translations and translate them.")]
     public static string TranslateSite(

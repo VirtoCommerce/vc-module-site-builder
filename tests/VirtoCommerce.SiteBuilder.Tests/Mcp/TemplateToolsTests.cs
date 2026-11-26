@@ -195,7 +195,7 @@ public sealed class TemplateToolsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ASectionTheTemplateDoesNotTake_IsRefusedOnTheDryRun()
+    public async Task ASectionTheTemplateDoesNotTake_IsAnsweredAsAnErrorOfTheDryRun()
     {
         await SeedAsync();
         await new SchemaCatalogService(_context.ThemeStorage).SaveAsync(StoreA,
@@ -216,9 +216,52 @@ public sealed class TemplateToolsTests : IAsyncDisposable
             dryRun = true,
         });
 
-        Assert.Equal(McpToolCallOutcome.Failed, result.Outcome);
-        Assert.Contains("a product template cannot hold", result.Error, StringComparison.Ordinal);
-        Assert.Contains("'announcement-bar'", result.Error, StringComparison.Ordinal);
+        var change = result.EnsureSucceeded().Read<ThemeFileChange>();
+        Assert.Contains(change.Errors, x => x.Contains("a product template cannot hold", StringComparison.Ordinal) && x.Contains("'announcement-bar'", StringComparison.Ordinal));
+        Assert.Null(change.NextStep);
+    }
+
+    [Fact]
+    public async Task ACustomSectionTypeTheThemeDoesNotHold_IsAnErrorOfTheDryRun_AsTheSaveRefusesIt()
+    {
+        await SeedAsync();
+        var token = await VersionOfAsync("product");
+        object Edit(bool dryRun) => new
+        {
+            store_id = StoreA,
+            template_key = "product",
+            version_token = token,
+            operations = new[] { new { op = "add_section", type = "custom-stats" } },
+            dryRun,
+        };
+
+        var preview = (await _context.CallAsync(Designer(), "edit_template", Edit(dryRun: true))).EnsureSucceeded().Read<ThemeFileChange>();
+        var save = await _context.CallAsync(Designer(), "edit_template", Edit(dryRun: false));
+
+        Assert.Contains(preview.Errors, x => x.Contains("has a type the storefront does not have, 'custom-stats'", StringComparison.Ordinal));
+        Assert.Null(preview.NextStep);
+        Assert.Equal(McpToolCallOutcome.Failed, save.Outcome);
+        Assert.Contains("has a type the storefront does not have, 'custom-stats'", save.Error, StringComparison.Ordinal);
+        Assert.Null(_context.ReadThemeFile(StoreA, "templates/product.json", draft: true));
+    }
+
+    [Fact]
+    public async Task ACustomSectionTypeTheThemeHoldsAsADraft_IsPlacedWithoutAWarning_SinceTheThemePublishesThemTogether()
+    {
+        await SeedAsync();
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+
+        var change = (await _context.CallAsync(Designer(), "edit_template", new
+        {
+            store_id = StoreA,
+            template_key = "product",
+            version_token = await VersionOfAsync("product"),
+            operations = new[] { new { op = "add_section", type = "custom-stats" } },
+        })).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Null(change.Errors);
+        Assert.DoesNotContain(change.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
+        Assert.Contains("custom-stats", _context.ReadThemeFile(StoreA, "templates/product.json", draft: true), StringComparison.Ordinal);
     }
 
     [Fact]

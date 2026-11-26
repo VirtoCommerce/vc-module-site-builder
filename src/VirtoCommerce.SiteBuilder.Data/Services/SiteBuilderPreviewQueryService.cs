@@ -30,7 +30,8 @@ public class SiteBuilderPreviewQueryService(
     IGitContentPolicy gitContentPolicy,
     IGitContentRepository gitContentRepository,
     IGitHubConnectionService gitHubConnectionService,
-    IOptions<GitContentOptions> gitContentOptions) : ISiteBuilderPreviewQueryService
+    IOptions<GitContentOptions> gitContentOptions,
+    CustomSectionUrlPolicy customSectionUrlPolicy) : ISiteBuilderPreviewQueryService
 {
     private const string Themes = "themes";
     private const string PagesContentType = "pages";
@@ -58,6 +59,7 @@ public class SiteBuilderPreviewQueryService(
         var storefront = AbstractTypeFactory<DesignerStorefront>.TryCreateInstance();
         storefront.Url = await GetStorefrontUrlAsync(request.StoreId);
         storefront.PreviewPath = await GetPreviewPathAsync();
+        storefront.AssetsBaseUrl = customSectionUrlPolicy.GetAssetsBaseUrl();
 
         return SiteBuilderOperationResult.Success(storefront);
     }

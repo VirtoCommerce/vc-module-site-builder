@@ -72,3 +72,55 @@ describe("SectionTree: names", () => {
     expect(sectionNames(wrapper)).toEqual(["Sale", "More"]);
   });
 });
+
+describe("SectionTree: adding a section", () => {
+  it("shows the designer's notice about the custom section types in the picker", async () => {
+    designer.doc.value = { settings: { id: "settings", type: "settings" }, content: [] };
+    const wrapper = mount(SectionTree, { props: { designer, customSectionsNotice: "Custom sections are shown as published." } });
+
+    await button(wrapper, "Add section")!.trigger("click");
+
+    expect(wrapper.find(".pd-add__notice").text()).toBe("Custom sections are shown as published.");
+  });
+});
+
+describe("SectionTree: custom section types the storefront will not show", () => {
+  it("marks a section whose custom type the theme lacks, and one whose type is not published yet, saying why", async () => {
+    designer.schemas.value = { ...SCHEMAS, sections: { ...SCHEMAS.sections, "custom-numbers": { name: "Roastery in numbers", custom: true }, "custom-hero": { name: "Coffee hero", custom: true } } };
+    designer.themeStatus.value = { publication: 3, drafts: ["custom-sections/custom-numbers.json"], newDrafts: ["custom-sections/custom-numbers.json"] };
+    const wrapper = mountTree([
+      { id: "promo-1", type: "promo" },
+      { id: "hero-1", type: "custom-hero" },
+      { id: "numbers-1", type: "custom-numbers" },
+      { id: "gone-1", type: "custom-gone" },
+      { id: "shared-1", type: "componentRef", componentRef: "custom-gone" },
+    ]);
+    await nextTick();
+
+    const badges = wrapper.findAll(".pd-tree__item").map((row) => row.find(".pd-tree__badge--with-icon"));
+    expect(badges.map((x) => x.exists())).toEqual([false, false, true, true, false]);
+    const unpublished = 'Section type "Roastery in numbers" is not published yet: this section will not be shown until the theme is published.';
+    const missing = 'Section type "custom-gone" not found: this section will not be shown on the storefront.';
+    expect(badges[2].find(".pd-tree__badge-label").text()).toBe("Not published");
+    expect(badges[2].attributes("title")).toBe(unpublished);
+    expect(badges[2].find(".tw-sr-only").text()).toBe(unpublished);
+    expect(badges[3].find(".pd-tree__badge-label").text()).toBe("Not found");
+    expect(badges[3].attributes("title")).toBe(missing);
+    expect(badges[3].find(".tw-sr-only").text()).toBe(missing);
+    // The narrowest tree shows only the icon, so the two tell apart by their icon as well as their colour.
+    expect(badges[2].find("[data-icon]").attributes("data-icon")).toBe("lucide-clock");
+    expect(badges[3].find("[data-icon]").attributes("data-icon")).toBe("lucide-circle-x");
+  });
+
+  it("names each section in a tooltip too, as a narrow tree cuts the name short beside its badge", async () => {
+    designer.schemas.value = { ...SCHEMAS, sections: { ...SCHEMAS.sections, "custom-numbers": { name: "Roastery in numbers", custom: true } } };
+    designer.themeStatus.value = { publication: 3, drafts: ["custom-sections/custom-numbers.json"], newDrafts: ["custom-sections/custom-numbers.json"] };
+    const wrapper = mountTree([
+      { id: "numbers-1", type: "custom-numbers" },
+      { id: "gone-1", type: "custom-gone" },
+    ]);
+    await nextTick();
+
+    expect(wrapper.findAll(".pd-tree__item .pd-tree__name").map((x) => x.attributes("title"))).toEqual(["Roastery in numbers", "Custom gone"]);
+  });
+});

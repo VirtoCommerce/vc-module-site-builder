@@ -8,7 +8,9 @@ public sealed record PageDocumentChange(string Field, string From, string To);
 public static class PageDocumentChanges
 {
     private const int MaxValueLength = 300;
-    private static readonly string[] ItemKeys = [IdKey, TypeKey, HiddenKey, BlocksKey];
+
+    // shown on their own; __group is compared as a value, so a move to another group shows
+    private static readonly string[] StructureKeys = [IdKey, TypeKey, HiddenKey, BlocksKey];
 
     public static IList<PageDocumentChange> Compare(PageDocumentEditor before, PageDocumentEditor after)
     {
@@ -69,7 +71,7 @@ public static class PageDocumentChanges
             changes.Add(new($"{label} hidden", wasHidden ? "true" : "false", IsHidden(after) ? "true" : "false"));
         }
 
-        CompareValues(changes, label, Flatten(before, ItemKeys), Flatten(after, ItemKeys));
+        CompareValues(changes, label, Flatten(before, StructureKeys), Flatten(after, StructureKeys));
         CompareItems(changes, $"{label} block", $"{label} order of blocks", Items(before == null ? null : GetBlocks(before)), Items(GetBlocks(after)));
     }
 

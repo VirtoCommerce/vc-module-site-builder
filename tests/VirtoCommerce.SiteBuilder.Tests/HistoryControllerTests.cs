@@ -271,6 +271,48 @@ public class HistoryControllerTests
         Assert.Empty(_history.Records);
     }
 
+    [Theory]
+    [InlineData("theme:default/agent-test.json")]
+    [InlineData("theme:default/x/bar.json")]
+    [InlineData("theme:default/sections/x.json")]
+    [InlineData("theme:default/content/templates/product.json")]
+    public async Task Restore_JsonFileTheBuilderDoesNotRead_ReturnsBadRequestNamingItAndWritesNothing(string item)
+    {
+        _history.Versions[(VersionId, item)] = "{}";
+
+        var result = await Controller().Restore(VersionId, "s1", [item], Ct);
+
+        Assert.Contains($"\"{item["theme:".Length..]}\" is not a theme file the builder saves",
+            (string)PlatformJson.ParseBody(Assert.IsType<BadRequestObjectResult>(result.Result))["error"]);
+        Assert.Empty(_live.Files);
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task Restore_ThemeFileNotInTheStoresTheme_ReturnsBadRequestAndWritesNothing()
+    {
+        const string item = "theme:custom-sections/custom-promo.json";
+        _history.Versions[(VersionId, item)] = """{ "template": "<script>alert(1)</script>" }""";
+
+        var result = await Controller().Restore(VersionId, "s1", [item], Ct);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(_live.Files);
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
+    public async Task RestoreOperation_HeaderPlacingACustomType_IsInvalidWithTheRuleAndWritesNothing()
+    {
+        _history.Versions[(VersionId, $"theme:{Header}")] = """{ "type": "header", "content": [ { "id": "promo", "type": "custom-hero" } ] }""";
+
+        var result = await Operations().RestoreAsync(RestoreRequest(VersionId, $"theme:{Header}"), User, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Equal(["sections/header-group.json: 'promo' places a custom section, which only a page or a template can hold"], result.Errors);
+        Assert.DoesNotContain(_live.Files.Keys, x => x.EndsWith("-draft", System.StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Restore_PagePlacingASharedComponentWithoutSharedComponentsRead_ReturnsForbidAndWritesNothing()
     {
@@ -304,6 +346,19 @@ public class HistoryControllerTests
         _pages.SeedGroup(new GroupedSiteBuilderPage { Id = "g2", StoreId = "s1", Pages = [] });
 
         Assert.IsType<BadRequestObjectResult>((await Controller().Restore(VersionId, "s1", ["page:g1", "page:g2"], Ct)).Result);
+    }
+
+    [Fact]
+    public async Task Restore_ThemeFileNamedTwiceInAnotherCase_ReturnsBadRequestAndWritesNothing()
+    {
+        _history.Versions[(VersionId, $"theme:{Template}")] = Page;
+        _history.Versions[(VersionId, "theme:default/templates/Product.json")] = Page;
+
+        var result = await Controller().Restore(VersionId, "s1", [$"theme:{Template}", "theme:default/templates/Product.json"], Ct);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(_live.Files);
+        Assert.Empty(_history.Records);
     }
 
     [Fact]
@@ -439,8 +494,9 @@ public class HistoryControllerTests
     {
         authorization ??= new FakeAuthorizationService(true);
         history ??= _history;
-        var drafts = new ThemeDraftService(new ThemeStorageFactory(_live.StoreService, _live, _live, _live), new InProcessDistributedLock(), _live,
-            NullLogger<ThemeDraftService>.Instance);
-        return TestServices.ContentHistoryOperations(authorization, history, _pages, TestServices.Designer(history, themeDrafts: drafts, pages: _pages, events: _live));
+        var themes = new ThemeStorageFactory(_live.StoreService, _live, _live, _live);
+        var drafts = new ThemeDraftService(themes, new InProcessDistributedLock(), _live, NullLogger<ThemeDraftService>.Instance);
+        return TestServices.ContentHistoryOperations(authorization, history, _pages,
+            TestServices.Designer(history, themeDrafts: drafts, pages: _pages, events: _live, themes: themes));
     }
 }

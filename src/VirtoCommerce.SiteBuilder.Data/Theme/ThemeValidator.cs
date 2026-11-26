@@ -18,6 +18,8 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
     public virtual IList<string> Validate(ThemeSource source, JObject catalog)
     {
         var errors = source.InvalidFiles.Select(x => $"{x}: not valid JSON").ToList();
+        // a type the theme holds is one the storefront renders, whether or not its preview has seen it
+        var themeCatalog = catalog == null ? null : ThemeCustomSections.AddToCatalog(catalog, source.CustomSections);
 
         foreach (var (key, document) in source.Templates)
         {
@@ -35,11 +37,19 @@ public class ThemeValidator : ThemeContentReader, IThemeValidator
             }
 
             var allowPageContent = key.StartsWith(ContentPageType, StringComparison.Ordinal);
-            ValidateItems((JArray)pageDocument["content"], ModuleConstants.SchemaKinds.Sections, file, catalog, errors, allowPageContent);
+            ValidateItems((JArray)pageDocument["content"], ModuleConstants.SchemaKinds.Sections, file, themeCatalog, errors, allowPageContent);
         }
 
-        ValidateSectionGroup(source.Header, ThemeStorage.HeaderGroupFile, catalog, errors);
-        ValidateSectionGroup(source.Footer, ThemeStorage.FooterGroupFile, catalog, errors);
+        foreach (var (file, sectionGroup) in new[] { (ThemeStorage.HeaderGroupFile, source.Header), (ThemeStorage.FooterGroupFile, source.Footer) })
+        {
+            // A first publication checks the shape only and leaves custom sections out, as it does shared components.
+            if (catalog != null)
+            {
+                errors.AddRange(ThemeCustomSections.GetSectionGroupErrors(file, sectionGroup, themeCatalog, source.CustomSections.Keys));
+            }
+
+            ValidateSectionGroup(ThemeCustomSections.WithoutPlacements(sectionGroup, themeCatalog, source.CustomSections.Keys), file, themeCatalog, errors);
+        }
 
         if (source.Rules != null && source.Rules is not JObject)
         {

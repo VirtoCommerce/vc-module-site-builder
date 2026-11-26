@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
@@ -9,7 +8,7 @@ using VirtoCommerce.Platform.Core.Common;
 
 namespace VirtoCommerce.SiteBuilder.Data.Theme;
 
-public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
+public class ThemeSnapshotBuilder(CustomSectionUrlPolicy customSectionUrlPolicy) : ThemeContentReader, IThemeSnapshotBuilder
 {
     private const int SnapshotFormat = 1;
     private const int TemplateRulesVersion = 2;
@@ -17,11 +16,6 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
 
     private const string ProductPageType = "product";
     private const string CategoryPageType = "category";
-
-    private static readonly Regex CultureNamePattern = new("^[a-z]{2,3}(-[a-z0-9]{2,8})*$", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
-
-    // A dictionary has a culture name with a subtag, so that a row such as { "sku": "X1" } stays a row.
-    private static readonly Regex SubtaggedCultureNamePattern = new("^[a-z]{2,3}(-[a-z0-9]{2,8})+$", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
 
     // The storefront and the designer default to the same rules.
     public const string DefaultTemplateRulesJson = """
@@ -75,10 +69,13 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         snapshot.CatalogHash = catalogHash;
         snapshot.Rules = GetTemplateRules(source.Rules);
         snapshot.Templates = GetTemplates(source.Templates);
-        snapshot.Header = GetSectionGroup(source.Header);
-        snapshot.Footer = GetSectionGroup(source.Footer);
+        // The storefront renders only a group's own sections in it; a first publication leaves a custom type out of the live files' groups.
+        snapshot.Header = GetSectionGroup(ThemeCustomSections.WithoutPlacements(source.Header, catalog, source.CustomSections.Keys));
+        snapshot.Footer = GetSectionGroup(ThemeCustomSections.WithoutPlacements(source.Footer, catalog, source.CustomSections.Keys));
         snapshot.Brand = GetBrand(source.Brand, source.SettingsData);
         snapshot.Palette = GetPalette(source.Palette, source.PaletteDark);
+        snapshot.CustomSections = GetCustomSections(source.CustomSections);
+        snapshot.AssetsBaseUrl = customSectionUrlPolicy.GetAssetsBaseUrl();
         snapshot.Menus = GetMenus(catalog, snapshot.Header, snapshot.Footer);
 
         return snapshot;
@@ -101,6 +98,7 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         result.Templates = result.Templates.ToDictionary(x => x.Key, x => (JObject)Translate(x.Value, language, defaultLanguage));
         result.Header = (JObject)Translate(result.Header, language, defaultLanguage);
         result.Footer = (JObject)Translate(result.Footer, language, defaultLanguage);
+        result.CustomSections = result.CustomSections?.ToDictionary(x => x.Key, x => (JObject)Translate(x.Value, language, defaultLanguage));
 
         return result;
     }
@@ -119,6 +117,18 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         }
 
         return result;
+    }
+
+    [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
+        Justification = "null leaves the custom section types out of the snapshot of a theme that has none.")]
+    protected virtual IDictionary<string, JObject> GetCustomSections(IDictionary<string, JToken> customSections)
+    {
+        var result = customSections
+            .Where(x => ThemeStorage.IsCustomSectionType(x.Key) && x.Value is JObject)
+            .OrderBy(x => x.Key, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => (JObject)x.Value.DeepClone());
+
+        return result.Count > 0 ? result : null;
     }
 
     protected virtual ThemeTemplateRules GetTemplateRules(JToken rules)
@@ -211,30 +221,10 @@ public class ThemeSnapshotBuilder : ThemeContentReader, IThemeSnapshotBuilder
         }
     }
 
-    protected virtual bool IsTranslation(JObject dictionary)
-    {
-        return dictionary.Properties().Any(x => SubtaggedCultureNamePattern.IsMatch(x.Name))
-            && dictionary.Properties().All(x => CultureNamePattern.IsMatch(x.Name) && x.Value.Type == JTokenType.String);
-    }
+    protected virtual bool IsTranslation(JObject dictionary) => ThemeTranslations.IsTranslation(dictionary);
 
-    protected virtual string GetTranslation(JObject dictionary, string language, string defaultLanguage)
-    {
-        var languagePart = GetLanguagePart(language);
-
-        string Find(Func<string, bool> matches) =>
-            dictionary.Properties().FirstOrDefault(x => matches(x.Name))?.Value.Value<string>();
-
-        return Find(x => string.Equals(x, language, StringComparison.OrdinalIgnoreCase))
-            ?? Find(x => string.Equals(x, languagePart, StringComparison.OrdinalIgnoreCase))
-            ?? Find(x => string.Equals(GetLanguagePart(x), languagePart, StringComparison.OrdinalIgnoreCase))
-            ?? Find(x => string.Equals(x, defaultLanguage, StringComparison.OrdinalIgnoreCase))
-            ?? dictionary.Properties().First().Value.Value<string>();
-    }
-
-    private static string GetLanguagePart(string cultureName)
-    {
-        return cultureName.Split('-')[0];
-    }
+    protected virtual string GetTranslation(JObject dictionary, string language, string defaultLanguage) =>
+        ThemeTranslations.Translate(dictionary, language, defaultLanguage);
 
     [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
         Justification = "null leaves the section group out of the snapshot; an empty object would be published as a group without content.")]

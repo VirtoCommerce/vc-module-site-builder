@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
 import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
@@ -29,6 +30,19 @@ async function routerAt(address: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/:any(.*)*", component: { render: () => null } }] });
   await router.push(address);
   return router;
+}
+
+// As vc-shell's AI agent service: the panel's state, and the assistant's messages passed on to each listener.
+function fakeAgent() {
+  const listeners = new Set<(message: { type: string }) => void>();
+  return {
+    isOpen: ref(true),
+    onMessage: (listener: (message: { type: string }) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    send: (type: string) => listeners.forEach((listener) => listener({ type })),
+  };
 }
 
 const toolbarItem = (wrapper: VueWrapper, id: string) =>
@@ -177,7 +191,7 @@ describe("the preview", () => {
       window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data }));
       await flushPromises();
 
-      expect(wrapper.find(".pd__frame-wait").exists()).toBe(false);
+      await vi.waitFor(() => expect(wrapper.find(".pd__frame-wait").exists()).toBe(false));
       expect(wrapper.text()).not.toContain(NO_STOREFRONT);
     } finally {
       wrapper.unmount();
@@ -242,19 +256,6 @@ describe("a page the AI assistant saves", () => {
   let platform: FakePlatform;
   let served: { content: string; eTag: string };
   let agent: ReturnType<typeof fakeAgent>;
-
-  // As vc-shell's AI agent service: the panel's state, and the assistant's messages passed on to each listener.
-  function fakeAgent() {
-    const listeners = new Set<(message: { type: string }) => void>();
-    return {
-      isOpen: ref(true),
-      onMessage: (listener: (message: { type: string }) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      },
-      send: (type: string) => listeners.forEach((listener) => listener({ type })),
-    };
-  }
 
   async function openPage() {
     served = { content: JSON.stringify(PAGE), eTag: '"v1"' };
@@ -632,5 +633,333 @@ describe("publishing a page at a permalink other pages have", () => {
     expect(notification.error).toHaveBeenCalledWith(
       'Already published at this permalink for the same visitors: "Old about" (en-US). They have unpublished changes, so publish or discard those changes first.',
     );
+  });
+});
+
+describe("the theme's custom section types", () => {
+  const SEARCH = `/api/content/themes/${STORE}/search`;
+  const HERO = { format: 1, name: { "en-US": "Hero", "de-DE": "Held" }, schema: { settings: [{ id: "title", type: "string" }] }, template: "<section></section>", css: "" };
+  const PROMO = { ...HERO, name: "Promo" };
+  const FILES: Record<string, unknown> = { "default/custom-sections/custom-hero.json": HERO, "default/custom-sections/custom-promo.json": PROMO };
+  const LISTED = [{ name: "custom-hero.json-draft" }, { name: "custom-promo.json" }];
+  let platform: FakePlatform;
+  // A change of the draft goes to the preview once changes pause for 120 ms.
+  const draftSent = async () => {
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(150);
+    await flushPromises();
+  };
+
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
+  afterEach(() => vi.useRealTimers());
+
+  async function openPage(
+    drafts: string[],
+    {
+      agent,
+      listed = () => LISTED,
+      publication = 3,
+      shared = false,
+    }: { agent?: ReturnType<typeof fakeAgent>; listed?: () => unknown; publication?: number | null; shared?: boolean } = {},
+  ) {
+    platform = fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
+      .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-shared-components/c1", { id: "c1", storeId: STORE, name: "Promo", usageCount: 1 })
+      .on("GET", "/api/site-builder-shared-components/c1/content", "[]")
+      .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer(FILES))
+      .on("GET", "/api/site-builder/template", (request: { query: Record<string, string> }) => (request.query.path in FILES ? FILES[request.query.path] : status(404)))
+      .on("GET", "/api/site-builder/theme/status", { publication, drafts })
+      .on("GET", "/api/site-builder/designer/storefront", { url: "https://shop.test", previewPath: "/designer-preview", assetsBaseUrl: "https://cdn.test/assets/" })
+      .on("GET", "/api/site-builder/catalog", {})
+      .on("GET", SEARCH, (request: { query: Record<string, string> }) => (request.query.folderUrl === "default/custom-sections" ? listed() : []))
+      .install();
+    if (!shared) blade.param.value = "g1";
+    const router = await routerAt(shared ? `/site-builder-draft/site-builder-designer?storeId=${STORE}&sharedComponentId=c1` : "/");
+    const provide = agent ? { [AiAgentServiceKey]: agent } : {};
+    const wrapper = shallowMount(SiteBuilderDesigner, { attachTo: document.body, global: { plugins: [router], provide, stubs: { VcBlade: false } } });
+    await flushPromises();
+    const frame = wrapper.find("iframe").element as HTMLIFrameElement;
+    const posted = vi.spyOn(frame.contentWindow!, "postMessage");
+    const fromPreview = async (type: string, data: unknown) => {
+      window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "https://shop.test", data: { source: "preview", type, data } }));
+      await flushPromises();
+    };
+    const sendLoaded = (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+      fromPreview("loaded", { protocol: 2, hash, sections, blocks: {}, shared: {}, objects: {}, paletteTokens: { light: [], dark: [] }, capabilities: [], conditions: [], ...extra });
+    const renders = () => posted.mock.calls.filter(([message]) => (message as { type: string }).type === "render").length;
+    // crypto.subtle answers the catalog's SHA-256 after the promises flushPromises waits for, so the handshake may go out later.
+    const load = async (hash: string, sections: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+      const sent = renders();
+      await sendLoaded(hash, sections, extra);
+      await vi.waitFor(() => expect(renders()).toBeGreaterThan(sent));
+    };
+    const lastDraft = () =>
+      posted.mock.calls
+        .map(([message]) => message as { type: string; theme?: Record<string, unknown> })
+        .filter((x) => x.type === "draft")
+        .at(-1);
+    const lastRender = () =>
+      posted.mock.calls
+        .map(([message]) => message as { type: string; selection?: unknown })
+        .filter((x) => x.type === "render")
+        .at(-1);
+    const notice = () => wrapper.findComponent(SectionTree).props("customSectionsNotice");
+    return {
+      load,
+      sendLoaded,
+      resolved: (data: unknown) => fromPreview("resolved", data),
+      frameLoaded: () => frame.dispatchEvent(new Event("load")),
+      lastDraft,
+      lastRender,
+      notice,
+      wrapper,
+      designer: (wrapper.vm as unknown as { designer: Designer }).designer,
+    };
+  }
+
+  it("go to the preview in the draft, each as last saved, once one of them has a draft", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+  });
+
+  it("replace the picker's types when the storefront sends loaded again with a new set, each named in the admin's language and listed once", async () => {
+    const page = await openPage([]);
+    // Hashes no other test loads: the designer remembers the catalogs the server has for as long as it runs.
+    await page.load("c0ffee01", { text: { name: "Text" }, "custom-old": { name: "Old", custom: true, settings: [] } });
+    const sections = { text: { name: "Text" }, "custom-hero": { name: { "de-DE": "Held", "en-US": "Hero" }, custom: true, settings: [] } };
+
+    await page.load("c0ffee02", sections);
+    await page.load("c0ffee02", sections);
+
+    expect(page.designer.sectionTypes.value.map((x) => [x.type, x.schema.name])).toEqual([
+      ["custom-hero", "Hero"],
+      ["text", "Text"],
+    ]);
+    const asked = platform.to("/api/site-builder/catalog").map((x) => x.query.hash);
+    expect(asked).toHaveLength(2);
+    expect(new Set(asked).size).toBe(2);
+  });
+
+  it("leave the preview where the user scrolled it, and the template it reported, when a type change sends loaded again", async () => {
+    const page = await openPage([]);
+    page.designer.selection.value = { kind: "section", id: "hero-1" };
+    await page.load("c0ffee04");
+    await page.resolved({ url: "/about", pageType: "page", template: "page", ruleId: null, rules: { template: "page", ruleId: null }, overriddenByWhiteLabeling: [] });
+    const templateNote = () => page.designer.extraPageFields.value.find((x) => x.id === "template")?.info;
+    const reported = templateNote();
+    expect(page.lastRender()?.selection).toEqual({ sectionId: "hero-1", scroll: true });
+
+    await page.load("c0ffee05", { "custom-hero": { name: "Hero", custom: true, settings: [] } });
+
+    expect(page.lastRender()?.selection).toEqual({ sectionId: "hero-1", scroll: false });
+    expect(templateNote()).toBe(reported);
+
+    page.frameLoaded();
+    await page.load("c0ffee05", { "custom-hero": { name: "Hero", custom: true, settings: [] } });
+
+    expect(page.lastRender()?.selection).toEqual({ sectionId: "hero-1", scroll: true });
+    expect(templateNote()).not.toBe(reported);
+  });
+
+  it("upload the storefront's catalog with its kit but without the custom types, which the server reads from the theme", async () => {
+    const page = await openPage([]);
+    platform.on("GET", "/api/site-builder/catalog", status(404)).on("PUT", "/api/site-builder/catalog", "");
+    const sections = { "custom-hero": { name: { "en-US": "Hero", "de-DE": "Held" }, custom: true, settings: [] } };
+    const kit = { tags: { "vc-button": { attributes: { label: { type: "string" } } } }, behaviors: { inview: { options: {} } } };
+
+    await page.load("c0ffee03", sections, { kit });
+
+    const [upload] = platform.to("/api/site-builder/catalog", "PUT");
+    expect(upload.body).toMatchObject({ hash: "c0ffee03", kit });
+    expect(upload.body.sections).not.toHaveProperty("custom-hero");
+    expect(page.designer.schemas.value.sections["custom-hero"].name).toBe("Hero");
+    const sha = createHash("sha256").update(JSON.stringify(upload.body), "utf8").digest("hex");
+    expect(platform.to("/api/site-builder/catalog", "GET").at(-1)?.query.hash).toBe(sha);
+    expect(page.designer.handshake.value?.hash).toBe(sha);
+  });
+
+  it("have no catalog hash until the catalog is checked, and keep the one loaded last when an earlier check answers last", async () => {
+    const page = await openPage([]);
+    let answerEarlier = () => {};
+    platform.on("GET", "/api/site-builder/catalog", () => new Promise((resolve) => (answerEarlier = () => resolve({}))));
+    await page.sendLoaded("c0ffee06", { text: { name: "Text" } });
+    await vi.waitFor(() => expect(platform.to("/api/site-builder/catalog")).toHaveLength(1));
+    expect(page.designer.handshake.value?.hash).toBeUndefined();
+    platform.on("GET", "/api/site-builder/catalog", {});
+    await page.load("c0ffee07", { hero: { name: "Hero" } });
+    const [earlier, later] = platform.to("/api/site-builder/catalog").map((x) => x.query.hash);
+
+    answerEarlier();
+    await flushPromises();
+
+    expect(later).not.toBe(earlier);
+    expect(page.designer.handshake.value?.hash).toBe(later);
+  });
+
+  it("are read again when the AI assistant creates one without placing it", async () => {
+    const agent = fakeAgent();
+    const page = await openPage([], { agent });
+    await page.load("0badc0de");
+    const NEW = { ...HERO, name: "New" };
+    platform
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: ["custom-sections/custom-new.json"] })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({ ...FILES, "default/custom-sections/custom-new.json": NEW }));
+
+    agent.send("RELOAD_BLADE");
+    await draftSent();
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO, "custom-new": NEW });
+  });
+
+  it("keep the later read when an earlier one answers last", async () => {
+    const HERO_PATH = "default/custom-sections/custom-hero.json";
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+    await page.load("0badc0de");
+    let answerEarlier = () => {};
+    const earlier = new Promise<void>((resolve) => (answerEarlier = resolve));
+    const files = themeFileAnswer(FILES);
+    let heroReads = 0;
+    platform.on("GET", "/api/site-builder/designer/theme-file", async (request: { query: Record<string, string> }) => {
+      if (request.query.path !== HERO_PATH) return files(request as never);
+      if (++heroReads > 1) return themeFileAnswer({ [HERO_PATH]: { ...HERO, name: "Later" } })(request as never);
+      await earlier;
+      return themeFileAnswer({ [HERO_PATH]: { ...HERO, name: "Earlier" } })(request as never);
+    });
+
+    // each status read is a new status, so each reads the drafted types again
+    for (let i = 0; i < 2; i++) {
+      await page.designer.refreshThemeStatus();
+      await flushPromises();
+    }
+    answerEarlier();
+    await draftSent();
+
+    expect(heroReads).toBe(2);
+    expect((page.lastDraft()?.theme?.customSections as Record<string, { name: string }>)["custom-hero"].name).toBe("Later");
+  });
+
+  it.each([
+    ["can't be read", () => status(500)],
+    ["is not JSON", (request: { query: Record<string, string> }) => ({ path: request.query.path, content: '{ "format": 1,', eTag: '"v2"' })],
+  ])("go without a type whose file %s, and with the others", async (_, answer) => {
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+    await page.load("0badc0de");
+    platform.on("GET", "/api/site-builder/designer/theme-file", answer);
+
+    await page.designer.refreshThemeStatus();
+    await draftSent();
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-promo": PROMO });
+    expect(page.notice()).toBeUndefined();
+  });
+
+  it("say in the picker why they show as published while the theme's types may not be listed, until a listing succeeds", async () => {
+    const page = await openPage([], { listed: () => status(403) });
+    await page.load("0badc0de");
+
+    expect(page.notice()).toBe("Custom sections are shown as published: listing the theme's custom sections needs permission to read the site content.");
+    expect(page.lastDraft()?.theme).not.toHaveProperty("customSections");
+
+    platform.on("GET", SEARCH, [{ name: "custom-hero.json" }]);
+    await page.designer.refreshThemeStatus();
+    await draftSent();
+
+    expect(page.notice()).toBeUndefined();
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO });
+  });
+
+  it("reload the preview once a publication makes them live, as its snapshot is the one it started with", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"]);
+    await page.load("0badc0de");
+    const reloads = vi.spyOn(HTMLIFrameElement.prototype, "src", "set");
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 4, drafts: [] });
+
+    await page.designer.refreshThemeStatus();
+    await flushPromises();
+    await page.designer.refreshThemeStatus();
+    await flushPromises();
+
+    expect(reloads).toHaveBeenCalledTimes(1);
+    reloads.mockRestore();
+  });
+
+  it("reload the preview after the theme's first publication too", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json"], { publication: null });
+    await page.load("0badc0de");
+    const reloads = vi.spyOn(HTMLIFrameElement.prototype, "src", "set");
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 1, drafts: [] });
+
+    await page.designer.refreshThemeStatus();
+    await flushPromises();
+
+    expect(reloads).toHaveBeenCalledTimes(1);
+    reloads.mockRestore();
+  });
+
+  it("go to the preview of a shared component too, which may place them, with no template", async () => {
+    const page = await openPage(["custom-sections/custom-hero.json", "templates/product.json"], { shared: true });
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+    expect(page.lastDraft()?.theme).not.toHaveProperty("templates");
+    expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/templates")).toEqual([]);
+  });
+
+  it("go with the asset library's base, which a store never published has in no snapshot", async () => {
+    const page = await openPage([]);
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme?.assetsBaseUrl).toBe("https://cdn.test/assets/");
+  });
+
+  it("go to the preview though none has a draft, listed and read once per publication", async () => {
+    const page = await openPage(["templates/product.json"], { listed: () => [{ name: "custom-hero.json" }, { name: "custom-promo.json" }] });
+    await page.load("0badc0de");
+
+    await page.designer.refreshThemeStatus();
+    await draftSent();
+
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+    expect(platform.to(SEARCH).filter((x) => x.query.folderUrl === "default/custom-sections")).toHaveLength(1);
+    expect(platform.to("/api/site-builder/template").filter((x) => x.query.path.startsWith("default/custom-sections/"))).toHaveLength(2);
+  });
+
+  it("go without a type never published once Discard deletes it, which is not read again", async () => {
+    const NEW_PATH = "default/custom-sections/custom-new.json";
+    const page = await openPage(["custom-sections/custom-new.json"], { listed: () => [...LISTED, { name: "custom-new.json-draft" }] });
+    platform
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: ["custom-sections/custom-new.json"], newDrafts: ["custom-sections/custom-new.json"] })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({ ...FILES, [NEW_PATH]: { ...HERO, name: "New" } }))
+      .on("POST", "/api/site-builder/designer/discard", {});
+    await page.designer.refreshThemeStatus();
+    await page.load("0badc0de");
+    await draftSent();
+    expect(Object.keys(page.lastDraft()?.theme?.customSections ?? {})).toContain("custom-new");
+
+    platform.on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: [] }).on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer(FILES));
+    await page.wrapper.find('[role="toolbar"] [data-test-id="discard"]').trigger("click");
+    await flushPromises();
+    page.wrapper.findComponent(DiscardDialog).vm.$emit("discard", { page: false, theme: ["custom-new"] });
+    await draftSent();
+
+    expect(platform.to("/api/site-builder/designer/discard", "POST")[0].body).toEqual({ themeFiles: [NEW_PATH] });
+    expect(page.lastDraft()?.theme?.customSections).toEqual({ "custom-hero": HERO, "custom-promo": PROMO });
+    expect(platform.to("/api/site-builder/template").filter((x) => x.query.path === NEW_PATH)).toEqual([]);
+  });
+
+  it("are left to the published snapshot while the theme has none", async () => {
+    const page = await openPage(["templates/product.json"], { listed: () => [] });
+
+    await page.load("0badc0de");
+
+    expect(page.lastDraft()?.theme).not.toHaveProperty("customSections");
   });
 });

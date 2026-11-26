@@ -8,6 +8,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
+using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
@@ -25,7 +26,8 @@ public class PagePublishingTools(
     IMultilanguagePageService multilanguagePageService,
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
-    FilePageShipping filePageShipping)
+    FilePageShipping filePageShipping,
+    SectionTypeFindings sectionTypeFindings)
 {
     private const string SettingsKeyPrefix = "settings:";
 
@@ -82,8 +84,14 @@ public class PagePublishingTools(
             if (PageLookup.IsFilePagePath(page_id))
             {
                 EnsureNoUnpublishConflicting(unpublish_conflicting, "publishing a page stored as a file does not check the permalinks of other pages");
-                return await filePageShipping.ShipAsync(context.User,
+                var change = await filePageShipping.ShipAsync(context.User,
                     new FilePageShipCall(store_id, page_id, Publish: true, rebase, draft_owner, expected_versions, dryRun), cancellationToken);
+                if (dryRun)
+                {
+                    WarnOf(change, await sectionTypeFindings.GetAsync(context.User, FilePages.Parse(store_id, page_id), cancellationToken));
+                }
+
+                return change;
             }
 
             EnsureNoRebase(rebase);
@@ -207,7 +215,31 @@ public class PagePublishingTools(
             dryRun,
             checkAsync: x => PinAsync(change, x.Preview?.Objects, publish ? [group.Id] : [], expectedVersions, dryRun));
 
+        if (publish && dryRun)
+        {
+            WarnOf(change, await sectionTypeFindings.GetAsync(user, group, cancellationToken));
+        }
+
         return change;
+    }
+
+    // The dry run says what get_publish_readiness would: a custom section type the page places that the published theme lacks or holds older.
+    // Language versions share their page's name, so each warning names its language, as the other warnings of a version do.
+    private async Task WarnOfSectionTypesAsync(ClaimsPrincipal user, SiteBuilderChange change, IEnumerable<GroupedSiteBuilderPage> languageVersions,
+        CancellationToken cancellationToken)
+    {
+        foreach (var group in languageVersions)
+        {
+            WarnOf(change, await sectionTypeFindings.GetAsync(user, group, cancellationToken), $"{group.CultureName}: ");
+        }
+    }
+
+    private static void WarnOf(SiteBuilderChange change, IEnumerable<McpFinding> findings, string prefix = null)
+    {
+        foreach (var finding in findings)
+        {
+            change.AddWarning($"{prefix}{finding.Title} {finding.Fix}");
+        }
     }
 
     private async Task<SiteBuilderChange> PublishAllLanguagesAsync(ClaimsPrincipal user, MultilanguagePage root, IDictionary<string, string> expectedVersions,
@@ -246,7 +278,22 @@ public class PagePublishingTools(
         if (dryRun)
         {
             await WarnOfSkippedVersionsAsync(user, change, preview?.Objects ?? [], cancellationToken);
+            await WarnOfSectionTypesAsync(user, change, await GetLanguageVersionsAsync(preview), cancellationToken);
         }
+    }
+
+    private async Task<IList<GroupedSiteBuilderPage>> GetLanguageVersionsAsync(SiteBuilderChangePreview preview)
+    {
+        var groups = new List<GroupedSiteBuilderPage>();
+        foreach (var id in preview?.Objects.Select(y => y.ObjectId).Where(y => y != null).Distinct() ?? [])
+        {
+            if (await groupedPageService.GetByIdAsync(id) is { } group)
+            {
+                groups.Add(group);
+            }
+        }
+
+        return groups;
     }
 
     private static string DescribeSkipped(MultilanguagePageBatchSkip skipped) => skipped.Reason switch
@@ -289,6 +336,7 @@ public class PagePublishingTools(
         await PinAsync(change, drafts, groups.Select(x => x.Id), expectedVersions, dryRun);
         if (dryRun)
         {
+            await WarnOfSectionTypesAsync(user, change, groups, cancellationToken);
             return change;
         }
 

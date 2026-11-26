@@ -78,4 +78,43 @@ describe("SettingsPanel", () => {
     expect(notification.error).toHaveBeenCalledWith("The shared component couldn't be detached.");
     expect(designer.doc.value.content).toEqual([{ id: "placed-1", type: "componentRef", componentRef: "footer" }]);
   });
+
+  describe("defaults added after the section", () => {
+    const title = { id: "title", type: "string", label: "Title", translatable: true, default: { "en-US": "Feature", "de-DE": "Funktion" } };
+    const label = { id: "label", type: "string", label: "Label", translatable: true, default: { "en-US": "More", "de-DE": "Mehr" } };
+
+    beforeEach(() => {
+      designer.schemas.value = {
+        ...SCHEMAS,
+        sections: {
+          ...SCHEMAS.sections,
+          features: { name: "Features", settings: [{ id: "items", type: "list", label: "Items", element: [title] }, { id: "cta", type: "object", label: "More", element: [label] }] },
+        },
+      };
+    });
+
+    const addRow = (wrapper: VueWrapper) => wrapper.findAll("button").find((x) => x.text() === "Add")!.trigger("click");
+    const items = () => designer.doc.value.content[0].items;
+
+    it("take the edited language's text on a page, which keeps one text, in a list row and in an object setting", async () => {
+      designer.doc.value = { ...designer.doc.value, content: [{ id: "features-1", type: "features" }] };
+      designer.selection.value = { kind: "section", id: "features-1" };
+      const wrapper = mountPanel();
+
+      await addRow(wrapper);
+
+      expect(items()).toEqual([{ title: "Funktion" }]);
+      expect((wrapper.find('input[aria-label="Label"]').element as HTMLInputElement).value).toBe("Mehr");
+    });
+
+    it("keep their texts by language in the header, which keeps every language", async () => {
+      designer.doc.value = { ...designer.doc.value, content: [{ id: "features-1", type: "features", __group: "header" }] };
+      designer.selection.value = { kind: "section", id: "features-1" };
+      const wrapper = mountPanel();
+
+      await addRow(wrapper);
+
+      expect(items()).toEqual([{ title: { "en-US": "Feature", "de-DE": "Funktion" } }]);
+    });
+  });
 });

@@ -17,7 +17,14 @@
       autofocus
       :placeholder="$t('SITE_BUILDER.DESIGNER.SEARCH_SECTIONS')"
     />
-    <template v-if="shared.length && designer.canPlaceShared.value && !group">
+    <p
+      v-if="notice && !group"
+      class="pd-add__notice"
+      role="status"
+    >
+      {{ notice }}
+    </p>
+    <template v-if="sharedShown">
       <div class="pd-add__group">{{ $t("SITE_BUILDER.DESIGNER.SHARED_COMPONENTS") }}</div>
       <ul class="pd-add__list">
         <li
@@ -39,37 +46,47 @@
           </button>
         </li>
       </ul>
-      <div class="pd-add__group">{{ $t("SITE_BUILDER.DESIGNER.SECTIONS") }}</div>
     </template>
-    <ul class="pd-add__list">
-      <li
-        v-for="{ type, schema } in shown"
-        :key="type"
+    <template
+      v-for="list in lists"
+      :key="list.id"
+    >
+      <div
+        v-if="list.heading"
+        class="pd-add__group"
       >
-        <button
-          type="button"
-          class="pd-add__item"
-          @click="add(type)"
-          @mouseenter="!group && emit('preview', type)"
-          @mouseleave="!group && emit('preview', null)"
-          @focus="!group && emit('preview', type)"
-          @blur="!group && emit('preview', null)"
+        {{ $t(list.heading) }}
+      </div>
+      <ul class="pd-add__list">
+        <li
+          v-for="{ type, schema } in list.types"
+          :key="type"
         >
-          <VcIcon
-            :icon="iconOf(schema)"
-            size="m"
-            class="pd-add__icon"
-          />
-          {{ schema.name ?? type }}
-        </button>
-      </li>
-      <li
-        v-if="!shown.length"
-        class="pd-add__empty"
-      >
-        {{ $t("SITE_BUILDER.DESIGNER.NO_SECTIONS") }}
-      </li>
-    </ul>
+          <button
+            type="button"
+            class="pd-add__item"
+            @click="add(type)"
+            @mouseenter="!group && emit('preview', type)"
+            @mouseleave="!group && emit('preview', null)"
+            @focus="!group && emit('preview', type)"
+            @blur="!group && emit('preview', null)"
+          >
+            <VcIcon
+              :icon="iconOf(schema)"
+              size="m"
+              class="pd-add__icon"
+            />
+            {{ schema.name ?? type }}
+          </button>
+        </li>
+        <li
+          v-if="!shown.length"
+          class="pd-add__empty"
+        >
+          {{ $t("SITE_BUILDER.DESIGNER.NO_SECTIONS") }}
+        </li>
+      </ul>
+    </template>
   </div>
 </template>
 
@@ -82,7 +99,7 @@ import { iconOf } from "../schema";
 import type { SharedComponent } from "../api";
 import { useSharedComponentSearch } from "../useSharedComponentSearch";
 
-const props = defineProps<{ designer: Designer; group?: SectionGroup }>();
+const props = defineProps<{ designer: Designer; group?: SectionGroup; notice?: string }>();
 const emit = defineEmits<{ preview: [type: string | null]; close: [] }>();
 
 const search = ref<string>();
@@ -96,6 +113,17 @@ const { components: shared } = useSharedComponentSearch(
   () => (props.designer.canPlaceShared.value && !props.group ? props.designer.storeId.value : undefined),
   search,
 );
+const sharedShown = computed(() => !!shared.value.length && props.designer.canPlaceShared.value && !props.group);
+
+const lists = computed(() => {
+  const custom = shown.value.filter((x) => x.schema.custom);
+  const builtIn = shown.value.filter((x) => !x.schema.custom);
+  const heading = sharedShown.value || custom.length ? "SITE_BUILDER.DESIGNER.SECTIONS" : undefined;
+  return [
+    ...(builtIn.length || !custom.length ? [{ id: "sections", heading, types: builtIn }] : []),
+    ...(custom.length ? [{ id: "custom", heading: "SITE_BUILDER.DESIGNER.CUSTOM_SECTIONS", types: custom }] : []),
+  ];
+});
 
 function addShared(component: SharedComponent) {
   props.designer.insertShared(component);
@@ -158,6 +186,16 @@ function close() {
 
   &__icon {
     color: var(--neutrals-600);
+  }
+
+  &__notice {
+    margin: 0;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--warning-50);
+    color: var(--neutrals-700);
+    font-size: 12px;
+    line-height: 1.4;
   }
 
   &__group {

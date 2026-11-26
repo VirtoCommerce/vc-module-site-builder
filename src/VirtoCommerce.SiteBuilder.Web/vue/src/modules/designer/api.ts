@@ -1,7 +1,9 @@
+import type { DesignerSaveResult } from "../../api_client/virtocommerce.sitebuilder";
 import type { Item, PageDocument, SectionGroup } from "./types";
 import { fromDocument, toDocument } from "./document";
 import { templateKeyOf } from "./templates";
-import { byCodeUnit } from "./json";
+import { byCodeUnit, isRecord } from "./json";
+import { customSectionPath, customSectionTypeOf, type CustomSectionType } from "./customSections";
 import { groupPath, historyStatusUrl, historyUrl, parseHistoryPage, parseHistoryStatus, restoreUrl, versionUrl, type HistoryStatus } from "./history";
 import {
   CatalogPendingError,
@@ -163,10 +165,11 @@ export async function loadStorefront(storeId: string) {
     // the store adds only the catalog context and the languages, so a user who may not read it still gets the preview
     loadStore(storeId).catch((): Store => ({})),
     call(`/api/site-builder/designer/storefront?${new URLSearchParams({ storeId })}`).then((res) => res.json()),
-  ])) as [Store, { url?: string; previewPath: string }];
+  ])) as [Store, { url?: string; previewPath: string; assetsBaseUrl?: string }];
   return {
     url: storefront.url || undefined,
     previewPath: storefront.previewPath,
+    assetsBaseUrl: storefront.assetsBaseUrl || undefined,
     catalog: { storeId, cultureName: store.defaultLanguage || "en-US", currencyCode: store.defaultCurrency || "USD" } as CatalogContext,
     languages: Array.isArray(store.languages) ? store.languages.filter((x): x is string => typeof x === "string") : [],
   };
@@ -215,8 +218,9 @@ export async function hasCatalog(storeId: string, hash: string): Promise<boolean
   return !!(await find(catalogUrl({ storeId, hash })));
 }
 
-export async function uploadCatalog(storeId: string, catalog: object) {
-  await call(catalogUrl({ storeId }), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(catalog) });
+/** The server names the catalog by the SHA-256 of this exact text. */
+export async function uploadCatalog(storeId: string, catalog: string) {
+  await call(catalogUrl({ storeId }), { method: "PUT", headers: { "Content-Type": "application/json" }, body: catalog });
 }
 
 export async function generatePalette(storeId: string, tokens: PaletteTokens, primary: string, secondary?: string | null): Promise<GeneratedPalettes> {
@@ -249,6 +253,11 @@ export async function loadThemeFile(storeId: string, path: string): Promise<Them
   return { content: body.content?.trim() ? JSON.parse(body.content) : undefined, eTag: body.eTag ?? "" };
 }
 
+async function findLiveThemeFile(storeId: string, path: string): Promise<unknown> {
+  const res = await find(`/api/site-builder/template?${new URLSearchParams({ storeId, type: "themes", path })}`);
+  return res && jsonOf(res);
+}
+
 export async function themeStatus(storeId: string): Promise<ThemeStatus> {
   return parseThemeStatus(await (await call(`/api/site-builder/theme/status?${new URLSearchParams({ storeId })}`)).json());
 }
@@ -279,14 +288,14 @@ export async function saveDesigner(
   storeId: string,
   save: { page?: DesignerSavePage; themeFiles: DesignerSaveFile[] },
   catalogHash?: string,
-): Promise<{ saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[] }> {
+): Promise<DesignerSaveResult> {
   if (save.themeFiles.length && !catalogHash) throw new CatalogPendingError();
   const res = await call(designerSaveUrl(storeId, catalogHash), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(designerSaveBody(save)),
   });
-  return ((await res.json().catch(() => ({}))) ?? {}) as { saveId?: string; eTag?: string; themeFiles?: { path: string; eTag: string }[] };
+  return ((await res.json().catch(() => ({}))) ?? {}) as DesignerSaveResult;
 }
 
 /** A file never published keeps its draft, its only copy. */
@@ -304,13 +313,27 @@ export async function storeMenus(storeId: string): Promise<unknown[]> {
   return Array.isArray(lists) ? lists : [];
 }
 
-export async function templateKeys(storeId: string, theme: string): Promise<string[]> {
-  const query = new URLSearchParams({ folderUrl: `${theme}/templates` });
+async function themeFolderKeys(storeId: string, theme: string, folder: string, keyOf: (path: string) => string | undefined): Promise<string[]> {
+  const query = new URLSearchParams({ folderUrl: `${theme}/${folder}` });
   const res = await find(`/api/content/themes/${encodeURIComponent(storeId)}/search?${query}`);
   if (!res) return [];
   const items = ((await res.json()) ?? []) as { name?: string }[];
-  // A template saved only as a draft is listed by its draft file.
-  return [...new Set(items.map((x) => templateKeyOf(`templates/${x.name ?? ""}`)).filter((x): x is string => !!x))].sort(byCodeUnit);
+  // A file saved only as a draft is listed by its draft file.
+  return [...new Set(items.map((x) => keyOf(`${folder}/${x.name ?? ""}`)).filter((x): x is string => !!x))].sort(byCodeUnit);
+}
+
+export const templateKeys = (storeId: string, theme: string) => themeFolderKeys(storeId, theme, "templates", templateKeyOf);
+
+export const customSectionTypes = (storeId: string, theme: string) => themeFolderKeys(storeId, theme, "custom-sections", customSectionTypeOf);
+
+const customSectionOf = (content: unknown) => (isRecord(content) ? (content as unknown as CustomSectionType) : undefined);
+
+export async function findCustomSection(storeId: string, theme: string, type: string): Promise<CustomSectionType | undefined> {
+  return customSectionOf((await loadThemeFile(storeId, customSectionPath(theme, type))).content);
+}
+
+export async function findLiveCustomSection(storeId: string, theme: string, type: string): Promise<CustomSectionType | undefined> {
+  return customSectionOf(await findLiveThemeFile(storeId, customSectionPath(theme, type)));
 }
 
 export async function gitFlowOf(storeId: string, theme: string): Promise<{ on: boolean }> {
@@ -332,6 +355,11 @@ export async function findFilePage(page: FilePage): Promise<PageDocument | undef
 export async function findTemplate(page: FilePage): Promise<{ doc?: PageDocument; eTag: string }> {
   const file = await loadThemeFile(page.storeId, page.path);
   return { doc: file.content === undefined ? undefined : toDocument(file.content), eTag: file.eTag };
+}
+
+export async function findLiveTemplate(storeId: string, path: string): Promise<PageDocument | undefined> {
+  const content = await findLiveThemeFile(storeId, path);
+  return content === undefined ? undefined : toDocument(content);
 }
 
 /** git validates the envelope, whose settings item must have a type. */

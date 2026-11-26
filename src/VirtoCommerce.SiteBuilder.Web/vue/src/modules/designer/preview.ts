@@ -13,9 +13,10 @@ import { clone } from "./json";
 
 export interface PreviewChannelOptions {
   post: (message: DesignerMessage) => void;
-  onLoaded: (loaded: Loaded) => void;
+  /** `newDocument`: the frame loaded a document that has had no handshake yet; else the storefront's catalog changed. */
+  onLoaded: (loaded: Loaded, newDocument: boolean) => void;
   prepare?: (loaded: Loaded) => Promise<void>;
-  handshake: () => DesignerMessage[];
+  handshake: (newDocument: boolean) => DesignerMessage[];
   onSelect?: (event: { sectionId: string; blockId?: string }) => void;
   onHover?: (sectionId: string | null) => void;
   onEdit?: (edit: TextEdit) => void;
@@ -33,6 +34,8 @@ export function createPreviewChannel(options: PreviewChannelOptions) {
   const loaded = shallowRef<Loaded>();
   // A newer frame load or `loaded` makes an unfinished handshake stale.
   let generation = 0;
+  // The storefront also sends `loaded` when its catalog changes; only a frame load brings a new document.
+  let greeted = false;
 
   const can = (capability: Capability) => !!loaded.value?.capabilities.includes(capability);
 
@@ -42,6 +45,7 @@ export function createPreviewChannel(options: PreviewChannelOptions) {
 
   function frameLoaded() {
     generation++;
+    greeted = false;
     connected.value = false;
     unsupported.value = false;
     loaded.value = undefined;
@@ -58,14 +62,16 @@ export function createPreviewChannel(options: PreviewChannelOptions) {
     }
     unsupported.value = false;
     loaded.value = next;
-    options.onLoaded(next);
+    const newDocument = !greeted;
+    options.onLoaded(next, newDocument);
     try {
       await options.prepare?.(next);
     } catch (e) {
       console.warn("[site-builder] The preview's handshake goes out without its preparation", e);
     }
     if (at !== generation) return;
-    options.handshake().forEach(options.post);
+    options.handshake(newDocument).forEach(options.post);
+    greeted = true;
     connected.value = true;
   }
 
@@ -113,7 +119,7 @@ export function usePreviewBridge(options: Omit<PreviewChannelOptions, "post"> & 
   window.addEventListener("message", onMessage);
   onBeforeUnmount(() => window.removeEventListener("message", onMessage));
 
-  return { connected: channel.connected, unsupported: channel.unsupported, send: channel.send, onFrameLoad: channel.frameLoaded };
+  return { connected: channel.connected, unsupported: channel.unsupported, loaded: channel.loaded, send: channel.send, onFrameLoad: channel.frameLoaded };
 }
 
 export function storefrontPage(storefrontUrl: string | undefined, path: string): URL | undefined {

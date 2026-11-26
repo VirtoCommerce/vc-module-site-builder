@@ -1,16 +1,23 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
+using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
+using VirtoCommerce.StoreModule.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
@@ -29,6 +36,8 @@ public class DraftTools(
     ISiteBuilderContentQueryService contentQueryService,
     IContentPermissionService contentPermissionService,
     IFilePageOperationService filePageOperationService,
+    SectionTypePages sectionTypePages,
+    IStoreService storeService,
     ILogger<DraftTools> logger)
 {
     public const string PageKind = "page";
@@ -41,21 +50,25 @@ public class DraftTools(
     [Authorize(Update)]
     [McpRequiresConfirmation(Fallback = McpConfirmationFallback.Refuse)]
     [Description("Discard the draft of a page or of a theme file: its unpublished changes are deleted and it is its " +
-        "published version again. Something never published has nothing to go back to and is refused. A page is a " +
+        "published version again. Something never published has nothing to go back to and is refused, but for a custom section " +
+        "type never published, whose discard removes the type. A page is a " +
         "database page by its id, or a page stored as a file by its path ('pages/about.page') with store_id; in git, its " +
         "draft is your own draft branch of the page. A theme file is a " +
-        "template, the template rules, the header, the footer, the brand or a palette, named by its path as search_templates " +
+        "template, the template rules, the header, the footer, the brand, a palette or a custom section type, named by its path as search_templates " +
         "and list_versions name it; discarding it needs builder:templates for templates and rules, builder:theme for the others. " +
         "First call it with dryRun: it shows the changes the discard undoes and answers expected_versions. Then call it without " +
         "dryRun and with those expected_versions unchanged: a draft saved again in between is not discarded, and a call without " +
         "them is refused. The user confirms the call in the chat; a client that cannot ask refuses it, and the user discards the " +
-        "draft in the designer instead. Returns the changes the discard undoes.")]
+        "draft in the designer instead. The confirmation names only the call's arguments, so show the user the dry run's warnings before the call: " +
+        "for a custom section type never published they say, by its name, that it is deleted for good and which pages place it. " +
+        "Returns the changes the discard undoes.")]
     public async Task<SiteBuilderChange> DiscardDraft(
         RequestContext<CallToolRequestParams> context,
         [Description("What to discard the draft of: 'page' or 'theme_file'.")] string kind,
         [Description("page: id of a Landing Page or of a language version (search_site_pages), or the path of a page stored as a file.")] string page_id = null,
         [Description("theme_file, or a page stored as a file: the store of the theme or of the page.")] string store_id = null,
-        [Description("theme_file: the file with the theme folder, for example 'default/templates/product.bicycles.json' or 'default/config/palette.json'.")] string theme_file = null,
+        [Description("theme_file: the file with the theme folder, for example 'default/templates/product.bicycles.json', 'default/config/palette.json' or " +
+            "'default/custom-sections/custom-stats.json'.")] string theme_file = null,
         [Description(ReviewedVersions.Description)] Dictionary<string, string> expected_versions = null,
         [Description("true to return what the discard would undo, without discarding.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
@@ -102,7 +115,8 @@ public class DraftTools(
         return change;
     }
 
-    // The designer's discard silently keeps a draft that has no live file; here it is refused, as for a page.
+    // The designer's discard silently keeps a draft that has no live file; here it is refused, as for a page, but for a custom section type's,
+    // whose discard removes the type.
     private async Task<SiteBuilderChange> DiscardThemeFileAsync(RequestContext<CallToolRequestParams> context, string storeId, string themeFile,
         IDictionary<string, string> expectedVersions, bool dryRun, CancellationToken cancellationToken)
     {
@@ -119,19 +133,8 @@ public class DraftTools(
         var status = await themeOperationService.GetStatusAsync(new SiteBuilderOperationRequest { StoreId = storeId }, context.User, cancellationToken);
         SiteBuilderChanges.EnsureSucceeded(status, $"The theme of store '{storeId}'", $"Your builder:read permission does not cover store '{storeId}'.");
 
-        if (!status.Value.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
-        {
-            throw new McpException($"'{path}' has no unpublished changes, so there is nothing to discard. The files with drafts: " +
-                $"{(status.Value.Drafts.Count == 0 ? "none" : string.Join(", ", status.Value.Drafts))}.");
-        }
+        var newType = GetNewTypeToDiscard(status.Value, path, pathInTheme);
 
-        if (status.Value.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
-        {
-            throw new McpException($"'{path}' was never published, so its draft is all there is and is not discarded. Change it with the design tools instead.");
-        }
-
-        var draft = await ThemeFiles.ReadAsync(designerOperationService, context.User, storeId, path, cancellationToken);
-        var live = await ThemeFiles.ReadLiveAsync(contentQueryService, context.User, storeId, path, cancellationToken);
         var change = new SiteBuilderChange
         {
             Action = "discard_draft",
@@ -141,15 +144,27 @@ public class DraftTools(
             DryRun = true,
         };
 
-        var changes = ThemeFileEdits.Compare(path, draft.Content, live);
-        foreach (var item in changes)
+        if (newType != null)
         {
-            change.AddChange(item.Field, item.From, item.To);
+            change.AddChange("section type", newType, "removed for good: it was never published, so its draft is its only copy and cannot be restored");
+            change.AddWarning(await DescribeLostTypeAsync(context.User, storeId, path, newType, cancellationToken));
+            change.AddWarning($"A page that places it shows nothing in its place, and get_publish_readiness names such a page; a template draft that " +
+                $"places it blocks publish_theme until the section is removed, as the theme no longer has {newType}.");
         }
-
-        if (changes.Count == 0)
+        else
         {
-            change.AddChange("draft", "saved draft", "published version");
+            var draft = await ThemeFiles.ReadAsync(designerOperationService, context.User, storeId, path, cancellationToken);
+            var live = await ThemeFiles.ReadLiveAsync(contentQueryService, context.User, storeId, path, cancellationToken);
+            var changes = ThemeFileEdits.Compare(path, draft.Content, live);
+            foreach (var item in changes)
+            {
+                change.AddChange(item.Field, item.From, item.To);
+            }
+
+            if (changes.Count == 0)
+            {
+                change.AddChange("draft", "saved draft", "published version");
+            }
         }
 
         var forbidden = $"You may not discard '{path}': it needs builder:update and {permission}, and builder:read in store '{storeId}'.";
@@ -170,6 +185,48 @@ public class DraftTools(
 
         change.DryRun = false;
         return change;
+    }
+
+    private static string GetNewTypeToDiscard(ThemeStatus status, string path, string pathInTheme)
+    {
+        if (!status.Drafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new McpException($"'{path}' has no unpublished changes, so there is nothing to discard. The files with drafts: " +
+                $"{(status.Drafts.Count == 0 ? "none" : string.Join(", ", status.Drafts))}.");
+        }
+
+        var newType = status.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase) ? ThemeCustomSections.GetCustomSectionType(pathInTheme) : null;
+        if (newType == null && status.NewDrafts.Contains(pathInTheme, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new McpException($"'{path}' was never published, so its draft is all there is and is not discarded. Change it with the design tools instead.");
+        }
+
+        return newType;
+    }
+
+    private async Task<string> DescribeLostTypeAsync(ClaimsPrincipal user, string storeId, string path, string type, CancellationToken cancellationToken)
+    {
+        var draft = await ThemeFiles.ReadAsync(designerOperationService, user, storeId, path, cancellationToken);
+        var language = (await storeService.GetNoCloneAsync(storeId))?.DefaultLanguage;
+        var name = ReadName(draft.Content, language) ?? type;
+        var pages = await sectionTypePages.DescribePublishedAndDraftsAsync(user, storeId, type, cancellationToken);
+
+        return $"Section type '{CustomSectionText.Quote(name)}' ({type}) is deleted for good: an AI agent created it for this store, it was never " +
+            $"published, and its draft is its only copy, so it cannot be restored. {pages}";
+    }
+
+    private static string ReadName(string content, string language)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(content)
+                ? null
+                : ThemeCustomSections.GetName((ThemeJson.Parse(content) as JObject)?[ThemeCustomSections.NameKey], language);
+        }
+        catch (JsonReaderException)
+        {
+            return null;
+        }
     }
 
     private static DesignerDiscardOperationRequest ThemeFileDiscard(string storeId, string path, bool isDryRun, IDictionary<string, string> versions) => new()

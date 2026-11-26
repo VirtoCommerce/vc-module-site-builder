@@ -1,4 +1,4 @@
-import type { Item, PageDocument, Schemas, TemplateEntry } from "./types";
+import type { Item, ItemSchema, PageDocument, Schemas, TemplateEntry } from "./types";
 import { toDocument } from "./document";
 import { clone } from "./json";
 import { humanize, newId } from "./schema";
@@ -37,6 +37,15 @@ export function templateEntry(schemas: Schemas, type?: PageType): { key: string;
   }
   const pages = entries.find(([, x]) => x.type === "pages" && !x.previewMessage?.templateKey);
   return { key: pages?.[0] ?? "page", entry: pages?.[1] ?? {} };
+}
+
+/**
+ * As the server offers a section to a template: one its list names, or, without a list, one that names no template or names this one.
+ * The list is of the storefront's built-in sections; a custom type names its templates itself.
+ */
+export function isOffered(key: string, entry: TemplateEntry, type: string, schema: ItemSchema): boolean {
+  const targeted = !schema.targetTemplates?.length || schema.targetTemplates.includes(key);
+  return entry.sections ? entry.sections.includes(type) || (!!schema.custom && targeted) : targeted;
 }
 
 export const PAGE_CONTENT = "page-content";

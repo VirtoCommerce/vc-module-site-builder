@@ -11,7 +11,7 @@ public interface IDesignerContentService
     /// <param name="files">Contents by the path with the theme folder.</param>
     /// <exception cref="InvalidDataException">A live theme write.</exception>
     /// <exception cref="Theme.ThemeValidationException">A file can run script, or does not fit the catalog.</exception>
-    Task ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
+    Task<ThemeFilesValidationResult> ValidateThemeFilesAsync(string storeId, IDictionary<string, JToken> files, bool draft, string catalogHash,
         CancellationToken cancellationToken = default);
 
     /// <summary>Saves the content with its HTML sanitized.</summary>
@@ -23,7 +23,7 @@ public interface IDesignerContentService
     /// <exception cref="InvalidDataException">Something in the content can run script.</exception>
     Task<SiteBuilderChangePreview> PreviewSaveAsync(DesignerSaveCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
-    /// <summary>A theme file never published keeps its draft.</summary>
+    /// <summary>A theme file never published keeps its draft, except a custom section type's, whose discard removes the type.</summary>
     /// <exception cref="InvalidDataException">The page has never been published.</exception>
     Task<ContentSaveResult> DiscardAsync(DesignerDiscardCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
@@ -37,9 +37,11 @@ public interface IDesignerContentService
 
     /// <exception cref="SiteBuilderContentConflictException">A draft is not at the version the command expects it at: nothing is written.</exception>
     /// <exception cref="InvalidDataException">Something in the version can run script: nothing is written.</exception>
+    /// <exception cref="Theme.ThemeValidationException">A custom section type it restores breaks a rule, or a header or a footer places one: nothing is written.</exception>
     Task<ContentSaveResult> RestoreAsync(ContentRestoreCommand command, ClaimsPrincipal user, CancellationToken cancellationToken = default);
 
     /// <summary>Sanitizes the version as <see cref="RestoreAsync"/> does and answers the drafts it would overwrite, writing nothing.</summary>
     /// <exception cref="InvalidDataException">Something in the version can run script.</exception>
+    /// <exception cref="Theme.ThemeValidationException">A custom section type it restores breaks a rule, or a header or a footer places one.</exception>
     Task<SiteBuilderChangePreview> PreviewRestoreAsync(ContentRestoreCommand command, CancellationToken cancellationToken = default);
 }

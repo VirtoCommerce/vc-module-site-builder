@@ -136,6 +136,26 @@ public class ThemeControllerTests
     }
 
     [Fact]
+    public void SaveCatalog_LimitsTheBodyTo8Megabytes()
+    {
+        var limit = typeof(ThemeController).GetMethod(nameof(ThemeController.SaveCatalog))!.GetCustomAttributes(typeof(RequestSizeLimitAttribute), inherit: true);
+
+        Assert.Equal(8_000_000, Assert.IsType<Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata>(Assert.Single(limit), exactMatch: false).MaxRequestBodySize);
+    }
+
+    [Fact]
+    public async Task SaveCatalog_BodyOverTheLimit_ReturnsBadRequestWithoutSaving()
+    {
+        var controller = Controller(new FakeAuthorizationService(true));
+        controller.HttpContext.Request.Body = new OverLimitStream();
+
+        var result = Assert.IsType<BadRequestObjectResult>((await controller.SaveCatalog("s1", Ct)).Result);
+
+        Assert.Equal("""{"error":"The catalog is larger than 8 MB."}""", System.Text.Json.JsonSerializer.Serialize(result.Value));
+        Assert.Empty(_services.Calls);
+    }
+
+    [Fact]
     public async Task Publish_Published_WritesThePublicationJson()
     {
         var controller = Controller(new FakeAuthorizationService(true));
@@ -185,6 +205,18 @@ public class ThemeControllerTests
         {
             ControllerContext = new ControllerContext { HttpContext = http },
         };
+    }
+
+    // as the server reads a body past the action's limit
+    private sealed class OverLimitStream : MemoryStream
+    {
+        public override int Read(byte[] buffer, int offset, int count) => throw TooLarge();
+
+        public override ValueTask<int> ReadAsync(System.Memory<byte> buffer, CancellationToken cancellationToken = default) => throw TooLarge();
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => throw TooLarge();
+
+        private static BadHttpRequestException TooLarge() => new("Request body too large.", StatusCodes.Status413PayloadTooLarge);
     }
 
     private sealed class RecordingThemeServices : IThemePublisher, ISchemaCatalogService, IThemePaletteService
@@ -263,6 +295,12 @@ public class ThemeControllerTests
         public Task<string> GetAsync(string storeId, string hash, CancellationToken cancellationToken = default)
         {
             Calls.Add($"get {storeId}");
+            return Task.FromResult<string>(null);
+        }
+
+        public Task<string> GetCurrentHashAsync(string storeId, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"get current hash {storeId}");
             return Task.FromResult<string>(null);
         }
     }

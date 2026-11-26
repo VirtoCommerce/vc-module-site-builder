@@ -22,6 +22,8 @@ public class ThemeSource
 
     public JToken PaletteDark { get; set; }
 
+    public IDictionary<string, JToken> CustomSections { get; set; } = new Dictionary<string, JToken>();
+
     public IDictionary<string, string> Drafts { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     public IList<string> InvalidFiles { get; set; } = new List<string>();

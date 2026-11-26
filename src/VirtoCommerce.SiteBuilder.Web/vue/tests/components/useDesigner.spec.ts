@@ -384,6 +384,30 @@ describe("useDesigner: editing and saving", () => {
     expect(designer.discardable.value).toEqual({ page: true, theme: ["header"] });
   });
 
+  it("offers each custom section type with a draft, one never published too, and discards it as its theme file", async () => {
+    themeStatus = {
+      publication: 3,
+      drafts: ["sections/header-group.json", "custom-sections/custom-numbers.json", "custom-sections/custom-hero.json"],
+      newDrafts: ["custom-sections/custom-numbers.json"],
+    };
+    await openDatabasePage();
+
+    expect(designer.discardable.value).toEqual({ page: false, theme: ["header", "custom-hero", "custom-numbers"] });
+
+    await designer.discardDrafts({ page: false, theme: ["custom-numbers"] });
+
+    expect(platform.to("/api/site-builder/designer/discard")[0].body).toEqual({ themeFiles: ["default/custom-sections/custom-numbers.json"] });
+  });
+
+  it("says whether it sent a discard, so a type never published is forgotten only once it is deleted", async () => {
+    themeStatus = { publication: 3, drafts: ["custom-sections/custom-numbers.json"], newDrafts: ["custom-sections/custom-numbers.json"] };
+    await openDatabasePage();
+
+    expect(await designer.discardDrafts({ page: false, theme: ["custom-hero"] })).toBe(false);
+    expect(await designer.discardDrafts({ page: false, theme: ["custom-numbers"] })).toBe(true);
+    expect(platform.to("/api/site-builder/designer/discard")).toHaveLength(1);
+  });
+
   it("does not offer a template with nothing live to go back to", async () => {
     themeStatus = { publication: 3, drafts: ["templates/product.json"], newDrafts: ["templates/product.json"] };
     await openTemplate();
@@ -572,6 +596,31 @@ describe("useDesigner: translatable settings and the main section", () => {
     designer.selection.value = { kind: "section", id: "hero-t" };
     designer.paste(copiedHero);
     expect(designer.selectedItem.value).toMatchObject({ title: HELLO });
+  });
+
+  it("adds a section to a page with its default in the language edited, and to a template or the header with the dictionary", async () => {
+    const withDefaults = () => {
+      designer.schemas.value = {
+        ...SCHEMAS,
+        sections: {
+          ...SCHEMAS.sections,
+          "custom-banner": { name: "Banner", custom: true, settings: [{ ...title, default: HELLO }] },
+          "site-header": { ...SCHEMAS.sections["site-header"], settings: [{ id: "announcement", type: "string", translatable: true, default: HELLO }] },
+        },
+      };
+    };
+    await openDatabasePage();
+    withDefaults();
+
+    designer.addSection("custom-banner");
+    expect(designer.selectedItem.value).toMatchObject({ type: "custom-banner", title: "Hallo" });
+    designer.addSection("site-header", "header");
+    expect(designer.selectedItem.value).toMatchObject({ __group: "header", announcement: HELLO });
+
+    await openTemplate();
+    withDefaults();
+    designer.addSection("custom-banner");
+    expect(designer.selectedItem.value).toMatchObject({ type: "custom-banner", title: HELLO });
   });
 
   it("never pastes a section for the header or footer only among the page's own", async () => {

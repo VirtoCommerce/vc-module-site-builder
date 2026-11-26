@@ -136,9 +136,9 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_ThemeFileThatDoesNotFitTheCatalog_IsInvalidWithEachError()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
 
-        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Header, """{ "content": [ { "id": "h", "type": "unknown" } ] }"""))), _user, Ct);
+        var result = await Operations().SaveAsync(SaveRequest(Save(null, (Header, """{ "content": [ { "id": "h", "type": "unknown" } ] }""")), catalog), _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.NotEmpty(result.Errors);
@@ -148,13 +148,13 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_DryRun_AnswersTheSanitizedContentOverTheDraftsAndWritesNothing()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string liveHeader = """{ "content": [] }""";
         _live.Files[Theme(Header)] = liveHeader;
         var page = DatabasePage();
         page.Content = """{"settings":{},"content":[{"id":"a","type":"notice","body":"<p>Hi</p><script>alert(1)</script>"}]}""";
         const string header = """{ "content": [ { "id": "h", "type": "notice", "note": { "en-US": "<a href=\"javascript:alert(1)\">x</a>" } } ] }""";
-        var request = SaveRequest(Save(page, (Header, header)));
+        var request = SaveRequest(Save(page, (Header, header)), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -224,11 +224,11 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_DryRunOfAFilePage_AnswersWhatIsPublishedAndWritesNoDraft()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string published = """{"settings":{"type":"settings"},"content":[]}""";
         _live.Files[Page("about.page")] = published;
         const string about = """{"settings":{"type":"settings"},"content":[{"id":"a","type":"notice","body":"<p onclick=\"alert(1)\">About</p>"}]}""";
-        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = about }));
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = about }), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -245,12 +245,12 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_FilePageAtTheReviewedVersion_IsSaved()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string published = """{"settings":{"type":"settings"},"content":[]}""";
         _live.Files[Page("about.page")] = published;
-        var dryRun = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        var dryRun = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }), catalog);
         dryRun.DryRun = true;
-        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }), catalog);
         request.ExpectedFilePageVersion = Assert.Single((await Operations().SaveAsync(dryRun, _user, Ct)).Preview.Objects).ETag;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
@@ -263,11 +263,11 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_FilePageDraftSavedSinceTheReview_IsAConflictAndWritesNothing()
     {
-        await SaveContentCatalogAsync();
+        var catalog = await SaveContentCatalogAsync();
         const string published = """{"settings":{"type":"settings"},"content":[]}""";
         const string saved = """{"settings":{"type":"settings","name":"Saved meanwhile"},"content":[]}""";
         _live.Files[Page("about.page")] = published;
-        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }));
+        var request = SaveRequest(Save(new DesignerSavePage { Path = "about.page", Type = "pages", Content = published }), catalog);
         request.ExpectedFilePageVersion = SiteBuilderContentVersion.CreateForFileContent(published);
         _live.Files[Page("about.page-draft")] = saved;
 
@@ -281,16 +281,29 @@ public class DesignerOperationServiceTests
     [Fact]
     public async Task SaveAsync_DryRunOfContentThatCanRunScript_IsInvalidAsTheSaveIs()
     {
-        await SaveCatalogAsync();
+        var catalog = await SaveCatalogAsync();
         var page = DatabasePage();
         page.Content = """{"settings":{},"content":[{"id":"a","type":"text","buttons":[{"url":"javascript:alert(1)"}]}]}""";
-        var request = SaveRequest(Save(page));
+        var request = SaveRequest(Save(page), catalog);
         request.DryRun = true;
 
         var result = await Operations().SaveAsync(request, _user, Ct);
 
         Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
         Assert.Contains("javascript: URL", result.Error);
+        AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task SaveAsync_ThemeFileNotInTheStoresTheme_IsInvalidAndWritesNothing()
+    {
+        var catalog = await SaveCatalogAsync();
+        var changes = Save(null, ("custom-sections/custom-promo.json", """{ "template": "<script>alert(1)</script>" }"""));
+
+        var result = await Operations().SaveAsync(SaveRequest(changes, catalog), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("custom-sections/custom-promo.json", result.Error);
         AssertNothingWritten();
     }
 
@@ -507,6 +520,22 @@ public class DesignerOperationServiceTests
         Assert.Equal(["p1"], (await _pages.GetByIdAsync("g1")).Pages.Select(x => x.Id));
     }
 
+    [Fact]
+    public async Task DiscardAsync_ThemeFileNotInTheStoresTheme_IsInvalidAndDiscardsNothing()
+    {
+        const string draft = "default/custom-sections/custom-promo.json-draft";
+        _live.Files[Theme(draft)] = """{ "template": "<p>promo</p>" }""";
+        var request = DiscardRequest(null, "custom-sections/custom-promo.json");
+        request.DryRun = false;
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("custom-sections/custom-promo.json", result.Error);
+        Assert.True(_live.Files.ContainsKey(Theme(draft)));
+        Assert.Empty(_history.Records);
+    }
+
     /// <summary>The discard of what a dry run of <paramref name="request"/> lists, at the versions it tells.</summary>
     private async Task<DesignerDiscardOperationRequest> ReviewedAsync(DesignerDiscardOperationRequest request)
     {
@@ -577,14 +606,15 @@ public class DesignerOperationServiceTests
         var policy = GitHubConnections.CreatePolicy(options, new FakeSettingsManager(false), new FakeGitContentOwnership());
         var filePageDrafts = TestServices.FilePageDrafts(_live, options, GitHubConnections.CreateService(options.Value), policy, null, null, new FakeGitContentProvisioner());
         var themeDrafts = new ThemeDraftService(_themes, _lock, _live, NullLogger<ThemeDraftService>.Instance);
-        var themePublisher = new ThemePublisher(_themes, new ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
-            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService());
+        var themePublisher = new ThemePublisher(_themes, TestServices.ThemeSnapshotBuilder(), new ThemeValidator(), _live.StoreService, new SchemaCatalogService(_themes),
+            _lock, _live, new NoContentHistory(), Options.Create(new ThemeSnapshotOptions()), NullLogger<ThemePublisher>.Instance, new SiteBuilderContentGuard(), new ThemePaletteService(),
+            TestServices.CustomSectionValidator());
 
         return TestServices.DesignerOperations(
             authorizationService: authorization,
             contentPermissionService: TestServices.Permissions(authorization),
             requestValidator: RequestValidators.Content("s1"),
-            designerContentService: TestServices.Designer(_history, filePageDrafts, themeDrafts, _pages, _live, themePublisher, new SchemaCatalogService(_themes)),
+            designerContentService: TestServices.Designer(_history, filePageDrafts, themeDrafts, _pages, _live, themePublisher, new SchemaCatalogService(_themes), _themes),
             themeDraftService: themeDrafts,
             groupedPageService: _pages,
             sharedComponentPlacementValidator: new SiteBuilderSharedComponentPlacementValidator(new NoopSharedComponentReferenceIndexService(), authorization));

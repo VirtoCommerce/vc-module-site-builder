@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
@@ -32,7 +33,7 @@ public static class PermalinkConflicts
     }
 
     public static string Describe(IEnumerable<SiteBuilderPermalinkUsage> conflicts) =>
-        string.Join("; ", conflicts.Select(x => $"page '{x.GroupId}' ({x.Name}, {x.CultureName ?? "any language"})"));
+        string.Join("; ", conflicts.Select(x => $"page '{x.GroupId}' ({CustomSectionText.Quote(x.Name)}, {x.CultureName ?? "any language"})"));
 
     public static string FixSkippedVersion(string cultureName, IList<SiteBuilderPermalinkUsage> conflicts) =>
         $"Publish it on its own, with languages: ['{cultureName}']. {Fix(conflicts)}";

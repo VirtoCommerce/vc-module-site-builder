@@ -23,15 +23,6 @@ public static class SiteBuilderContentPaths
     // The config folder ships with the theme; the builder saves only the files it owns there.
     private const string ThemeConfigFolder = "config";
 
-    private static readonly HashSet<string> BuilderConfigFiles = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ThemeStorage.SettingsDataFile,
-        ThemeStorage.TemplateRulesFile,
-        ThemeStorage.BrandFile,
-        ThemeStorage.PaletteFile,
-        ThemeStorage.DarkPaletteFile,
-    };
-
     // What file storage reads as a path or a pattern rather than as part of a name, on Windows and Linux alike.
     private static readonly SearchValues<char> KeywordSeparators = SearchValues.Create("\\/:*?\"<>|");
 
@@ -40,13 +31,13 @@ public static class SiteBuilderContentPaths
     private static readonly Regex ContentHistoryCursorPattern = new("^[A-Za-z0-9_-]{1,4096}$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     // the catalog's file name in the theme, as the storefront names it
-    private static readonly Regex CatalogHashPattern = new("^[A-Za-z0-9_-]{8,128}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex CatalogHashPattern = new("\\A[A-Za-z0-9_-]{8,128}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     // base64url of a commit sha's 20 bytes
-    private static readonly Regex HistoryVersionIdPattern = new("^[A-Za-z0-9_-]{27}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex HistoryVersionIdPattern = new("\\A[A-Za-z0-9_-]{27}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     // the id goes into a commit trailer
-    private static readonly Regex SaveIdPattern = new("^[A-Za-z0-9-]{8,64}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+    private static readonly Regex SaveIdPattern = new("\\A[A-Za-z0-9-]{8,64}\\z", RegexOptions.None, TimeSpan.FromSeconds(1));
 
     public static bool IsCatalogHash(string hash) => !string.IsNullOrEmpty(hash) && CatalogHashPattern.IsMatch(hash);
 
@@ -92,15 +83,21 @@ public static class SiteBuilderContentPaths
 
     public static bool IsInsideAThemeFolder(string path) => path.TrimStart('/').Contains('/');
 
+    [Obsolete("A theme file is saved only when the builder reads it, which CanSaveThemeFile tells; a request checks it once the store's theme folder is known (SiteBuilderContentRules.SavedByTheBuilder).")]
     public static bool IsWritableThemeFile(string path) => IsJsonFile(path) && IsInsideAThemeFolder(path) && CanSaveThemeFile(path);
 
-    public static bool CanSaveThemeFile(string path)
+    /// <summary>A file the theme's status and publication read: any other one written would be a draft nothing lists, publishes or discards.</summary>
+    public static bool CanSaveThemeFile(string path) => ThemeStorage.IsThemeFile(GetPathInTheme(path));
+
+    public static string GetNotSavedError(string path) =>
+        $"\"{path}\" is not a theme file the builder saves (templates, custom section types, header and footer groups, settings, rules, brand, palettes).";
+
+    /// <summary>Not a file of the config folder the theme is deployed with: a file outside the folder, or one the builder saves there.</summary>
+    public static bool IsNotDeployedConfig(string path)
     {
         var pathInTheme = GetPathInTheme(path);
 
-        return !IsInFolder(pathInTheme, ThemeStorage.SnapshotsFolder) &&
-               !IsInFolder(pathInTheme, ThemeStorage.CatalogsFolder) &&
-               (!IsInFolder(pathInTheme, ThemeConfigFolder) || BuilderConfigFiles.Contains(pathInTheme));
+        return !IsInFolder(pathInTheme, ThemeConfigFolder) || ThemeStorage.IsThemeFile(pathInTheme);
     }
 
     public static string GetThemeName(string path)

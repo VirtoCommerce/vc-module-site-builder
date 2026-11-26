@@ -7,7 +7,7 @@ namespace VirtoCommerce.SiteBuilder.Data.Validation;
 /// <summary>The storefront's sanitizer profile, with fewer elements and an allowlist of URL schemes.</summary>
 public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
 {
-    private static readonly HashSet<string> AllowedTags = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> AllowedTagSet = new(StringComparer.OrdinalIgnoreCase)
     {
         "a", "abbr", "acronym", "address", "area", "article", "aside", "audio", "b", "bdi", "bdo", "big", "blink", "blockquote", "br",
         "button", "canvas", "caption", "center", "cite", "code", "col", "colgroup", "data", "datalist", "dd", "del", "details", "dfn",
@@ -17,6 +17,8 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
         "ruby", "s", "samp", "section", "select", "small", "source", "spacer", "span", "strike", "strong", "sub", "summary", "sup",
         "table", "tbody", "td", "textarea", "tfoot", "th", "thead", "time", "tr", "track", "tt", "u", "ul", "var", "video", "wbr",
     };
+
+    public static IReadOnlySet<string> AllowedTags => AllowedTagSet;
 
     private static readonly HashSet<string> AllowedAttributes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -50,6 +52,8 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
 
     private static readonly string[] NewWindowRelTokens = ["noopener", "noreferrer"];
 
+    // as a URL parser trims: U+00A0 and the like stay part of the URL
+    private static readonly char[] C0ControlOrSpace = Enumerable.Range(0, ' ' + 1).Select(x => (char)x).ToArray();
     private const string ImageDataUrlPrefix = "data:image/";
 
     public virtual string Sanitize(string html)
@@ -68,7 +72,7 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
     {
         var sanitizer = new HtmlSanitizer(new HtmlSanitizerOptions
         {
-            AllowedTags = AllowedTags,
+            AllowedTags = AllowedTagSet,
             AllowedAttributes = AllowedAttributes,
             UriAttributes = UriAttributes,
             AllowedSchemes = AllowedSchemes,
@@ -101,7 +105,7 @@ public class SiteBuilderHtmlSanitizer : ISiteBuilderHtmlSanitizer
         sanitizer.FilterUrl += (_, e) =>
         {
             // an image cannot run what it shows, so it may be inline
-            if (e.SanitizedUrl == null && e.Tag.LocalName == "img" && e.OriginalUrl.TrimStart().StartsWith(ImageDataUrlPrefix, StringComparison.OrdinalIgnoreCase))
+            if (e.SanitizedUrl == null && e.Tag.LocalName == "img" && e.OriginalUrl.TrimStart(C0ControlOrSpace).StartsWith(ImageDataUrlPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 e.SanitizedUrl = e.OriginalUrl;
             }

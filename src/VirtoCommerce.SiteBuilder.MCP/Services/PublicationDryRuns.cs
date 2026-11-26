@@ -1,12 +1,12 @@
 using System.Security.Claims;
 using Microsoft.Extensions.Logging;
-using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
-using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Tools;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
+using static VirtoCommerce.SiteBuilder.MCP.Services.PublishChecks;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Services;
 
@@ -14,56 +14,10 @@ public class PublicationDryRuns(
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
     IFilePageOperationService filePageOperationService,
-    IThemeOperationService themeOperationService,
     ISiteBuilderContentQueryService contentQueryService,
-    ISchemaCatalogService schemaCatalogService,
+    SectionTypeFindings sectionTypeFindings,
     ILogger<PublicationDryRuns> logger)
 {
-    private const string ContrastMarker = "contrast";
-
-    public async Task CheckThemeAsync(ClaimsPrincipal user, string storeId, PublishReadiness readiness, CancellationToken cancellationToken)
-    {
-        var catalog = await ThemeFiles.GetCatalogAsync(schemaCatalogService, storeId, cancellationToken);
-        var catalogHash = ThemeFiles.GetCatalogHash(catalog);
-        if (catalogHash == null)
-        {
-            readiness.Findings.Add(Blocker("schema-catalog-missing", "The storefront has not sent its schema catalog, so the theme cannot be checked or published.",
-                $"Store '{storeId}' has no current schema catalog.", "Open the store once in the designer: its preview sends the catalog. Then check again.", "catalog"));
-            return;
-        }
-
-        var check = await themeOperationService.PublishAsync(new ThemePublishOperationRequest { StoreId = storeId, CatalogHash = catalogHash, DryRun = true },
-            user, cancellationToken);
-        EnsureAllowed(check, $"Your builder:read permission does not cover store '{storeId}'.");
-
-        if (!check.Succeeded)
-        {
-            AddThemeRefusals(check, readiness);
-            return;
-        }
-
-        AddThemeDryRun(check, storeId, readiness);
-    }
-
-    private static void AddThemeDryRun(SiteBuilderOperationResult check, string storeId, PublishReadiness readiness)
-    {
-        foreach (var draft in check.Preview?.Objects ?? [])
-        {
-            readiness.Parts.Add(PublishPart.FromPreview(draft));
-        }
-
-        foreach (var warning in check.Preview?.Warnings ?? [])
-        {
-            readiness.Findings.Add(Warning("theme-warning", warning, "The dry run of the theme's publication.", "Review it before publishing; it does not stop the publication.", "theme"));
-        }
-
-        if (readiness.Parts.Count == 0)
-        {
-            readiness.Findings.Add(Info("nothing-to-publish", "The theme has no drafts: a publication would put out the live files again.",
-                $"Store '{storeId}' has no theme drafts.", "Nothing to do; edit_theme_draft, edit_template or edit_template_rules make drafts.", "theme"));
-        }
-    }
-
     public async Task<bool> CheckPageAsync(ClaimsPrincipal user, GroupedSiteBuilderPage group, bool unpublish, PublishReadiness readiness,
         CancellationToken cancellationToken)
     {
@@ -130,7 +84,7 @@ public class PublicationDryRuns(
         var groupIds = check.Preview?.Objects.Select(x => x.ObjectId).Where(x => x != null).Distinct().ToList() ?? [];
         if (groupIds.Count == 0)
         {
-            readiness.Findings.Add(Blocker("no-draft", $"No language version of Multilanguage Page '{root.Name}' has a draft, so nothing would be published.",
+            readiness.Findings.Add(Blocker("no-draft", $"No language version of Multilanguage Page '{CustomSectionText.Quote(root.Name)}' has a draft, so nothing would be published.",
                 $"Multilanguage Page '{root.Id}': every language version is published as it is.", "Edit a language version with edit_page_draft first.", "content"));
         }
 
@@ -168,48 +122,30 @@ public class PublicationDryRuns(
             var part = PublishPart.FromPreview(item);
             if (!unpublish)
             {
-                part.Changes = PublishPart.Compare(await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: false, cancellationToken),
-                    await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken));
+                var draft = await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: true, cancellationToken);
+                part.Changes = PublishPart.Compare(await FilePages.ReadAsync(contentQueryService, logger, user, page, draft: false, cancellationToken), draft);
+                await CheckSectionTypesAsync(user, page.StoreId, page.PageId, draft, readiness, group: null, cancellationToken);
             }
 
             readiness.Parts.Add(part);
         }
     }
 
-    private static void EnsureAllowed(SiteBuilderOperationResult result, string forbidden)
+    public async Task CheckSectionTypesAsync(ClaimsPrincipal user, string storeId, string pageName, string content, PublishReadiness readiness,
+        GroupedSiteBuilderPage group, CancellationToken cancellationToken)
     {
-        if (result.Status == SiteBuilderOperationStatus.Forbidden)
+        foreach (var finding in await sectionTypeFindings.GetAsync(user, storeId, pageName, content, group, cancellationToken))
         {
-            throw new McpForbiddenException(forbidden);
+            readiness.Findings.Add(finding);
         }
-    }
-
-    private static void AddThemeRefusals(SiteBuilderOperationResult check, PublishReadiness readiness)
-    {
-        var errors = check.Errors?.Count > 0 ? check.Errors : [check.Error ?? check.Status.ToString()];
-        foreach (var error in errors)
-        {
-            readiness.Findings.Add(ThemeRefusal(error));
-        }
-    }
-
-    private static McpFinding ThemeRefusal(string error)
-    {
-        if (error.Contains(ContrastMarker, StringComparison.OrdinalIgnoreCase))
-        {
-            return Blocker("palette-contrast", "A color pair of the palette is below the WCAG 2.2 AA contrast, so the theme cannot be published.", error,
-                "Fix the palette with edit_theme_draft (part palette): regenerate it or change the failing colors.", "contrast");
-        }
-
-        return Blocker("theme-refused", "The theme's publication would be refused.", error, "Fix the draft it names, then check again.", "validation");
     }
 
     private static McpFinding NoDraft(GroupedSiteBuilderPage group) =>
-        Blocker("no-draft", $"Page '{group.Name}' has no draft, so publishing it would change nothing.", $"Page '{group.Id}' is {group.Status} without unpublished changes.",
+        Blocker("no-draft", $"Page '{CustomSectionText.Quote(group.Name)}' has no draft, so publishing it would change nothing.", $"Page '{group.Id}' is {group.Status} without unpublished changes.",
             "Edit it with edit_page_draft first, or there is nothing to publish.", "content", group);
 
     private static McpFinding PermalinkConflict(GroupedSiteBuilderPage group, IList<SiteBuilderPermalinkUsage> conflicts) =>
-        Blocker("permalink-conflict", $"Published pages serve the permalink '{group.Permalink}' to the same visitors, so publishing page '{group.Name}' " +
+        Blocker("permalink-conflict", $"Published pages serve the permalink '{group.Permalink}' to the same visitors, so publishing page '{CustomSectionText.Quote(group.Name)}' " +
             "would replace them.", PermalinkConflicts.Describe(conflicts), $"{PermalinkConflicts.Fix(conflicts)}.", "address", group);
 
     private static McpFinding UnpublishRefusal(GroupedSiteBuilderPage group)
@@ -217,11 +153,11 @@ public class PublicationDryRuns(
         var published = group.Pages.Any(x => x.Status == PageStatuses.Published);
         if (!published)
         {
-            return Blocker("not-published", $"Page '{group.Name}' is not published, so there is nothing to unpublish.", $"Page '{group.Id}' is {group.Status}.",
+            return Blocker("not-published", $"Page '{CustomSectionText.Quote(group.Name)}' is not published, so there is nothing to unpublish.", $"Page '{group.Id}' is {group.Status}.",
                 "Nothing to do.", "rules", group);
         }
 
-        return Blocker("unpublish-refused-while-draft", $"Page '{group.Name}' has unpublished changes, and a page with a draft cannot be unpublished.",
+        return Blocker("unpublish-refused-while-draft", $"Page '{CustomSectionText.Quote(group.Name)}' has unpublished changes, and a page with a draft cannot be unpublished.",
             $"Page '{group.Id}' has a published version and a draft.", "Publish the draft (publish_page) or discard it (discard_draft) first, then unpublish.", "rules", group);
     }
 
@@ -239,26 +175,4 @@ public class PublicationDryRuns(
         return Blocker("page-refused", $"The publication of page '{page.PageId}' would be refused.", details ?? check.Status.ToString(),
             "Fix the page with edit_page_draft or in the designer, then check again.", "validation");
     }
-
-    public static McpFinding Blocker(string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group = null) =>
-        Finding(McpFindingSeverities.Critical, id, title, evidence, fix, category, group);
-
-    public static McpFinding Warning(string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group = null) =>
-        Finding(McpFindingSeverities.Warning, id, title, evidence, fix, category, group);
-
-    public static McpFinding Info(string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group = null) =>
-        Finding(McpFindingSeverities.Info, id, title, evidence, fix, category, group);
-
-    private static McpFinding Finding(string severity, string id, string title, string evidence, string fix, string category, GroupedSiteBuilderPage group) => new()
-    {
-        Id = id,
-        Severity = severity,
-        Title = title,
-        Evidence = evidence,
-        Fix = fix,
-        Category = category,
-        ObjectType = group == null ? null : ChangePreview.Page,
-        ObjectId = group?.Id,
-        ObjectName = group?.Name,
-    };
 }
