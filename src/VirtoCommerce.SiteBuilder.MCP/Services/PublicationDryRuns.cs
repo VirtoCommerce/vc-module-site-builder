@@ -24,6 +24,8 @@ public class PublicationDryRuns(
     ILogger<PublicationDryRuns> logger)
 {
     private const string ContrastMarker = "contrast";
+    private const string SectionTypeMissing = "section-type-missing";
+    private const string SectionTypeUnpublished = "section-type-unpublished";
 
     public async Task CheckThemeAsync(ClaimsPrincipal user, string storeId, PublishReadiness readiness, CancellationToken cancellationToken)
     {
@@ -216,14 +218,35 @@ public class PublicationDryRuns(
         return await GetSectionTypeFindingsAsync(user, page.StoreId, page.PageId, draft, group: null, cancellationToken);
     }
 
-    private async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, string content,
-        GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    /// <summary>
+    /// The findings of the custom section types an edit adds to a page that the theme does not hold, or holds only as a draft: told as the
+    /// section is added, since the page is published all the same.
+    /// </summary>
+    public async Task<IList<McpFinding>> GetAddedSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, PageDocumentEditor before,
+        PageDocumentEditor after, GroupedSiteBuilderPage group, CancellationToken cancellationToken)
     {
-        var findings = new List<McpFinding>();
-        var placed = (PageDocumentEditor.Read(content)?.Sections ?? [])
+        var added = GetPlacedTypes(after);
+        added.ExceptWith(GetPlacedTypes(before));
+
+        return (await GetSectionTypeFindingsAsync(user, storeId, pageName, added, group, cancellationToken))
+            .Where(x => x.Id is SectionTypeMissing or SectionTypeUnpublished)
+            .ToList();
+    }
+
+    private Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, string content,
+        GroupedSiteBuilderPage group, CancellationToken cancellationToken) =>
+        GetSectionTypeFindingsAsync(user, storeId, pageName, GetPlacedTypes(PageDocumentEditor.Read(content)), group, cancellationToken);
+
+    private static HashSet<string> GetPlacedTypes(PageDocumentEditor document) =>
+        (document?.Sections ?? [])
             .Select(SiteBuilderPageItems.GetItemType)
             .Where(x => x != null && ThemeStorage.IsCustomSectionType(x))
             .ToHashSet(StringComparer.Ordinal);
+
+    private async Task<IList<McpFinding>> GetSectionTypeFindingsAsync(ClaimsPrincipal user, string storeId, string pageName, HashSet<string> placed,
+        GroupedSiteBuilderPage group, CancellationToken cancellationToken)
+    {
+        var findings = new List<McpFinding>();
         if (placed.Count == 0)
         {
             return findings;
@@ -233,8 +256,8 @@ public class PublicationDryRuns(
         var missing = placed.Where(x => !types.Contains(x)).Order(StringComparer.Ordinal).ToList();
         if (missing.Count > 0)
         {
-            findings.Add(Warning("section-type-missing", $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme does not hold " +
-                $"({string.Join(", ", missing)}): the storefront shows nothing for them.",
+            findings.Add(Warning(SectionTypeMissing, $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme does not hold " +
+                $"({string.Join(", ", missing)}): it can still be published, but the storefront shows nothing in their place.",
                 $"Store '{storeId}': {string.Join(", ", missing.Select(ThemeStorage.GetCustomSectionFile))} do not exist.",
                 "Create them with create_section_type and publish the theme, or remove those sections from the page.", "theme", group));
         }
@@ -247,8 +270,8 @@ public class PublicationDryRuns(
             .ToList();
         if (drafts.Count > 0)
         {
-            findings.Add(Warning("section-type-unpublished", $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme holds only as a draft " +
-                $"({string.Join(", ", drafts)}): the storefront shows nothing for them until the theme is published.",
+            findings.Add(Warning(SectionTypeUnpublished, $"Page '{CustomSectionText.Quote(pageName)}' places custom section types the theme holds only as a draft " +
+                $"({string.Join(", ", drafts)}): it can still be published, but the storefront shows nothing in their place until the theme is published.",
                 $"Store '{storeId}': {string.Join(", ", drafts.Select(ThemeStorage.GetCustomSectionFile))} have no published version.",
                 "Publish the theme first (publish_theme, which a second person approves), then the page.", "theme", group));
         }

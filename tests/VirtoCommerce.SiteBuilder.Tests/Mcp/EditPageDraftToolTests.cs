@@ -255,6 +255,46 @@ public sealed class EditPageDraftToolTests : IAsyncDisposable
         Assert.Contains(edit.Warnings, x => x.Contains("only in the theme's draft", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(false, "the theme does not hold")]
+    [InlineData(true, "the theme holds only as a draft")]
+    public async Task AddingASectionOfACustomSectionTypeThePublishedThemeLacks_WarnsThatThePageIsPublishedWithoutIt(bool draftType, string why)
+    {
+        await _context.SeedThemeAsync(StoreA);
+        if (draftType)
+        {
+            _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType, draft: true);
+        }
+
+        var edit = await EditAsync(Editor(), "a1", await _context.DraftVersionAsync("a1"), [new { op = "add_section", type = "custom-stats" }], dryRun: true);
+
+        var warning = Assert.Single(edit.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains($"places custom section types {why} (custom-stats): it can still be published, but the storefront shows nothing in their place",
+            warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AddingASectionOfAPublishedCustomSectionType_HasNoSectionTypeWarning()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType);
+
+        var edit = await EditAsync(Editor(), "a1", await _context.DraftVersionAsync("a1"), [new { op = "add_section", type = "custom-stats" }]);
+
+        Assert.DoesNotContain(edit.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnEditThatAddsNoSuchSection_DoesNotWarnAgainOfOneThePageAlreadyPlaces()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "hero", "type": "hero-banner", "title": "Spring" }, { "id": "s1", "type": "custom-stats" } ] }""");
+
+        var edit = await EditAsync(Editor(), "stats", await _context.DraftVersionAsync("stats"), [SetTitle("Summer")]);
+
+        Assert.DoesNotContain(edit.Warnings, x => x.Contains("custom-stats", StringComparison.Ordinal));
+    }
+
     private async Task<PageDraftEdit> EditAsync(McpTestUser user, string pageId, string token, object[] operations, bool dryRun = false)
     {
         var result = await _context.CallAsync(user, Tool, new { page_id = pageId, version_token = token, operations, dryRun });

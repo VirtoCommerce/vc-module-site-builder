@@ -32,6 +32,7 @@ public class PageDraftTools(
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
     ISiteBuilderContentQueryService contentQueryService,
+    PublicationDryRuns dryRuns,
     ILogger<PageDraftTools> logger)
 {
     private const int MaxOperations = 100;
@@ -49,8 +50,9 @@ public class PageDraftTools(
         "and pass its version_token; the operations apply in order, and all or none are saved. Customers see the " +
         "change only after the draft is published. Returns the changes section by section, the new version_token and " +
         "the page's sections. Call it with dryRun first to show the user the change. A page stored as a file is named " +
-        "by its path ('pages/about.page') with store_id, and holds no Shared Component. Not for the page's name, address, " +
-        "language, audience or dates.")]
+        "by its path ('pages/about.page') with store_id, and holds no Shared Component. A section it adds of a custom section " +
+        "type the theme does not hold, or holds only as a draft, is saved with a warning: the page can still be published, but " +
+        "the section shows nothing until the type is published. Not for the page's name, address, language, audience or dates.")]
     public async Task<PageDraftEdit> EditPageDraft(
         RequestContext<CallToolRequestParams> context,
         [Description("Id of the page (a Landing Page or a language version of a Multilanguage Page), as search_site_pages returns it, " +
@@ -126,6 +128,7 @@ public class PageDraftTools(
         preview.Sections = SectionRow.From(saved.Sections);
         AddPublishedWarning(preview, group);
         AddWarnings(preview, templateWarnings);
+        AddWarnings(preview, await GetSectionTypeWarningsAsync(context.User, group.StoreId, group.Name, before, saved, group, cancellationToken));
 
         return preview;
     }
@@ -187,6 +190,7 @@ public class PageDraftTools(
 
         preview.Sections = SectionRow.From(saved.Sections);
         AddWarnings(preview, templateWarnings);
+        AddWarnings(preview, await GetSectionTypeWarningsAsync(context.User, page.StoreId, page.PageId, before, saved, group: null, cancellationToken));
 
         if (dryRun)
         {
@@ -217,6 +221,10 @@ public class PageDraftTools(
             preview.AddWarning(warning);
         }
     }
+
+    private async Task<IEnumerable<string>> GetSectionTypeWarningsAsync(ClaimsPrincipal user, string storeId, string pageName, PageDocumentEditor before,
+        PageDocumentEditor after, GroupedSiteBuilderPage group, CancellationToken cancellationToken) =>
+        (await dryRuns.GetAddedSectionTypeFindingsAsync(user, storeId, pageName, before, after, group, cancellationToken)).Select(x => $"{x.Title} {x.Fix}");
 
     private static void AddPublishedWarning(PageDraftEdit preview, GroupedSiteBuilderPage group)
     {

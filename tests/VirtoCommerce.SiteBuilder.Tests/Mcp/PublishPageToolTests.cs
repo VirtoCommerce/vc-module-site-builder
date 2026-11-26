@@ -86,6 +86,20 @@ public sealed class PublishPageToolTests : IAsyncDisposable
         Assert.Contains("publish_theme", warning, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task TheApprovalPreview_SaysThePageIsPublished_ButASectionOfACustomSectionTypeTheThemeLacksShowsNothing()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedDraft("stats", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats", "title": "Our year" } ] }""");
+
+        var held = await _context.CallAsync(Publisher(), "publish_page", await _context.ReviewAsync(Publisher(), "publish_page", new() { ["page_id"] = "stats" }));
+
+        Assert.Equal(McpToolCallOutcome.PendingApproval, held.Outcome);
+        var warning = Assert.Single(held.Read<SiteBuilderChange>().Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("places custom section types the theme does not hold (custom-stats): it can still be published, but the storefront shows " +
+            "nothing in their place.", warning, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

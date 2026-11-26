@@ -88,6 +88,19 @@ public sealed class FilePageToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task AnEditThatAddsASectionOfACustomSectionTypeTheThemeLacks_WarnsThatThePageIsPublishedWithoutIt()
+    {
+        await _context.SeedThemeAsync(StoreA);
+
+        var edit = (await _context.CallAsync(Editor(), "edit_page_draft",
+            new { page_id = PageId, store_id = StoreA, version_token = FilePages.VersionOf(Published), operations = new[] { new { op = "add_section", type = "custom-stats" } } }))
+            .EnsureSucceeded().Read<PageDraftEdit>();
+
+        var warning = Assert.Single(edit.Warnings, x => x.Contains("(custom-stats)", StringComparison.Ordinal));
+        Assert.Contains("it can still be published, but the storefront shows nothing in their place", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ADryRunEdit_WritesNothing()
     {
         var edit = (await _context.CallAsync(Editor(), "edit_page_draft",

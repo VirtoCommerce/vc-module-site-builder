@@ -310,8 +310,10 @@ custom type is not refused for one the theme already holds. Warnings do not refu
 each theme file it saved (`themeFiles[].warnings`), without the file's name.
 
 A template may place a custom type the theme holds: its save checks the theme's drafts, a publication the theme it
-publishes. A page's save does not check that a type it places exists; `get_publish_readiness` warns of a page that
-places a type the theme holds only as a draft, or not at all. A header or footer group may not place one, since the
+publishes. A page's save does not check that a type it places exists, and nothing refuses to publish such a page: it is
+published, and the storefront shows nothing in place of those sections. `edit_page_draft` warns when it adds a section of
+a type the theme holds only as a draft, or not at all, and `get_publish_readiness` and the dry run of `publish_page`, which
+the approver of the publication sees, warn of a page that places one. A header or footer group may not place one, since the
 storefront renders only the group's own sections there: a save and a publication refuse it, and the first publication,
 from the live files, leaves it out of the group. A section of the group places one when its type has the form of a
 type; a block, at any depth, only when its type is one the theme holds, or a section the catalog marks custom, and is
