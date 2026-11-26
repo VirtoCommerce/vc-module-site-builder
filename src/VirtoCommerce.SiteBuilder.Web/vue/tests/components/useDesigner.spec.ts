@@ -384,6 +384,21 @@ describe("useDesigner: editing and saving", () => {
     expect(designer.discardable.value).toEqual({ page: true, theme: ["header"] });
   });
 
+  it("offers each custom section type with a draft, one never published too, and discards it as its theme file", async () => {
+    themeStatus = {
+      publication: 3,
+      drafts: ["sections/header-group.json", "custom-sections/custom-numbers.json", "custom-sections/custom-hero.json"],
+      newDrafts: ["custom-sections/custom-numbers.json"],
+    };
+    await openDatabasePage();
+
+    expect(designer.discardable.value).toEqual({ page: false, theme: ["header", "custom-hero", "custom-numbers"] });
+
+    await designer.discardDrafts({ page: false, theme: ["custom-numbers"] });
+
+    expect(platform.to("/api/site-builder/designer/discard")[0].body).toEqual({ themeFiles: ["default/custom-sections/custom-numbers.json"] });
+  });
+
   it("does not offer a template with nothing live to go back to", async () => {
     themeStatus = { publication: 3, drafts: ["templates/product.json"], newDrafts: ["templates/product.json"] };
     await openTemplate();

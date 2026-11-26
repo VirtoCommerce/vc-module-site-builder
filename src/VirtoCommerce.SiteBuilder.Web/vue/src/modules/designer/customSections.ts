@@ -16,17 +16,20 @@ export interface CustomSectionType {
 const TYPE = /^custom-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TYPE_MAX_LENGTH = 64;
 
-const isCustomSectionType = (type: string) => type.length <= TYPE_MAX_LENGTH && TYPE.test(type);
+/** A custom section type: its key always starts with `custom-`, which no other theme part does. */
+export type CustomSectionPart = `custom-${string}`;
+
+export const isCustomSectionPart = (type: string): type is CustomSectionPart => type.length <= TYPE_MAX_LENGTH && TYPE.test(type);
 
 export const customSectionPath = (theme: string, type: string) => `${theme}/custom-sections/${type}.json`;
 
-export function customSectionTypeOf(path: string): string | undefined {
+export function customSectionTypeOf(path: string): CustomSectionPart | undefined {
   const type = /(?:^|\/)custom-sections\/([^/]+)\.json(?:-draft)?$/.exec(path)?.[1];
-  return type && isCustomSectionType(type) ? type : undefined;
+  return type && isCustomSectionPart(type) ? type : undefined;
 }
 
-export const draftedCustomSectionTypes = (status: ThemeStatus | undefined): string[] =>
-  [...new Set((status?.drafts ?? []).map(customSectionTypeOf).filter((x): x is string => !!x))].sort(byCodeUnit);
+export const draftedCustomSectionTypes = (status: ThemeStatus | undefined): CustomSectionPart[] =>
+  [...new Set((status?.drafts ?? []).map(customSectionTypeOf).filter((x): x is CustomSectionPart => !!x))].sort(byCodeUnit);
 
 /**
  * The storefront takes the draft's types in place of all the published ones. They go while the theme has any, drafted or

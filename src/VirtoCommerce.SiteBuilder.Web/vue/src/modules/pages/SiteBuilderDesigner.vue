@@ -671,13 +671,12 @@ import {
   type HistoryFile,
   type HistoryStatus,
   type HistoryVersion,
-  type ThemePart,
 } from "../designer/history";
 import { publishActions, themeErrors, themePublishButton } from "../designer/themePublication";
 import { CatalogPendingError } from "../designer/designerSave";
 import type { Field, Item, PageDocument, SectionGroup, Selection } from "../designer/types";
 import { draftTemplates, savedTemplatesReader } from "../designer/templateDrafts";
-import { keptCustomSections, namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
+import { customSectionTypeOf, keptCustomSections, namedSections, savedCustomSectionsReader, type CustomSectionType } from "../designer/customSections";
 import TemplateSwitcher from "../designer/components/TemplateSwitcher.vue";
 import EntityPicker from "../designer/components/EntityPicker.vue";
 import RulesPanel from "../designer/components/RulesPanel.vue";
@@ -691,7 +690,7 @@ import { useThemeLook } from "../designer/useThemeLook";
 import { usePreviewUser } from "../designer/usePreviewUser";
 import { LOOK_FILES } from "../designer/themeLook";
 import { PERMISSIONS, refusedParts } from "../designer/permissions";
-import { discardOptions, type DiscardOption } from "../designer/discard";
+import { discardOptions, type DiscardOption, type DiscardThemePart } from "../designer/discard";
 import DiscardDialog from "../designer/components/DiscardDialog.vue";
 
 defineBlade({
@@ -1488,13 +1487,16 @@ async function restoreSiteVersion(version: HistoryVersion, items: string[]) {
   }
 }
 
-// A draft never published is the only copy, so only drafts with a published version can be thrown away.
+// A draft never published is the only copy, so only drafts with a published version can be thrown away, but for a custom
+// section type's: discarding it deletes the type, which the dialog says.
 const discardChoices = computed(() =>
   discardOptions({
     page: designer.discardable.value.page,
     theme: designer.discardable.value.theme,
     template: designer.themeFileOpen.value,
     hasAccess,
+    sectionName: (type) => designer.sectionSchema(type)?.name,
+    neverPublished: (designer.themeStatus.value?.newDrafts ?? []).map(customSectionTypeOf).filter((x) => x !== undefined),
   }),
 );
 const hasDraft = computed(() => discardChoices.value.some((x) => x.allowed));
@@ -1509,7 +1511,7 @@ async function discardChanges() {
   else if (await showConfirmation(t("SITE_BUILDER.DESIGNER.CONFIRM_DISCARD_UNSAVED"))) await discardDrafts({ page: false, theme: [] });
 }
 
-async function discardDrafts(choice: { page: boolean; theme: ThemePart[] }) {
+async function discardDrafts(choice: { page: boolean; theme: DiscardThemePart[] }) {
   discarding.value = undefined;
   const drafts = choice.page || choice.theme.length > 0;
   let failed = false;

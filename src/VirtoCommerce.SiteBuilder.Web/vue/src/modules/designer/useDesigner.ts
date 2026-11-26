@@ -7,7 +7,7 @@ import { fromDocument, isComponentRef, resolveRefs } from "./document";
 import type { ClipboardItem } from "./clipboard";
 import * as api from "./api";
 import { GROUPS, groupItems, groupOf, pageOnly, withGroups } from "./groups";
-import { THEME_FILES, THEME_PARTS, groupPath, type HistoryFile, type ThemePart } from "./history";
+import { THEME_FILES, THEME_PARTS, groupPath, type HistoryFile } from "./history";
 import {
   MAIN_SECTIONS,
   PAGE_CONTENT,
@@ -25,6 +25,8 @@ import { moveItem } from "./rules";
 import type { Capability, Handshake } from "./previewMessages";
 import { hasThemeDraft, isNewThemeDraft, templateStatus, type ThemeStatus } from "./themePublication";
 import { CatalogPendingError, type DesignerDiscardPage, type DesignerSaveFile, type DesignerSavePage } from "./designerSave";
+import { customSectionPath, draftedCustomSectionTypes, isCustomSectionPart } from "./customSections";
+import type { DiscardThemePart } from "./discard";
 
 const EMPTY_SCHEMAS: Schemas = { sections: {}, blocks: {}, shared: {}, objects: {} };
 export interface PageRow {
@@ -586,14 +588,18 @@ export function useDesigner() {
 
   const themeStatus = ref<ThemeStatus>();
   const themeFileOpen = computed(() => file.value?.type === "themes");
-  const discardable = computed<{ page: boolean; theme: ThemePart[] }>(() => ({
+  // A custom section type never published goes too: discarding it is how a type an agent made is deleted.
+  const discardable = computed<{ page: boolean; theme: DiscardThemePart[] }>(() => ({
     page: !!status.value.hasChanges && (themeFileOpen.value ? !isNewThemeDraft(themeStatus.value, file.value!.theme, file.value!.path) : !!status.value.published),
     theme:
       theme.value && !shared.value
-        ? THEME_PARTS.filter((part) => {
-            const path = THEME_FILES[part](theme.value!);
-            return hasThemeDraft(themeStatus.value, theme.value!, path) && !isNewThemeDraft(themeStatus.value, theme.value!, path);
-          })
+        ? [
+            ...THEME_PARTS.filter((part) => {
+              const path = THEME_FILES[part](theme.value!);
+              return hasThemeDraft(themeStatus.value, theme.value!, path) && !isNewThemeDraft(themeStatus.value, theme.value!, path);
+            }),
+            ...draftedCustomSectionTypes(themeStatus.value),
+          ]
         : [],
   }));
 
@@ -616,11 +622,15 @@ export function useDesigner() {
     status.value = own ?? templateStatus(themeStatus.value, page!.theme, page!.path);
   }
 
-  async function discardDrafts(choice: { page: boolean; theme: ThemePart[] }) {
+  async function discardDrafts(choice: { page: boolean; theme: DiscardThemePart[] }) {
     if (busy.value || !storeId.value) return;
     const page = file.value;
     const themeName = theme.value;
-    const files = themeName ? discardable.value.theme.filter((part) => choice.theme.includes(part)).map((part) => THEME_FILES[part](themeName)) : [];
+    const files = themeName
+      ? discardable.value.theme
+          .filter((part) => choice.theme.includes(part))
+          .map((part) => (isCustomSectionPart(part) ? customSectionPath(themeName, part) : THEME_FILES[part](themeName)))
+      : [];
     let pagePart: DesignerDiscardPage | undefined;
     if (choice.page && discardable.value.page) {
       if (groupId.value) pagePart = { groupId: groupId.value };
