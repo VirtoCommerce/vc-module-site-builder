@@ -475,7 +475,7 @@ function select(sel: Selection) {
 
     &--warning {
       background: var(--warning-50);
-      color: var(--warning-700);
+      color: var(--warning-800);
     }
 
     // The label gives way before the section's name does in a narrow tree; the title and the hidden hint keep the whole text.
