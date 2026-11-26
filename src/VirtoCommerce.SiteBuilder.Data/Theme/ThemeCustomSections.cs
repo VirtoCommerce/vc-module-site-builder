@@ -92,6 +92,14 @@ public static class ThemeCustomSections
     public static bool IsPlacement(JObject item) =>
         !string.IsNullOrWhiteSpace(ThemeJson.GetString(item, "id")) && ThemeJson.GetString(item, "type") is { } type && ThemeStorage.IsCustomSectionType(type);
 
+    /// <summary>A type's name, given as a text or a text per language, in the language, else in another; <c>null</c> for no name.</summary>
+    public static string GetName(JToken name, string language) => name switch
+    {
+        JValue { Type: JTokenType.String } value => string.IsNullOrWhiteSpace((string)value) ? null : (string)value,
+        JObject translations when ThemeTranslations.IsTranslation(translations) => ThemeTranslations.Translate(translations, language, language),
+        _ => null,
+    };
+
     /// <summary>The type of a file by its path in the theme, valid or not; null for a file outside the folder or one that is not JSON.</summary>
     public static string GetCustomSectionType(string pathInTheme)
     {

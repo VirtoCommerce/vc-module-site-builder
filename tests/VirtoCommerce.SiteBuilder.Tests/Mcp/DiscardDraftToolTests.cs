@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VirtoCommerce.MCP.Testing;
 using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -24,6 +25,7 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
         _context.SeedPage("edited", StoreA, published: true, draft: true);
         _context.SeedPage("new", StoreA, published: false, draft: true);
         _context.SeedPage("b1", StoreB, published: true, draft: true);
+        _context.ListPages(() => []);
     }
 
     public ValueTask DisposeAsync() => _context.DisposeAsync();
@@ -225,6 +227,121 @@ public sealed class DiscardDraftToolTests : IAsyncDisposable
         Assert.Contains(change.Warnings, x => x.Contains("A page that places it shows nothing in its place", StringComparison.Ordinal) &&
             x.Contains("a template draft that places it blocks publish_theme until the section is removed", StringComparison.Ordinal));
         Assert.Null(_context.ReadThemeFile(StoreA, "custom-sections/custom-stats.json", draft: true));
+    }
+
+    [Fact]
+    public async Task TheDryRunOfACustomSectionTypeNeverPublished_SaysByNameThatItIsDeletedForGood_AndHowManyPagesPlaceIt()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", McpTestContext.StatsSectionType, draft: true);
+        var spring = _context.SeedDraft("spring", StoreA, """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""");
+        var about = _context.SeedPage("about", StoreA, published: true, draft: false,
+            content: """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" }, { "id": "s2", "type": "custom-stats" } ] }""");
+        var plain = _context.SeedDraft("plain", StoreA, """{ "settings": {}, "content": [ { "id": "t1", "type": "text" } ] }""");
+        _context.ListPages(() => [LandingRow(spring), LandingRow(about), LandingRow(plain)]);
+
+        var result = await _context.CallAsync(ThemeEditor(), Tool,
+            new { kind = "theme_file", store_id = StoreA, theme_file = "default/custom-sections/custom-stats.json", dryRun = true });
+
+        var change = result.EnsureSucceeded().Read<SiteBuilderChange>();
+        Assert.Equal("Section type 'Stats' (custom-stats) is deleted for good: an AI agent created it for this store, it was never published, and " +
+            "its draft is its only copy, so it cannot be restored. 2 pages place it and will show nothing in its place: 'Page about' (/about) and " +
+            "'Page spring' (/spring).", change.Warnings[0]);
+        Assert.Equal("removed for good: it was never published, so its draft is its only copy and cannot be restored",
+            Assert.Single(change.Changes, x => x.Field == "section type").To?.ToString());
+        Assert.NotNull(_context.ReadThemeFile(StoreA, "custom-sections/custom-stats.json", draft: true));
+    }
+
+    private const string PlacesStats = """{ "settings": {}, "content": [ { "id": "s1", "type": "custom-stats" } ] }""";
+
+    private async Task<string> DeletionWarningAsync(Func<IEnumerable<SiteBuilderPageListItem>> rows, string sectionType = StatsSectionType)
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", sectionType, draft: true);
+        _context.ListPages(rows);
+
+        var result = await _context.CallAsync(ThemeEditor(), Tool,
+            new { kind = "theme_file", store_id = StoreA, theme_file = "default/custom-sections/custom-stats.json", dryRun = true });
+
+        return Assert.Single(result.EnsureSucceeded().Read<SiteBuilderChange>().Warnings, x => x.Contains("for good", StringComparison.Ordinal));
+    }
+
+    private List<SiteBuilderPageListItem> SeedPages(int count, int placing) =>
+        Enumerable.Range(1, count)
+            .Select(i => LandingRow(_context.SeedDraft($"p{i:00}", StoreA, i <= placing ? PlacesStats : """{ "settings": {}, "content": [] }""")))
+            .ToList();
+
+    [Fact]
+    public async Task TheDeletionWarning_NamesTenPlacingPages_AndCountsTheRest()
+    {
+        var rows = SeedPages(12, placing: 12);
+
+        var warning = await DeletionWarningAsync(() => rows);
+
+        Assert.EndsWith("12 pages place it and will show nothing in its place: 'Page p01' (/p01), 'Page p02' (/p02), 'Page p03' (/p03), " +
+            "'Page p04' (/p04), 'Page p05' (/p05), 'Page p06' (/p06), 'Page p07' (/p07), 'Page p08' (/p08), 'Page p09' (/p09), 'Page p10' (/p10) " +
+            "and 2 more.", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheDeletionWarning_NamesASinglePlacingPage_AndSaysWhenNotEveryPageWasRead()
+    {
+        var rows = SeedPages(51, placing: 1);
+
+        var warning = await DeletionWarningAsync(() => rows);
+
+        Assert.EndsWith("cannot be restored. 1 page places it and will show nothing in its place: 'Page p01' (/p01). Only 50 of the store's 51 " +
+            "pages were read, so others may place it too.", warning, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1, "No page places it. 1 language version could not be read, so it may place it too.")]
+    [InlineData(2, "No page places it. 2 language versions could not be read, so they may place it too.")]
+    public async Task TheDeletionWarning_SaysHowManyLanguageVersionsCouldNotBeRead(int unread, string expected)
+    {
+        var rows = Enumerable.Range(1, unread).Select(i => LandingRow(_context.SeedDraft($"empty{i}", StoreA, string.Empty))).ToList();
+
+        var warning = await DeletionWarningAsync(() => rows);
+
+        Assert.EndsWith(expected, warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheDeletionWarning_CountsAMultilanguagePageOnce_ByItsOwnName()
+    {
+        var english = _context.SeedDraft("about-en", StoreA, PlacesStats, multilanguagePageId: "about");
+        var french = _context.SeedDraft("about-fr", StoreA, PlacesStats, "fr-FR", "about");
+        SiteBuilderPageListItem[] rows =
+        [
+            new()
+            {
+                Type = "Multilanguage",
+                Id = "about",
+                Name = "About",
+                Permalink = "/about",
+                MultilanguagePage = Root("about", StoreA),
+                Languages = [new MultilanguagePageLanguage { CultureName = "en-US", Page = english }, new MultilanguagePageLanguage { CultureName = "fr-FR", Page = french }],
+            },
+        ];
+
+        var warning = await DeletionWarningAsync(() => rows);
+
+        Assert.EndsWith("1 page places it and will show nothing in its place: 'About' (/about).", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheDeletionWarning_NamesATypeNamedPerLanguage_InTheStoresDefaultLanguage()
+    {
+        var warning = await DeletionWarningAsync(() => [],
+            StatsSectionType.Replace("\"name\": \"Stats\"", "\"name\": { \"fr-FR\": \"Statistiques\", \"en-US\": \"Stats band\" }", StringComparison.Ordinal));
+
+        Assert.StartsWith("Section type 'Stats band' (custom-stats) is deleted for good", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheTool_TellsTheAgentToShowTheUserThatADiscardDeletesACustomSectionTypeForGood()
+    {
+        Assert.Contains("show the user the dry run's warnings before the call", _context.Harness.GetTool(Tool).ProtocolTool.Description, StringComparison.Ordinal);
     }
 
     [Fact]

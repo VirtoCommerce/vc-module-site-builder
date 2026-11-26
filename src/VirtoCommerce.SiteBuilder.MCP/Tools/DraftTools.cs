@@ -1,17 +1,24 @@
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
+using VirtoCommerce.Platform.Core.Common;
+using VirtoCommerce.Platform.Core.Security;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
+using VirtoCommerce.StoreModule.Core.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
 
@@ -30,6 +37,9 @@ public class DraftTools(
     ISiteBuilderContentQueryService contentQueryService,
     IContentPermissionService contentPermissionService,
     IFilePageOperationService filePageOperationService,
+    ISiteBuilderSectionScanner sectionScanner,
+    IStoreService storeService,
+    Func<UserManager<ApplicationUser>> userManagerFactory,
     ILogger<DraftTools> logger)
 {
     public const string PageKind = "page";
@@ -51,7 +61,9 @@ public class DraftTools(
         "First call it with dryRun: it shows the changes the discard undoes and answers expected_versions. Then call it without " +
         "dryRun and with those expected_versions unchanged: a draft saved again in between is not discarded, and a call without " +
         "them is refused. The user confirms the call in the chat; a client that cannot ask refuses it, and the user discards the " +
-        "draft in the designer instead. Returns the changes the discard undoes.")]
+        "draft in the designer instead. The confirmation names only the call's arguments, so show the user the dry run's warnings before the call: " +
+        "for a custom section type never published they say, by its name, that it is deleted for good and which pages place it. " +
+        "Returns the changes the discard undoes.")]
     public async Task<SiteBuilderChange> DiscardDraft(
         RequestContext<CallToolRequestParams> context,
         [Description("What to discard the draft of: 'page' or 'theme_file'.")] string kind,
@@ -146,7 +158,8 @@ public class DraftTools(
 
         if (newType != null)
         {
-            change.AddChange("section type", newType, "removed: it was never published, so the theme no longer has it");
+            change.AddChange("section type", newType, "removed for good: it was never published, so its draft is its only copy and cannot be restored");
+            change.AddWarning(await DescribeLostTypeAsync(context.User, storeId, path, newType, cancellationToken));
             change.AddWarning($"A page that places it shows nothing in its place, and get_publish_readiness names such a page; a template draft that " +
                 $"places it blocks publish_theme until the section is removed, as the theme no longer has {newType}.");
         }
@@ -184,6 +197,30 @@ public class DraftTools(
 
         change.DryRun = false;
         return change;
+    }
+
+    private async Task<string> DescribeLostTypeAsync(ClaimsPrincipal user, string storeId, string path, string type, CancellationToken cancellationToken)
+    {
+        var draft = await ThemeFiles.ReadAsync(designerOperationService, user, storeId, path, cancellationToken);
+        var language = (await storeService.GetNoCloneAsync(storeId))?.DefaultLanguage;
+        var name = ThemeCustomSections.GetName(ReadType(draft.Content)?[ThemeCustomSections.NameKey], language) ?? type;
+        var pages = await SectionTypePages.DescribePublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type,
+            cancellationToken);
+
+        return $"Section type '{CustomSectionText.Quote(name)}' ({type}) is deleted for good: an AI agent created it for this store, it was never " +
+            $"published, and its draft is its only copy, so it cannot be restored. {pages}";
+    }
+
+    private static JObject ReadType(string content)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(content) ? null : ThemeJson.Parse(content) as JObject;
+        }
+        catch (JsonReaderException)
+        {
+            return null;
+        }
     }
 
     private static DesignerDiscardOperationRequest ThemeFileDiscard(string storeId, string path, bool isDryRun, IDictionary<string, string> versions) => new()

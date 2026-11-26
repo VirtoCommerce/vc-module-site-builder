@@ -14,9 +14,10 @@ below. Anything that needs logic comes from the storefront: a [kit tag](#kit-tag
 `custom-sections/{type}.json` in the theme folder, with its draft `{file}-draft` next to it as every theme file has.
 `type` matches `^custom-[a-z0-9]+(?:-[a-z0-9]+)*$` and is at most 64 characters; the file name is the type. Writing it
 takes `builder:theme`. A type is never renamed once a page or a template places it. Discarding the draft of a type that
-was never published removes the type. The prefix `custom-` is the theme's: the catalog's upload refuses a section whose
-key starts with it unless it is marked `"custom": true`. A theme's types are at most 256 KB of JSON together, and at
-most 256 types, since the snapshot carries every type to every page; the setting
+was never published removes the type for good: the draft is its only copy. The dry run of `discard_draft` says so by the
+type's name and counts the pages that place it. The prefix `custom-` is the theme's: the catalog's upload refuses a
+section whose key starts with it unless it is marked `"custom": true`. A theme's types are at most 256 KB of JSON
+together, and at most 256 types, since the snapshot carries every type to every page; the setting
 `SiteBuilder:ThemeSnapshot:CustomSectionsMaxSize` (bytes) changes the size limit. A save checks the limits early, but
 two saves at once may pass them together: the publication enforces them, and `get_publish_readiness` names them. A save
 is refused on a limit only when it grows the types past it, and then on the limits alone, before the types it writes

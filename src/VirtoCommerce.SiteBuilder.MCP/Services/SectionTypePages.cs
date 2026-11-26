@@ -22,6 +22,8 @@ public static class SectionTypePages
 
     private const string TemplatesNotScanned = " Templates are not scanned: search_templates lists them.";
 
+    private const int MaxNamedPages = 10;
+
     /// <param name="published"><c>true</c> reads the published version of each page, <c>false</c> its draft, else its published version.</param>
     public static async Task<(IList<PlacingPageRow> Pages, string Coverage)> FindAsync(ISiteBuilderSectionScanner sectionScanner,
         IAuthorizationService authorizationService, Func<UserManager<ApplicationUser>> userManagerFactory, ClaimsPrincipal user, string storeId, string type,
@@ -37,6 +39,60 @@ public static class SectionTypePages
     /// The pages whose published version places the type and those whose draft does, a row per version, each marked by <see cref="PlacingPageRow.Version"/>.
     /// </summary>
     public static async Task<(IList<PlacingPageRow> Pages, string Coverage)> FindPublishedAndDraftsAsync(ISiteBuilderSectionScanner sectionScanner,
+        IAuthorizationService authorizationService, Func<UserManager<ApplicationUser>> userManagerFactory, ClaimsPrincipal user, string storeId, string type,
+        CancellationToken cancellationToken)
+    {
+        var (pages, scan) = await ScanPublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type, cancellationToken);
+
+        return (pages, SectionScanCoverage.Describe(scan) + " Each page was read in its published version and in its draft, where it has one." +
+            TemplatesNotScanned);
+    }
+
+    /// <summary>
+    /// For a warning: how many pages place the type in their published version or in their draft, each page once, a Multilanguage Page with all its
+    /// language versions included, which they are, and that others may place it too when the scan did not read every page.
+    /// </summary>
+    public static async Task<string> DescribePublishedAndDraftsAsync(ISiteBuilderSectionScanner sectionScanner, IAuthorizationService authorizationService,
+        Func<UserManager<ApplicationUser>> userManagerFactory, ClaimsPrincipal user, string storeId, string type, CancellationToken cancellationToken)
+    {
+        var (_, scan) = await ScanPublishedAndDraftsAsync(sectionScanner, authorizationService, userManagerFactory, user, storeId, type, cancellationToken);
+        var placing = scan.Pages
+            .Where(x => x.Sections.Count > 0)
+            .Select(x => (Id: x.ListItem?.Id ?? x.Page.MultilanguagePageId ?? x.Page.Id, Name: CustomSectionText.Quote(x.ListItem?.Name ?? x.Page.Name),
+                Permalink: x.ListItem?.Permalink ?? x.Page.Permalink))
+            .DistinctBy(x => x.Id)
+            .OrderBy(x => x.Name, StringComparer.Ordinal)
+            .ToList();
+        var named = placing.Take(MaxNamedPages).Select(x => x.Permalink == null ? $"'{x.Name}'" : $"'{x.Name}' ({x.Permalink})").ToList();
+        if (placing.Count > MaxNamedPages)
+        {
+            named.Add($"{placing.Count - MaxNamedPages} more");
+        }
+
+        var text = placing.Count switch
+        {
+            0 => "No page places it.",
+            1 => $"1 page places it and will show nothing in its place: {named[0]}.",
+            _ => $"{placing.Count} pages place it and will show nothing in its place: {CustomSectionText.JoinAnd(named)}.",
+        };
+
+        if (!scan.IsComplete)
+        {
+            text += $" Only {scan.ScannedPageCount} of the store's {scan.TotalPageCount} pages were read, so others may place it too.";
+        }
+
+        var unread = scan.Unread.Where(x => x.Reason != SiteBuilderSectionScanUnread.NotPublished).Select(x => (x.PageId, x.CultureName)).Distinct().Count();
+        text += unread switch
+        {
+            0 => string.Empty,
+            1 => " 1 language version could not be read, so it may place it too.",
+            _ => $" {unread} language versions could not be read, so they may place it too.",
+        };
+
+        return text;
+    }
+
+    private static async Task<(IList<PlacingPageRow> Pages, SiteBuilderSectionScanResult Scan)> ScanPublishedAndDraftsAsync(ISiteBuilderSectionScanner sectionScanner,
         IAuthorizationService authorizationService, Func<UserManager<ApplicationUser>> userManagerFactory, ClaimsPrincipal user, string storeId, string type,
         CancellationToken cancellationToken)
     {
@@ -60,8 +116,7 @@ public static class SectionTypePages
 
         var pages = ToRows(published.Pages, PublishedVersion).Concat(ToRows(draftVersions, DraftVersion)).ToList();
 
-        return (pages, SectionScanCoverage.Describe(scan) + " Each page was read in its published version and in its draft, where it has one." +
-            TemplatesNotScanned);
+        return (pages, scan);
     }
 
     private static Task<SiteBuilderSectionScanResult> ScanAsync(ISiteBuilderSectionScanner sectionScanner, string storeId, string type, bool published,

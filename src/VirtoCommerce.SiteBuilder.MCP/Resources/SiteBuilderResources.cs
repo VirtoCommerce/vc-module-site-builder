@@ -266,17 +266,9 @@ public class SiteBuilderResources(
 
     private static List<SchemaRow> ListSchemas(JObject schemas, string language) =>
         schemas?.Properties()
-            .Select(x => new SchemaRow(x.Name, GetName((x.Value as JObject)?[NameKey], language) ?? x.Name, x.Value is JObject schema && ThemeCustomSections.IsCustom(schema) ? true : null))
+            .Select(x => new SchemaRow(x.Name, ThemeCustomSections.GetName((x.Value as JObject)?[NameKey], language) ?? x.Name, x.Value is JObject schema && ThemeCustomSections.IsCustom(schema) ? true : null))
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .ToList() ?? [];
-
-    // A custom section type may name itself per language, which the store's default language reads.
-    private static string GetName(JToken name, string language) => name switch
-    {
-        JValue { Type: JTokenType.String } value => string.IsNullOrWhiteSpace((string)value) ? null : (string)value,
-        JObject translations when ThemeTranslations.IsTranslation(translations) => ThemeTranslations.Translate(translations, language, language),
-        _ => null,
-    };
 
     internal static string Serialize(object value) => JsonSerializer.Serialize(value, McpSerialization.Options);
 }
