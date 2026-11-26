@@ -1,12 +1,13 @@
 using FluentValidation;
 using VirtoCommerce.SiteBuilder.Core.History;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 
 namespace VirtoCommerce.SiteBuilder.Data.Validation;
 
 public class ContentHistoryRestoreRequestValidator : AbstractValidator<ContentHistoryRestoreRequest>
 {
-    public ContentHistoryRestoreRequestValidator(IValidator<ContentHistoryRequest> requestValidator)
+    public ContentHistoryRestoreRequestValidator(IValidator<ContentHistoryRequest> requestValidator, IThemeStorageFactory themeStorageFactory)
     {
         ClassLevelCascadeMode = CascadeMode.Stop;
 
@@ -19,6 +20,9 @@ public class ContentHistoryRestoreRequestValidator : AbstractValidator<ContentHi
         RuleFor(x => x.Items)
             .Must(items => DesignerThemeFiles.AreNamedOnce(items.Select(GetThemeFile).Where(x => x != null).ToList()))
             .WithMessage(DesignerThemeFiles.NamingError);
+
+        RuleFor(x => x.Items)
+            .InTheStoresTheme(themeStorageFactory, items => items.Select(GetThemeFile).Where(x => x != null));
     }
 
     private static bool IsSavedItem(string value) =>

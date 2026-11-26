@@ -1,7 +1,9 @@
 using FluentValidation;
+using VirtoCommerce.ContentModule.Core;
 using VirtoCommerce.SiteBuilder.Core;
 using VirtoCommerce.SiteBuilder.Core.GitContent;
 using VirtoCommerce.SiteBuilder.Core.Models;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 
 namespace VirtoCommerce.SiteBuilder.Data.Validation;
 
@@ -10,7 +12,8 @@ public class SiteBuilderContentRequestValidator : AbstractValidator<SiteBuilderC
     // GitHub's GraphQL connections return at most this many nodes.
     private const int MaxHistoryTake = 100;
 
-    public SiteBuilderContentRequestValidator(IValidator<SiteBuilderStoreRequest> storeRequestValidator, IValidator<SiteBuilderContentFile> fileValidator)
+    public SiteBuilderContentRequestValidator(IValidator<SiteBuilderStoreRequest> storeRequestValidator, IValidator<SiteBuilderContentFile> fileValidator,
+        IThemeStorageFactory themeStorageFactory)
     {
         ClassLevelCascadeMode = CascadeMode.Stop;
         RuleLevelCascadeMode = CascadeMode.Stop;
@@ -79,5 +82,11 @@ public class SiteBuilderContentRequestValidator : AbstractValidator<SiteBuilderC
             .WithMessage("\"{PropertyValue}\" is not a schema name.");
 
         Include(storeRequestValidator);
+
+        RuleFor(x => x.Files)
+            .InTheStoresTheme(themeStorageFactory, files => files.Where(IsThemeFile).Select(x => x.Path));
     }
+
+    private static bool IsThemeFile(SiteBuilderContentFile file) =>
+        string.Equals(file?.ContentType, ContentConstants.ContentTypes.Themes, StringComparison.OrdinalIgnoreCase);
 }

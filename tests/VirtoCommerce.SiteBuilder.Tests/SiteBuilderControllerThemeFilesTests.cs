@@ -480,6 +480,34 @@ public class SiteBuilderControllerThemeFilesTests
         Assert.False(_live.Files.ContainsKey(DraftFile(contentType, path)));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DiscardDraftOperation_ThemeFileNotInTheStoresTheme_IsInvalidAndKeepsTheDraft(bool dryRun)
+    {
+        const string draft = "default/custom-sections/custom-promo.json-draft";
+        var history = new RecordingContentHistory();
+        _live.Files[Theme(draft)] = "draft";
+
+        var result = await DiscardOperations(history).DiscardDraftAsync(DiscardRequest("themes", "custom-sections/custom-promo.json", dryRun), Alice, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("custom-sections/custom-promo.json", result.Error);
+        Assert.Equal("draft", _live.Files[Theme(draft)]);
+        Assert.Empty(history.Records);
+    }
+
+    [Fact]
+    public async Task DiscardDraft_ThemeFileNotInTheStoresTheme_ReturnsBadRequestAndKeepsTheDraft()
+    {
+        const string draft = "default/custom-sections/custom-promo.json-draft";
+        _live.Files[Theme(draft)] = "draft";
+
+        Assert.IsType<BadRequestObjectResult>(await Builder().DiscardDraft("s1", "custom-sections/custom-promo.json", "themes"));
+
+        Assert.Equal("draft", _live.Files[Theme(draft)]);
+    }
+
     private static ClaimsPrincipal Alice => new(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
 
     private static string DraftFile(string contentType, string path) => contentType == "themes" ? Theme($"{path}-draft") : Page($"{path}-draft");

@@ -272,6 +272,19 @@ public class HistoryControllerTests
     }
 
     [Fact]
+    public async Task Restore_ThemeFileNotInTheStoresTheme_ReturnsBadRequestAndWritesNothing()
+    {
+        const string item = "theme:custom-sections/custom-promo.json";
+        _history.Versions[(VersionId, item)] = """{ "template": "<script>alert(1)</script>" }""";
+
+        var result = await Controller().Restore(VersionId, "s1", [item], Ct);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(_live.Files);
+        Assert.Empty(_history.Records);
+    }
+
+    [Fact]
     public async Task RestoreOperation_HeaderPlacingACustomType_IsInvalidWithTheRuleAndWritesNothing()
     {
         _history.Versions[(VersionId, $"theme:{Header}")] = """{ "type": "header", "content": [ { "id": "promo", "type": "custom-hero" } ] }""";

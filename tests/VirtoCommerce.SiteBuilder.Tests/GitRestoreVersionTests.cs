@@ -471,8 +471,7 @@ namespace VirtoCommerce.SiteBuilder.Tests
         private static FilePageOperationService Operations(RecordingRepository repository, RecordingHistory history)
         {
             var options = Options.Create(new GitContentOptions { Enabled = true, Repository = "o/r", Token = "t0ken", BaseBranch = "master" });
-            var requestValidator = new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(new Store { Id = "vccom" })),
-                new SiteBuilderContentFileValidator());
+            var requestValidator = RequestValidators.Content(new FakeStoreService(new Store { Id = "vccom" }));
 
             return TestServices.FilePageOperations(new FakeAuthorizationService(true), requestValidator, options, GitHubConnections.CreateService(options.Value),
                 new FakeGitContentPolicy(repositoryFormat: "acme/site-{0}"), repository, history);
@@ -529,13 +528,13 @@ namespace VirtoCommerce.SiteBuilder.Tests
                 settingsManager: new PerNameSettings(configuredStoreUrl, previewPath),
                 authorizationService: new FakeAuthorizationService(true),
                 distributedLock: new InProcessDistributedLock(),
-                requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(store ?? new Store { Id = "vccom" })), new SiteBuilderContentFileValidator()),
+                requestValidator: RequestValidators.Content(new FakeStoreService(store ?? new Store { Id = "vccom" })),
                 contentHistory: new NoContentHistory(),
                 themeDraftService: null,
                 designerOperationService: TestServices.DesignerOperations(
                     authorizationService: new FakeAuthorizationService(true),
                     contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
-                    requestValidator: new SiteBuilderContentRequestValidator(new SiteBuilderStoreRequestValidator(new FakeStoreService(store ?? new Store { Id = "vccom" })), new SiteBuilderContentFileValidator()),
+                    requestValidator: RequestValidators.Content(new FakeStoreService(store ?? new Store { Id = "vccom" })),
                     designerContentService: TestServices.Designer(new NoContentHistory(), filePageDrafts, null, null, null, null)),
                 contentPermissionService: TestServices.Permissions(new FakeAuthorizationService(true)),
                 filePageDraftService: filePageDrafts,

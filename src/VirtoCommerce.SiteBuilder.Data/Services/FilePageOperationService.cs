@@ -932,7 +932,17 @@ public class FilePageOperationService(
     {
         var (storeId, path, theme) = (request.StoreId, request.Path, request.Theme);
         var contentType = string.IsNullOrEmpty(request.ContentType) ? PagesContentType : request.ContentType.ToLowerInvariant();
-        var contentRequest = new SiteBuilderContentRequest { StoreId = storeId, ContentType = contentType, Theme = theme, Paths = [path] };
+        var contentRequest = new SiteBuilderContentRequest { StoreId = storeId, ContentType = contentType, Theme = theme };
+        // a theme file whose draft goes is named as one, so it is checked as the designer's discard checks it
+        if (contentType == Themes)
+        {
+            contentRequest.Files = [new SiteBuilderContentFile { ContentType = Themes, Path = path }];
+        }
+        else
+        {
+            contentRequest.Paths = [path];
+        }
+
         if (await CheckRequestAsync(contentRequest, request.BindingErrors, user, cancellationToken) is { } refused)
         {
             return refused.As<FileDraftDiscard>();

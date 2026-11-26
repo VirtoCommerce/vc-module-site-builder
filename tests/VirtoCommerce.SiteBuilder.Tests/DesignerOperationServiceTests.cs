@@ -295,6 +295,19 @@ public class DesignerOperationServiceTests
     }
 
     [Fact]
+    public async Task SaveAsync_ThemeFileNotInTheStoresTheme_IsInvalidAndWritesNothing()
+    {
+        var catalog = await SaveCatalogAsync();
+        var changes = Save(null, ("custom-sections/custom-promo.json", """{ "template": "<script>alert(1)</script>" }"""));
+
+        var result = await Operations().SaveAsync(SaveRequest(changes, catalog), _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("custom-sections/custom-promo.json", result.Error);
+        AssertNothingWritten();
+    }
+
+    [Fact]
     public async Task DiscardAsync_StoreUserDoesNotWorkIn_IsForbiddenBeforeTheRequestIsRead()
     {
         var request = new DesignerDiscardOperationRequest { StoreId = "s1", Changes = new DesignerDiscardRequest(), BindingErrors = [NotRead] };
@@ -505,6 +518,22 @@ public class DesignerOperationServiceTests
         Assert.True(result.Succeeded);
         Assert.False(_live.Files.ContainsKey(Theme($"{Header}-draft")));
         Assert.Equal(["p1"], (await _pages.GetByIdAsync("g1")).Pages.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task DiscardAsync_ThemeFileNotInTheStoresTheme_IsInvalidAndDiscardsNothing()
+    {
+        const string draft = "default/custom-sections/custom-promo.json-draft";
+        _live.Files[Theme(draft)] = """{ "template": "<p>promo</p>" }""";
+        var request = DiscardRequest(null, "custom-sections/custom-promo.json");
+        request.DryRun = false;
+
+        var result = await Operations().DiscardAsync(request, _user, Ct);
+
+        Assert.Equal(SiteBuilderOperationStatus.Invalid, result.Status);
+        Assert.Contains("custom-sections/custom-promo.json", result.Error);
+        Assert.True(_live.Files.ContainsKey(Theme(draft)));
+        Assert.Empty(_history.Records);
     }
 
     /// <summary>The discard of what a dry run of <paramref name="request"/> lists, at the versions it tells.</summary>
