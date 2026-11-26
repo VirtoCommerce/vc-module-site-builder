@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
+import { VcButton } from "@vc-shell/framework/ui";
 import DiscardDialog from "../../src/modules/designer/components/DiscardDialog.vue";
 import { discardOptions } from "../../src/modules/designer/discard";
 import { PERMISSIONS } from "../../src/modules/designer/permissions";
@@ -121,6 +122,18 @@ describe("DiscardDialog", () => {
       await confirm.trigger("click");
 
       expect(wrapper.emitted("discard")).toEqual([[{ page: true, theme: ["custom-numbers", "custom-hero"] }]]);
+    });
+
+    it("confirms a delete that cannot be undone with a danger button, and a discard alone with the usual one", async () => {
+      const wrapper = mountCustom();
+      const confirmVariant = () => wrapper.findAllComponents(VcButton).at(-1)!.props("variant");
+      expect(confirmVariant()).toBe("primary");
+
+      await option(wrapper, 'Section type "Roastery in numbers" (never published)').find("input").trigger("change");
+      expect(confirmVariant()).toBe("danger");
+
+      await option(wrapper, 'Section type "Roastery in numbers" (never published)').find("input").trigger("change");
+      expect(confirmVariant()).toBe("primary");
     });
   });
 });

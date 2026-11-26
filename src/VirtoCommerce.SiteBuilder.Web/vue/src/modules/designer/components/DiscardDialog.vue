@@ -57,6 +57,7 @@
           {{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD_CANCEL") }}
         </VcButton>
         <VcButton
+          :variant="removals.length ? 'danger' : 'primary'"
           :disabled="!unsaved && !choice.page && !choice.theme.length"
           @click="emit('discard', choice)"
         >
