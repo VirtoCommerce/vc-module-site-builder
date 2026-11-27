@@ -247,6 +247,48 @@ describe("telling open lists the page changed", () => {
   });
 });
 
+describe("Version history while the page has unsaved changes", () => {
+  it("tells the panel, saves the changes when the panel's alert asks to, and reloads the panel's versions", async () => {
+    const reload = vi.fn(async () => undefined);
+    const Panel = defineComponent({
+      name: "VersionHistory",
+      props: { dirty: Boolean },
+      emits: ["save"],
+      setup: (_, { expose }) => {
+        expose({ reload });
+        return () => null;
+      },
+    });
+    const platform = fakePlatform()
+      .on("GET", `/api/stores/${STORE}`, { id: STORE, dynamicProperties: [{ name: "DefaultThemeName", values: [{ value: "default" }] }] })
+      .on("GET", GROUP, { id: "g1", storeId: STORE, name: "About", status: "Published" })
+      .on("GET", `${GROUP}/content`, { content: JSON.stringify(PAGE), eTag: '"v1"' })
+      .on("GET", "/api/site-builder-pages/grouped/publish-status/g1", { published: true, hasChanges: true })
+      .on("GET", "/api/site-builder/designer/theme-file", themeFileAnswer({}))
+      .on("GET", "/api/site-builder/theme/status", { publication: 3, drafts: [] })
+      .on("GET", "/api/site-builder/history/status", { status: "enabled" })
+      .on("POST", "/api/site-builder/designer/save", { eTag: '"v2"' })
+      .install();
+    blade.param.value = "g1";
+    const wrapper = shallowMount(SiteBuilderDesigner, { global: { plugins: [await routerAt("/")], stubs: { VcBlade: false, VersionHistory: Panel } } });
+    await flushPromises();
+    const { designer } = wrapper.vm as unknown as { designer: Designer };
+    await wrapper.find('[role="toolbar"] [data-test-id="history"]').trigger("click");
+
+    designer.doc.value = { ...designer.doc.value, content: designer.doc.value.content.map((x) => ({ ...x, title: "Mine" })) };
+    await flushPromises();
+    const panel = wrapper.findComponent(Panel);
+    expect(panel.props("dirty")).toBe(true);
+
+    panel.vm.$emit("save");
+    await flushPromises();
+
+    expect(platform.to("/api/site-builder/designer/save", "POST")).toHaveLength(1);
+    expect(panel.props("dirty")).toBe(false);
+    expect(reload).toHaveBeenCalled();
+  });
+});
+
 describe("a page the AI assistant saves", () => {
   const CONTENT = `${GROUP}/content`;
   const STATUS = "/api/site-builder-pages/grouped/publish-status/g1";

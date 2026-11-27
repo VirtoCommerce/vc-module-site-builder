@@ -512,11 +512,5 @@ function select(sel: Selection) {
   &__row--bottom {
     margin-top: 8px;
   }
-
-  &__menu-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
 }
 </style>

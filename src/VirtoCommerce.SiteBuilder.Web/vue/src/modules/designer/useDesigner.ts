@@ -53,6 +53,8 @@ export function useDesigner() {
   const can = (capability: Capability) => !!handshake.value?.capabilities.includes(capability);
   const selection = ref<Selection | null>(null);
   const hovered = ref<string | null>(null);
+  // The tree's sections that show their blocks.
+  const expanded = reactive(new Set<string>());
 
   const eTag = ref<string>();
   const themeETags = ref<Record<string, string>>({});
@@ -105,6 +107,7 @@ export function useDesigner() {
     return typeof limit === "number" && doc.value.content.filter((x) => x.type === type).length >= limit;
   };
   const blockSchema = (type?: string): ItemSchema | undefined => (type ? blockSchemaOf(schemas.value, type) : undefined);
+  const canHoldBlocks = (section: Item) => !isComponentRef(section) && !!sectionSchema(section.type)?.blocks?.length;
 
   const templateKey = computed(() => (file.value?.type === "themes" ? templateKeyOf(file.value.path) : undefined));
   const pageType = computed(() => (templateKey.value ? pageTypeOf(templateKey.value) : undefined));
@@ -253,6 +256,7 @@ export function useDesigner() {
     const content = [...doc.value.content];
     content.splice(group ? groupEnd(group) : pageEnd(), 0, section);
     setContent(content);
+    if (canHoldBlocks(section)) expanded.add(section.id);
     selection.value = { kind: "section", id: section.id };
   }
 
@@ -500,6 +504,7 @@ export function useDesigner() {
 
   function reset(next: PageDocument, groups: Partial<Record<SectionGroup, Item[]>> = currentGroups()) {
     record.cancel();
+    expanded.clear();
     doc.value = groupsLoaded.value ? withGroups(next, groups) : next;
     savedJson.value = JSON.stringify(pageOnly(doc.value));
     savedGroupsJson.value = { header: JSON.stringify(groupItems(doc.value, "header")), footer: JSON.stringify(groupItems(doc.value, "footer")) };
@@ -778,6 +783,7 @@ export function useDesigner() {
     groupsPreview,
     groupSectionTypes,
     hovered,
+    expanded,
     sectionLabels,
     dirty,
     changedParts,
@@ -809,6 +815,7 @@ export function useDesigner() {
     sectionSchema,
     sectionGap,
     blockSchema,
+    canHoldBlocks,
     sectionTypes,
     pageRows,
     selectedSection,

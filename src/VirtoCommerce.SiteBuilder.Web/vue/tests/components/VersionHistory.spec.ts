@@ -9,7 +9,7 @@ import type { HistoryVersion } from "../../src/modules/designer/history";
 
 const version = (id: string): HistoryVersion => ({ id, label: id, description: "Saved", date: "2026-11-09T10:00:00Z", items: [`page:${id}`] });
 
-async function mountPanel(restoreRefused?: (version: HistoryVersion) => string | undefined) {
+async function mountPanel(restoreRefused?: (version: HistoryVersion) => string | undefined, state: { dirty?: boolean; canDiscard?: boolean } = {}) {
   const wrapper = mount(VersionHistory, {
     props: {
       source: async () => ({ versions: [version("v2"), version("v1")] }),
@@ -17,6 +17,7 @@ async function mountPanel(restoreRefused?: (version: HistoryVersion) => string |
       busy: false,
       canDiscard: false,
       restoreRefused,
+      ...state,
     },
   });
   await flushPromises();
@@ -37,6 +38,36 @@ describe("restoring a version", () => {
 
     expect(restore(wrapper).attributes("disabled")).toBeDefined();
     expect(restore(wrapper).attributes("title")).toBe("No access to the header");
+  });
+});
+
+describe("restoring while there are unsaved changes", () => {
+  const button = (wrapper: VueWrapper, text: string) => wrapper.findAll("button").filter((x) => x.text() === text);
+
+  it("is not offered, and the alert above the list says why and offers Save and Discard in place of the footer's Discard", async () => {
+    const wrapper = await mountPanel(undefined, { dirty: true, canDiscard: true });
+
+    expect(wrapper.find('[role="alert"]').text()).toContain("You have unsaved changes. Save or discard them to restore an earlier version.");
+    expect(restore(wrapper).attributes("disabled")).toBeDefined();
+    expect(restore(wrapper).attributes("title")).toBeUndefined();
+    expect(button(wrapper, "Discard all changes")).toHaveLength(1);
+    expect(wrapper.find(".vh__footer").exists()).toBe(false);
+
+    await button(wrapper, "Save")[0].trigger("click");
+    await button(wrapper, "Discard all changes")[0].trigger("click");
+
+    expect(wrapper.emitted("save")).toHaveLength(1);
+    expect(wrapper.emitted("discard")).toHaveLength(1);
+  });
+
+  it("is offered again once the changes are saved, and the footer has its Discard back", async () => {
+    const wrapper = await mountPanel(undefined, { dirty: true, canDiscard: true });
+
+    await wrapper.setProps({ dirty: false });
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(restore(wrapper).attributes("disabled")).toBeUndefined();
+    expect(wrapper.find(".vh__footer").text()).toBe("Discard all changes");
   });
 });
 

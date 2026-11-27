@@ -42,17 +42,17 @@
           />
         </span>
         <button
-          v-if="canHoldBlocks(section)"
+          v-if="designer.canHoldBlocks(section)"
           type="button"
           class="pd-tree__toggle"
-          :aria-expanded="expanded.has(section.id)"
+          :aria-expanded="designer.expanded.has(section.id)"
           :aria-label="$t('SITE_BUILDER.DESIGNER.BLOCKS')"
           @click.stop="toggle(section.id)"
         >
           <VcIcon
             icon="lucide-chevron-right"
             size="xs"
-            :class="{ 'pd-tree__chevron--open': expanded.has(section.id) }"
+            :class="{ 'pd-tree__chevron--open': designer.expanded.has(section.id) }"
           />
         </button>
         <VcIcon
@@ -101,7 +101,7 @@
       </div>
 
       <ul
-        v-if="canHoldBlocks(section) && expanded.has(section.id)"
+        v-if="designer.canHoldBlocks(section) && designer.expanded.has(section.id)"
         class="pd-tree__blocks"
       >
         <li
@@ -151,38 +151,24 @@
           </div>
         </li>
         <li>
-          <VcDropdown
-            :model-value="blockMenu === section.id"
-            :items="blockTypes(section)"
-            :floating="true"
-            placement="bottom-start"
-            @update:model-value="(open: boolean) => (blockMenu = open ? section.id : undefined)"
-            @item-click="(x: { type: string }) => addBlock(section.id, x.type)"
+          <AddBlock
+            v-slot="{ isActive, toggle: open }"
+            :designer="designer"
+            :section="section"
           >
-            <template #trigger="{ isActive, toggle: open }">
-              <button
-                type="button"
-                class="pd-tree__add pd-tree__add--block"
-                :aria-expanded="isActive"
-                @click="open"
-              >
-                <VcIcon
-                  icon="lucide-circle-plus"
-                  size="s"
-                />
-                {{ $t("SITE_BUILDER.DESIGNER.ADD_BLOCK") }}
-              </button>
-            </template>
-            <template #item="{ item }">
-              <span class="pd-tree__menu-item">
-                <VcIcon
-                  :icon="iconOf(item.schema)"
-                  size="s"
-                />
-                {{ item.schema.name ?? item.type }}
-              </span>
-            </template>
-          </VcDropdown>
+            <button
+              type="button"
+              class="pd-tree__add pd-tree__add--block"
+              :aria-expanded="isActive"
+              @click="open"
+            >
+              <VcIcon
+                icon="lucide-circle-plus"
+                size="s"
+              />
+              {{ $t("SITE_BUILDER.DESIGNER.ADD_BLOCK") }}
+            </button>
+          </AddBlock>
         </li>
       </ul>
     </li>
@@ -190,15 +176,16 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, reactive, ref, useTemplateRef, watch } from "vue";
+import { nextTick, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useSortable } from "@vueuse/integrations/useSortable";
-import { VcDropdown, VcIcon } from "@vc-shell/framework/ui";
+import { VcIcon } from "@vc-shell/framework/ui";
 import type { Item, Selection } from "../types";
 import type { Designer } from "../useDesigner";
 import { iconOf, itemTitle } from "../schema";
 import { isComponentRef } from "../document";
 import type { CustomSectionGap } from "../customSections";
+import AddBlock from "./AddBlock.vue";
 
 const props = defineProps<{
   designer: Designer;
@@ -209,8 +196,6 @@ const props = defineProps<{
 const emit = defineEmits<{ hover: [sectionId: string | null] }>();
 
 const { t } = useI18n({ useScope: "global" });
-const blockMenu = ref<string>();
-const expanded = reactive(new Set<string>());
 
 const sectionName = (section: Item) =>
   isComponentRef(section)
@@ -231,19 +216,9 @@ const isSelected = (id: string) => {
   const sel = props.designer.selection.value;
   return !!sel && sel.kind !== "page" && sel.id === id;
 };
-const canHoldBlocks = (section: Item) => !isComponentRef(section) && !!props.designer.sectionSchema(section.type)?.blocks?.length;
-const blockTypes = (section: Item) =>
-  (props.designer.sectionSchema(section.type)?.blocks ?? [])
-    .map((type) => ({ type, schema: props.designer.blockSchema(type) ?? { name: type } }))
-    .filter((x) => !x.schema.hidden);
-
-// The menu stays open on its own and would cover the rows below.
-function addBlock(sectionId: string, type: string) {
-  blockMenu.value = undefined;
-  props.designer.addBlock(sectionId, type);
-}
 
 function toggle(id: string) {
+  const { expanded } = props.designer;
   if (expanded.has(id)) expanded.delete(id);
   else expanded.add(id);
 }
@@ -255,7 +230,7 @@ function select(sel: Selection) {
 watch(
   () => props.designer.selection.value,
   (sel) => {
-    if (sel?.kind === "block" && props.sections.some((x) => x.id === sel.sectionId)) expanded.add(sel.sectionId);
+    if (sel?.kind === "block" && props.sections.some((x) => x.id === sel.sectionId)) props.designer.expanded.add(sel.sectionId);
   },
 );
 

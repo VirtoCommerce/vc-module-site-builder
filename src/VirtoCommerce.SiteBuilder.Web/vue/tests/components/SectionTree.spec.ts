@@ -74,6 +74,17 @@ describe("SectionTree: names", () => {
 });
 
 describe("SectionTree: adding a section", () => {
+  it("shows the blocks of a section added that can hold them, and of no section already there", async () => {
+    const wrapper = mountTree([{ id: "promo-1", type: "promo" }]);
+
+    designer.addSection("promo");
+    await nextTick();
+
+    const toggles = wrapper.findAll("button.pd-tree__toggle");
+    expect(toggles.map((x) => x.attributes("aria-expanded"))).toEqual(["false", "true"]);
+    expect(wrapper.findAll(".pd-tree__blocks")).toHaveLength(1);
+  });
+
   it("shows the designer's notice about the custom section types in the picker", async () => {
     designer.doc.value = { settings: { id: "settings", type: "settings" }, content: [] };
     const wrapper = mount(SectionTree, { props: { designer, customSectionsNotice: "Custom sections are shown as published." } });

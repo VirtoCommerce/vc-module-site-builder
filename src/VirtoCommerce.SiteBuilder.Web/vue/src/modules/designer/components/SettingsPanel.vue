@@ -100,11 +100,60 @@
         @update="designer.setField"
       />
       <p
-        v-if="values && !placed && !tabFields.length"
+        v-if="values && !placed && !tabFields.length && !blockHolder"
         class="pd-settings__empty"
       >
         {{ $t("SITE_BUILDER.DESIGNER.NO_SETTINGS") }}
       </p>
+      <section
+        v-if="blockHolder"
+        class="pd-settings__blocks"
+      >
+        <h3 class="pd-settings__heading">{{ $t("SITE_BUILDER.DESIGNER.BLOCKS") }}</h3>
+        <ul
+          v-if="blockHolder.blocks?.length"
+          class="pd-settings__block-list"
+        >
+          <li
+            v-for="block in blockHolder.blocks"
+            :key="block.id"
+          >
+            <button
+              type="button"
+              class="pd-settings__block"
+              :class="{ 'pd-settings__block--hidden': block.hidden }"
+              @click="designer.selection.value = { kind: 'block', sectionId: blockHolder.id, id: block.id }"
+            >
+              <VcIcon
+                :icon="iconOf(designer.blockSchema(block.type))"
+                size="s"
+              />
+              <span class="pd-settings__block-name">{{ itemTitle(block, designer.blockSchema(block.type), designer.languages.value.default) }}</span>
+            </button>
+          </li>
+        </ul>
+        <p
+          v-else
+          class="pd-settings__empty"
+        >
+          {{ $t("SITE_BUILDER.DESIGNER.NO_BLOCKS") }}
+        </p>
+        <AddBlock
+          v-slot="{ isActive, toggle }"
+          :designer="designer"
+          :section="blockHolder"
+        >
+          <VcButton
+            variant="secondary"
+            size="sm"
+            icon="lucide-circle-plus"
+            :aria-expanded="isActive"
+            @click="toggle"
+          >
+            {{ $t("SITE_BUILDER.DESIGNER.ADD_BLOCK") }}
+          </VcButton>
+        </AddBlock>
+      </section>
     </div>
 
     <footer
@@ -135,6 +184,7 @@ import type { Selection } from "../types";
 import { iconOf, itemTitle } from "../schema";
 import { isComponentRef } from "../document";
 import type { GroupItem } from "../whiteLabeling";
+import AddBlock from "./AddBlock.vue";
 import Fields from "./Fields.vue";
 import PanelHeader from "./PanelHeader.vue";
 
@@ -165,6 +215,7 @@ const icon = computed(() => {
   return placed.value ? "lucide-link" : iconOf(schema.value);
 });
 const values = computed(() => (sel.value.kind === "page" ? props.designer.doc.value.settings : item.value));
+const blockHolder = computed(() => (sel.value.kind === "section" && item.value && props.designer.canHoldBlocks(item.value) ? item.value : undefined));
 const textSection = computed(() => (sel.value.kind === "page" ? undefined : props.designer.selectedSection.value));
 const itemKey = computed(() => (sel.value.kind === "page" ? `page:${sel.value.key}` : sel.value.id));
 
@@ -289,6 +340,60 @@ const actions = computed(() => {
   &__empty {
     margin: 0;
     color: var(--neutrals-500);
+  }
+
+  &__blocks {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 20px;
+  }
+
+  &__heading {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--neutrals-500);
+  }
+
+  &__block-list {
+    align-self: stretch;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__block {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--neutrals-900);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--neutrals-100);
+    }
+
+    &--hidden {
+      opacity: 0.5;
+    }
+  }
+
+  &__block-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   &__foot {

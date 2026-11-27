@@ -3,14 +3,14 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { defineComponent, effectScope, h, type PropType } from "vue";
 import SettingsPanel from "../../src/modules/designer/components/SettingsPanel.vue";
 import { useDesigner, type Designer } from "../../src/modules/designer/useDesigner";
-import type { Schemas } from "../../src/modules/designer/types";
+import type { Item, Schemas } from "../../src/modules/designer/types";
 import { fakePlatform, status } from "./support/fakePlatform";
 import { notification } from "./support/vcShell";
 
 // As VcDropdown does: a pick runs the item, and closes the menu only when asked to with closeOnSelect.
 const VcDropdown = defineComponent({
   name: "VcDropdown",
-  props: { modelValue: Boolean, items: { type: Array as PropType<{ title: string }[]>, default: () => [] }, closeOnSelect: Boolean },
+  props: { modelValue: Boolean, items: { type: Array as PropType<{ title?: string }[]>, default: () => [] }, closeOnSelect: Boolean },
   emits: ["update:modelValue", "item-click"],
   setup(props, { emit, slots }) {
     const pick = (item: unknown) => {
@@ -20,7 +20,9 @@ const VcDropdown = defineComponent({
     return () =>
       h("div", [
         slots.trigger?.({ isActive: props.modelValue, toggle: () => emit("update:modelValue", !props.modelValue) }),
-        props.modelValue ? h("ul", { role: "menu" }, props.items.map((item) => h("li", { role: "menuitem", onClick: () => pick(item) }, item.title))) : null,
+        props.modelValue
+          ? h("ul", { role: "menu" }, props.items.map((item) => h("li", { role: "menuitem", onClick: () => pick(item) }, slots.item?.({ item }) ?? item.title)))
+          : null,
       ]);
   },
 });
@@ -115,6 +117,55 @@ describe("SettingsPanel", () => {
       await addRow(wrapper);
 
       expect(items()).toEqual([{ title: { "en-US": "Feature", "de-DE": "Funktion" } }]);
+    });
+  });
+
+  describe("a section's blocks", () => {
+    beforeEach(() => {
+      designer.schemas.value = {
+        ...SCHEMAS,
+        sections: { ...SCHEMAS.sections, bar: { name: "Announcement bar", blocks: ["announcement"] } },
+        blocks: { announcement: { name: "Announcement", displayField: "text", settings: [{ id: "text", type: "string" }] } },
+      };
+    });
+
+    const select = (content: Item[]) => {
+      designer.doc.value = { ...designer.doc.value, content };
+      designer.selection.value = { kind: "section", id: content[0].id };
+    };
+
+    it("are listed for a section that can hold them, and the one picked is opened", async () => {
+      select([{ id: "bar-1", type: "bar", blocks: [{ id: "announcement-1", type: "announcement", text: "Free shipping" }] }]);
+      const wrapper = mountPanel();
+
+      expect(wrapper.findAll(".pd-settings__block").map((x) => x.text())).toEqual(["Free shipping"]);
+      await wrapper.find(".pd-settings__block").trigger("click");
+
+      expect(designer.selection.value).toEqual({ kind: "block", sectionId: "bar-1", id: "announcement-1" });
+    });
+
+    it("are said to be none yet, in place of nothing to set, and the type picked is added and opened", async () => {
+      select([{ id: "bar-1", type: "bar", blocks: [] }]);
+      const wrapper = mountPanel();
+      expect(wrapper.find(".pd-settings__blocks").text()).toContain("No blocks yet.");
+      expect(wrapper.text()).not.toContain("Nothing to set here.");
+
+      await wrapper.findAll("button").find((x) => x.text() === "Add block")!.trigger("click");
+      await menuItem(wrapper, "Announcement").trigger("click");
+
+      const [block] = designer.doc.value.content[0].blocks!;
+      expect(block).toMatchObject({ type: "announcement" });
+      expect(designer.selection.value).toEqual({ kind: "block", sectionId: "bar-1", id: block.id });
+      expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    });
+
+    it("are not shown for a section whose type holds none, nor for a shared component's placement", () => {
+      expect(mountPanel().find(".pd-settings__blocks").exists()).toBe(false);
+
+      designer.components.set("footer", { name: "Footer", usageCount: 2, content: [] });
+      select([{ id: "placed-1", type: "componentRef", componentRef: "footer" }]);
+
+      expect(mountPanel().find(".pd-settings__blocks").exists()).toBe(false);
     });
   });
 });
