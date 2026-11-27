@@ -17,6 +17,35 @@
       />
     </PanelHeader>
 
+    <VcBanner
+      v-if="dirty"
+      variant="warning"
+      icon="lucide-triangle-alert"
+      class="vh__unsaved"
+    >
+      <template #title>{{ $t("SITE_BUILDER.DESIGNER.HISTORY.UNSAVED") }}</template>
+      <div class="vh__unsaved-actions">
+        <VcButton
+          size="sm"
+          variant="primary"
+          icon="lucide-save"
+          :disabled="busy"
+          @click="emit('save')"
+        >
+          {{ $t("SITE_BUILDER.DESIGNER.SAVE") }}
+        </VcButton>
+        <VcButton
+          size="sm"
+          variant="secondary"
+          icon="lucide-rotate-ccw"
+          :disabled="busy"
+          @click="emit('discard')"
+        >
+          {{ $t("SITE_BUILDER.DESIGNER.HISTORY.DISCARD") }}
+        </VcButton>
+      </div>
+    </VcBanner>
+
     <div class="vh__list">
       <p
         v-if="failed"
@@ -95,7 +124,7 @@
             type="button"
             class="vh__action vh__action--restore"
             :disabled="dirty || busy || !!restoreRefused?.(version)"
-            :title="dirty ? $t('SITE_BUILDER.DESIGNER.HISTORY.SAVE_FIRST') : restoreRefused?.(version)"
+            :title="restoreRefused?.(version)"
             @click="emit('restore', version)"
           >
             <VcIcon
@@ -109,7 +138,7 @@
     </div>
 
     <footer
-      v-if="hasMore || canDiscard"
+      v-if="hasMore || discardInFooter"
       class="vh__footer"
     >
       <button
@@ -122,7 +151,7 @@
         {{ $t("SITE_BUILDER.DESIGNER.HISTORY.MORE") }}
       </button>
       <button
-        v-if="canDiscard"
+        v-if="discardInFooter"
         type="button"
         class="vh__wide vh__wide--danger"
         :disabled="busy"
@@ -141,7 +170,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { VcIcon } from "@vc-shell/framework/ui";
+import { VcBanner, VcButton, VcIcon } from "@vc-shell/framework/ui";
 import type { HistoryVersion } from "../history";
 import PanelHeader from "./PanelHeader.vue";
 
@@ -161,7 +190,7 @@ const props = defineProps<{
   previewable?: (version: HistoryVersion) => boolean;
   restoreRefused?: (version: HistoryVersion) => string | undefined;
 }>();
-const emit = defineEmits<{ close: []; preview: [version: HistoryVersion | null]; restore: [version: HistoryVersion]; discard: [] }>();
+const emit = defineEmits<{ close: []; preview: [version: HistoryVersion | null]; restore: [version: HistoryVersion]; save: []; discard: [] }>();
 
 const { locale } = useI18n({ useScope: "global" });
 const versions = ref<HistoryVersion[]>([]);
@@ -169,6 +198,9 @@ const hasMore = ref(false);
 const cursor = ref<string>();
 const loading = ref(false);
 const failed = ref(false);
+
+// While there are unsaved changes the alert above the list offers Discard instead.
+const discardInFooter = computed(() => props.canDiscard && !props.dirty);
 
 // A file page marks every version its production branch holds as published, and the newest one is live.
 const liveId = computed(() => versions.value.find((x) => x.published)?.id);
@@ -215,6 +247,18 @@ defineExpose({ reload: () => load() });
 
   &__spin {
     animation: vh-spin 1s linear infinite;
+  }
+
+  &__unsaved {
+    flex: none;
+    margin: 8px 12px 0;
+  }
+
+  &__unsaved-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
   }
 
   &__list {

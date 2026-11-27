@@ -33,7 +33,8 @@ public class ThemeDraftTools(
     IGroupedPageService groupedPageService,
     IGroupedPageContentService pageContentService,
     ISiteBuilderSharedComponentService sharedComponentService,
-    ISiteBuilderSharedComponentContentService sharedComponentContentService)
+    ISiteBuilderSharedComponentContentService sharedComponentContentService,
+    ICustomSectionService customSectionService)
 {
     public const string HeaderPart = "header";
     public const string FooterPart = "footer";
@@ -138,7 +139,7 @@ public class ThemeDraftTools(
         CheckGroupEdit(request.Operations, group, versionToken, current);
 
         var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
-            sharedComponentContentService, request.User, request.StoreId);
+            sharedComponentContentService, schemaCatalogService, customSectionService, request.User, request.StoreId);
         await editor.ApplyAsync(request.Operations, sources, request.CancellationToken);
         change.Sections = SectionRow.From(editor.Sections);
 

@@ -91,7 +91,7 @@ export const VcBlade = defineComponent({
 export const VcBanner = defineComponent({
   name: "VcBanner",
   props: { variant: String, icon: String },
-  setup: (_, { slots }) => () => h("div", { role: "alert" }, slots.default?.()),
+  setup: (_, { slots }) => () => h("div", { role: "alert" }, [slots.title?.(), slots.default?.()]),
 });
 
 export const VcStatus = defineComponent({ name: "VcStatus", props: { variant: String }, setup: (_, { slots }) => () => h("span", slots.default?.()) });

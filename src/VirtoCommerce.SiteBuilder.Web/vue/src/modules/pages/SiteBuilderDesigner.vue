@@ -427,6 +427,7 @@
           @close="closeHistory"
           @preview="previewVersion"
           @restore="restoreVersion"
+          @save="save"
           @discard="discardChanges"
         />
       </div>

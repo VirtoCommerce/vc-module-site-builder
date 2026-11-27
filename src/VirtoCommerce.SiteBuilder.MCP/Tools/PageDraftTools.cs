@@ -14,6 +14,7 @@ using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.SiteBuilder.Data.Services;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions;
@@ -31,6 +32,8 @@ public class PageDraftTools(
     IDesignerOperationService designerOperationService,
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
+    ISchemaCatalogService schemaCatalogService,
+    ICustomSectionService customSectionService,
     ISiteBuilderContentQueryService contentQueryService,
     SectionTypeFindings sectionTypeFindings,
     ILogger<PageDraftTools> logger)
@@ -297,7 +300,8 @@ public class PageDraftTools(
             .ToList();
 
     private PageEditSources CreateSources(RequestContext<CallToolRequestParams> context, string storeId) =>
-        new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, context.User, storeId);
+        new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, schemaCatalogService,
+            customSectionService, context.User, storeId);
 
     private static void EnsureOperations(PageEditOperation[] operations)
     {

@@ -2,11 +2,13 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.ContentModule.Core;
 using VirtoCommerce.MCP.Core;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
 using VirtoCommerce.SiteBuilder.Core.Theme;
+using VirtoCommerce.SiteBuilder.Data.Extensions;
 using VirtoCommerce.SiteBuilder.Data.Theme;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 
@@ -39,6 +41,21 @@ public static class ThemeFiles
         {
             return null;
         }
+    }
+
+    // With the theme's custom section types, which the storefront's preview may not have seen yet.
+    public static async Task<JObject> GetCatalogWithCustomSectionsAsync(ISchemaCatalogService schemaCatalogService, ICustomSectionService customSectionService,
+        string storeId, CancellationToken cancellationToken)
+    {
+        var catalog = await schemaCatalogService.GetCatalogObjectAsync(storeId, hash: null, cancellationToken);
+        if (catalog == null)
+        {
+            return null;
+        }
+
+        var types = await customSectionService.GetTypesAsync(storeId, themeName: null, cancellationToken: cancellationToken);
+
+        return ThemeCustomSections.AddToCatalog(catalog, types);
     }
 
     public static async Task<string> RequireCatalogHashAsync(ISchemaCatalogService schemaCatalogService, string storeId, CancellationToken cancellationToken) =>

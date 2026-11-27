@@ -6,6 +6,10 @@ saved but not published yet — and let you continue editing from any of them.
 This works only for stores whose pages are kept in a git repository (the content git flow). Without it a
 draft overwrites the page and no versions are kept, so the **Version history** button is not shown at all.
 
+In the Admin Shell, versions are restored from the designer's **Version history** panel. The site's **History**
+widget holds only the repository settings (turning history on or off, testing the connection), so to restore a
+version, open the page in the designer.
+
 ## Where it comes from
 
 A version is a commit that touched the page's file. Versions are found by the file's history, not by who
@@ -46,27 +50,28 @@ saves by the same author on the same branch are folded into one row — expand i
 **Preview** opens the storefront rendering of that exact commit in a new tab. The link is pinned to a
 commit sha, so it keeps showing what it showed when it was made, and it never changes the page.
 
-## Continue editing from a version
+## Restore a version
 
-**Continue from this** takes the content of the chosen version and saves it as a **new version on your own
+**Restore** takes the content of the chosen version and saves it as a **new version on your own
 work branch**. Then you edit and publish as usual.
 
 Nothing is overwritten and nothing disappears:
 
-- the version you continued from stays where it was;
+- the version you restored stays where it was;
 - **your current draft is not lost** — it stays in the history as the version before this one;
 - other people's branches are never written to.
 
 Two things to know:
 
-- **Save or discard your unsaved changes first.** Continuing re-reads the page, so unsaved edits in the
-  editor would be lost. The button stays disabled until the editor is clean.
+- **Save or discard your unsaved changes first.** Restoring re-reads the page, so unsaved edits in the
+  editor would be lost. While there are any, the panel says so at its top, with **Save** and **Discard all
+  changes**, and every **Restore** stays disabled until the editor is clean.
 - **You are asked to confirm.** The editor is about to show different content, which is worth a deliberate
   click when the version came from somebody else.
 
 ## Rolling back a published page
 
-Continue from the last good version, then press **Publish**. That is the whole rollback: the restored
+Restore the last good version, then press **Publish**. That is the whole rollback: the restored
 content goes through the usual pull request and deploy, and the bad version stays in history rather than
 being erased. No git client, and no developer, required.
 

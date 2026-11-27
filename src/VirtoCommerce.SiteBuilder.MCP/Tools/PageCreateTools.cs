@@ -9,6 +9,7 @@ using VirtoCommerce.MCP.Core;
 using VirtoCommerce.MCP.Core.Attributes;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -28,6 +29,8 @@ public class PageCreateTools(
     ISiteBuilderPageListService pageListService,
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
+    ISchemaCatalogService schemaCatalogService,
+    ICustomSectionService customSectionService,
     IGroupedPageOperationService groupedPageOperationService,
     IMultilanguagePageOperationService multilanguagePageOperationService,
     SectionTypeFindings sectionTypeFindings)
@@ -122,7 +125,7 @@ public class PageCreateTools(
         if (sections?.Length > 0)
         {
             var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
-                sharedComponentContentService, user, page.StoreId);
+                sharedComponentContentService, schemaCatalogService, customSectionService, user, page.StoreId);
             await editor.ApplyAsync(sections, sources, cancellationToken);
         }
 
