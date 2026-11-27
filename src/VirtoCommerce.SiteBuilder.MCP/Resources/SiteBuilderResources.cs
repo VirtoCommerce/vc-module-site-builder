@@ -33,7 +33,6 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 using CustomerPermissions = VirtoCommerce.CustomerModule.Core.ModuleConstants.Security.Permissions;
 using CustomerSettings = VirtoCommerce.CustomerModule.Core.ModuleConstants.Settings.General;
 using Formatting = Newtonsoft.Json.Formatting;
-using JsonReaderException = Newtonsoft.Json.JsonReaderException;
 
 namespace VirtoCommerce.SiteBuilder.MCP.Resources;
 
@@ -222,29 +221,11 @@ public class SiteBuilderResources(
         return Serialize(McpPage<OrganizationRow>.Create(result.Results.Select(x => new OrganizationRow(x.Id, x.Name ?? x.Id)), result.TotalCount, paging));
     }
 
-    // With the theme's custom section types, which the storefront's preview may not have seen yet.
     private async Task<JObject> ReadThemeCatalogAsync(ClaimsPrincipal user, string storeId, CancellationToken cancellationToken)
     {
         await EnsureStoreAsync(authorizationService, user, storeId);
-        var json = await schemaCatalogService.GetAsync(storeId, hash: null, cancellationToken);
-        JObject catalog;
-        try
-        {
-            catalog = string.IsNullOrEmpty(json) ? null : ThemeJson.ParseObject(json);
-        }
-        catch (JsonReaderException)
-        {
-            return null;
-        }
 
-        if (catalog == null)
-        {
-            return null;
-        }
-
-        var types = await customSectionService.GetTypesAsync(storeId, themeName: null, cancellationToken: cancellationToken);
-
-        return ThemeCustomSections.AddToCatalog(catalog, types);
+        return await ThemeFiles.GetCatalogWithCustomSectionsAsync(schemaCatalogService, customSectionService, storeId, cancellationToken);
     }
 
     internal static Task EnsureStoreAsync(IAuthorizationService authorizationService, ClaimsPrincipal user, string storeId)

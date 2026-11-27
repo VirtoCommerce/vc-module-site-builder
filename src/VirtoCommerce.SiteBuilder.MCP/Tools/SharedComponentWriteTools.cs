@@ -15,6 +15,7 @@ using VirtoCommerce.MCP.Core.Models;
 using VirtoCommerce.Platform.Core.Common;
 using VirtoCommerce.SiteBuilder.Core.Models;
 using VirtoCommerce.SiteBuilder.Core.Services;
+using VirtoCommerce.SiteBuilder.Core.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Extensions;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
@@ -22,6 +23,8 @@ using static VirtoCommerce.SiteBuilder.Core.ModuleConstants.Security.Permissions
 
 namespace VirtoCommerce.SiteBuilder.MCP.Tools;
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+    Justification = "The services come from dependency injection; a parameter object would only hide them and change the constructor that subclasses call.")]
 [McpServerToolType]
 [McpScope(McpScopes.Admin)]
 public class SharedComponentWriteTools(
@@ -30,6 +33,8 @@ public class SharedComponentWriteTools(
     IGroupedPageContentService pageContentService,
     ISiteBuilderSharedComponentService sharedComponentService,
     ISiteBuilderSharedComponentContentService sharedComponentContentService,
+    ISchemaCatalogService schemaCatalogService,
+    ICustomSectionService customSectionService,
     ISiteBuilderSharedComponentOperationService sharedComponentOperationService)
 {
     public const string OperationsArgument = "operations";
@@ -356,7 +361,8 @@ public class SharedComponentWriteTools(
     }
 
     private PageEditSources CreateSources(ClaimsPrincipal user, string storeId) =>
-        new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, user, storeId);
+        new(authorizationService, groupedPageService, pageContentService, sharedComponentService, sharedComponentContentService, schemaCatalogService,
+            customSectionService, user, storeId);
 
     private static SharedComponentContentSaveOperationRequest ContentRequest(SiteBuilderSharedComponent component, JObject content, bool isDryRun,
         string expectedContentVersion) =>

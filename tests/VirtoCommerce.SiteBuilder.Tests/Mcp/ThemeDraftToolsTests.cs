@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using VirtoCommerce.MCP.Testing;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using VirtoCommerce.SiteBuilder.MCP.Services;
 using Xunit;
 using static VirtoCommerce.SiteBuilder.Tests.Mcp.McpTestContext;
@@ -59,6 +60,35 @@ public sealed class ThemeDraftToolsTests : IAsyncDisposable
         Assert.Equal(["announcement-bar", "site-header"], change.Sections.Select(x => x.Type));
         var saved = JsonNode.Parse(_context.ReadThemeFile(StoreA, "sections/header-group.json", draft: true)!)!.AsObject();
         Assert.Equal(["type", "name", "content"], saved.Select(x => x.Key));
+    }
+
+    [Fact]
+    public async Task ASectionAddedToTheHeader_HoldsTheDefaultBlocksOfItsSchema()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        await new SchemaCatalogService(_context.ThemeStorage).SaveAsync(StoreA, """
+            {
+              "sections": {
+                "site-header": {},
+                "announcement-bar": { "blocks": ["announcement"], "default": { "blocks": [ { "type": "announcement" } ] } }
+              },
+              "blocks": { "announcement": { "settings": [ { "id": "text", "type": "string", "translatable": true, "default": "Announce something here" } ] } }
+            }
+            """, TestContext.Current.CancellationToken);
+        _context.SeedThemeFile(StoreA, "sections/header-group.json", Header);
+        var read = (await _context.CallAsync(Designer(), Tool, new { store_id = StoreA, part = "header", dryRun = true })).EnsureSucceeded().Read<ThemeFileChange>();
+
+        var change = (await _context.CallAsync(Designer(), Tool, new
+        {
+            store_id = StoreA,
+            part = "header",
+            version_token = read.VersionTokens["default/sections/header-group.json"],
+            operations = new[] { new { op = "add_section", type = "announcement-bar", position = 0 } },
+        })).EnsureSucceeded().Read<ThemeFileChange>();
+
+        Assert.Equal(1, change.Sections[0].BlockCount);
+        var saved = JsonNode.Parse(_context.ReadThemeFile(StoreA, "sections/header-group.json", draft: true)!)!;
+        Assert.Equal("Announce something here", saved["content"]![0]!["blocks"]![0]!["text"]!.GetValue<string>());
     }
 
     [Fact]

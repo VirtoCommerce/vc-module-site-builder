@@ -132,6 +132,8 @@ public class PageDraftJobRunner(
 
         public Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken) => throw Unsupported();
 
+        public Task<JsonObject> GetSchemasAsync(CancellationToken cancellationToken) => Task.FromResult<JsonObject>(null);
+
         private static McpException Unsupported() => new("A bulk change cannot copy sections or place Shared Components; use edit_page_draft.");
     }
 }

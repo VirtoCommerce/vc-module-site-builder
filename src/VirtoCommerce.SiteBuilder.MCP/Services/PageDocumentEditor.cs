@@ -2,7 +2,9 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol;
+using Newtonsoft.Json.Linq;
 using VirtoCommerce.SiteBuilder.Data.Services;
+using VirtoCommerce.SiteBuilder.Data.Theme;
 using static VirtoCommerce.SiteBuilder.Core.ModuleConstants;
 using static VirtoCommerce.SiteBuilder.Data.Services.SiteBuilderPageItems;
 
@@ -16,6 +18,9 @@ public interface IPageEditSources
     Task EnsureSharedComponentAsync(string sharedComponentId, CancellationToken cancellationToken);
 
     Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken);
+
+    // The storefront's catalog with the theme's custom section types, which new sections and blocks start from; null until the storefront sends one.
+    Task<JsonObject> GetSchemasAsync(CancellationToken cancellationToken);
 }
 
 public enum PageDocumentKind
@@ -97,6 +102,9 @@ public sealed class PageDocumentEditor
     // Kinds whose page-owned settings are refused, as they follow the page (or the component) itself.
     private bool HasPageSettings => _kind is PageDocumentKind.Page or PageDocumentKind.FilePage or PageDocumentKind.SharedComponent;
 
+    // the storefront picks the language in templates, section groups and pages stored as files only; elsewhere it shows the dictionary
+    private bool KeepsOneText => _kind is PageDocumentKind.Page or PageDocumentKind.SharedComponent;
+
     public string Write()
     {
         if (IsLegacyShape)
@@ -141,6 +149,12 @@ public sealed class PageDocumentEditor
 
         switch (name)
         {
+            case "add_section":
+                Insert(Sections, await NewItemAsync(operation, block: false, sources, cancellationToken), operation, PageEnd(), sectionList: true);
+                break;
+            case "add_block":
+                await AddBlockAsync(operation, sources, cancellationToken);
+                break;
             case "set_page_settings":
                 if (_kind == PageDocumentKind.SectionGroup)
                 {
@@ -169,9 +183,6 @@ public sealed class PageDocumentEditor
     {
         switch (name)
         {
-            case "add_section":
-                Insert(Sections, NewItem(operation, block: false), operation, PageEnd(), sectionList: true);
-                return true;
             case "duplicate_section":
                 DuplicateSection(operation);
                 return true;
@@ -199,9 +210,6 @@ public sealed class PageDocumentEditor
     {
         switch (name)
         {
-            case "add_block":
-                AddBlock(operation);
-                return true;
             case "duplicate_block":
                 DuplicateBlock(operation);
                 return true;
@@ -222,7 +230,7 @@ public sealed class PageDocumentEditor
         }
     }
 
-    private JsonObject NewItem(PageEditOperation operation, bool block)
+    private async Task<JsonObject> NewItemAsync(PageEditOperation operation, bool block, IPageEditSources sources, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(operation.Type))
         {
@@ -235,7 +243,12 @@ public sealed class PageDocumentEditor
             throw new EditException("A Shared Component is placed with place_shared_component.");
         }
 
-        var item = new JsonObject { [IdKey] = NewId(type, _ids), [TypeKey] = type };
+        var item = SchemaDefaults.NewItem(await sources.GetSchemasAsync(cancellationToken), type, block, _ids);
+        if (KeepsOneText)
+        {
+            item = (JsonObject)InOneText(item);
+        }
+
         if (operation.Settings?.Count > 0)
         {
             SetValues(item, operation.Settings, operation.Language, page: false);
@@ -259,16 +272,17 @@ public sealed class PageDocumentEditor
         SetValues(target, operation.Settings, operation.Language, page: false);
     }
 
-    private void AddBlock(PageEditOperation operation)
+    private async Task AddBlockAsync(PageEditOperation operation, IPageEditSources sources, CancellationToken cancellationToken)
     {
         var section = EditableSection(operation.SectionId, "hold blocks of its own");
+        var block = await NewItemAsync(operation, block: true, sources, cancellationToken);
         if (GetBlocks(section) is not { } blocks)
         {
             blocks = [];
             section[BlocksKey] = blocks;
         }
 
-        Insert(blocks, NewItem(operation, block: true), operation, blocks.Count, sectionList: false);
+        Insert(blocks, block, operation, blocks.Count, sectionList: false);
     }
 
     private void DuplicateBlock(PageEditOperation operation)
@@ -668,8 +682,7 @@ public sealed class PageDocumentEditor
                 "pass language to set one of them.");
         }
 
-        // the storefront picks the language in templates, section groups and pages stored as files only; elsewhere it shows the dictionary
-        if ((_kind is PageDocumentKind.Page or PageDocumentKind.SharedComponent) && ContainsTranslations(value))
+        if (KeepsOneText && ContainsTranslations(value))
         {
             throw new EditException(_kind == PageDocumentKind.SharedComponent
                 ? $"'{path}' takes one text, not a text per language: a Shared Component shows the same text in every language version it stands on."
@@ -714,6 +727,15 @@ public sealed class PageDocumentEditor
 
         return translations;
     }
+
+    // As the designer settles a new item where one text is kept: a text per language becomes the text of the page's language.
+    private JsonNode InOneText(JsonNode node) => node switch
+    {
+        _ when IsTranslations(node) => ThemeTranslations.Translate(JObject.Parse(node.ToJsonString()), PageLanguage, PageLanguage),
+        JsonObject value => new JsonObject(value.Select(x => KeyValuePair.Create(x.Key, InOneText(x.Value)))),
+        JsonArray list => new JsonArray([.. list.Select(InOneText)]),
+        _ => node?.DeepClone(),
+    };
 
     private static bool ContainsTranslations(JsonNode node) => node switch
     {

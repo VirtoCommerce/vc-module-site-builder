@@ -38,7 +38,8 @@ public class TemplateTools(
     IGroupedPageService groupedPageService,
     IGroupedPageContentService pageContentService,
     ISiteBuilderSharedComponentService sharedComponentService,
-    ISiteBuilderSharedComponentContentService sharedComponentContentService)
+    ISiteBuilderSharedComponentContentService sharedComponentContentService,
+    ICustomSectionService customSectionService)
 {
     private const int MaxOperations = 100;
 
@@ -229,7 +230,7 @@ public class TemplateTools(
         if (operations?.Length > 0)
         {
             var sources = new PageEditSources(authorizationService, groupedPageService, pageContentService, sharedComponentService,
-                sharedComponentContentService, user, storeId);
+                sharedComponentContentService, schemaCatalogService, customSectionService, user, storeId);
             await editor.ApplyAsync(operations, sources, cancellationToken);
         }
 

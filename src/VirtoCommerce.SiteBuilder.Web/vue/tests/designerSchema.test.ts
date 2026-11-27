@@ -40,6 +40,13 @@ test("new items get defaults, an id from the type, and a blocks list when they h
   assert.equal(newItem("text", "block", schemas).text, "Hi");
 });
 
+test("a default's blocks get their own type's defaults under the values the default gives them, and new ids", () => {
+  const announcement = { blocks: ["text"], default: { blocks: [{ type: "text" }, { id: "b2", type: "text", text: "Sale", name: "Promo" }] } };
+  const bar = newItem("announcement", "section", { ...schemas, sections: { announcement } });
+  assert.deepEqual(bar.blocks?.map((x) => [x.type, x.text, x.name]), [["text", "Hi", undefined], ["text", "Sale", "Promo"]]);
+  assert.equal(new Set(bar.blocks?.map((x) => x.id).concat("b2")).size, 3);
+});
+
 test("a block with no block schema of its type is made from the section schema, as it is edited", () => {
   const block = newItem("slider", "block", schemas);
   assert.equal(block.height, "auto");

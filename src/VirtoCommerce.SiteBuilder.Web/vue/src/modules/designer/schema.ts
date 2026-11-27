@@ -38,10 +38,10 @@ export function newId(type: string): string {
 
 export const blockSchemaOf = (schemas: Schemas, type: string): ItemSchema | undefined => schemas.blocks[type] ?? schemas.sections[type];
 
-export function newItem(type: string, kind: "section" | "block", schemas: Schemas): Item {
+export function newItem(type: string, kind: "section" | "block", schemas: Schemas, values?: Item): Item {
   const schema = kind === "section" ? schemas.sections[type] : blockSchemaOf(schemas, type);
-  const item: Item = { ...valuesOf(fieldsOf(schema, kind, schemas)), ...clone(schema?.default ?? {}), type, id: newId(type) };
-  if (schema?.blocks) item.blocks = Array.isArray(item.blocks) ? item.blocks.map(copyItem) : [];
+  const item: Item = { ...valuesOf(fieldsOf(schema, kind, schemas)), ...clone(schema?.default ?? {}), ...clone(values), type, id: newId(type) };
+  if (schema?.blocks) item.blocks = Array.isArray(item.blocks) ? item.blocks.map((x) => newItem(x.type, "block", schemas, x)) : [];
   return item;
 }
 

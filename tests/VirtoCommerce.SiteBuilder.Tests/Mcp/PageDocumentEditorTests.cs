@@ -25,6 +25,29 @@ public sealed class PageDocumentEditorTests
         }
         """;
 
+    private static readonly JsonObject Schemas = JsonNode.Parse("""
+        {
+          "sections": {
+            "announcement-bar": {
+              "blocks": ["announcement"],
+              "settings": [
+                { "id": "home_only", "type": "checkbox", "default": false },
+                { "id": "background", "type": "color-token", "default": "color_neutral_900" },
+                { "id": "button", "type": "object", "element": [ { "id": "label", "type": "string" }, { "id": "url", "type": "string", "default": "/" } ] },
+                { "id": "links", "type": "list", "element": [ { "id": "url", "type": "string" } ] },
+                { "type": "header", "label": "Look" }
+              ],
+              "default": { "blocks": [ { "type": "announcement" }, { "id": "fixed", "type": "announcement", "text": "Free shipping" } ] }
+            },
+            "greeting": { "settings": [ { "id": "title", "type": "string", "translatable": true, "default": { "en-US": "Hello", "de-DE": "Hallo" } } ] }
+          },
+          "blocks": {
+            "announcement": { "settings": [ { "id": "text", "type": "string", "translatable": true, "default": "Announce something here" }, { "id": "link", "type": "string", "format": "url" } ] }
+          },
+          "shared": { "_sections": { "settings": [ { "id": "anchor", "type": "string", "default": null, "sort": -1 } ] } }
+        }
+        """)!.AsObject();
+
     private readonly FakeSources _sources = new();
 
     [Fact]
@@ -37,6 +60,66 @@ public sealed class PageDocumentEditorTests
         Assert.StartsWith("richtext", Text(added["id"]));
         Assert.Equal("Hi", Text(added["title"]));
         Assert.Equal("/about", Text(added["link"]!["url"]));
+        Assert.Equal(["id", "type", "title", "link"], added.Select(x => x.Key));
+    }
+
+    [Fact]
+    public async Task AddSection_StartsFromTheDefaultsOfItsSchema_AndThePassedValuesOverrideThem()
+    {
+        _sources.Schemas = Schemas;
+
+        var editor = await EditAsync(
+            Op("add_section", type: "announcement-bar", settings: new() { ["background"] = "color_primary_500", ["button.label"] = "Go" }),
+            Op("add_section", type: "faq"));
+
+        var added = Section(editor, 4);
+        Assert.Equal(["id", "type", "anchor", "home_only", "background", "button", "links", "blocks"], added.Select(x => x.Key));
+        Assert.False(added["home_only"]!.GetValue<bool>());
+        Assert.Null(added["anchor"]);
+        Assert.Equal("color_primary_500", Text(added["background"]));
+        Assert.Equal(("Go", "/"), (Text(added["button"]!["label"]), Text(added["button"]!["url"])));
+        Assert.Empty(added["links"]!.AsArray());
+        Assert.Equal(["id", "type"], Section(editor, 5).Select(x => x.Key));
+    }
+
+    [Fact]
+    public async Task AddSection_GetsTheDefaultBlocksOfItsSchema_EachWithItsOwnDefaults_UnderTheValuesTheDefaultGivesIt()
+    {
+        _sources.Schemas = Schemas;
+
+        var editor = await EditAsync(Op("add_section", type: "announcement-bar"));
+
+        var blocks = Section(editor, 4)["blocks"]!.AsArray();
+        Assert.Equal(["Announce something here", "Free shipping"], blocks.Select(x => Text(x!["text"])));
+        Assert.All(blocks, x => Assert.Equal(["id", "type", "text"], x!.AsObject().Select(y => y.Key)));
+        Assert.DoesNotContain(blocks, x => Text(x!["id"]) == "fixed");
+        Assert.Equal(2, blocks.Select(x => Text(x!["id"])).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task AddBlock_StartsFromTheDefaultsOfItsBlockSchema()
+    {
+        _sources.Schemas = Schemas;
+
+        var editor = await EditAsync(new PageEditOperation { Op = "add_block", SectionId = "list", Type = "announcement", Settings = new() { ["link"] = "/sale" } });
+
+        var block = Section(editor, 1)["blocks"]![2]!;
+        Assert.Equal(("Announce something here", "/sale"), (Text(block["text"]), Text(block["link"])));
+    }
+
+    [Theory]
+    [InlineData(PageDocumentKind.Page, "\"Hallo\"")]
+    [InlineData(PageDocumentKind.SharedComponent, "\"Hallo\"")]
+    [InlineData(PageDocumentKind.Template, """{"en-US":"Hello","de-DE":"Hallo"}""")]
+    public async Task ATextPerLanguageDefault_IsTheTextOfThePagesLanguage_WhereTheStorefrontShowsOneText(PageDocumentKind kind, string expected)
+    {
+        _sources.Schemas = Schemas;
+        var editor = PageDocumentEditor.Read(Document, kind)!;
+        editor.PageLanguage = "de-DE";
+
+        await editor.ApplyAsync([Op("add_section", type: "greeting")], _sources, CancellationToken.None);
+
+        Assert.Equal(expected, Section(editor, 4)["title"]!.ToJsonString());
     }
 
     [Theory]
@@ -545,6 +628,8 @@ public sealed class PageDocumentEditorTests
 
         public List<string> CheckedComponents { get; } = [];
 
+        public JsonObject Schemas { get; set; }
+
         public Task<JsonArray> GetPageSectionsAsync(string pageId, CancellationToken cancellationToken) =>
             Task.FromResult(Pages.TryGetValue(pageId, out var sections) ? sections : throw new McpException("not found"));
 
@@ -556,5 +641,7 @@ public sealed class PageDocumentEditorTests
 
         public Task<JsonArray> GetSharedComponentSectionsAsync(string sharedComponentId, CancellationToken cancellationToken) =>
             Task.FromResult(Components.TryGetValue(sharedComponentId, out var sections) ? sections : throw new McpForbiddenException("no"));
+
+        public Task<JsonObject> GetSchemasAsync(CancellationToken cancellationToken) => Task.FromResult(Schemas);
     }
 }

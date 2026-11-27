@@ -285,6 +285,19 @@ public sealed class EditPageDraftToolTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ASectionOfACustomSectionType_StartsFromTheDefaultsOfItsSchema()
+    {
+        await _context.SeedThemeAsync(StoreA);
+        _context.SeedThemeFile(StoreA, "custom-sections/custom-stats.json", StatsSectionType.Replace("\"translatable\": true", "\"translatable\": true, \"default\": \"Our year\"",
+            StringComparison.Ordinal));
+
+        await EditAsync(Editor(), "a1", await _context.DraftVersionAsync("a1"), [new { op = "add_section", type = "custom-stats" }]);
+
+        var added = JsonNode.Parse((await _context.LoadDraftAsync("a1")).Content)!["content"]![2]!;
+        Assert.Equal("Our year", SiteBuilderPageItems.GetString(added["title"]));
+    }
+
+    [Fact]
     public async Task AnEditThatAddsNoSuchSection_DoesNotWarnAgainOfOneThePageAlreadyPlaces()
     {
         await _context.SeedThemeAsync(StoreA);
